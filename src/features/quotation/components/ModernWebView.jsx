@@ -1010,7 +1010,9 @@ export default function ModernWebView({ data, pdfUrl }) {
   const segments  = q.flight?.included      && Array.isArray(q.flight?.segments)    ? q.flight.segments    : [];
   const cruises   = q.cruise?.included      && Array.isArray(q.cruise?.cruises)     ? q.cruise.cruises     : [];
   const vehicles  = q.vehicle?.included     && Array.isArray(q.vehicle?.vehicles)   ? q.vehicle.vehicles   : [];
-  
+  // Add-ons me item-level `included` bhi hota hai — section ON ho par ek line OFF ho sakti hai.
+  // `== false` hi filter karo: null/undefined ka matlab "included" hai (builder aise rows likhta
+  // hai jinke baare me usne user se poocha hi nahi).
   const addonItems = q.addons?.included     && Array.isArray(q.addons?.items)
     ? q.addons.items.filter(a => a?.included !== false)
     : [];
@@ -1107,30 +1109,26 @@ export default function ModernWebView({ data, pdfUrl }) {
         }
 
         /* ── hero ── */
-        .mv-hero { position: relative; min-height: 100vh; min-height: 100svh; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; overflow: hidden; padding: 96px 24px 110px; color: var(--ink); background: transparent; }
+        .mv-hero { position: relative; min-height: 100vh; min-height: 100svh; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; overflow: hidden; padding: 96px 24px 110px; color: #f6f2e9; }
         .mv-hero-media { position: absolute; inset: 0; }
         .mv-hero-media img { width: 100%; height: 100%; object-fit: cover; }
-        
-        /* Removed dark gradient overlay */
+
         .mv-hero-media::after { content: ''; position: absolute; inset: 0; background: transparent; }
-        
-        /* Removed fallback solid background */
-        .mv-hero-fallback { position: absolute; inset: 0; background: transparent; }
-        .mv-hero-fallback::before { display: none; }
-        
-        .mv-hero-mark { position: absolute; right: -4vw; bottom: -14vh; font-family: 'Fraunces', Georgia, serif; font-style: italic; font-weight: 300; font-size: clamp(240px, 46vw, 560px); line-height: 1; color: rgba(25, 22, 17, 0.04); pointer-events: none; user-select: none; }
+        .mv-hero-fallback { position: absolute; inset: 0; background: linear-gradient(158deg, #2a251b 0%, #38311f 46%, #17140d 100%); }
+        .mv-hero-fallback::before { content: ''; position: absolute; inset: 0; background: radial-gradient(ellipse 70% 55% at 70% 18%, rgba(156,91,51,0.35), transparent 65%); }
+        .mv-hero-mark { position: absolute; right: -4vw; bottom: -14vh; font-family: 'Fraunces', Georgia, serif; font-style: italic; font-weight: 300; font-size: clamp(240px, 46vw, 560px); line-height: 1; color: rgba(246,242,233,0.05); pointer-events: none; user-select: none; }
         .mv-hero-inner { position: relative; z-index: 2; max-width: 900px; }
-        .mv-hero-kicker { display: inline-flex; align-items: center; gap: 14px; font-size: 11px; font-weight: 600; letter-spacing: .3em; text-transform: uppercase; color: var(--accent); margin: 0 0 26px; }
-        .mv-hero-kicker::before, .mv-hero-kicker::after { content: ''; width: 34px; height: 1px; background: var(--line); }
-        .mv-hero-title { font-size: clamp(52px, 11vw, 118px); line-height: 0.98; margin: 0; font-weight: 400; letter-spacing: -0.02em; color: var(--ink); }
-        .mv-hero-title em { font-style: italic; font-weight: 300; color: var(--accent); }
-        .mv-hero-sub { font-size: clamp(15px, 2.4vw, 19px); font-weight: 400; color: var(--soft); margin: 22px 0 0; letter-spacing: .01em; }
-        .mv-hero-meta { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px 0; margin: 34px auto 0; font-size: 13px; font-weight: 500; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
-        .mv-hero-meta > span { padding: 0 18px; border-right: 1px solid var(--line); }
+        .mv-hero-kicker { display: inline-flex; align-items: center; gap: 14px; font-size: 11px; font-weight: 600; letter-spacing: .3em; text-transform: uppercase; color: rgba(246,242,233,0.85); margin: 0 0 26px; }
+        .mv-hero-kicker::before, .mv-hero-kicker::after { content: ''; width: 34px; height: 1px; background: rgba(246,242,233,0.45); }
+        .mv-hero-title { font-size: clamp(52px, 11vw, 118px); line-height: 0.98; margin: 0; font-weight: 400; letter-spacing: -0.02em; }
+        .mv-hero-title em { font-style: italic; font-weight: 300; color: #e8c9a8; }
+        .mv-hero-sub { font-size: clamp(15px, 2.4vw, 19px); font-weight: 400; color: rgba(246,242,233,0.88); margin: 22px 0 0; letter-spacing: .01em; }
+        .mv-hero-meta { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px 0; margin: 34px auto 0; font-size: 13px; font-weight: 500; letter-spacing: .06em; text-transform: uppercase; color: rgba(246,242,233,0.75); }
+        .mv-hero-meta > span { padding: 0 18px; border-right: 1px solid rgba(246,242,233,0.28); }
         .mv-hero-meta > span:last-child { border-right: none; }
-        .mv-hero-cue { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 2; display: flex; flex-direction: column; align-items: center; gap: 10px; font-size: 10px; font-weight: 600; letter-spacing: .3em; text-transform: uppercase; color: var(--muted); }
-        .mv-hero-cue i { display: block; width: 1px; height: 44px; background: var(--line); overflow: hidden; position: relative; }
-        .mv-hero-cue i::after { content: ''; position: absolute; left: 0; top: -50%; width: 1px; height: 50%; background: var(--accent); animation: mvDrop 2.1s cubic-bezier(.65,0,.35,1) infinite; }
+        .mv-hero-cue { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 2; display: flex; flex-direction: column; align-items: center; gap: 10px; font-size: 10px; font-weight: 600; letter-spacing: .3em; text-transform: uppercase; color: rgba(246,242,233,0.65); }
+        .mv-hero-cue i { display: block; width: 1px; height: 44px; background: rgba(246,242,233,0.4); overflow: hidden; position: relative; }
+        .mv-hero-cue i::after { content: ''; position: absolute; left: 0; top: -50%; width: 1px; height: 50%; background: #e8c9a8; animation: mvDrop 2.1s cubic-bezier(.65,0,.35,1) infinite; }
         @keyframes mvDrop { 0% { top: -50%; } 70%, 100% { top: 110%; } }
 
         /* ── layout ── */
@@ -1633,6 +1631,10 @@ export default function ModernWebView({ data, pdfUrl }) {
             </Reveal>
             <Reveal>
               <div className="mv-price">
+                {/* Per-section amounts live on the SECTION objects (flight.amount, hotel.amount, …) —
+                    the public Totals carries only subtotal/discount/tax/grandTotal/addonsTotal/perAdult.
+                    The totals.flightAmount-style fields this originally read DO NOT EXIST on the wire,
+                    so every one of these rows silently vanished against the real API. */}
                 {q.flight?.included      && q.flight.amount      > 0 && <PriceRow label="Flights"     value={inr(q.flight.amount)} />}
                 {q.hotel?.included       && q.hotel.amount       > 0 && <PriceRow label="Hotels"      value={inr(q.hotel.amount)} />}
                 {q.sightseeing?.included && q.sightseeing.amount > 0 && <PriceRow label="Sightseeing" value={inr(q.sightseeing.amount)} />}
@@ -1641,6 +1643,8 @@ export default function ModernWebView({ data, pdfUrl }) {
                 {q.addons?.included      && q.addons.amount      > 0 && <PriceRow label="Add-ons"     value={inr(q.addons.amount)} />}
                 {totals.subtotal != null       && <PriceRow label="Subtotal"    value={inr(totals.subtotal)} strong />}
                 {totals.discountAmount    > 0 && <PriceRow label="Discount"     value={`− ${inr(totals.discountAmount)}`} minus />}
+                {/* NO markup row, ever. The public DTO deliberately omits markup because it is the
+                    agency's margin — this is the customer-facing page. Do not re-add it. */}
                 {totals.taxAmount         > 0 && <PriceRow label={`Tax (${totals.taxPercent || 0}%)`} value={inr(totals.taxAmount)} />}
 
                 <div className="mv-grand">

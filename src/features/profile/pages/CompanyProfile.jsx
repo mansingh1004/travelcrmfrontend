@@ -504,7 +504,7 @@ function EditProfileTab({ company, onSave, showToast }) {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           <div>
             <Label required hint="Full legal company name">Company Name</Label>
-            <input value={form.name} onChange={e=>set("name",e.target.value)} className={inp(errs.name)} placeholder="Nepal Tours And Travels"/>
+            <input value={form.name} onChange={e=>set("name",e.target.value)} className={inp(errs.name)} placeholder="Enter Company Name"/>
             <ErrMsg f="name"/>
           </div>
           <div>
