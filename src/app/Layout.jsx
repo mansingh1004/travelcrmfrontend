@@ -77,6 +77,9 @@ import ImpersonationBanner from '@app/chrome/ImpersonationBanner';
 import MaintenanceOverlay from '@app/chrome/MaintenanceOverlay';
 // import DishaWidget from '../features/assistant/DishaWidget';
 
+import ReminderPopupCenter from
+  "@features/reminders/components/ReminderPopupCenter";
+
 const Layout = () => { // 2. Yahan se { children } hata diya gaya hai
   // Default state ko ab false rakha hai taaki mobile par pehle se open na mile
   const [isSidebarExpanded, setIsSidebarExpanded] = useState(false);
@@ -121,6 +124,9 @@ const Layout = () => { // 2. Yahan se { children } hata diya gaya hai
         </main>
       </div>
       </div>
+
+       {/* Global reminder popup — visible on every authenticated CRM page */}
+      <ReminderPopupCenter />
 
       {/* Floating internal AI assistant — available on every authenticated page.
           Parked: the AI assistant is not part of this sprint's release, and the backend

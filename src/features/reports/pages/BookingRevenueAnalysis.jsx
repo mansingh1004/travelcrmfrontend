@@ -318,6 +318,9 @@ export default function BookingRevenueAnalysis() {
   const [search,       setSearch]       = useState("");
   const [showEntries,  setShowEntries]  = useState("25");
   const [page,         setPage]         = useState(1);
+
+  const [revenueStatsOpen, setRevenueStatsOpen] = useState(false);
+
   const [applied,      setApplied]      = useState({
     startDate:"2026-05-23", endDate:"2026-06-22",
     dateType:"Booking Date", status:"All Statuses",
@@ -484,7 +487,7 @@ export default function BookingRevenueAnalysis() {
                 </p>
               </div>
             </div>
-            <button onClick={fetchBookings}
+            <button onClick={()=>navigate("/ReportsDashboard")}
               className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200
                 hover:border-blue-300 bg-white hover:bg-blue-50 text-slate-600 hover:text-blue-600
                 text-sm font-bold transition-all shadow-sm">
@@ -589,7 +592,7 @@ export default function BookingRevenueAnalysis() {
         </div>
 
         {/* ── 4 BIG HERO STAT CARDS ── */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <BigStatCard
             value={summary.totalRevenue}
             label="Total Revenue"
@@ -620,7 +623,109 @@ export default function BookingRevenueAnalysis() {
             icon={<FiAlertTriangle/>}
             delay={180}
           />
+        </div> */}
+
+        {/* ── COLLAPSIBLE REVENUE ANALYTICS ── */}
+<div className="bg-white/80 backdrop-blur-md rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden fade-up">
+
+  {/* Toggle header */}
+  <button
+    type="button"
+    onClick={() =>
+      setRevenueStatsOpen((previous) => !previous)
+    }
+    aria-expanded={revenueStatsOpen}
+    className="w-full px-4 sm:px-5 py-3 flex items-center justify-between gap-3 hover:bg-slate-50 transition-colors"
+  >
+    <div className="flex items-center gap-3 flex-wrap min-w-0">
+      <div className="flex items-center gap-2">
+        <FaChartLine className="w-4 h-4 text-emerald-600" />
+
+        <span className="text-sm font-extrabold text-slate-700">
+          Revenue Analytics
+        </span>
+      </div>
+
+      {/* Compact values shown when cards are closed */}
+      {!revenueStatsOpen && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="px-2.5 py-1 rounded-full bg-teal-100 text-teal-700 text-[11px] font-bold">
+            Revenue {fmt(summary.totalRevenue)}
+          </span>
+
+          <span className="px-2.5 py-1 rounded-full bg-green-100 text-green-700 text-[11px] font-bold">
+            Profit {fmt(summary.netProfit)}
+          </span>
+
+          <span className="px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 text-[11px] font-bold">
+            Margin {summary.avgNetMargin}%
+          </span>
+
+          <span className="px-2.5 py-1 rounded-full bg-red-100 text-red-700 text-[11px] font-bold">
+            Due {fmt(summary.outstandingDue)}
+          </span>
         </div>
+      )}
+    </div>
+
+    <div className="w-8 h-8 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center flex-shrink-0">
+      {revenueStatsOpen ? (
+        <FiChevronUp className="w-4 h-4" />
+      ) : (
+        <FiChevronDown className="w-4 h-4" />
+      )}
+    </div>
+  </button>
+
+  {/* Expandable cards */}
+  <div
+    className={`grid transition-all duration-300 ease-in-out ${
+      revenueStatsOpen
+        ? "grid-rows-[1fr] opacity-100"
+        : "grid-rows-[0fr] opacity-0"
+    }`}
+  >
+    <div className="min-h-0 overflow-hidden">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 p-4 pt-1">
+
+        <BigStatCard
+          value={summary.totalRevenue}
+          label="Total Revenue"
+          bg="bg-gradient-to-br from-teal-500 to-cyan-600"
+          icon={<FaRupeeSign />}
+          delay={0}
+        />
+
+        <BigStatCard
+          value={summary.netProfit}
+          label="Net Profit"
+          bg="bg-gradient-to-br from-green-500 to-emerald-600"
+          icon={<FaChartLine />}
+          delay={60}
+        />
+
+        <BigStatCard
+          value={summary.avgNetMargin}
+          label="Avg Net Margin"
+          subLabel="Normal: 71.6%"
+          bg="bg-gradient-to-br from-amber-500 to-orange-500"
+          icon={<FaPercentage />}
+          isPercent
+          delay={120}
+        />
+
+        <BigStatCard
+          value={summary.outstandingDue}
+          label="Outstanding Due"
+          bg="bg-gradient-to-br from-red-500 to-rose-600"
+          icon={<FiAlertTriangle />}
+          delay={180}
+        />
+
+      </div>
+    </div>
+  </div>
+</div>
 
         {/* ── REVENUE BREAKDOWN + BOOKING STATISTICS ── */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

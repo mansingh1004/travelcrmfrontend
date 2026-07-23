@@ -499,7 +499,7 @@ export default function BookingsPage({
   const [filterPay,     setFilterPay]     = useState("All Payment Status");
   const [filterMonth,   setFilterMonth]   = useState("All Booking Months");
   const [filterTravel,  setFilterTravel]  = useState("All Travel Months");
-  const [filtersOpen,   setFiltersOpen]   = useState(true);
+  const [filtersOpen,   setFiltersOpen]   = useState(false);
 
   const [statsOpen, setStatsOpen] = useState(false);
   // sort + page
