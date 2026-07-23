@@ -109,6 +109,9 @@ export default function GeographicDistribution() {
   const [search,       setSearch]       = useState("");
   const [showEntries,  setShowEntries]  = useState("25");
   const [page,         setPage]         = useState(1);
+
+  const [geographicStatsOpen, setGeographicStatsOpen] = useState(false);
+
   const [applied,      setApplied]      = useState({ startDate:DEFAULT_START, endDate:DEFAULT_END, viewType:"Departing Cities", leadType:"All Types", leadStage:"All Stages" });
 
   /* data state */
@@ -339,7 +342,7 @@ export default function GeographicDistribution() {
         </div>
 
         {/* ── STAT CARDS (6 cards matching screenshot colors) ── */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        {/* <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           {[
             { icon:<FaUsers className="text-2xl"/>,         label:"Total Leads", value:summary.total,     bg:"bg-gradient-to-br from-cyan-500 to-cyan-600",     delay:0   },
             { icon:<FaFire  className="text-2xl"/>,         label:"Hot Leads",   value:summary.hot,       bg:"bg-gradient-to-br from-red-500 to-red-600",       delay:50  },
@@ -348,7 +351,131 @@ export default function GeographicDistribution() {
             { icon:<span className="text-2xl">🌿</span>,    label:"Fresh Leads", value:summary.fresh,     bg:"bg-gradient-to-br from-blue-500 to-blue-600",     delay:200 },
             { icon:<FaCheckCircle className="text-2xl"/>,   label:"Converted",   value:summary.converted, bg:"bg-gradient-to-br from-green-500 to-emerald-600", delay:250 },
           ].map(s=><StatCard key={s.label} {...s}/>)}
+        </div> */}
+
+        {/* ── COLLAPSIBLE GEOGRAPHIC LEAD ANALYTICS ── */}
+<div className="bg-white/80 backdrop-blur-md rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden fade-up">
+
+  {/* Toggle header */}
+  <button
+    type="button"
+    onClick={() =>
+      setGeographicStatsOpen((previous) => !previous)
+    }
+    aria-expanded={geographicStatsOpen}
+    className="w-full px-4 sm:px-5 py-3 flex items-center justify-between gap-3 hover:bg-slate-50 transition-colors"
+  >
+    <div className="flex items-center gap-3 flex-wrap min-w-0">
+      <div className="flex items-center gap-2">
+        <FaMapMarkedAlt className="w-4 h-4 text-emerald-600" />
+
+        <span className="text-sm font-extrabold text-slate-700">
+          Geographic Lead Analytics
+        </span>
+      </div>
+
+      {/* Compact values displayed while cards are closed */}
+      {!geographicStatsOpen && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="px-2.5 py-1 rounded-full bg-cyan-100 text-cyan-700 text-[11px] font-bold">
+            {summary.total} Total
+          </span>
+
+          <span className="px-2.5 py-1 rounded-full bg-red-100 text-red-700 text-[11px] font-bold">
+            {summary.hot} Hot
+          </span>
+
+          <span className="px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 text-[11px] font-bold">
+            {summary.warm} Warm
+          </span>
+
+          <span className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 text-[11px] font-bold">
+            {summary.cold} Cold
+          </span>
+
+          <span className="px-2.5 py-1 rounded-full bg-blue-100 text-blue-700 text-[11px] font-bold">
+            {summary.fresh} Fresh
+          </span>
+
+          <span className="px-2.5 py-1 rounded-full bg-green-100 text-green-700 text-[11px] font-bold">
+            {summary.converted} Converted
+          </span>
         </div>
+      )}
+    </div>
+
+    <div className="w-8 h-8 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center flex-shrink-0">
+      {geographicStatsOpen ? (
+        <FiChevronUp className="w-4 h-4" />
+      ) : (
+        <FiChevronDown className="w-4 h-4" />
+      )}
+    </div>
+  </button>
+
+  {/* Expandable cards */}
+  <div
+    className={`grid transition-all duration-300 ease-in-out ${
+      geographicStatsOpen
+        ? "grid-rows-[1fr] opacity-100"
+        : "grid-rows-[0fr] opacity-0"
+    }`}
+  >
+    <div className="min-h-0 overflow-hidden">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 p-4 pt-1">
+        {[
+          {
+            icon: <FaUsers className="text-2xl" />,
+            label: "Total Leads",
+            value: summary.total,
+            bg: "bg-gradient-to-br from-cyan-500 to-cyan-600",
+            delay: 0,
+          },
+          {
+            icon: <FaFire className="text-2xl" />,
+            label: "Hot Leads",
+            value: summary.hot,
+            bg: "bg-gradient-to-br from-red-500 to-red-600",
+            delay: 50,
+          },
+          {
+            icon: <FaThermometerHalf className="text-2xl" />,
+            label: "Warm Leads",
+            value: summary.warm,
+            bg: "bg-gradient-to-br from-amber-500 to-amber-600",
+            delay: 100,
+          },
+          {
+            icon: <FaSnowflake className="text-2xl" />,
+            label: "Cold Leads",
+            value: summary.cold,
+            bg: "bg-gradient-to-br from-slate-500 to-slate-600",
+            delay: 150,
+          },
+          {
+            icon: <span className="text-2xl">🌿</span>,
+            label: "Fresh Leads",
+            value: summary.fresh,
+            bg: "bg-gradient-to-br from-blue-500 to-blue-600",
+            delay: 200,
+          },
+          {
+            icon: <FaCheckCircle className="text-2xl" />,
+            label: "Converted",
+            value: summary.converted,
+            bg: "bg-gradient-to-br from-green-500 to-emerald-600",
+            delay: 250,
+          },
+        ].map((stat) => (
+          <StatCard
+            key={stat.label}
+            {...stat}
+          />
+        ))}
+      </div>
+    </div>
+  </div>
+</div>
 
         {/* ── DISTRIBUTION TABLE CARD ── */}
         <div className="bg-white/80 backdrop-blur-md rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden fade-up">

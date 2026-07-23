@@ -529,6 +529,9 @@ export default function FollowupReports() {
   const [search,       setSearch]       = useState("");
   const [showEntries,  setShowEntries]  = useState("25");
   const [page,         setPage]         = useState(1);
+
+  const [followupStatsOpen, setFollowupStatsOpen] = useState(false);
+
   const [applied,      setApplied]      = useState({
     viewType:"All", daysAhead:"7 days", assignedTo:"All Users",
     priority:"All Priorities", reminderType:"All Types"
@@ -849,7 +852,7 @@ export default function FollowupReports() {
       )}
 
       {/* ── PAGE HEADER ── */}
-      <div className="bg-white/70 backdrop-blur-md border-b border-slate-100 sticky top-0 z-30 shadow-sm">
+      <div className="bg-white/70 backdrop-blur-md border-b border-slate-100">
         <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 py-4">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div className="flex items-center gap-3">
@@ -885,7 +888,7 @@ export default function FollowupReports() {
       <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 py-5 space-y-5">
 
         {/* ── STAT CARDS ── */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4">
+        {/* <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4">
           {[
             { icon:"📋", label:"Total Due",   value:stats.total,    bg:"bg-gradient-to-br from-blue-500 to-blue-600",     delay:0   },
             { icon:"🔴", label:"Overdue",     value:stats.overdue,  bg:"bg-gradient-to-br from-red-500 to-rose-600",      delay:60  },
@@ -896,7 +899,135 @@ export default function FollowupReports() {
           ].map(c=>(
             <StatCard key={c.label} icon={c.icon} label={c.label} value={c.value} bg={c.bg} delay={c.delay}/>
           ))}
+        </div> */}
+
+        {/* ── COLLAPSIBLE FOLLOW-UP ANALYTICS ── */}
+<div className="bg-white/80 backdrop-blur-md rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden">
+
+  {/* Toggle header */}
+  <button
+    type="button"
+    onClick={() =>
+      setFollowupStatsOpen((previous) => !previous)
+    }
+    aria-expanded={followupStatsOpen}
+    className="w-full px-4 sm:px-5 py-3 flex items-center justify-between gap-3 hover:bg-slate-50 transition-colors"
+  >
+    <div className="flex items-center gap-3 flex-wrap min-w-0">
+      <div className="flex items-center gap-2">
+        <FaTasks className="w-4 h-4 text-amber-600" />
+
+        <span className="text-sm font-extrabold text-slate-700">
+          Follow-up Analytics
+        </span>
+      </div>
+
+      {/* Compact values shown when cards are closed */}
+      {!followupStatsOpen && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="px-2.5 py-1 rounded-full bg-blue-100 text-blue-700 text-[11px] font-bold">
+            {stats.total} Total Due
+          </span>
+
+          <span className="px-2.5 py-1 rounded-full bg-red-100 text-red-700 text-[11px] font-bold">
+            {stats.overdue} Overdue
+          </span>
+
+          <span className="px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 text-[11px] font-bold">
+            {stats.dueToday} Due Today
+          </span>
+
+          <span className="px-2.5 py-1 rounded-full bg-orange-100 text-orange-700 text-[11px] font-bold">
+            {stats.urgent} Urgent
+          </span>
+
+          <span className="px-2.5 py-1 rounded-full bg-teal-100 text-teal-700 text-[11px] font-bold">
+            {stats.upcoming} Upcoming
+          </span>
+
+          <span className="px-2.5 py-1 rounded-full bg-violet-100 text-violet-700 text-[11px] font-bold">
+            {stats.high} High Priority
+          </span>
         </div>
+      )}
+    </div>
+
+    <div className="w-8 h-8 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center flex-shrink-0">
+      {followupStatsOpen ? (
+        <FiChevronUp className="w-4 h-4" />
+      ) : (
+        <FiChevronDown className="w-4 h-4" />
+      )}
+    </div>
+  </button>
+
+  {/* Expandable statistic cards */}
+  <div
+    className={`grid transition-all duration-300 ease-in-out ${
+      followupStatsOpen
+        ? "grid-rows-[1fr] opacity-100"
+        : "grid-rows-[0fr] opacity-0"
+    }`}
+  >
+    <div className="min-h-0 overflow-hidden">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 p-4 pt-1">
+        {[
+          {
+            icon: "📋",
+            label: "Total Due",
+            value: stats.total,
+            bg: "bg-gradient-to-br from-blue-500 to-blue-600",
+            delay: 0,
+          },
+          {
+            icon: "🔴",
+            label: "Overdue",
+            value: stats.overdue,
+            bg: "bg-gradient-to-br from-red-500 to-rose-600",
+            delay: 60,
+          },
+          {
+            icon: "📅",
+            label: "Due Today",
+            value: stats.dueToday,
+            bg: "bg-gradient-to-br from-amber-500 to-orange-500",
+            delay: 120,
+          },
+          {
+            icon: "⚡",
+            label: "Urgent (3d)",
+            value: stats.urgent,
+            bg: "bg-gradient-to-br from-orange-500 to-red-400",
+            delay: 180,
+          },
+          {
+            icon: "🔔",
+            label: "Upcoming",
+            value: stats.upcoming,
+            bg: "bg-gradient-to-br from-teal-500 to-cyan-500",
+            delay: 240,
+          },
+          {
+            icon: "⭐",
+            label: "High Priority",
+            value: stats.high,
+            bg: "bg-gradient-to-br from-violet-600 to-purple-600",
+            delay: 300,
+          },
+        ].map((card) => (
+          <StatCard
+            key={card.label}
+            icon={card.icon}
+            label={card.label}
+            value={card.value}
+            bg={card.bg}
+            delay={card.delay}
+          />
+        ))}
+      </div>
+    </div>
+  </div>
+</div>
 
         {/* ── FILTERS CARD ── */}
         <div className="bg-white/80 backdrop-blur-md rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden">

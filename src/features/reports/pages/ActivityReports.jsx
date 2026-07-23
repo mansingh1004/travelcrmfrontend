@@ -162,6 +162,9 @@ export default function ActivityReports() {
   const [user,        setUser]        = useState("All Users");
   const [perPage,     setPerPage]     = useState("50");
   const [filtersOpen, setFiltersOpen] = useState(true);
+
+  const [activityStatsOpen, setActivityStatsOpen] = useState(false);
+
   const [applied,     setApplied]     = useState({startDate:DEFAULT_START,endDate:DEFAULT_END,action:"All Actions",userType:"All Types",user:"All Users"});
 
   // Data state
@@ -315,14 +318,116 @@ export default function ActivityReports() {
       <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 py-6 space-y-5">
 
         {/* ── STAT CARDS ── */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        {/* <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           {[
             { icon:"📋", label:"Total Activities", value:stats.total,  gradient:"from-blue-600 to-blue-700",     delay:0   },
             { icon:"⬆️", label:"Total Logins",     value:stats.logins, gradient:"from-green-500 to-emerald-600", delay:60  },
             { icon:"👤", label:"Admin Actions",    value:stats.admins, gradient:"from-purple-500 to-purple-600", delay:120 },
             { icon:"🧑‍💼", label:"Unique Users",    value:stats.unique, gradient:"from-amber-500 to-orange-500",  delay:180 },
           ].map(s=><StatCard key={s.label} {...s}/>)}
+        </div> */}
+
+        {/* ── COLLAPSIBLE ACTIVITY ANALYTICS ── */}
+<div className="bg-white/80 backdrop-blur-md rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden fade-up">
+
+  {/* Toggle header */}
+  <button
+    type="button"
+    onClick={() =>
+      setActivityStatsOpen((previous) => !previous)
+    }
+    aria-expanded={activityStatsOpen}
+    className="w-full px-4 sm:px-5 py-3 flex items-center justify-between gap-3 hover:bg-slate-50 transition-colors"
+  >
+    <div className="flex items-center gap-3 flex-wrap min-w-0">
+      <div className="flex items-center gap-2">
+        <FiActivity className="w-4 h-4 text-blue-600" />
+
+        <span className="text-sm font-extrabold text-slate-700">
+          Activity Analytics
+        </span>
+      </div>
+
+      {/* Compact values shown while cards are closed */}
+      {!activityStatsOpen && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="px-2.5 py-1 rounded-full bg-blue-100 text-blue-700 text-[11px] font-bold">
+            {stats.total} Activities
+          </span>
+
+          <span className="px-2.5 py-1 rounded-full bg-green-100 text-green-700 text-[11px] font-bold">
+            {stats.logins} Logins
+          </span>
+
+          <span className="px-2.5 py-1 rounded-full bg-purple-100 text-purple-700 text-[11px] font-bold">
+            {stats.admins} Admin Actions
+          </span>
+
+          <span className="px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 text-[11px] font-bold">
+            {stats.unique} Unique Users
+          </span>
         </div>
+      )}
+    </div>
+
+    <div className="w-8 h-8 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center flex-shrink-0">
+      {activityStatsOpen ? (
+        <FiChevronUp className="w-4 h-4" />
+      ) : (
+        <FiChevronDown className="w-4 h-4" />
+      )}
+    </div>
+  </button>
+
+  {/* Expandable cards */}
+  <div
+    className={`grid transition-all duration-300 ease-in-out ${
+      activityStatsOpen
+        ? "grid-rows-[1fr] opacity-100"
+        : "grid-rows-[0fr] opacity-0"
+    }`}
+  >
+    <div className="min-h-0 overflow-hidden">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 p-4 pt-1">
+        {[
+          {
+            icon: "📋",
+            label: "Total Activities",
+            value: stats.total,
+            gradient: "from-blue-600 to-blue-700",
+            delay: 0,
+          },
+          {
+            icon: "⬆️",
+            label: "Total Logins",
+            value: stats.logins,
+            gradient: "from-green-500 to-emerald-600",
+            delay: 60,
+          },
+          {
+            icon: "👤",
+            label: "Admin Actions",
+            value: stats.admins,
+            gradient: "from-purple-500 to-purple-600",
+            delay: 120,
+          },
+          {
+            icon: "🧑‍💼",
+            label: "Unique Users",
+            value: stats.unique,
+            gradient: "from-amber-500 to-orange-500",
+            delay: 180,
+          },
+        ].map((stat) => (
+          <StatCard
+            key={stat.label}
+            {...stat}
+          />
+        ))}
+      </div>
+    </div>
+  </div>
+</div>
 
         {/* ── FILTERS & SEARCH PANEL ── */}
         <div className="bg-white/80 backdrop-blur-md rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden fade-up">
