@@ -15,47 +15,12 @@ import API from "@shared/api/http";
 // ═════════════════════════════════════════════════════════════
 export const companyService = {
 
-  // ── GET COMPANY PROFILE ────────────────────────────────────
-  // GET /api/company
-  // @GetMapping("/api/company")
-  // public ResponseEntity<CompanyDTO> getCompany()
-  //
-  // Returns the single company profile row for the logged-in tenant.
-  // Response:
-  // {
-  //   id: 1,
-  //   name: "Nepal Tours And Travels",
-  //   prefix: "NTAT",
-  //   email: "nepaltours.travels@gmail.com",
-  //   phone: "9918001088",
-  //   website: "https://nepaltoursandtravels.com/",
-  //   operatingSince: 1999,
-  //   totalReviews: 313,
-  //   tripsSold: 0,
-  //   gstin: "09EKTPS8464R1ZE",
-  //   tan: "ABCD1234SE",
-  //   status: "Active",
-  //   createdDate: "May 29, 2026",
-  //   address: "Opp. Gate No. -1,\nRailway Station...",
-  //   state: "Uttar Pradesh",
-  //   logoUrl: "https://...",
-  //   faviconUrl: "https://..."
-  // }
+  
   get: () => {
     return API.get("/company");
   },
 
-  // ── UPDATE COMPANY PROFILE (JSON fields only) ──────────────
-  // PUT /api/company
-  // @PutMapping("/api/company")
-  // public ResponseEntity<CompanyDTO> update(@RequestBody CompanyDTO dto)
-  //
-  // Request body (all fields optional except name/prefix/email/state):
-  // {
-  //   name, prefix, email, phone, website,
-  //   operatingSince, totalReviews, tripsSold,
-  //   gstin, tan, address, state
-  // }
+  
   update: (data) => {
     return API.put("/company", data);
   },

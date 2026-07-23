@@ -60,27 +60,8 @@ const intlDomesticService = {
     });
   },
 
-  // ── GET DOMESTIC PANEL DATA ────────────────────────────────
-  // GET /api/reports/international-domestic/domestic
-  // @GetMapping("/api/reports/international-domestic/domestic")
-  // public ResponseEntity<TripTypeDataDTO> getDomestic(
-  //     @RequestParam(required = false)              String startDate,
-  //     @RequestParam(required = false)              String endDate,
-  //     @RequestParam(defaultValue = "Booking Date") String dateType,
-  //     @RequestParam(required = false)              String status)
-  //
-  // Response:
-  // {
-  //   totalRevenue:   197001.00,
-  //   totalBookings:  2,
-  //   avgValue:       98500.50,
-  //   avgNights:      5.0,
-  //   tcs:            0.00,
-  //   growthPct:      71.6,
-  //   destinations: [
-  //     { name:"Nepal", country:"Nepal", bookings:1, revenue:610000 }
-  //   ]
-  // }
+ 
+  
   getDomestic: (filters = {}) => {
     return api.get("/reports/international-domestic/domestic", {
       params: buildParams(filters),
