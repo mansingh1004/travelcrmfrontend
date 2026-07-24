@@ -42,7 +42,12 @@ function NumberInput({ label, icon: Icon, value, onChange, min = 0, max = 20, co
   );
 }
 
-export default function TravelDetails({ register, watch, setValue }) {
+export default function TravelDetails({
+  register,
+  watch,
+  setValue,
+  getValues,
+}) {
   const [countries, setCountries] = useState([]);
   const [loadingCountries, setLoadingCountries] = useState(true);
   const [error, setError] = useState(null);
@@ -61,34 +66,152 @@ export default function TravelDetails({ register, watch, setValue }) {
     setValue("extraBeds", 0);
   }, []);
 
+  // useEffect(() => {
+  //   geographyService.getCountries()
+  //     .then((list) => {
+  //       setCountries(list);
+
+  //       // ── AUTO-SELECT: Departing Country = India (default) ──
+  //       // List load hone ke baad India ko canonical value se set karte hain
+  //       // taaki SearchableSelect mein properly selected dikhe. User ne agar
+  //       // pehle se koi doosra country choose kiya ho toh usse nahi chhedte.
+  //       const current = watch("departCountry");
+  //       if (!current || current === "India") {
+  //         const india = (Array.isArray(list) ? list : []).find((c) => {
+  //           const name = typeof c === "string" ? c : (c?.name || c?.countryName || "");
+  //           return name.trim().toLowerCase() === "india";
+  //         });
+  //         const value = india
+  //           ? (typeof india === "string" ? india : (india.name || india.countryName))
+  //           : "India";
+  //         setValue("departCountry", value, { shouldValidate: true });
+  //       }
+  //     })
+  //     // Was `err.message` — an axios error, so the user saw "Request failed with status code 500".
+  //     .catch((err) => setError(getErrorMessage(err, "Couldn't load countries.")))
+  //     .finally(() => setLoadingCountries(false));
+  //   // eslint-disable-next-line react-hooks/exhaustive-deps
+  // }, []);
+
   useEffect(() => {
-    geographyService.getCountries()
-      .then((list) => {
-        setCountries(list);
+  let isMounted = true;
 
-        // ── AUTO-SELECT: Departing Country = India (default) ──
-        // List load hone ke baad India ko canonical value se set karte hain
-        // taaki SearchableSelect mein properly selected dikhe. User ne agar
-        // pehle se koi doosra country choose kiya ho toh usse nahi chhedte.
-        const current = watch("departCountry");
-        if (!current || current === "India") {
-          const india = (Array.isArray(list) ? list : []).find((c) => {
-            const name = typeof c === "string" ? c : (c?.name || c?.countryName || "");
-            return name.trim().toLowerCase() === "india";
-          });
-          const value = india
-            ? (typeof india === "string" ? india : (india.name || india.countryName))
-            : "India";
-          setValue("departCountry", value, { shouldValidate: true });
-        }
-      })
-      // Was `err.message` — an axios error, so the user saw "Request failed with status code 500".
-      .catch((err) => setError(getErrorMessage(err, "Couldn't load countries.")))
-      .finally(() => setLoadingCountries(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const getCountryName = (country) => {
+    if (typeof country === "string") {
+      return country.trim();
+    }
 
-  console.log(countries)
+    return String(
+      country?.name ||
+      country?.countryName ||
+      country?.label ||
+      ""
+    ).trim();
+  };
+
+  const loadCountries = async () => {
+    setLoadingCountries(true);
+    setError(null);
+
+    try {
+      const response = await geographyService.getCountries();
+
+      const rawCountries = Array.isArray(response)
+        ? response
+        : Array.isArray(response?.data)
+          ? response.data
+          : Array.isArray(response?.data?.data)
+            ? response.data.data
+            : Array.isArray(response?.content)
+              ? response.content
+              : [];
+
+      /*
+       * SearchableSelect ko { value, label } objects chahiye.
+       *
+       * Result:
+       * [
+       *   { value: "India", label: "India" },
+       *   { value: "Nepal", label: "Nepal" }
+       * ]
+       */
+      const countryOptions = rawCountries
+        .map((country) => {
+          const countryName = getCountryName(country);
+
+          if (!countryName) return null;
+
+          return {
+            value: countryName,
+            label: countryName,
+          };
+        })
+        .filter(Boolean)
+        .filter(
+          (country, index, array) =>
+            array.findIndex(
+              (item) =>
+                item.value.toLowerCase() ===
+                country.value.toLowerCase()
+            ) === index
+        );
+
+      if (!isMounted) return;
+
+      setCountries(countryOptions);
+
+      const indiaOption = countryOptions.find(
+        (country) =>
+          country.value.toLowerCase() === "india"
+      );
+
+      const currentCountry = getValues("departCountry");
+
+      /*
+       * Create form open hone par India select hogi.
+       * Existing different country ko overwrite nahi karega.
+       */
+      if (
+        !currentCountry ||
+        String(currentCountry).toLowerCase() === "india"
+      ) {
+        setValue(
+          "departCountry",
+          indiaOption?.value || "India",
+          {
+            shouldValidate: true,
+            shouldDirty: false,
+            shouldTouch: false,
+          }
+        );
+      }
+    } catch (err) {
+      if (!isMounted) return;
+
+      setCountries([]);
+
+      setError(
+        getErrorMessage(
+          err,
+          "Couldn't load countries."
+        )
+      );
+    } finally {
+      if (isMounted) {
+        setLoadingCountries(false);
+      }
+    }
+  };
+
+  loadCountries();
+
+  return () => {
+    isMounted = false;
+  };
+}, [getValues, setValue]);
+
+
+  // console.log(countries)
 
   const totalTravellers = adults + children + infants;
 
@@ -137,7 +260,7 @@ export default function TravelDetails({ register, watch, setValue }) {
               <FiGlobe className="w-3.5 h-3.5 text-teal-500" />
               Departing Country
             </label>
-            <SearchableSelect
+            {/* <SearchableSelect
               options={countries}
               value={watch("departCountry")}
               onChange={(val) => setValue("departCountry", val, { shouldValidate: true })}
@@ -145,7 +268,23 @@ export default function TravelDetails({ register, watch, setValue }) {
               loading={loadingCountries}
               icon={FiGlobe}
               searchable={true}
-            />
+            /> */}
+
+            <SearchableSelect
+  options={countries}
+  value={watch("departCountry") || ""}
+  onChange={(value) => {
+    setValue("departCountry", value, {
+      shouldValidate: true,
+      shouldDirty: true,
+      shouldTouch: true,
+    });
+  }}
+  placeholder="Select country"
+  loading={loadingCountries}
+  icon={FiGlobe}
+  searchable
+/>
             {error && (
               <span className="text-xs text-red-500">Failed to load countries: {error}</span>
             )}
