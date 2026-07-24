@@ -1401,7 +1401,7 @@ function PLine({ label, val, green, bold }) {
   );
 }
 
-/* ━━━ PUBLIC ROUTE ━━━ */
+
 export function PublicQuotationPage() {
   const { publicId } = useParams();
   return <div className="min-h-screen"><QuotationWebView publicId={publicId} /></div>;
