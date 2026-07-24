@@ -221,6 +221,7 @@ export default function CreateLead() {
                 register={register}
                 watch={watch}
                 setValue={setValue}
+                getValues={getValues}
               />
               <ServicesSection
                 selectedServices={selectedServices}
