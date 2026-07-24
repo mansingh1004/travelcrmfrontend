@@ -876,6 +876,21 @@
 // TRASH_DELETE (tenant-admin only by default); the route itself by TRASH_VIEW.
 // ─────────────────────────────────────────────────────────────
 
+// src/trash/TrashPage.jsx
+// ─────────────────────────────────────────────────────────────
+// Universal Trash (Recycle Bin) page.
+// UPDATED: Uses same custom inline Toast as all other CRM pages
+//
+// Backed by the unified /api/trash endpoint which returns records grouped by
+// module. There is no server-side pagination / filtering / bulk, so this page
+// fetches once, flattens the groups into rows, and does search + filter +
+// pagination CLIENT-SIDE (matching the BookingsPage pattern).
+//
+// Records are addressed ONLY by { entityType key, publicId UUID } — never the
+// internal Long id. Restore is gated by TRASH_RESTORE, permanent delete by
+// TRASH_DELETE (tenant-admin only by default); the route itself by TRASH_VIEW.
+// ─────────────────────────────────────────────────────────────
+
 import { useState, useEffect, useMemo, useCallback } from "react";
 import {
   Trash2, RotateCcw, AlertTriangle, Search, X, RefreshCw, Inbox, Clock,
