@@ -157,7 +157,6 @@
 
 
 
-// src/components/CreateVendor/VendorServices.jsx
 
 import { useState } from "react";
 import { Check as FiCheck, Plus as FiPlus, Trash2 as FiTrash2, Hotel as FaHotel, Plane as FaPlane, Bus as FaBus, Ship as FaShip, BookUser as FaPassport, TreePalm as FaUmbrellaBeach, Car as FaCar, ConciergeBell as FaConciergeBell, Route as FaRoute, Flag as MdTour } from "lucide-react";
