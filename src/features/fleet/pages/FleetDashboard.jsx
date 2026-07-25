@@ -383,8 +383,7 @@
 
 
 
-// src/fleet/FleetDashboard.jsx
-// Fleet overview — counts, live trips, expiring documents and service-due vehicles.
+
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { LayoutDashboard, Car, IdCard, Route as RouteIcon, Plus, ShieldAlert, Wrench, CheckCircle2, XCircle, Fuel, Gauge, TrendingUp, IndianRupee, CalendarClock } from "lucide-react";
