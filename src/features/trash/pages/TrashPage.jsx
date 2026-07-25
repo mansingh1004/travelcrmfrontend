@@ -890,11 +890,25 @@
 // internal Long id. Restore is gated by TRASH_RESTORE, permanent delete by
 // TRASH_DELETE (tenant-admin only by default); the route itself by TRASH_VIEW.
 // ─────────────────────────────────────────────────────────────
+// src/trash/TrashPage.jsx
+// ─────────────────────────────────────────────────────────────
+// Universal Trash (Recycle Bin) page.
+// UPDATED: Uses same custom inline Toast as all other CRM pages
+//
+// Backed by the unified /api/trash endpoint which returns records grouped by
+// module. There is no server-side pagination / filtering / bulk, so this page
+// fetches once, flattens the groups into rows, and does search + filter +
+// pagination CLIENT-SIDE (matching the BookingsPage pattern).
+//
+// Records are addressed ONLY by { entityType key, publicId UUID } — never the
+// internal Long id. Restore is gated by TRASH_RESTORE, permanent delete by
+// TRASH_DELETE (tenant-admin only by default); the route itself by TRASH_VIEW.
+// ─────────────────────────────────────────────────────────────
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import {
   Trash2, RotateCcw, AlertTriangle, Search, X, RefreshCw, Inbox, Clock,
-  ShieldAlert, Check, LayoutGrid, List, ChevronLeft, ChevronRight,
+  ShieldAlert, Check, LayoutGrid, List,
 } from "lucide-react";
 
 
@@ -1674,18 +1688,19 @@ export default function TrashPage() {
           )}
 
           {/* ── PAGINATION ──
-              The whole "MAIN CARD" wrapper above has overflow-hidden. On
-              mobile the old markup (« ‹ 1 … n › » all in one flex row with
-              no wrap and no scroll) could add up to wider than the phone
-              screen — anything past the card's edge was silently clipped by
-              that overflow-hidden, which is exactly what made the arrows
-              disappear. Small screens now get a compact prev/next + "Page X
-              of Y" control that can never overflow; the full first/prev/
-              numbers/next/last row is back from sm upward. */}
+              Same numbered « ‹ [page] › » control at every breakpoint now
+              (matches the style already used elsewhere in the CRM, e.g. the
+              Vendors page). The button row itself carries the overflow
+              handling — overflow-x-auto so if a huge page count ever makes
+              it wider than the phone, it scrolls internally instead of
+              being silently clipped by the card's overflow-hidden (that
+              clipping, with no scroll escape at all, is what made the
+              arrows disappear before). On mobile the row is centered and
+              sits above the "Showing X–Y of Z" line for visibility. */}
           {!error && !loading && filtered.length > 0 && (
             <div className="px-5 py-4 border-t border-slate-100 bg-slate-50/60
               flex flex-col sm:flex-row items-center justify-between gap-3">
-              <p className="text-xs text-slate-400 font-medium">
+              <p className="order-2 sm:order-1 text-xs text-slate-400 font-medium">
                 Showing{" "}
                 <span className="font-bold text-slate-600">{(safePage-1)*PER_PAGE+1}</span>–
                 <span className="font-bold text-slate-600">{Math.min(safePage*PER_PAGE,filtered.length)}</span>
@@ -1693,56 +1708,40 @@ export default function TrashPage() {
                 <span className="font-bold text-slate-600">{filtered.length}</span>
               </p>
 
-              {/* Compact control — mobile only */}
-              <div className="flex sm:hidden items-center gap-2">
-                <button disabled={safePage===1} onClick={()=>setPage(p=>Math.max(1,p-1))}
-                  className="w-9 h-9 flex items-center justify-center rounded-lg bg-white border border-slate-200 text-slate-600
-                    hover:border-blue-300 hover:text-blue-600 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
-                  <ChevronLeft size={16}/>
-                </button>
-                <span className="text-xs font-bold text-slate-600 px-2 whitespace-nowrap">
-                  Page {safePage} of {totalPages}
-                </span>
-                <button disabled={safePage===totalPages} onClick={()=>setPage(p=>Math.min(totalPages,p+1))}
-                  className="w-9 h-9 flex items-center justify-center rounded-lg bg-white border border-slate-200 text-slate-600
-                    hover:border-blue-300 hover:text-blue-600 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
-                  <ChevronRight size={16}/>
-                </button>
-              </div>
-
-              {/* Full control with page numbers — sm and up */}
-              <div className="hidden sm:flex items-center gap-1.5">
-                <button disabled={safePage===1} onClick={()=>setPage(1)}
-                  className="w-8 h-8 rounded-lg bg-white border border-slate-200 text-slate-500 text-xs font-bold
-                    hover:border-blue-300 hover:text-blue-600 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
-                  «
-                </button>
-                <button disabled={safePage===1} onClick={()=>setPage(p=>Math.max(1,p-1))}
-                  className="w-8 h-8 rounded-lg bg-white border border-slate-200 text-slate-500 text-xs font-bold
-                    hover:border-blue-300 hover:text-blue-600 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
-                  ‹
-                </button>
-                {pageNumbers.map((p,i) =>
-                  typeof p==="string"
-                    ? <span key={`e${i}`} className="w-8 h-8 flex items-center justify-center text-xs text-slate-400">…</span>
-                    : <button key={p} onClick={()=>setPage(p)}
-                        className={`w-8 h-8 rounded-lg text-xs font-bold transition-all border
-                          ${safePage===p
-                            ?"bg-blue-600 border-blue-600 text-white shadow-sm"
-                            :"bg-white border-slate-200 text-slate-600 hover:border-blue-300 hover:text-blue-600"}`}>
-                        {p}
-                      </button>
-                )}
-                <button disabled={safePage===totalPages} onClick={()=>setPage(p=>Math.min(totalPages,p+1))}
-                  className="w-8 h-8 rounded-lg bg-white border border-slate-200 text-slate-500 text-xs font-bold
-                    hover:border-blue-300 hover:text-blue-600 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
-                  ›
-                </button>
-                <button disabled={safePage===totalPages} onClick={()=>setPage(totalPages)}
-                  className="w-8 h-8 rounded-lg bg-white border border-slate-200 text-slate-500 text-xs font-bold
-                    hover:border-blue-300 hover:text-blue-600 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
-                  »
-                </button>
+              <div className="order-1 sm:order-2 w-full sm:w-auto overflow-x-auto">
+                <div className="flex items-center justify-center sm:justify-end gap-1.5 w-max mx-auto sm:mx-0">
+                  <button disabled={safePage===1} onClick={()=>setPage(1)}
+                    className="w-8 h-8 shrink-0 rounded-lg bg-white border border-slate-200 text-slate-500 text-xs font-bold
+                      hover:border-blue-300 hover:text-blue-600 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
+                    «
+                  </button>
+                  <button disabled={safePage===1} onClick={()=>setPage(p=>Math.max(1,p-1))}
+                    className="w-8 h-8 shrink-0 rounded-lg bg-white border border-slate-200 text-slate-500 text-xs font-bold
+                      hover:border-blue-300 hover:text-blue-600 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
+                    ‹
+                  </button>
+                  {pageNumbers.map((p,i) =>
+                    typeof p==="string"
+                      ? <span key={`e${i}`} className="w-8 h-8 shrink-0 flex items-center justify-center text-xs text-slate-400">…</span>
+                      : <button key={p} onClick={()=>setPage(p)}
+                          className={`w-8 h-8 shrink-0 rounded-lg text-xs font-bold transition-all border
+                            ${safePage===p
+                              ?"bg-blue-600 border-blue-600 text-white shadow-sm"
+                              :"bg-white border-slate-200 text-slate-600 hover:border-blue-300 hover:text-blue-600"}`}>
+                          {p}
+                        </button>
+                  )}
+                  <button disabled={safePage===totalPages} onClick={()=>setPage(p=>Math.min(totalPages,p+1))}
+                    className="w-8 h-8 shrink-0 rounded-lg bg-white border border-slate-200 text-slate-500 text-xs font-bold
+                      hover:border-blue-300 hover:text-blue-600 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
+                    ›
+                  </button>
+                  <button disabled={safePage===totalPages} onClick={()=>setPage(totalPages)}
+                    className="w-8 h-8 shrink-0 rounded-lg bg-white border border-slate-200 text-slate-500 text-xs font-bold
+                      hover:border-blue-300 hover:text-blue-600 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
+                    »
+                  </button>
+                </div>
               </div>
             </div>
           )}
