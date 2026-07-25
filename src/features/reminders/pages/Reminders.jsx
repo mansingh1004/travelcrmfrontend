@@ -999,8 +999,9 @@ export default function Reminders() {
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/20 to-slate-100"
-      style={{ fontFamily:"'Plus Jakarta Sans',system-ui,sans-serif" }}>
+    <div className="min-h-screen w-full min-w-0 overflow-x-hidden bg-gradient-to-br from-slate-50 via-blue-50/20 to-slate-100"
+      style={{ fontFamily:"'Plus Jakarta Sans',system-ui,sans-serif" }}
+    >
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap');
         @keyframes slideIn { from{transform:translateX(110%);opacity:0} to{transform:translateX(0);opacity:1} }
@@ -1010,6 +1011,30 @@ export default function Reminders() {
         .fade-up { animation:fadeUp .4s ease both; }
         select { -webkit-appearance:none; appearance:none; }
         ::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:#f1f5f9;border-radius:99px}::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:99px}
+
+        .reminder-list-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #94a3b8 #e2e8f0;
+}
+
+.reminder-list-scroll::-webkit-scrollbar {
+  width: 7px;
+  height: 8px;
+}
+
+.reminder-list-scroll::-webkit-scrollbar-track {
+  background: #e2e8f0;
+  border-radius: 999px;
+}
+
+.reminder-list-scroll::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border-radius: 999px;
+}
+
+.reminder-list-scroll::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
       `}</style>
 
       {toast      && <Toast msg={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
@@ -1033,16 +1058,25 @@ export default function Reminders() {
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <button onClick={fetchReminders}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 hover:border-blue-300 bg-white hover:bg-blue-50 text-slate-600 hover:text-blue-600 text-sm font-bold transition-all shadow-sm">
-                <FiRefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} /> Refresh
-              </button>
-              <button onClick={() => navigate("/CreateReminder")}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold shadow-md shadow-blue-200 hover:shadow-lg transition-all">
-                <FiPlus className="w-4 h-4" strokeWidth={2.5} /> Add Reminder
-              </button>
-            </div>
+            <div className="grid grid-cols-2 sm:flex items-center gap-2 w-full sm:w-auto">
+  <button
+    onClick={fetchReminders}
+    className="w-full sm:w-auto flex items-center justify-center gap-2 px-3 sm:px-4 py-2.5 rounded-xl border border-slate-200 hover:border-blue-300 bg-white hover:bg-blue-50 text-slate-600 hover:text-blue-600 text-xs sm:text-sm font-bold transition-all shadow-sm"
+  >
+    <FiRefreshCw
+      className={`w-4 h-4 ${loading ? "animate-spin" : ""}`}
+    />
+    Refresh
+  </button>
+
+  <button
+    onClick={() => navigate("/CreateReminder")}
+    className="w-full sm:w-auto flex items-center justify-center gap-2 px-3 sm:px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-bold shadow-md shadow-blue-200 hover:shadow-lg transition-all"
+  >
+    <FiPlus className="w-4 h-4" strokeWidth={2.5} />
+    Add Reminder
+  </button>
+</div>
           </div>
         </div>
       </div>
@@ -1111,8 +1145,8 @@ export default function Reminders() {
 </div>
 
         <div className="bg-white/80 backdrop-blur-md rounded-2xl border border-slate-200/60 shadow-sm p-4">
-          <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center flex-wrap">
-            <div className="relative flex-1 min-w-[200px]">
+          <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center sm:flex-wrap min-w-0">
+            <div className="relative flex-1 min-w-0 sm:min-w-[200px]">
               <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"/>
               <input value={search} onChange={e => setSearch(e.target.value)}
                 placeholder="Search lead name, phone, title…"
@@ -1123,27 +1157,45 @@ export default function Reminders() {
             <div className="w-full sm:w-48"><Sel val={fType}     onChange={setFType}     opts={TYPES}/></div>
             {(search || fStatus !== "All Status" || fPriority !== "All Priorities" || fType !== "All Types") && (
               <button onClick={() => { setSearch(""); setFStatus("All Status"); setFPriority("All Priorities"); setFType("All Types"); }}
-                className="text-xs text-red-400 hover:text-red-600 font-bold flex items-center gap-1 px-3 py-2 rounded-xl hover:bg-red-50 transition-all whitespace-nowrap">
+                className="w-full sm:w-auto justify-center text-xs text-red-400 hover:text-red-600 font-bold flex items-center gap-1 px-3 py-2 rounded-xl hover:bg-red-50 transition-all whitespace-nowrap">
                 <FiX className="w-3 h-3"/> Clear
               </button>
             )}
           </div>
         </div>
 
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-slate-500 font-medium">
-            <span className="font-extrabold text-slate-700">{filtered.length}</span> reminder{filtered.length !== 1 ? "s" : ""}
-            {filtered.length !== reminders.length && ` (filtered from ${reminders.length})`}
-          </p>
-          <div className="flex gap-1 bg-white border border-slate-200 rounded-xl p-1">
-            {["grid","list"].map(v => (
-              <button key={v} onClick={() => setView(v)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${view === v ? "bg-blue-600 text-white shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
-                {v === "grid" ? "⊞ Grid" : "☰ List"}
-              </button>
-            ))}
-          </div>
-        </div>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+  <p className="text-sm text-slate-500 font-medium">
+    <span className="font-extrabold text-slate-700">
+      {filtered.length}
+    </span>{" "}
+    reminder{filtered.length !== 1 ? "s" : ""}
+
+    {filtered.length !== reminders.length && (
+      <span className="block sm:inline text-xs sm:text-sm mt-0.5 sm:mt-0">
+        {" "}
+        (filtered from {reminders.length})
+      </span>
+    )}
+  </p>
+
+  <div className="grid grid-cols-2 sm:flex gap-1 bg-white border border-slate-200 rounded-xl p-1 w-full sm:w-auto">
+    {["grid", "list"].map((item) => (
+      <button
+        key={item}
+        type="button"
+        onClick={() => setView(item)}
+        className={`w-full sm:w-auto px-3 py-2 sm:py-1.5 rounded-lg text-xs font-bold transition-all ${
+          view === item
+            ? "bg-blue-600 text-white shadow-sm"
+            : "text-slate-500 hover:text-slate-700"
+        }`}
+      >
+        {item === "grid" ? "⊞ Grid" : "☰ List"}
+      </button>
+    ))}
+  </div>
+</div>
 
         {loading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1180,80 +1232,247 @@ export default function Reminders() {
               />
             ))}
           </div>
-        ) : (
-          <div className="bg-white/80 backdrop-blur-md rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 border-b border-slate-100 text-[11px] font-extrabold text-slate-400 uppercase tracking-wider">
-                <tr>
-                  {["Status","Lead","Title","Due Date","Priority","Type","Actions"].map(h => (
-                    <th key={h} className="px-4 py-3 text-left whitespace-nowrap">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {filtered.map((r, idx) => {
-                  const pc  = PRIORITY_CFG[r.priority] || PRIORITY_CFG.Medium;
-                  const sc  = STATUS_CFG[r.status]     || STATUS_CFG.Active;
-                  const tc  = TYPE_CFG[r.type]         || TYPE_CFG.Custom;
-                  const due = getDueText(r.dueDate);
-                  return (
-                    <tr key={r.id || r._localId}
-                      className={`transition-colors hover:bg-slate-50 ${due.overdue && r.status==="Active" ? "bg-red-50/30" : ""}`}
-                      style={{ animation:"fadeUp .35s ease both", animationDelay:`${idx*20}ms` }}>
-                      <td className="px-4 py-3">
-                        <span className={`inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full ${sc.bg} ${sc.text}`}>
-                          <span className={`w-1.5 h-1.5 rounded-full ${sc.dot}`}/>{sc.icon} {r.status}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <p className="font-bold text-slate-800 text-xs">{r.leadName}</p>
-                        <p className="text-slate-400 text-[10px]">{r.phone}</p>
-                      </td>
-                      <td className="px-4 py-3 max-w-[200px]">
-                        <p className="font-semibold text-slate-700 truncate text-xs">{r.title}</p>
-                        {r.description && <p className="text-slate-400 text-[10px] truncate">{r.description}</p>}
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <p className={`text-xs font-bold ${due.overdue && r.status==="Active" ? "text-red-600" : due.soon ? "text-amber-600" : "text-slate-700"}`}>
-                          {fmtDate(r.dueDate)}
-                        </p>
-                        <p className="text-[10px] text-slate-400">{due.text}</p>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border ${pc.border} ${pc.bg} ${pc.text}`}>
-                          {pc.icon} {r.priority}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="text-xs text-slate-500">{tc.icon} {tc.label}</span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-1">
-                          <button onClick={() => setViewLeadR(r)} title="View Lead"
-                            className="w-7 h-7 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 flex items-center justify-center transition-all">
-                            <FiEye className="w-3 h-3"/>
-                          </button>
-                          <button onClick={() => setLogR(r)} title="Add Log"
-                            className="w-7 h-7 rounded-lg bg-cyan-50 hover:bg-cyan-100 text-cyan-600 flex items-center justify-center transition-all">
-                            <MdOutlineAddTask className="w-3 h-3"/>
-                          </button>
-                          <button onClick={() => setEditR(r)} title="Edit"
-                            className="w-7 h-7 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-500 flex items-center justify-center transition-all">
-                            <FiEdit2 className="w-3 h-3"/>
-                          </button>
-                          <button onClick={() => handleDelete(r.id || r._localId)} title="Delete"
-                            className="w-7 h-7 rounded-lg bg-red-50 hover:bg-red-100 text-red-500 flex items-center justify-center transition-all">
-                            <FiTrash2 className="w-3 h-3"/>
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+       ) : (
+  <div className="min-w-0 overflow-hidden rounded-2xl border border-slate-200/60 bg-white/80 shadow-sm backdrop-blur-md">
+    {/* Mobile scroll information */}
+    <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/80 px-4 py-2 lg:hidden">
+      <p className="text-xs font-bold text-slate-600">
+        Reminder List
+      </p>
+
+      <p className="text-[10px] font-semibold text-slate-400">
+        ← Swipe to view columns →
+      </p>
+    </div>
+
+    {/* Horizontal + vertical scroll container */}
+    <div
+      className="
+        reminder-list-scroll
+        max-h-[65dvh]
+        w-full
+        overflow-auto
+        overscroll-contain
+        sm:max-h-[70dvh]
+      "
+      style={{
+        WebkitOverflowScrolling: "touch",
+      }}
+    >
+      <table className="w-full min-w-[920px] text-sm">
+        <thead className="sticky top-0 z-20 border-b border-slate-200 bg-slate-50 text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
+          <tr>
+            <th className="min-w-[125px] whitespace-nowrap bg-slate-50 px-4 py-3 text-left">
+              Status
+            </th>
+
+            <th className="min-w-[150px] whitespace-nowrap bg-slate-50 px-4 py-3 text-left">
+              Lead
+            </th>
+
+            <th className="min-w-[210px] whitespace-nowrap bg-slate-50 px-4 py-3 text-left">
+              Title
+            </th>
+
+            <th className="min-w-[145px] whitespace-nowrap bg-slate-50 px-4 py-3 text-left">
+              Due Date
+            </th>
+
+            <th className="min-w-[120px] whitespace-nowrap bg-slate-50 px-4 py-3 text-left">
+              Priority
+            </th>
+
+            <th className="min-w-[140px] whitespace-nowrap bg-slate-50 px-4 py-3 text-left">
+              Type
+            </th>
+
+            <th className="min-w-[150px] whitespace-nowrap bg-slate-50 px-4 py-3 text-left">
+              Actions
+            </th>
+          </tr>
+        </thead>
+
+        <tbody className="divide-y divide-slate-100">
+          {filtered.map((r, idx) => {
+            const pc =
+              PRIORITY_CFG[r.priority] ||
+              PRIORITY_CFG.Medium;
+
+            const sc =
+              STATUS_CFG[r.status] ||
+              STATUS_CFG.Active;
+
+            const tc =
+              TYPE_CFG[r.type] ||
+              TYPE_CFG.Custom;
+
+            const due = getDueText(r.dueDate);
+
+            const isOverdue =
+              due.overdue &&
+              r.status === "Active";
+
+            return (
+              <tr
+                key={r.id || r._localId}
+                className={`transition-colors hover:bg-slate-50 ${
+                  isOverdue
+                    ? "bg-red-50/40"
+                    : "bg-white"
+                }`}
+                style={{
+                  animation: "fadeUp .35s ease both",
+                  animationDelay: `${idx * 20}ms`,
+                }}
+              >
+                {/* Status */}
+                <td className="whitespace-nowrap px-4 py-3">
+                  <span
+                    className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold ${sc.bg} ${sc.text}`}
+                  >
+                    <span
+                      className={`h-1.5 w-1.5 rounded-full ${sc.dot}`}
+                    />
+
+                    {sc.icon} {r.status}
+                  </span>
+                </td>
+
+                {/* Lead */}
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-2.5">
+                    <div
+                      className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-gradient-to-br text-xs font-extrabold text-white ${avatarGrad(
+                        idx
+                      )}`}
+                    >
+                      {initials(r.leadName)}
+                    </div>
+
+                    <div className="min-w-0">
+                      <p className="max-w-[135px] truncate text-xs font-bold text-slate-800">
+                        {r.leadName}
+                      </p>
+
+                      <p className="max-w-[135px] truncate text-[10px] text-slate-400">
+                        {r.phone || "No phone"}
+                      </p>
+                    </div>
+                  </div>
+                </td>
+
+                {/* Title */}
+                <td className="max-w-[230px] px-4 py-3">
+                  <p className="truncate text-xs font-semibold text-slate-700">
+                    {r.title}
+                  </p>
+
+                  {r.description && (
+                    <p className="mt-0.5 truncate text-[10px] text-slate-400">
+                      {r.description}
+                    </p>
+                  )}
+                </td>
+
+                {/* Due Date */}
+                <td className="whitespace-nowrap px-4 py-3">
+                  <p
+                    className={`text-xs font-bold ${
+                      isOverdue
+                        ? "text-red-600"
+                        : due.soon
+                          ? "text-amber-600"
+                          : "text-slate-700"
+                    }`}
+                  >
+                    {fmtDate(r.dueDate)}
+                  </p>
+
+                  <p
+                    className={`mt-0.5 text-[10px] ${
+                      isOverdue
+                        ? "text-red-500"
+                        : due.soon
+                          ? "text-amber-500"
+                          : "text-slate-400"
+                    }`}
+                  >
+                    {due.text}
+                  </p>
+                </td>
+
+                {/* Priority */}
+                <td className="whitespace-nowrap px-4 py-3">
+                  <span
+                    className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-bold ${pc.border} ${pc.bg} ${pc.text}`}
+                  >
+                    {pc.icon} {r.priority}
+                  </span>
+                </td>
+
+                {/* Type */}
+                <td className="whitespace-nowrap px-4 py-3">
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-500">
+                    {tc.icon} {tc.label}
+                  </span>
+                </td>
+
+                {/* Actions */}
+                <td className="whitespace-nowrap px-4 py-3">
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setViewLeadR(r)}
+                      title="View Lead"
+                      aria-label="View lead"
+                      className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 text-blue-600 transition-all hover:bg-blue-100"
+                    >
+                      <FiEye className="h-3.5 w-3.5" />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setLogR(r)}
+                      title="Add Log"
+                      aria-label="Add log"
+                      className="flex h-8 w-8 items-center justify-center rounded-lg bg-cyan-50 text-cyan-600 transition-all hover:bg-cyan-100"
+                    >
+                      <MdOutlineAddTask className="h-3.5 w-3.5" />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setEditR(r)}
+                      title="Edit Reminder"
+                      aria-label="Edit reminder"
+                      className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-500 transition-all hover:bg-slate-200"
+                    >
+                      <FiEdit2 className="h-3.5 w-3.5" />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleDelete(
+                          r.id || r._localId
+                        )
+                      }
+                      title="Delete Reminder"
+                      aria-label="Delete reminder"
+                      className="flex h-8 w-8 items-center justify-center rounded-lg bg-red-50 text-red-500 transition-all hover:bg-red-100"
+                    >
+                      <FiTrash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  </div>
+)}
       </div>
     </div>
   );
