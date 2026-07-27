@@ -21,15 +21,17 @@ GitHub secrets:
 
 - `DOCKERHUB_USERNAME`
 - `DOCKERHUB_TOKEN`
-- `HOSTINGER_HOST`
-- `HOSTINGER_USER`
 - `HOSTINGER_SSH_KEY`
-- `HOSTINGER_PORT` optional, defaults to `22`
-- `HOSTINGER_KNOWN_HOSTS` optional
+- `HOSTINGER_HOST` optional if set as a GitHub variable
+- `HOSTINGER_USER` optional if set as a GitHub variable
+- `HOSTINGER_PORT` optional, can be secret or variable, defaults to `22`
+- `HOSTINGER_KNOWN_HOSTS` optional, can be secret or variable
 
 GitHub variables:
 
 - `VITE_API_URL`, for example `https://api.mytripsafar.com/api`
+- `HOSTINGER_HOST`, if not using the secret
+- `HOSTINGER_USER`, if not using the secret
 - `HOSTINGER_FE_APP_DIR` optional, defaults to `/opt/travelcrm-frontend`
 
 nginx should proxy the frontend domain to `http://127.0.0.1:5173`.
