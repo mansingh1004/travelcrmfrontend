@@ -2,7 +2,6 @@
 
 
 
-// src/fleet/FleetVehicleDetail.jsx
 // Vehicle detail — profile, compliance docs, and the fuel / maintenance / trip diaries.
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
