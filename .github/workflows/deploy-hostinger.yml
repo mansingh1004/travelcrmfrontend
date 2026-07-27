@@ -10,6 +10,7 @@ on:
 env:
   IMAGE_NAME: travelcrm-frontend
   HOSTINGER_PORT: ${{ secrets.HOSTINGER_PORT || vars.HOSTINGER_PORT || '22' }}
+  HOSTINGER_HOST: ${{ secrets.HOSTINGER_HOST || vars.HOSTINGER_HOST || '187.127.159.81' }}
   HOSTINGER_APP_DIR: ${{ vars.HOSTINGER_FE_APP_DIR || '/opt/travelcrm-frontend' }}
   VITE_API_URL: ${{ vars.VITE_API_URL || 'https://api.mytripsafar.com/api' }}
 
@@ -114,7 +115,6 @@ jobs:
       - name: Configure SSH
         shell: bash
         env:
-          HOSTINGER_HOST: ${{ secrets.HOSTINGER_HOST || vars.HOSTINGER_HOST }}
           HOSTINGER_USER: ${{ secrets.HOSTINGER_USER || vars.HOSTINGER_USER }}
           HOSTINGER_SSH_KEY: ${{ secrets.HOSTINGER_SSH_KEY }}
           HOSTINGER_KNOWN_HOSTS: ${{ secrets.HOSTINGER_KNOWN_HOSTS || vars.HOSTINGER_KNOWN_HOSTS }}
@@ -136,7 +136,6 @@ jobs:
       - name: Upload compose files
         shell: bash
         env:
-          HOSTINGER_HOST: ${{ secrets.HOSTINGER_HOST || vars.HOSTINGER_HOST }}
           HOSTINGER_USER: ${{ secrets.HOSTINGER_USER || vars.HOSTINGER_USER }}
         run: |
           remote="${HOSTINGER_USER}@${HOSTINGER_HOST}"
@@ -151,7 +150,6 @@ jobs:
       - name: Run remote deployment
         shell: bash
         env:
-          HOSTINGER_HOST: ${{ secrets.HOSTINGER_HOST || vars.HOSTINGER_HOST }}
           HOSTINGER_USER: ${{ secrets.HOSTINGER_USER || vars.HOSTINGER_USER }}
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
