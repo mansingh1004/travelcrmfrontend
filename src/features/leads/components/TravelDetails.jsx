@@ -52,19 +52,19 @@ export default function TravelDetails({
   const [loadingCountries, setLoadingCountries] = useState(true);
   const [error, setError] = useState(null);
 
-  const rooms = watch("rooms") || 1;
-  const adults = watch("adults") || 2;
-  const children = watch("children") || 0;
-  const infants = watch("infants") || 0;
-  const extraBeds = watch("extraBeds") || 0;
+  const rooms = watch("rooms") ?? 1;
+  const adults = watch("adults") ?? 2;
+  const children = watch("children") ?? 0;
+  const infants = watch("infants") ?? 0;
+  const extraBeds = watch("extraBeds") ?? 0;
 
-  useEffect(() => {
-    setValue("rooms", 1);
-    setValue("adults", 2);
-    setValue("children", 0);
-    setValue("infants", 0);
-    setValue("extraBeds", 0);
-  }, []);
+  // useEffect(() => {
+  //   setValue("rooms", 1);
+  //   setValue("adults", 2);
+  //   setValue("children", 0);
+  //   setValue("infants", 0);
+  //   setValue("extraBeds", 0);
+  // }, []);
 
   // useEffect(() => {
   //   geographyService.getCountries()
@@ -93,122 +93,251 @@ export default function TravelDetails({
   //   // eslint-disable-next-line react-hooks/exhaustive-deps
   // }, []);
 
+
+  //   useEffect(() => {
+  //   let isMounted = true;
+
+  //   const getCountryName = (country) => {
+  //     if (typeof country === "string") {
+  //       return country.trim();
+  //     }
+
+  //     return String(
+  //       country?.name ||
+  //       country?.countryName ||
+  //       country?.label ||
+  //       ""
+  //     ).trim();
+  //   };
+
+  //   const loadCountries = async () => {
+  //     setLoadingCountries(true);
+  //     setError(null);
+
+  //     try {
+  //       const response = await geographyService.getCountries();
+
+  //       const rawCountries = Array.isArray(response)
+  //         ? response
+  //         : Array.isArray(response?.data)
+  //           ? response.data
+  //           : Array.isArray(response?.data?.data)
+  //             ? response.data.data
+  //             : Array.isArray(response?.content)
+  //               ? response.content
+  //               : [];
+
+  //       /*
+  //        * SearchableSelect ko { value, label } objects chahiye.
+  //        *
+  //        * Result:
+  //        * [
+  //        *   { value: "India", label: "India" },
+  //        *   { value: "Nepal", label: "Nepal" }
+  //        * ]
+  //        */
+  //       const countryOptions = rawCountries
+  //         .map((country) => {
+  //           const countryName = getCountryName(country);
+
+  //           if (!countryName) return null;
+
+  //           return {
+  //             value: countryName,
+  //             label: countryName,
+  //           };
+  //         })
+  //         .filter(Boolean)
+  //         .filter(
+  //           (country, index, array) =>
+  //             array.findIndex(
+  //               (item) =>
+  //                 item.value.toLowerCase() ===
+  //                 country.value.toLowerCase()
+  //             ) === index
+  //         );
+
+  //       if (!isMounted) return;
+
+  //       setCountries(countryOptions);
+
+  //       const indiaOption = countryOptions.find(
+  //         (country) =>
+  //           country.value.toLowerCase() === "india"
+  //       );
+
+  //       const currentCountry = getValues("departCountry");
+
+  //       /*
+  //        * Create form open hone par India select hogi.
+  //        * Existing different country ko overwrite nahi karega.
+  //        */
+  //       if (
+  //         !currentCountry ||
+  //         String(currentCountry).toLowerCase() === "india"
+  //       ) {
+  //         setValue(
+  //           "departCountry",
+  //           indiaOption?.value || "India",
+  //           {
+  //             shouldValidate: true,
+  //             shouldDirty: false,
+  //             shouldTouch: false,
+  //           }
+  //         );
+  //       }
+  //     } catch (err) {
+  //       if (!isMounted) return;
+
+  //       setCountries([]);
+
+  //       setError(
+  //         getErrorMessage(
+  //           err,
+  //           "Couldn't load countries."
+  //         )
+  //       );
+  //     } finally {
+  //       if (isMounted) {
+  //         setLoadingCountries(false);
+  //       }
+  //     }
+  //   };
+
+  //   loadCountries();
+
+  //   return () => {
+  //     isMounted = false;
+  //   };
+  // }, [getValues, setValue]);
+
+
   useEffect(() => {
-  let isMounted = true;
+    let active = true;
 
-  const getCountryName = (country) => {
-    if (typeof country === "string") {
-      return country.trim();
-    }
+    const loadCountries = async () => {
+      setLoadingCountries(true);
+      setError(null);
 
-    return String(
-      country?.name ||
-      country?.countryName ||
-      country?.label ||
-      ""
-    ).trim();
-  };
+      try {
+        const response = await geographyService.getCountries();
 
-  const loadCountries = async () => {
-    setLoadingCountries(true);
-    setError(null);
-
-    try {
-      const response = await geographyService.getCountries();
-
-      const rawCountries = Array.isArray(response)
-        ? response
-        : Array.isArray(response?.data)
-          ? response.data
-          : Array.isArray(response?.data?.data)
-            ? response.data.data
-            : Array.isArray(response?.content)
-              ? response.content
+        /*
+         * Supported response shapes:
+         *
+         * 1. Direct array
+         *    [{ value: 1, label: "India" }]
+         *
+         * 2. API body
+         *    { data: [{ value: 1, label: "India" }] }
+         *
+         * 3. Axios response
+         *    { data: { data: [...] } }
+         */
+        const rawCountries = Array.isArray(response)
+          ? response
+          : Array.isArray(response?.data)
+            ? response.data
+            : Array.isArray(response?.data?.data)
+              ? response.data.data
               : [];
 
-      /*
-       * SearchableSelect ko { value, label } objects chahiye.
-       *
-       * Result:
-       * [
-       *   { value: "India", label: "India" },
-       *   { value: "Nepal", label: "Nepal" }
-       * ]
-       */
-      const countryOptions = rawCountries
-        .map((country) => {
-          const countryName = getCountryName(country);
+        const countryOptions = rawCountries
+          .map((country) => {
+            const countryName =
+              typeof country === "string"
+                ? country.trim()
+                : String(
+                  country?.label ||
+                  country?.name ||
+                  country?.countryName ||
+                  ""
+                ).trim();
 
-          if (!countryName) return null;
+            if (!countryName) {
+              return null;
+            }
 
-          return {
-            value: countryName,
-            label: countryName,
-          };
-        })
-        .filter(Boolean)
-        .filter(
-          (country, index, array) =>
-            array.findIndex(
-              (item) =>
-                item.value.toLowerCase() ===
-                country.value.toLowerCase()
-            ) === index
+            /*
+             * Form mein country name save karna hai,
+             * database country ID nahi.
+             */
+            return {
+              value: countryName,
+              label: countryName,
+            };
+          })
+          .filter(Boolean);
+
+        if (!active) return;
+
+        setCountries(countryOptions);
+
+        /*
+         * getValues missing hone par component crash nahi karega.
+         */
+        const currentCountry =
+          typeof getValues === "function"
+            ? getValues("departCountry")
+            : watch("departCountry");
+
+        const matchingCountry = countryOptions.find(
+          (country) =>
+            country.value.toLowerCase() ===
+            String(currentCountry || "").trim().toLowerCase()
         );
 
-      if (!isMounted) return;
+        const indiaOption = countryOptions.find(
+          (country) =>
+            country.value.toLowerCase() === "india"
+        );
 
-      setCountries(countryOptions);
-
-      const indiaOption = countryOptions.find(
-        (country) =>
-          country.value.toLowerCase() === "india"
-      );
-
-      const currentCountry = getValues("departCountry");
-
-      /*
-       * Create form open hone par India select hogi.
-       * Existing different country ko overwrite nahi karega.
-       */
-      if (
-        !currentCountry ||
-        String(currentCountry).toLowerCase() === "india"
-      ) {
-        setValue(
-          "departCountry",
-          indiaOption?.value || "India",
-          {
-            shouldValidate: true,
+        /*
+         * Edit mode:
+         * Existing country preserve karo.
+         *
+         * Create mode:
+         * Empty hone par India select karo.
+         */
+        if (matchingCountry) {
+          setValue("departCountry", matchingCountry.value, {
+            shouldValidate: false,
             shouldDirty: false,
             shouldTouch: false,
-          }
+          });
+        } else if (!currentCountry && indiaOption) {
+          setValue("departCountry", indiaOption.value, {
+            shouldValidate: false,
+            shouldDirty: false,
+            shouldTouch: false,
+          });
+        }
+      } catch (err) {
+        if (!active) return;
+
+        console.error("Country loading error:", err);
+
+        setCountries([]);
+
+        setError(
+          getErrorMessage(
+            err,
+            "Couldn't load countries."
+          )
         );
+      } finally {
+        if (active) {
+          setLoadingCountries(false);
+        }
       }
-    } catch (err) {
-      if (!isMounted) return;
+    };
 
-      setCountries([]);
+    loadCountries();
 
-      setError(
-        getErrorMessage(
-          err,
-          "Couldn't load countries."
-        )
-      );
-    } finally {
-      if (isMounted) {
-        setLoadingCountries(false);
-      }
-    }
-  };
-
-  loadCountries();
-
-  return () => {
-    isMounted = false;
-  };
-}, [getValues, setValue]);
+    return () => {
+      active = false;
+    };
+  }, [getValues, setValue, watch]);
 
 
   // console.log(countries)
@@ -271,20 +400,20 @@ export default function TravelDetails({
             /> */}
 
             <SearchableSelect
-  options={countries}
-  value={watch("departCountry") || ""}
-  onChange={(value) => {
-    setValue("departCountry", value, {
-      shouldValidate: true,
-      shouldDirty: true,
-      shouldTouch: true,
-    });
-  }}
-  placeholder="Select country"
-  loading={loadingCountries}
-  icon={FiGlobe}
-  searchable
-/>
+              options={countries}
+              value={watch("departCountry") || ""}
+              onChange={(value) => {
+                setValue("departCountry", value, {
+                  shouldValidate: true,
+                  shouldDirty: true,
+                  shouldTouch: true,
+                });
+              }}
+              placeholder="Select country"
+              loading={loadingCountries}
+              icon={FiGlobe}
+              searchable
+            />
             {error && (
               <span className="text-xs text-red-500">Failed to load countries: {error}</span>
             )}

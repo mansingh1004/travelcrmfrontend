@@ -1,7 +1,7 @@
 
 
- // new update
- 
+// new update
+
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import {
@@ -11,83 +11,83 @@ import {
   Wallet, ShieldCheck, Download, Share2, CheckCircle, Loader2, AlertCircle
 } from "lucide-react";
 
-import FlightTab               from "../components/FlightTab";
-import HotelTab                from "../components/HotelTab";
-import SightseeingTab          from "../components/SightseeingTab";
-import CruiseTab               from "../components/CruiseTab";
-import VehicleTab              from "../components/VehicleTab";
-import AddOnServicesTab        from "../components/AddOnServicesTab";
+import FlightTab from "../components/FlightTab";
+import HotelTab from "../components/HotelTab";
+import SightseeingTab from "../components/SightseeingTab";
+import CruiseTab from "../components/CruiseTab";
+import VehicleTab from "../components/VehicleTab";
+import AddOnServicesTab from "../components/AddOnServicesTab";
 import InclusionsExclusionsTab from "../components/InclusionsExclusionsTab";
-import SummaryPricingTab       from "../components/SummaryPricingTab";
+import SummaryPricingTab from "../components/SummaryPricingTab";
 
-import { Input, Label }     from "../components/Ui";
+import { Input, Label } from "../components/Ui";
 import QuotationStyleModal from "../components/QuotationStyleModal";
 import { quotationService } from "../api/quotationService";
 import { leadService } from "@features/leads";
 
 /* ─── TAB CONFIG ─────────────────────────────────────── */
 const TABS = [
-  { id: "flight",      label: "Flight",                  icon: Plane,     color: "blue"    },
-  { id: "hotel",       label: "Hotel",                   icon: Hotel,     color: "violet"  },
-  { id: "sightseeing", label: "Sightseeing",             icon: Map,       color: "emerald" },
-  { id: "cruise",      label: "Cruise",                  icon: Anchor,    color: "cyan"    },
-  { id: "vehicle",     label: "Vehicle",                 icon: Car,       color: "orange"  },
-  { id: "addons",      label: "Add-on Services",         icon: Package,   color: "rose"    },
-  { id: "inclusions",  label: "Inclusions & Exclusions", icon: List,      color: "amber"   },
-  { id: "summary",     label: "Summary & Pricing",       icon: BarChart2, color: "indigo"  },
+  { id: "flight", label: "Flight", icon: Plane, color: "blue" },
+  { id: "hotel", label: "Hotel", icon: Hotel, color: "violet" },
+  { id: "sightseeing", label: "Sightseeing", icon: Map, color: "emerald" },
+  { id: "cruise", label: "Cruise", icon: Anchor, color: "cyan" },
+  { id: "vehicle", label: "Vehicle", icon: Car, color: "orange" },
+  { id: "addons", label: "Add-on Services", icon: Package, color: "rose" },
+  { id: "inclusions", label: "Inclusions & Exclusions", icon: List, color: "amber" },
+  { id: "summary", label: "Summary & Pricing", icon: BarChart2, color: "indigo" },
 ];
 
 // Lead-service name → service tab id. Used for tab reorder + Include default.
 // addons/inclusions/summary are NOT services → they always stay at the end and remain ON.
 const SERVICE_TAB_MAP = {
-  flight:      "Flight",
-  hotel:       "Hotel",
+  flight: "Flight",
+  hotel: "Hotel",
   sightseeing: "Sightseeing",
-  cruise:      "Cruise",
-  vehicle:     "Vehicle",
+  cruise: "Cruise",
+  vehicle: "Vehicle",
 };
 
 const TAB_ACTIVE = {
-  blue:    "text-blue-600    border-blue-600    bg-blue-50",
-  violet:  "text-violet-600  border-violet-600  bg-violet-50",
+  blue: "text-blue-600    border-blue-600    bg-blue-50",
+  violet: "text-violet-600  border-violet-600  bg-violet-50",
   emerald: "text-emerald-600 border-emerald-600 bg-emerald-50",
-  cyan:    "text-cyan-600    border-cyan-600    bg-cyan-50",
-  orange:  "text-orange-600  border-orange-600  bg-orange-50",
-  rose:    "text-rose-600    border-rose-600    bg-rose-50",
-  amber:   "text-amber-600   border-amber-600   bg-amber-50",
-  indigo:  "text-indigo-600  border-indigo-600  bg-indigo-50",
+  cyan: "text-cyan-600    border-cyan-600    bg-cyan-50",
+  orange: "text-orange-600  border-orange-600  bg-orange-50",
+  rose: "text-rose-600    border-rose-600    bg-rose-50",
+  amber: "text-amber-600   border-amber-600   bg-amber-50",
+  indigo: "text-indigo-600  border-indigo-600  bg-indigo-50",
 };
 
 const ICON_BG = {
-  blue:    "bg-blue-100    text-blue-600",
-  violet:  "bg-violet-100  text-violet-600",
+  blue: "bg-blue-100    text-blue-600",
+  violet: "bg-violet-100  text-violet-600",
   emerald: "bg-emerald-100 text-emerald-600",
-  cyan:    "bg-cyan-100    text-cyan-600",
-  orange:  "bg-orange-100  text-orange-600",
-  rose:    "bg-rose-100    text-rose-600",
-  amber:   "bg-amber-100   text-amber-600",
-  indigo:  "bg-indigo-100  text-indigo-600",
+  cyan: "bg-cyan-100    text-cyan-600",
+  orange: "bg-orange-100  text-orange-600",
+  rose: "bg-rose-100    text-rose-600",
+  amber: "bg-amber-100   text-amber-600",
+  indigo: "bg-indigo-100  text-indigo-600",
 };
 
 const CHIP_STYLE = {
-  blue:    { grad: "from-blue-500 to-blue-600",       ring: "hover:border-blue-300",    glow: "shadow-blue-100"    },
+  blue: { grad: "from-blue-500 to-blue-600", ring: "hover:border-blue-300", glow: "shadow-blue-100" },
   emerald: { grad: "from-emerald-500 to-emerald-600", ring: "hover:border-emerald-300", glow: "shadow-emerald-100" },
-  violet:  { grad: "from-violet-500 to-violet-600",   ring: "hover:border-violet-300",  glow: "shadow-violet-100"  },
-  amber:   { grad: "from-amber-400 to-amber-500",     ring: "hover:border-amber-300",   glow: "shadow-amber-100"   },
-  rose:    { grad: "from-rose-500 to-rose-600",       ring: "hover:border-rose-300",    glow: "shadow-rose-100"    },
-  cyan:    { grad: "from-cyan-500 to-cyan-600",       ring: "hover:border-cyan-300",    glow: "shadow-cyan-100"    },
+  violet: { grad: "from-violet-500 to-violet-600", ring: "hover:border-violet-300", glow: "shadow-violet-100" },
+  amber: { grad: "from-amber-400 to-amber-500", ring: "hover:border-amber-300", glow: "shadow-amber-100" },
+  rose: { grad: "from-rose-500 to-rose-600", ring: "hover:border-rose-300", glow: "shadow-rose-100" },
+  cyan: { grad: "from-cyan-500 to-cyan-600", ring: "hover:border-cyan-300", glow: "shadow-cyan-100" },
 };
 
 /* ─── SERVICE COLORS ─────────────────────────────────── */
 const SERVICE_COLORS = {
-  Hotel:       { bg: '#E6F1FB', text: '#042C53' },
-  Flight:      { bg: '#EEEDFE', text: '#26215C' },
-  Cruise:      { bg: '#E1F5EE', text: '#04342C' },
-  Vehicle:     { bg: '#FAECE7', text: '#4A1B0C' },
-  Visa:        { bg: '#FBEAF0', text: '#4B1528' },
-  Passport:    { bg: '#F1EFE8', text: '#2C2C2A' },
+  Hotel: { bg: '#E6F1FB', text: '#042C53' },
+  Flight: { bg: '#EEEDFE', text: '#26215C' },
+  Cruise: { bg: '#E1F5EE', text: '#04342C' },
+  Vehicle: { bg: '#FAECE7', text: '#4A1B0C' },
+  Visa: { bg: '#FBEAF0', text: '#4B1528' },
+  Passport: { bg: '#F1EFE8', text: '#2C2C2A' },
   Sightseeing: { bg: '#FAEEDA', text: '#412402' },
-  Insurance:   { bg: '#E4F2F1', text: '#0B3B38' },
+  Insurance: { bg: '#E4F2F1', text: '#0B3B38' },
 };
 // Backend services lowercase bhejta hai ('hotel','flight') par ye keys Capitalized hain — bina
 // normalize kiye HAR chip grey default pe gir jaata tha. Ab lookup aur label dono normalized
@@ -110,7 +110,7 @@ function Toast({ msg, type, onClose }) {
       style={{ animation: "slideIn .3s ease both" }}>
       {type === "success"
         ? <CheckCircle size={18} className="text-green-600 flex-shrink-0" />
-        : <AlertCircle  size={18} className="text-red-500  flex-shrink-0" />}
+        : <AlertCircle size={18} className="text-red-500  flex-shrink-0" />}
       <p className="text-sm font-semibold flex-1">{msg}</p>
       <button onClick={onClose} className="opacity-50 hover:opacity-100 ml-1 text-lg leading-none">&times;</button>
     </div>
@@ -120,20 +120,20 @@ function Toast({ msg, type, onClose }) {
 /* ─── MAIN COMPONENT ─────────────────────────────────── */
 export default function CreateQuotation() {
   const [searchParams] = useSearchParams();
-  const navigate       = useNavigate();
+  const navigate = useNavigate();
 
-  const leadId = searchParams.get("leadId")      || null;
+  const leadId = searchParams.get("leadId") || null;
   const editId = searchParams.get("quotationId") || null;
 
-  const [activeTab,   setActiveTab]   = useState("flight");
-  const [qtTitle,     setQtTitle]     = useState("");
-  const [version]                     = useState("v1.0");
-  const [stage]                       = useState("New Lead");
+  const [activeTab, setActiveTab] = useState("flight");
+  const [qtTitle, setQtTitle] = useState("");
+  const [version] = useState("v1.0");
+  const [stage] = useState("New Lead");
   const [quotationId, setQuotationId] = useState(editId || null);
-  const [saving,      setSaving]      = useState(false);
-  const [pdfLoading,  setPdfLoading]  = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [pdfLoading, setPdfLoading] = useState(false);
   const [stylePickOpen, setStylePickOpen] = useState(false);   // Export-PDF design dialog
-  const [toast,       setToast]       = useState(null);
+  const [toast, setToast] = useState(null);
 
   const showToast = (msg, type = "success") => setToast({ msg, type });
 
@@ -152,47 +152,47 @@ export default function CreateQuotation() {
     return fromUrl === "MODERN" || fromUrl === "PREMIUM" ? fromUrl : "CLASSIC";
   });
 
-  const [leadData,    setLeadData]    = useState(null);
+  const [leadData, setLeadData] = useState(null);
   const [leadLoading, setLeadLoading] = useState(false);
   const [destinationId, setDestinationId] = useState(null);
 
 
-  const [flightData,      setFlightData]      = useState({});
-  const [hotelData,       setHotelData]       = useState({});
+  const [flightData, setFlightData] = useState({});
+  const [hotelData, setHotelData] = useState({});
   const [sightseeingData, setSightseeingData] = useState({});
-  const [cruiseData,      setCruiseData]      = useState({});
-  const [vehicleData,     setVehicleData]     = useState({});
-  const [addonData,       setAddonData]       = useState({});
-  const [inclusionsData,  setInclusionsData]  = useState({});
-  const [summaryData,     setSummaryData]     = useState({});
+  const [cruiseData, setCruiseData] = useState({});
+  const [vehicleData, setVehicleData] = useState({});
+  const [addonData, setAddonData] = useState({});
+  const [inclusionsData, setInclusionsData] = useState({});
+  const [summaryData, setSummaryData] = useState({});
 
   // Wrap each tab's setter: real user edit → form dirty (Update enable). Prefill (hydrating) → no.
-  const onFlightChange      = useCallback((v) => { setFlightData(v);      if (!hydratingRef.current) setIsDirty(true); }, []);
-  const onHotelChange       = useCallback((v) => { setHotelData(v);       if (!hydratingRef.current) setIsDirty(true); }, []);
+  const onFlightChange = useCallback((v) => { setFlightData(v); if (!hydratingRef.current) setIsDirty(true); }, []);
+  const onHotelChange = useCallback((v) => { setHotelData(v); if (!hydratingRef.current) setIsDirty(true); }, []);
   const onSightseeingChange = useCallback((v) => { setSightseeingData(v); if (!hydratingRef.current) setIsDirty(true); }, []);
-  const onCruiseChange      = useCallback((v) => { setCruiseData(v);      if (!hydratingRef.current) setIsDirty(true); }, []);
-  const onVehicleChange     = useCallback((v) => { setVehicleData(v);     if (!hydratingRef.current) setIsDirty(true); }, []);
-  const onAddonChange       = useCallback((v) => { setAddonData(v);       if (!hydratingRef.current) setIsDirty(true); }, []);
-  const onInclusionsChange  = useCallback((v) => { setInclusionsData(v);  if (!hydratingRef.current) setIsDirty(true); }, []);
-  const onSummaryChange     = useCallback((v) => { setSummaryData(v);     if (!hydratingRef.current) setIsDirty(true); }, []);
+  const onCruiseChange = useCallback((v) => { setCruiseData(v); if (!hydratingRef.current) setIsDirty(true); }, []);
+  const onVehicleChange = useCallback((v) => { setVehicleData(v); if (!hydratingRef.current) setIsDirty(true); }, []);
+  const onAddonChange = useCallback((v) => { setAddonData(v); if (!hydratingRef.current) setIsDirty(true); }, []);
+  const onInclusionsChange = useCallback((v) => { setInclusionsData(v); if (!hydratingRef.current) setIsDirty(true); }, []);
+  const onSummaryChange = useCallback((v) => { setSummaryData(v); if (!hydratingRef.current) setIsDirty(true); }, []);
 
   const costs = useMemo(() => ({
-    flight:      Number(flightData.amount)      || 0,
-    hotel:       Number(hotelData.amount)       || 0,
+    flight: Number(flightData.amount) || 0,
+    hotel: Number(hotelData.amount) || 0,
     sightseeing: Number(sightseeingData.amount) || 0,
-    cruise:      Number(cruiseData.amount)      || 0,
-    vehicle:     Number(vehicleData.amount)     || 0,
-    addons:      Number(addonData.amount)       || 0,
+    cruise: Number(cruiseData.amount) || 0,
+    vehicle: Number(vehicleData.amount) || 0,
+    addons: Number(addonData.amount) || 0,
   }), [flightData.amount, hotelData.amount, sightseeingData.amount,
-       cruiseData.amount, vehicleData.amount, addonData.amount]);
+  cruiseData.amount, vehicleData.amount, addonData.amount]);
 
   const grandTotal = (() => {
-    const subtotal  = Object.values(costs).reduce((a, b) => a + b, 0);
-    const disc      = summaryData.discType === "%"
+    const subtotal = Object.values(costs).reduce((a, b) => a + b, 0);
+    const disc = summaryData.discType === "%"
       ? (subtotal * Number(summaryData.discount || 0)) / 100
       : Number(summaryData.discount || 0);
     const afterDisc = subtotal - disc + Number(summaryData.markup || 0);
-    const taxAmt    = (afterDisc * Number(summaryData.tax ?? 18)) / 100;
+    const taxAmt = (afterDisc * Number(summaryData.tax ?? 18)) / 100;
     return afterDisc + taxAmt;
   })();
 
@@ -202,7 +202,7 @@ export default function CreateQuotation() {
     (async () => {
       try {
         setLeadLoading(true);
-        const res  = await leadService.getLeadById(leadId);
+        const res = await leadService.getLeadById(leadId);
         const data = res.data?.data || res.data || {};
         setLeadData(data);
         setDestinationId(
@@ -211,16 +211,16 @@ export default function CreateQuotation() {
           null
         );
         if (!qtTitle) {
-          const dest     = data.itinerary?.[0]?.destination || "";
-          const nights   = data.itinerary?.[0]?.nights || "";
+          const dest = data.itinerary?.[0]?.destination || "";
+          const nights = data.itinerary?.[0]?.nights || "";
           const autoTitle = [data.customerName, dest, nights ? `${nights}N` : ""].filter(Boolean).join(" – ");
           if (autoTitle) setQtTitle(autoTitle);
         }
       } catch (err) {
         console.error("Failed to fetch lead:", err);
-        if (err.response?.status === 401)      showToast("Session expired. Please login again.", "error");
+        if (err.response?.status === 401) showToast("Session expired. Please login again.", "error");
         else if (err.response?.status === 404) showToast("Lead not found.", "error");
-        else                                   showToast("Failed to load lead data.", "error");
+        else showToast("Failed to load lead data.", "error");
       } finally {
         setLeadLoading(false);
       }
@@ -233,23 +233,23 @@ export default function CreateQuotation() {
     hydratingRef.current = true;   // prefill in progress → don't mark dirty
     (async () => {
       try {
-        const res  = await quotationService.getQuotationById(editId);
+        const res = await quotationService.getQuotationById(editId);
         const data = res.data?.data || res.data || {};
         setQtTitle(data.title || "");
         setTemplateStyle(data.templateStyle || "CLASSIC");
-        if (data.flight)      setFlightData(data.flight);
-        if (data.hotel)       setHotelData(data.hotel);
+        if (data.flight) setFlightData(data.flight);
+        if (data.hotel) setHotelData(data.hotel);
         if (data.sightseeing) setSightseeingData(data.sightseeing);
-        if (data.cruise)      setCruiseData(data.cruise);
-        if (data.vehicle)     setVehicleData(data.vehicle);
-        if (data.addons)      setAddonData(data.addons);
+        if (data.cruise) setCruiseData(data.cruise);
+        if (data.vehicle) setVehicleData(data.vehicle);
+        if (data.addons) setAddonData(data.addons);
         if (data.inclusions || data.exclusions) {
           setInclusionsData({
-            inclusions:           data.inclusions           || [],
-            exclusions:           data.exclusions           || [],
-            paymentPolicies:      data.paymentPolicies      || [],
+            inclusions: data.inclusions || [],
+            exclusions: data.exclusions || [],
+            paymentPolicies: data.paymentPolicies || [],
             cancellationPolicies: data.cancellationPolicies || [],
-            bookingTerms:         data.bookingTerms         || [],
+            bookingTerms: data.bookingTerms || [],
           });
         }
         if (data.pricing) setSummaryData(data.pricing);
@@ -269,54 +269,54 @@ export default function CreateQuotation() {
   const collectAllData = useCallback(() => ({
     leadId,
     destinationId,
-    title:   qtTitle || "Quotation",
+    title: qtTitle || "Quotation",
     version,
     stage,
     templateStyle,
     // `?? true` fail-open tha: jis tab pe user gaya hi nahi uska `included` undefined rehta
     // hai, aur section lead ke against bhi ON chala jaata tha. Fallback ab lead-derived gate
     // hai. User ka explicit tick (included === true) hamesha jeetta hai — kahin clamp nahi.
-    flightIncluded:      flightData.included ?? svcOn("Flight"),
-    flightTitle:         flightData.title    || "Flight Details",
-    flightAmount:        flightData.amount   || 0,
-    journey:             flightData.journey  || "Round Trip",
-    segments:            flightData.segments || [],
-    hotelIncluded:       hotelData.included  ?? svcOn("Hotel"),
-    hotelTitle:          hotelData.title     || "Hotel Details",
-    hotelAmount:         hotelData.amount    || 0,
-    hotelNotes:          hotelData.notes     || "",
-    hotels:              hotelData.hotels    || [],
+    flightIncluded: flightData.included ?? svcOn("Flight"),
+    flightTitle: flightData.title || "Flight Details",
+    flightAmount: flightData.amount || 0,
+    journey: flightData.journey || "Round Trip",
+    segments: flightData.segments || [],
+    hotelIncluded: hotelData.included ?? svcOn("Hotel"),
+    hotelTitle: hotelData.title || "Hotel Details",
+    hotelAmount: hotelData.amount || 0,
+    hotelNotes: hotelData.notes || "",
+    hotels: hotelData.hotels || [],
     sightseeingIncluded: sightseeingData.included ?? svcOn("Sightseeing"),
-    sightseeingTitle:    sightseeingData.title    || "Sightseeing",
-    sightseeingAmount:   sightseeingData.amount   || 0,
-    sightseeingNotes:    sightseeingData.notes    || "",
-    days:                sightseeingData.days     || [],
-    cruiseIncluded:      cruiseData.included ?? false,
-    cruiseTitle:         cruiseData.title    || "Cruise Details",
-    cruiseAmount:        cruiseData.amount   || 0,
-    cruises:             cruiseData.cruises  || [],
-    vehicleIncluded:     vehicleData.included ?? svcOn("Vehicle"),
-    vehicleTitle:        vehicleData.title    || "Vehicle Details",
-    vehicleAmount:       vehicleData.amount   || 0,
-    vehicles:            vehicleData.vehicles || [],
-    addonIncluded:       addonData.included ?? false,
-    addonTitle:          addonData.title    || "Add-on Services",
-    addonAmount:         Number(addonData.amount) || 0,
-    addons:              addonData.items    || [],
-    inclusions:          inclusionsData.inclusions           || [],
-    exclusions:          inclusionsData.exclusions           || [],
-    paymentPolicies:     inclusionsData.paymentPolicies      || [],
+    sightseeingTitle: sightseeingData.title || "Sightseeing",
+    sightseeingAmount: sightseeingData.amount || 0,
+    sightseeingNotes: sightseeingData.notes || "",
+    days: sightseeingData.days || [],
+    cruiseIncluded: cruiseData.included ?? false,
+    cruiseTitle: cruiseData.title || "Cruise Details",
+    cruiseAmount: cruiseData.amount || 0,
+    cruises: cruiseData.cruises || [],
+    vehicleIncluded: vehicleData.included ?? svcOn("Vehicle"),
+    vehicleTitle: vehicleData.title || "Vehicle Details",
+    vehicleAmount: vehicleData.amount || 0,
+    vehicles: vehicleData.vehicles || [],
+    addonIncluded: addonData.included ?? false,
+    addonTitle: addonData.title || "Add-on Services",
+    addonAmount: Number(addonData.amount) || 0,
+    addons: addonData.items || [],
+    inclusions: inclusionsData.inclusions || [],
+    exclusions: inclusionsData.exclusions || [],
+    paymentPolicies: inclusionsData.paymentPolicies || [],
     cancellationPolicies: inclusionsData.cancellationPolicies || [],
-    bookingTerms:        inclusionsData.bookingTerms         || [],
+    bookingTerms: inclusionsData.bookingTerms || [],
     discount: summaryData.discount || 0,
     discType: summaryData.discType || "Fixed",
-    tax:      summaryData.tax      || 18,
-    markup:   summaryData.markup   || 0,
-  // leadData bhi dep hai — svcOn() isi se derive hota hai, warna lead aane ke baad bhi
-  // ye callback purane (sab-ON) gate ke saath memoized reh jaata.
-  }), [leadId,destinationId, leadData, qtTitle, version, stage, templateStyle,
-       flightData, hotelData, sightseeingData, cruiseData,
-       vehicleData, addonData, inclusionsData, summaryData]);
+    tax: summaryData.tax || 18,
+    markup: summaryData.markup || 0,
+    // leadData bhi dep hai — svcOn() isi se derive hota hai, warna lead aane ke baad bhi
+    // ye callback purane (sab-ON) gate ke saath memoized reh jaata.
+  }), [leadId, destinationId, leadData, qtTitle, version, stage, templateStyle,
+    flightData, hotelData, sightseeingData, cruiseData,
+    vehicleData, addonData, inclusionsData, summaryData]);
 
   /* ── Save ──
      asNew = false → normal Save button:
@@ -342,7 +342,7 @@ export default function CreateQuotation() {
         setIsDirty(false);
         showToast("Quotation updated successfully!");
       } else {
-        const res   = await quotationService.createQuotation(allData);
+        const res = await quotationService.createQuotation(allData);
         const newId = res.data?.data?.id || res.data?.data?.publicId || res.data?.id || res.data?.publicId;
         setQuotationId(newId);
         setIsDirty(false);
@@ -372,8 +372,8 @@ export default function CreateQuotation() {
       setPdfLoading(true);
       const res = await quotationService.generatePdf(quotationId, style);
       const url = URL.createObjectURL(new Blob([res.data], { type: "application/pdf" }));
-      const a   = document.createElement("a");
-      a.href    = url;
+      const a = document.createElement("a");
+      a.href = url;
       a.download = `quotation-${quotationId}.pdf`;
       a.click();
       URL.revokeObjectURL(url);
@@ -389,7 +389,7 @@ export default function CreateQuotation() {
   const handleShare = async () => {
     if (!quotationId) { showToast("Please save the quotation first.", "error"); return; }
     try {
-      const res  = await quotationService.getShareLink(quotationId);
+      const res = await quotationService.getShareLink(quotationId);
       const link = res.data?.data?.shareUrl || res.data?.shareUrl || "";
       if (link) { await navigator.clipboard.writeText(link); showToast("Share link copied!"); }
     } catch {
@@ -424,11 +424,11 @@ export default function CreateQuotation() {
   // Koi naya channel nahi banaya: har service tab pehle se apna `included` onDataChange me
   // bhejta hai, wahi single source of truth hai. Untick karte hi tab wapas disabled.
   const manualOn = {
-    flight:      flightData.included      === true,
-    hotel:       hotelData.included       === true,
+    flight: flightData.included === true,
+    hotel: hotelData.included === true,
     sightseeing: sightseeingData.included === true,
-    cruise:      cruiseData.included      === true,
-    vehicle:     vehicleData.included     === true,
+    cruise: cruiseData.included === true,
+    vehicle: vehicleData.included === true,
   };
 
   // Reorder: chosen service tabs pehle → non-chosen service tabs → addons/inclusions/summary (end).
@@ -474,10 +474,10 @@ export default function CreateQuotation() {
 
   const travelers = leadData
     ? [
-        leadData.adults   ? `${leadData.adults} Adults`   : "",
-        leadData.children ? `${leadData.children} Child`  : "",
-        leadData.infants  ? `${leadData.infants} Infant`  : "",
-      ].filter(Boolean).join(", ")
+      leadData.adults ? `${leadData.adults} Adults` : "",
+      leadData.children ? `${leadData.children} Child` : "",
+      leadData.infants ? `${leadData.infants} Infant` : "",
+    ].filter(Boolean).join(", ")
     : "—";
 
   // ── Rooms count — multiple possible field names handle karo ──
@@ -488,11 +488,11 @@ export default function CreateQuotation() {
     || null;
 
   // ── Pax info — har tab ko bhejne ke liye (Flight=members, Hotel=rooms, Sightseeing=pax) ──
-  const adults   = Number(leadData?.adults)   || 0;
+  const adults = Number(leadData?.adults) || 0;
   const children = Number(leadData?.children) || 0;
-  const infants  = Number(leadData?.infants)  || 0;
+  const infants = Number(leadData?.infants) || 0;
   const totalPax = adults + children + infants;
-  const paxInfo  = {
+  const paxInfo = {
     adults, children, infants, totalPax,
     rooms: rooms ? Number(rooms) : null,
   };
@@ -501,32 +501,132 @@ export default function CreateQuotation() {
   // itinerary: [{destination:"Dubai", city:"...", nights:2}, ...]
   // → dayCityMap: {1:"Dubai", 2:"Dubai", 3:"Manali", 4:"Manali"}
   // → destinations: [{city, nights, startDay, endDay, checkIn, checkOut}, ...]
-  const { dayCityMap, destinations: cityStays } = (() => {
-    const itin = Array.isArray(leadData?.itinerary) ? leadData.itinerary.filter(d => d && d.destination) : [];
+  // const { dayCityMap, destinations: cityStays } = (() => {
+  //   const itin = Array.isArray(leadData?.itinerary) ? leadData.itinerary.filter(d => d && d.destination) : [];
+  //   const map = {};
+  //   const stays = [];
+  //   let day = 1;
+  //   const travelDate = leadData?.travelDate ? new Date(leadData.travelDate) : null;
+  //   const addDays = (base, n) => { if (!base) return ""; const d = new Date(base); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
+
+  //   itin.forEach((item) => {
+  //     const nights = Number(item.nights) || 0;
+  //     const startDay = day;
+  //     for (let i = 0; i < Math.max(nights, 1); i++) { map[day] = item.city || item.destination; day++; }
+  //     const endDay = day - 1;
+  //     stays.push({
+  //       // City = itinerary row ka actual city (e.g. "Raigad"). Sirf tab destination naam
+  //       // pe fall back karo jab kisi row me city set na ho.
+  //       city: item.city || item.destination,
+  //       nights,
+  //       startDay,
+  //       endDay,
+  //       checkIn:  travelDate ? addDays(travelDate, startDay - 1) : "",
+  //       checkOut: travelDate ? addDays(travelDate, endDay)       : "",
+  //     });
+  //   });
+  //   return { dayCityMap: map, destinations: stays };
+  // })();
+
+  // ── Lead itinerary se stay days + final departure day banao ──
+  // Example:
+  // Kathmandu 2N + Pokhara 1N + Janakpur 1N
+  //
+  // Day 1 → Kathmandu
+  // Day 2 → Kathmandu
+  // Day 3 → Pokhara
+  // Day 4 → Janakpur
+  // Day 5 → Janakpur departure
+
+  const {
+    dayCityMap,
+    departureDay,
+    destinations: cityStays,
+  } = (() => {
+    const itinerary = Array.isArray(leadData?.itinerary)
+      ? leadData.itinerary.filter(
+        (item) => item && (item.destination || item.city)
+      )
+      : [];
+
     const map = {};
     const stays = [];
-    let day = 1;
-    const travelDate = leadData?.travelDate ? new Date(leadData.travelDate) : null;
-    const addDays = (base, n) => { if (!base) return ""; const d = new Date(base); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
 
-    itin.forEach((item) => {
-      const nights = Number(item.nights) || 0;
-      const startDay = day;
-      for (let i = 0; i < Math.max(nights, 1); i++) { map[day] = item.city || item.destination; day++; }
-      const endDay = day - 1;
+    let currentDay = 1;
+    let totalNights = 0;
+
+    const travelDate = leadData?.travelDate
+      ? new Date(leadData.travelDate)
+      : null;
+
+    const addDays = (baseDate, numberOfDays) => {
+      if (!baseDate) return "";
+
+      const date = new Date(baseDate);
+      date.setDate(date.getDate() + numberOfDays);
+
+      return date.toISOString().slice(0, 10);
+    };
+
+    itinerary.forEach((item) => {
+      const city = item.city || item.destination;
+      const nights = Math.max(Number(item.nights) || 0, 0);
+
+      totalNights += nights;
+
+      const startDay = currentDay;
+
+      // Minimum one day rakha hai so 0-night/day-trip itinerary bhi visible rahe.
+      const stayDays = Math.max(nights, 1);
+
+      for (let index = 0; index < stayDays; index++) {
+        map[currentDay] = city;
+        currentDay += 1;
+      }
+
+      const endDay = currentDay - 1;
+
       stays.push({
-        // City = itinerary row ka actual city (e.g. "Raigad"). Sirf tab destination naam
-        // pe fall back karo jab kisi row me city set na ho.
-        city: item.city || item.destination,
+        city,
         nights,
         startDay,
         endDay,
-        checkIn:  travelDate ? addDays(travelDate, startDay - 1) : "",
-        checkOut: travelDate ? addDays(travelDate, endDay)       : "",
+
+        checkIn: travelDate
+          ? addDays(travelDate, startDay - 1)
+          : "",
+
+        // Example: 4 nights ka checkout Day 5 ko hoga.
+        checkOut: travelDate
+          ? addDays(travelDate, endDay)
+          : "",
       });
     });
-    return { dayCityMap: map, destinations: stays };
+
+    let finalDepartureDay = null;
+
+    // Nights available hain to final N+1 departure day add karo.
+    if (itinerary.length > 0 && totalNights > 0) {
+      const lastItineraryItem = itinerary[itinerary.length - 1];
+
+      const lastCity =
+        lastItineraryItem.city ||
+        lastItineraryItem.destination ||
+        "";
+
+      finalDepartureDay = currentDay;
+
+      // Departure same last city se hoga.
+      map[finalDepartureDay] = lastCity;
+    }
+
+    return {
+      dayCityMap: map,
+      departureDay: finalDepartureDay,
+      destinations: stays,
+    };
   })();
+
 
   const destination = leadData?.itinerary?.length
     ? leadData.itinerary.map(i => `${i.destination}${i.nights ? ` (${i.nights}N)` : ""}`).join(", ")
@@ -534,17 +634,17 @@ export default function CreateQuotation() {
 
   const assignedTo =
     leadData?.assignedUser?.fullName ||
-    leadData?.assignedUser?.name     ||
-    leadData?.assignedUserName       ||
-    leadData?.assignTo               || "—";
+    leadData?.assignedUser?.name ||
+    leadData?.assignedUserName ||
+    leadData?.assignTo || "—";
 
   const SUMMARY_INFO = [
-    { icon: User,     label: "Client Name",  value: leadData?.customerName || "—", color: "blue"    },
-    { icon: Phone,    label: "Contact",      value: leadData?.phone        || "—", color: "emerald" },
-    { icon: Users,    label: "Travelers",    value: travelers,                      color: "violet"  },
-    { icon: Calendar, label: "Assigned To",  value: assignedTo,                    color: "amber"   },
-    { icon: MapPin,   label: "Destination",  value: destination,                   color: "rose"    },
-    { icon: FileText, label: "Package",      value: qtTitle || "—",                color: "cyan"    },
+    { icon: User, label: "Client Name", value: leadData?.customerName || "—", color: "blue" },
+    { icon: Phone, label: "Contact", value: leadData?.phone || "—", color: "emerald" },
+    { icon: Users, label: "Travelers", value: travelers, color: "violet" },
+    { icon: Calendar, label: "Assigned To", value: assignedTo, color: "amber" },
+    { icon: MapPin, label: "Destination", value: destination, color: "rose" },
+    { icon: FileText, label: "Package", value: qtTitle || "—", color: "cyan" },
   ];
 
   const fmt = (n) => `₹${Number(n).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
@@ -792,9 +892,9 @@ export default function CreateQuotation() {
           <div className="tab-scroll overflow-x-auto border-b border-slate-100">
             <div className="flex min-w-max">
               {orderedTabs.map((tab) => {
-                const Icon   = tab.icon;
+                const Icon = tab.icon;
                 const active = activeTab === tab.id;
-                const off    = !tab.enabled;   // lead pe ye service chuni nahi gayi
+                const off = !tab.enabled;   // lead pe ye service chuni nahi gayi
                 return (
                   <button
                     key={tab.id}
@@ -831,14 +931,25 @@ export default function CreateQuotation() {
           {/* Tab content */}
           <div className="relative overflow-hidden">
             <div style={{ minHeight: 260 }}>
-              <div style={{ display: activeTab === "flight"      ? "block" : "none" }} className="p-3 sm:p-5 lg:p-6"><FlightTab               key={`flight-inc-${svcOn("Flight")}`}     onDataChange={onFlightChange}      paxInfo={paxInfo} defaultIncluded={svcOn("Flight")} /></div>
-              <div style={{ display: activeTab === "hotel"       ? "block" : "none" }} className="p-3 sm:p-5 lg:p-6"><HotelTab                key={`hotel-inc-${svcOn("Hotel")}`}       onDataChange={onHotelChange}       paxInfo={paxInfo} destinations={cityStays} defaultIncluded={svcOn("Hotel")} /></div>
-              <div style={{ display: activeTab === "sightseeing" ? "block" : "none" }} className="p-3 sm:p-5 lg:p-6"><SightseeingTab          key={`sight-inc-${svcOn("Sightseeing")}`} onDataChange={onSightseeingChange} paxInfo={paxInfo} dayCityMap={dayCityMap} defaultIncluded={svcOn("Sightseeing")} /></div>
-              <div style={{ display: activeTab === "cruise"      ? "block" : "none" }} className="p-3 sm:p-5 lg:p-6"><CruiseTab               key={`cruise-inc-${svcOn("Cruise")}`}     onDataChange={onCruiseChange}      defaultIncluded={svcOn("Cruise")} /></div>
-              <div style={{ display: activeTab === "vehicle"     ? "block" : "none" }} className="p-3 sm:p-5 lg:p-6"><VehicleTab              key={`vehicle-inc-${svcOn("Vehicle")}`}   onDataChange={onVehicleChange}     defaultIncluded={svcOn("Vehicle")} /></div>
-              <div style={{ display: activeTab === "addons"      ? "block" : "none" }} className="p-3 sm:p-5 lg:p-6"><AddOnServicesTab        onDataChange={onAddonChange}       /></div>
-              <div style={{ display: activeTab === "inclusions"  ? "block" : "none" }} className="p-3 sm:p-5 lg:p-6"><InclusionsExclusionsTab onDataChange={onInclusionsChange}  /></div>
-              <div style={{ display: activeTab === "summary"     ? "block" : "none" }} className="p-3 sm:p-5 lg:p-6">
+              <div style={{ display: activeTab === "flight" ? "block" : "none" }} className="p-3 sm:p-5 lg:p-6"><FlightTab key={`flight-inc-${svcOn("Flight")}`} onDataChange={onFlightChange} paxInfo={paxInfo} defaultIncluded={svcOn("Flight")} /></div>
+              <div style={{ display: activeTab === "hotel" ? "block" : "none" }} className="p-3 sm:p-5 lg:p-6"><HotelTab key={`hotel-inc-${svcOn("Hotel")}`} onDataChange={onHotelChange} paxInfo={paxInfo} destinations={cityStays} defaultIncluded={svcOn("Hotel")} /></div>
+              <div style={{ display: activeTab === "sightseeing" ? "block" : "none" }} className="p-3 sm:p-5 lg:p-6">
+                {/* <SightseeingTab   key={`sight-inc-${svcOn("Sightseeing")}`} onDataChange={onSightseeingChange} paxInfo={paxInfo} dayCityMap={dayCityMap} defaultIncluded={svcOn("Sightseeing")} />   */}
+                <SightseeingTab
+                  key={`sight-inc-${svcOn("Sightseeing")}`}
+                  onDataChange={onSightseeingChange}
+                  paxInfo={paxInfo}
+                  dayCityMap={dayCityMap}
+                  departureDay={departureDay}
+                  travelDate={leadData?.travelDate || ""}
+                  defaultIncluded={svcOn("Sightseeing")}
+                />
+              </div>
+              <div style={{ display: activeTab === "cruise" ? "block" : "none" }} className="p-3 sm:p-5 lg:p-6"><CruiseTab key={`cruise-inc-${svcOn("Cruise")}`} onDataChange={onCruiseChange} defaultIncluded={svcOn("Cruise")} /></div>
+              <div style={{ display: activeTab === "vehicle" ? "block" : "none" }} className="p-3 sm:p-5 lg:p-6"><VehicleTab key={`vehicle-inc-${svcOn("Vehicle")}`} onDataChange={onVehicleChange} defaultIncluded={svcOn("Vehicle")} /></div>
+              <div style={{ display: activeTab === "addons" ? "block" : "none" }} className="p-3 sm:p-5 lg:p-6"><AddOnServicesTab onDataChange={onAddonChange} /></div>
+              <div style={{ display: activeTab === "inclusions" ? "block" : "none" }} className="p-3 sm:p-5 lg:p-6"><InclusionsExclusionsTab onDataChange={onInclusionsChange} /></div>
+              <div style={{ display: activeTab === "summary" ? "block" : "none" }} className="p-3 sm:p-5 lg:p-6">
                 <SummaryPricingTab
                   onDataChange={onSummaryChange}
                   costs={costs}
@@ -859,7 +970,7 @@ export default function CreateQuotation() {
             {/* Progress dots — hidden on mobile, shown sm+ */}
             <div className="hidden sm:flex items-center gap-1.5">
               {navTabs.map((t, i) => {
-                const done    = onNavigableTab && i < activeIdx;
+                const done = onNavigableTab && i < activeIdx;
                 const current = i === activeIdx;
                 return (
                   <button key={t.id} onClick={() => setActiveTab(t.id)} title={t.label}

@@ -20,16 +20,85 @@ import { useToast } from "@shared/ui/toast";
 import { getErrorMessage, getFieldErrors, isAlreadyReported } from "@shared/api/apiError";
 
 import LeadInformation from "../components/LeadInformation";
-import TravelDetails   from "../components/TravelDetails";
+import TravelDetails from "../components/TravelDetails";
 import ServicesSection from "../components/ServicesSection";
 import ItinerarySection from "../components/ItinerarySection";
-import LeadSummary      from "../components/LeadSummary";
+import LeadSummary from "../components/LeadSummary";
 
 let nextId = 1;
 
+
+const SERVICE_ID_MAP = {
+  hotel: "hotel",
+  flight: "flight",
+  cruise: "cruise",
+  visa: "visa",
+  sightseeing: "sightseeing",
+
+  vehicle: "vehicle",
+  "vehicle rental": "vehicle",
+
+  insurance: "insurance",
+  "travel insurance": "insurance",
+
+  passport: "passport",
+  "passport assistance": "passport",
+};
+
+const normalizeServiceId = (service) => {
+  const rawValue =
+    typeof service === "string"
+      ? service
+      : service?.id ??
+      service?.code ??
+      service?.value ??
+      service?.label ??
+      service?.name ??
+      "";
+
+  const normalized = String(rawValue)
+    .trim()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+
+  return SERVICE_ID_MAP[normalized] || normalized;
+};
+
+const getEntityName = (value, fallback = "") => {
+  if (typeof value === "string") {
+    return value.trim();
+  }
+
+  return String(
+    value?.name ??
+    value?.label ??
+    value?.title ??
+    fallback ??
+    ""
+  ).trim();
+};
+
+const toDateInput = (value) => {
+  if (!value) return "";
+
+  const textValue = String(value);
+
+  // Handles yyyy-MM-dd and ISO datetime without timezone date shifting.
+  if (/^\d{4}-\d{2}-\d{2}/.test(textValue)) {
+    return textValue.slice(0, 10);
+  }
+
+  const parsedDate = new Date(value);
+
+  return Number.isNaN(parsedDate.getTime())
+    ? ""
+    : parsedDate.toISOString().slice(0, 10);
+};
+
 /* ─── SKELETON LOADER ────────────────────────────────────────── */
 function SkeletonBlock({ h = "h-64" }) {
-  return <div className={`bg-white rounded-2xl border border-slate-100 shadow-sm ${h} animate-pulse`}/>;
+  return <div className={`bg-white rounded-2xl border border-slate-100 shadow-sm ${h} animate-pulse`} />;
 }
 
 /* ─── MAIN PAGE ──────────────────────────────────────────────── */
@@ -52,13 +121,24 @@ export default function EditLead() {
     },
   });
 
-  const [loadingLead, setLoadingLead]   = useState(true);
-  const [leadCode,    setLeadCode]      = useState("");
+  const [loadingLead, setLoadingLead] = useState(true);
+  const [leadCode, setLeadCode] = useState("");
   const [selectedServices, setSelectedServices] = useState([]);
-  const [itinerary, setItinerary]       = useState([{ id: nextId++, destination: "", city: "", nights: 2 }]);
-  const [submitting, setSubmitting]     = useState(false);
-  const [savingDraft, setSavingDraft]   = useState(false);
-  const [searching, setSearching]       = useState(false);
+  // const [itinerary, setItinerary]       = useState([{ id: nextId++, destination: "", city: "", nights: 2 }]);
+
+  const [itinerary, setItinerary] = useState([
+    {
+      id: nextId++,
+      destinationId: "",
+      destination: "",
+      cityId: "",
+      city: "",
+      nights: 2,
+    },
+  ]);
+  const [submitting, setSubmitting] = useState(false);
+  const [savingDraft, setSavingDraft] = useState(false);
+  const [searching, setSearching] = useState(false);
 
   // Centralized toaster: <ToastHost/> (mounted beside the router in App.jsx) renders it.
   // Argument order is (message, type) everywhere — see shared/ui/toast.jsx.
@@ -86,57 +166,276 @@ export default function EditLead() {
 
     leadService.getLeadById(id)
       .then((res) => {
-        const body = res.data;
-        const lead = body?.data ?? body;
+        // const body = res.data;
+        // const lead = body?.data ?? body;
 
-        // Normalize date inputs to yyyy-MM-dd for <input type="date">
-        const toDateInput = (d) => d ? new Date(d).toISOString().slice(0, 10) : "";
+        // // Normalize date inputs to yyyy-MM-dd for <input type="date">
+        // const toDateInput = (d) => d ? new Date(d).toISOString().slice(0, 10) : "";
+
+        // const safeAssignedUserId =
+        //   lead.assignedUserId ||
+        //   lead.assignedUser?.publicId ||
+        //   lead.assignedUser?.id ||
+        //   "";
+
+        const body = res?.data;
+
+        const lead =
+          body?.data?.data ??
+          body?.data ??
+          body ??
+          {};
 
         const safeAssignedUserId =
-          lead.assignedUserId ||
-          lead.assignedUser?.publicId ||
-          lead.assignedUser?.id ||
+          lead.assignedUserId ??
+          lead.assignedUserPublicId ??
+          lead.assignToPublicId ??
+          lead.assignedToPublicId ??
+          lead.assignedUser?.publicId ??
+          lead.assignedUser?.id ??
+          lead.assignTo?.publicId ??
+          lead.assignTo?.id ??
           "";
 
+        // reset({
+        //   customerName:    lead.customerName || "",
+        //   phone:           lead.phone || "",
+        //   email:           lead.email || "",
+        //   budget:          lead.budget != null ? lead.budget : "",
+        //   leadSource:      lead.leadSource || "",
+        //   leadType:        lead.leadType || "",
+        //   leadStage:       lead.leadStage || "New Lead",
+        //   assignedUserId:  safeAssignedUserId,
+        //   birthDate:       toDateInput(lead.birthDate),
+        //   travelDate:      toDateInput(lead.travelDate),
+        //   departCountry:   lead.departCountry || "India",
+        //   departCity:      lead.departCity || "",
+        //   rooms:           lead.rooms ?? 1,
+        //   adults:          lead.adults ?? 2,
+        //   children:        lead.children ?? 0,
+        //   infants:         lead.infants ?? 0,
+        //   extraBeds:       lead.extraBeds ?? 0,
+        //   notes:           lead.notes || "",
+        // });
+
+
         reset({
-          customerName:    lead.customerName || "",
-          phone:           lead.phone || "",
-          email:           lead.email || "",
-          budget:          lead.budget != null ? lead.budget : "",
-          leadSource:      lead.leadSource || "",
-          leadType:        lead.leadType || "",
-          leadStage:       lead.leadStage || "New Lead",
-          assignedUserId:  safeAssignedUserId,
-          birthDate:       toDateInput(lead.birthDate),
-          travelDate:      toDateInput(lead.travelDate),
-          departCountry:   lead.departCountry || "India",
-          departCity:      lead.departCity || "",
-          rooms:           lead.rooms ?? 1,
-          adults:          lead.adults ?? 2,
-          children:        lead.children ?? 0,
-          infants:         lead.infants ?? 0,
-          extraBeds:       lead.extraBeds ?? 0,
-          notes:           lead.notes || "",
+          customerName:
+            lead.customerName ??
+            lead.customer?.name ??
+            lead.name ??
+            "",
+
+          phone:
+            lead.phone ??
+            lead.mobile ??
+            lead.contactNumber ??
+            lead.customer?.phone ??
+            "",
+
+          email:
+            lead.email ??
+            lead.customer?.email ??
+            "",
+
+          budget:
+            lead.budget ??
+            lead.estimatedValue ??
+            "",
+
+          leadSource:
+            lead.leadSource ??
+            lead.source ??
+            "",
+
+          leadType:
+            lead.leadType ??
+            lead.type ??
+            "",
+
+          leadStage:
+            lead.leadStage ??
+            lead.stage ??
+            "New Lead",
+
+          assignedUserId: safeAssignedUserId,
+
+          birthDate: toDateInput(
+            lead.birthDate ??
+            lead.dateOfBirth ??
+            lead.dob
+          ),
+
+          travelDate: toDateInput(
+            lead.travelDate ??
+            lead.departureDate ??
+            lead.journeyDate
+          ),
+
+          departCountry:
+            lead.departCountry ??
+            lead.departingCountry ??
+            lead.departureCountry ??
+            "India",
+
+          departCity:
+            lead.departCity ??
+            lead.departingCity ??
+            lead.departureCity ??
+            "",
+
+          rooms: Number(
+            lead.rooms ??
+            lead.roomCount ??
+            lead.noOfRooms ??
+            1
+          ),
+
+          adults: Number(
+            lead.adults ??
+            lead.adultCount ??
+            2
+          ),
+
+          children: Number(
+            lead.children ??
+            lead.childCount ??
+            0
+          ),
+
+          infants: Number(
+            lead.infants ??
+            lead.infantCount ??
+            0
+          ),
+
+          extraBeds: Number(
+            lead.extraBeds ??
+            lead.extraBedCount ??
+            0
+          ),
+
+          notes:
+            lead.notes ??
+            lead.note ??
+            lead.remarks ??
+            lead.requirements ??
+            "",
         });
 
         // Re-hydrate selected services (array of strings or {id,label})
-        const svcs = Array.isArray(lead.services) ? lead.services : [];
-        setSelectedServices(
-          svcs.map((s) => (typeof s === "string" ? s.toLowerCase() : (s.id || s.label || "").toLowerCase()))
-        );
+        // const svcs = Array.isArray(lead.services) ? lead.services : [];
+        // setSelectedServices(
+        //   svcs.map((s) => (typeof s === "string" ? s.toLowerCase() : (s.id || s.label || "").toLowerCase()))
+        // );
+
+
+        const rawServices =
+          lead.services ??
+          lead.selectedServices ??
+          lead.requiredServices ??
+          [];
+
+        const serviceList = Array.isArray(rawServices)
+          ? rawServices
+          : [];
+
+        const normalizedServices = [
+          ...new Set(
+            serviceList
+              .map(normalizeServiceId)
+              .filter(Boolean)
+          ),
+        ];
+
+        setSelectedServices(normalizedServices);
 
         // Re-hydrate itinerary rows
-        const itin = Array.isArray(lead.itinerary) ? lead.itinerary : [];
-        setItinerary(
-          itin.length > 0
-            ? itin.map((row) => ({
+        // const itin = Array.isArray(lead.itinerary) ? lead.itinerary : [];
+        // setItinerary(
+        //   itin.length > 0
+        //     ? itin.map((row) => ({
+        //         id: nextId++,
+        //         destination: row.destination || "",
+        //         city: row.city || "",
+        //         nights: row.nights || 1,
+        //       }))
+        //     : [{ id: nextId++, destination: "", city: "", nights: 2 }]
+        // );
+
+
+        const rawItinerary =
+          lead.itinerary ??
+          lead.itineraries ??
+          lead.travelItinerary ??
+          [];
+
+        const itineraryList = Array.isArray(rawItinerary)
+          ? rawItinerary
+          : [];
+
+        const hydratedItinerary =
+          itineraryList.length > 0
+            ? itineraryList.map((row) => {
+              const destinationName = getEntityName(
+                row.destination,
+                row.destinationName ??
+                row.destinationLabel ??
+                ""
+              );
+
+              const cityName = getEntityName(
+                row.city,
+                row.cityName ??
+                row.cityLabel ??
+                ""
+              );
+
+              return {
+                // UI-only unique key
                 id: nextId++,
-                destination: row.destination || "",
-                city: row.city || "",
-                nights: row.nights || 1,
-              }))
-            : [{ id: nextId++, destination: "", city: "", nights: 2 }]
-        );
+
+                destinationId:
+                  row.destinationId ??
+                  row.destinationPublicId ??
+                  row.destination?.id ??
+                  row.destination?.publicId ??
+                  "",
+
+                destination: destinationName,
+
+                cityId:
+                  row.cityId ??
+                  row.cityPublicId ??
+                  row.city?.id ??
+                  row.city?.publicId ??
+                  "",
+
+                city: cityName,
+
+                nights: Math.max(
+                  1,
+                  Number(
+                    row.nights ??
+                    row.noOfNights ??
+                    row.stayNights ??
+                    1
+                  )
+                ),
+              };
+            })
+            : [
+              {
+                id: nextId++,
+                destinationId: "",
+                destination: "",
+                cityId: "",
+                city: "",
+                nights: 2,
+              },
+            ];
+
+        setItinerary(hydratedItinerary);
 
         setLeadCode(lead.publicId || lead.id || id);
       })
@@ -155,7 +454,17 @@ export default function EditLead() {
   }, []);
 
   const addItineraryRow = () => {
-    setItinerary((prev) => [...prev, { id: nextId++, destination: "", city: "", nights: 2 }]);
+    setItinerary((prev) => [
+      ...prev,
+      {
+        id: nextId++,
+        destinationId: "",
+        destination: "",
+        cityId: "",
+        city: "",
+        nights: 2,
+      },
+    ]);
   };
   const removeItineraryRow = (rowId) => {
     setItinerary((prev) => prev.filter((r) => r.id !== rowId));
@@ -309,12 +618,14 @@ export default function EditLead() {
                   register={register}
                   watch={watch}
                   setValue={setValue}
+                  getValues={getValues}
                 />
                 <ServicesSection
                   selectedServices={selectedServices}
                   onToggle={toggleService}
                 />
                 <ItinerarySection
+                  hydrationKey={id}
                   itinerary={itinerary}
                   onAdd={addItineraryRow}
                   onRemove={removeItineraryRow}

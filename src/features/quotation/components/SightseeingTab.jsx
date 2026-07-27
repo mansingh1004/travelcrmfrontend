@@ -584,7 +584,7 @@
 //           : d
 //       )));
 //     }
-     
+
 //   }, [paxInfo.totalPax]);
 
 //   // ── Parent ko data do ─────────────────────────────────────
@@ -1476,7 +1476,7 @@
 //           : d
 //       )));
 //     }
-     
+
 //   }, [paxInfo.totalPax]);
 
 //   // ── Parent ko data do ─────────────────────────────────────
@@ -1790,13 +1790,13 @@ import { toast } from "@shared/ui/toast";
    - Select → onSelect(sightseeing) auto-fill
 ═══════════════════════════════════════════════════════ */
 function SightseeingSearchDropdown({ value, onSelect, allItems, loading, defaultCity = "", placeholder = "Type to search attractions..." }) {
-  const [open,   setOpen]   = useState(false);
+  const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
-  const [pos,    setPos]    = useState(null);
+  const [pos, setPos] = useState(null);
 
   const buttonRef = useRef(null);
   const searchRef = useRef(null);
-  const panelRef  = useRef(null);
+  const panelRef = useRef(null);
 
   const MAX_PANEL_H = 300, MIN_PANEL_H = 160;
 
@@ -1835,7 +1835,7 @@ function SightseeingSearchDropdown({ value, onSelect, allItems, loading, default
     const handler = (e) => {
       if (
         buttonRef.current && !buttonRef.current.contains(e.target) &&
-        panelRef.current  && !panelRef.current.contains(e.target)
+        panelRef.current && !panelRef.current.contains(e.target)
       ) { setOpen(false); setSearch(""); }
     };
     document.addEventListener("mousedown", handler);
@@ -1908,9 +1908,9 @@ function SightseeingSearchDropdown({ value, onSelect, allItems, loading, default
           </li>
         ) : (
           filtered.map((s, idx) => {
-            const img  = getImage(s);
+            const img = getImage(s);
             const city = getCity(s);
-            const sel  = s.title === value;
+            const sel = s.title === value;
             return (
               <li
                 key={s.publicId || s.id || idx}
@@ -1983,15 +1983,15 @@ const ssEmptyForm = {
 };
 
 function SightseeingFormModal({ isOpen, onClose, editingItem, onSaved }) {
-  const [form, setForm]   = useState({ ...ssEmptyForm });
-  const [saving, setSaving]       = useState(false);
+  const [form, setForm] = useState({ ...ssEmptyForm });
+  const [saving, setSaving] = useState(false);
   const [imgUploading, setImgUploading] = useState(false);
   const [error, setError] = useState("");
   const fileRef = useRef();
 
   // Geography cascade
-  const [countries,   setCountries]   = useState([]);
-  const [countryId,   setCountryId]   = useState("");
+  const [countries, setCountries] = useState([]);
+  const [countryId, setCountryId] = useState("");
   const [destOptions, setDestOptions] = useState([]);
   const [cityOptions, setCityOptions] = useState([]);
   const [loadingDest, setLoadingDest] = useState(false);
@@ -2014,17 +2014,17 @@ function SightseeingFormModal({ isOpen, onClose, editingItem, onSaved }) {
       // Edit mode — existing values prefill
       setForm({
         ...ssEmptyForm,
-        title:              editingItem.title || "",
-        destination:        editingItem.destination || editingItem.destinationName || "",
-        destinationId:      editingItem.destinationId || "",
-        city:               editingItem.city || editingItem.cityName || "",
-        sequence:           editingItem.sequence != null ? String(editingItem.sequence) : "1",
-        estimatedHours:     editingItem.estimatedHours != null ? String(editingItem.estimatedHours) : "",
+        title: editingItem.title || "",
+        destination: editingItem.destination || editingItem.destinationName || "",
+        destinationId: editingItem.destinationId || "",
+        city: editingItem.city || editingItem.cityName || "",
+        sequence: editingItem.sequence != null ? String(editingItem.sequence) : "1",
+        estimatedHours: editingItem.estimatedHours != null ? String(editingItem.estimatedHours) : "",
         suggestedStartTime: editingItem.suggestedStartTime || "",
-        imagePath:          editingItem.imagePath || editingItem.imageUrl || "",
-        imagePreview:       editingItem.imagePath || editingItem.imageUrl || "",
-        description:        editingItem.description || "",
-        remarks:            editingItem.remarks || "",
+        imagePath: editingItem.imagePath || editingItem.imageUrl || "",
+        imagePreview: editingItem.imagePath || editingItem.imageUrl || "",
+        description: editingItem.description || "",
+        remarks: editingItem.remarks || "",
       });
       // destinationId se country + cities prefill
       const destId = editingItem.destinationId;
@@ -2285,19 +2285,28 @@ function DashCard({ title, icon: Icon, iconColor = "", headerRight, children }) 
   );
 }
 
-export default function SightseeingTab({ onDataChange, paxInfo = {}, dayCityMap = {}, travelDate = "", defaultIncluded = true }) {
+// export default function SightseeingTab({ onDataChange, paxInfo = {}, dayCityMap = {}, travelDate = "", defaultIncluded = true }) {
+
+export default function SightseeingTab({
+  onDataChange,
+  paxInfo = {},
+  dayCityMap = {},
+  departureDay = null,
+  travelDate = "",
+  defaultIncluded = true,
+}) {
   const [included, setIncluded] = useState(defaultIncluded);
-  const [title,    setTitle]    = useState("Sightseeing");
-  const [notes,    setNotes]    = useState("");
-  const [days,     setDays]     = useState([newDay(1)]);
+  const [title, setTitle] = useState("Sightseeing");
+  const [notes, setNotes] = useState("");
+  const [days, setDays] = useState([newDay(1)]);
   const daysAutoFilledRef = useRef(false);  // dayCityMap se days ek hi baar auto-build ho
 
   // ── Sightseeing Master se saare attractions (ek baar load) ──
-  const [allItems,     setAllItems]     = useState([]);
+  const [allItems, setAllItems] = useState([]);
   const [itemsLoading, setItemsLoading] = useState(true);
 
   // ── Add/Edit modal state ──
-  const [modalOpen,   setModalOpen]   = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
   const [modalTarget, setModalTarget] = useState(null); // { did, aid } — kis activity ke liye
 
@@ -2305,7 +2314,7 @@ export default function SightseeingTab({ onDataChange, paxInfo = {}, dayCityMap 
     try {
       setItemsLoading(true);
       const res = await sightseeingService.getAllSightseeings();
-      const raw  = res.data?.data ?? res.data;
+      const raw = res.data?.data ?? res.data;
       const list = Array.isArray(raw) ? raw
         : Array.isArray(raw?.content) ? raw.content : [];
       // console.log("=== SIGHTSEEINGS LOADED ===", list.length, list[0]);
@@ -2338,26 +2347,107 @@ export default function SightseeingTab({ onDataChange, paxInfo = {}, dayCityMap 
     return d.toISOString().slice(0, 10);
   }
 
+
+  // ── Normal sightseeing day ya final departure day create karo ──
+  function buildItineraryDay(dayNumber) {
+    const city = dayCityMap[dayNumber] || "";
+
+    const dayData = {
+      ...newDay(dayNumber, city),
+      date: dateForDay(dayNumber),
+    };
+
+    const isDepartureDay =
+      departureDay != null &&
+      Number(dayNumber) === Number(departureDay);
+
+    if (!isDepartureDay) {
+      return dayData;
+    }
+
+    return {
+      ...dayData,
+      isDepartureDay: true,
+      pricePerPax: 0,
+
+      activities: [
+        {
+          ...newActivity(city),
+
+          attraction: city
+            ? `Departure from ${city}`
+            : "Departure",
+
+          description: city
+            ? `Check-out and departure from ${city}.`
+            : "Check-out and departure.",
+        },
+      ],
+    };
+  }
+
   // ── Lead ke itinerary se days auto-build (day 1 → Dubai, day 2 → Dubai, day 3 → Manali...) ──
   // Sirf EK BAAR chalta hai jab dayCityMap aata hai aur days abhi tak default/pristine hai.
-  useEffect(() => {
-    const totalDays = Object.keys(dayCityMap).length;
-    if (totalDays === 0 || daysAutoFilledRef.current) return;
-    const isPristine = days.length === 1 && !days[0].date && (days[0].activities || []).every(a => !a.attraction && !a.description);
-    if (!isPristine) return;  // user ne already kuch edit kar diya, overwrite mat karo
+  // useEffect(() => {
+  //   const totalDays = Object.keys(dayCityMap).length;
+  //   if (totalDays === 0 || daysAutoFilledRef.current) return;
+  //   const isPristine = days.length === 1 && !days[0].date && (days[0].activities || []).every(a => !a.attraction && !a.description);
+  //   if (!isPristine) return;  // user ne already kuch edit kar diya, overwrite mat karo
 
-    const built = [];
-    for (let d = 1; d <= totalDays; d++) {
-      built.push({ ...newDay(d, dayCityMap[d] || ""), date: dateForDay(d) });
+  //   const built = [];
+  //   for (let d = 1; d <= totalDays; d++) {
+  //     built.push({ ...newDay(d, dayCityMap[d] || ""), date: dateForDay(d) });
+  //   }
+  //   setDays(built);
+  //   daysAutoFilledRef.current = true;
+  //   // console.log("=== DAYS AUTO-BUILT FROM LEAD ITINERARY ===", built.map(d => ({ day: d.day, city: d.city, date: d.date })));
+  //   // eslint-disable-next-line react-hooks/exhaustive-deps
+  // }, [dayCityMap, travelDate]);
+
+
+
+  useEffect(() => {
+    const dayNumbers = Object.keys(dayCityMap)
+      .map(Number)
+      .filter(Number.isFinite);
+
+    const totalDays =
+      dayNumbers.length > 0
+        ? Math.max(...dayNumbers)
+        : 0;
+
+    if (totalDays === 0 || daysAutoFilledRef.current) {
+      return;
     }
-    setDays(built);
+
+    const isPristine =
+      days.length === 1 &&
+      !days[0].date &&
+      (days[0].activities || []).every(
+        (activity) =>
+          !activity.attraction &&
+          !activity.description
+      );
+
+    // User ne manually data enter kar diya ho to overwrite mat karo.
+    if (!isPristine) {
+      return;
+    }
+
+    const builtDays = [];
+
+    for (let dayNumber = 1; dayNumber <= totalDays; dayNumber++) {
+      builtDays.push(buildItineraryDay(dayNumber));
+    }
+
+    setDays(builtDays);
     daysAutoFilledRef.current = true;
-    // console.log("=== DAYS AUTO-BUILT FROM LEAD ITINERARY ===", built.map(d => ({ day: d.day, city: d.city, date: d.date })));
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dayCityMap, travelDate]);
+  }, [dayCityMap, departureDay, travelDate]);
 
   // ── Auto price ────────────────────────────────────────────
-  const dayTotals       = days.map(d => Number(d.pricePerPax) * Number(d.pax) || 0);
+  const dayTotals = days.map(d => Number(d.pricePerPax) * Number(d.pax) || 0);
   const sightseeingTotal = dayTotals.reduce((a, b) => a + b, 0);
 
   // ── paxInfo aane par days ka pax auto-fill (default 1 ko hi replace karo) ──
@@ -2370,7 +2460,7 @@ export default function SightseeingTab({ onDataChange, paxInfo = {}, dayCityMap 
           : d
       )));
     }
-     
+
   }, [paxInfo.totalPax]);
 
   // ── Parent ko data do ─────────────────────────────────────
@@ -2379,10 +2469,21 @@ export default function SightseeingTab({ onDataChange, paxInfo = {}, dayCityMap 
   }, [included, title, notes, days, sightseeingTotal]);
 
   // ── Helpers ───────────────────────────────────────────────
-  const addDay    = () => setDays(p => [...p, { ...newDay(p.length + 1, dayCityMap[p.length + 1] || ""), date: dateForDay(p.length + 1) }]);
+  // const addDay    = () => setDays(p => [...p, { ...newDay(p.length + 1, dayCityMap[p.length + 1] || ""), date: dateForDay(p.length + 1) }]);
+
+  const addDay = () => {
+    setDays((previousDays) => {
+      const nextDayNumber = previousDays.length + 1;
+
+      return [
+        ...previousDays,
+        buildItineraryDay(nextDayNumber),
+      ];
+    });
+  };
   const removeDay = (id) => setDays(p => p.filter(d => d.id !== id));
   const updateDay = (id, k, v) => setDays(p => p.map(d => d.id === id ? { ...d, [k]: v } : d));
-  const addAct    = (did) => setDays(p => p.map(d => d.id === did ? { ...d, activities: [...d.activities, newActivity(d.city)] } : d));
+  const addAct = (did) => setDays(p => p.map(d => d.id === did ? { ...d, activities: [...d.activities, newActivity(d.city)] } : d));
   const removeAct = (did, aid) => setDays(p => p.map(d => d.id === did ? { ...d, activities: d.activities.filter(a => a.id !== aid) } : d));
   const updateAct = (did, aid, k, v) => setDays(p => p.map(d => d.id === did ? {
     ...d, activities: d.activities.map(a => a.id === aid ? { ...a, [k]: v } : a)
@@ -2461,7 +2562,7 @@ export default function SightseeingTab({ onDataChange, paxInfo = {}, dayCityMap 
       fillActivity(modalTarget.did, modalTarget.aid, {
         ...item,
         _image: item.imagePath || item.imageUrl || "",
-        _city:  item.city || item.cityName || "",
+        _city: item.city || item.cityName || "",
       });
     }
     setModalTarget(null);
@@ -2489,138 +2590,166 @@ export default function SightseeingTab({ onDataChange, paxInfo = {}, dayCityMap 
         </div>
       </DashCard>
 
-      {included && days.map((day, di) => {
+      {/* {included && days.map((day, di) => {
         // ── Day ki city LOCKED source: lead itinerary (dayCityMap) — user editable nahi ──
         const dayNum  = day.day || (di + 1);
         const dayCity = dayCityMap[dayNum] || day.city || "";
         return (
         <DashCard key={day.id} title={`Day ${day.day}${day.city ? ` · ${day.city}` : ""}`} icon={Sun} iconColor="text-amber-600"
           headerRight={
-            <div className="flex items-center gap-2 min-w-0">
-              {dayCity && (
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-violet-50 border border-violet-200 text-[11px] font-bold text-violet-700 flex-shrink-0"
-                  title="City locked from lead itinerary">
-                  <MapPin size={11} className="flex-shrink-0" /> {dayCity}
-                </span>
-              )}
-              <Input type="date" value={day.date} onChange={e => updateDay(day.id, "date", e.target.value)} className="flex-1 sm:flex-initial sm:w-36 min-w-0 text-xs py-1.5" />
-              {days.length > 1 && <RemoveBtn onClick={() => removeDay(day.id)} />}
-            </div>
-          }>
-          <div className="space-y-4">
+            <div className="flex items-center gap-2 min-w-0"> */}
 
-            {/* ── Price Box per Day ── */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3 rounded-2xl bg-amber-50 border border-amber-100">
-              <div>
-                <Label>Price / Pax (₹)</Label>
-                <Input type="number" min={0} value={day.pricePerPax}
-                  onChange={e => updateDay(day.id, "pricePerPax", e.target.value)} placeholder="0" />
-              </div>
-              <div>
-                <Label>No. of Pax</Label>
-                <Input type="number" min={1} value={day.pax}
-                  onChange={e => setDays(p => p.map(d => d.id === day.id ? { ...d, pax: e.target.value, _paxTouched: true } : d))} placeholder="1" />
-              </div>
-              <div>
-                <Label>Day Total</Label>
-                <div className="h-10 flex items-center justify-center bg-amber-600 rounded-xl text-sm font-extrabold text-white">
-                  ₹{dayTotals[di].toLocaleString("en-IN")}
-                </div>
-              </div>
-            </div>
 
-            {/* ── Activities ── */}
-            {day.activities.map((act, ai) => (
-              <div key={act.id} className={ai > 0 ? "pt-4 border-t border-slate-100" : ""}>
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wide">Activity {ai + 1}</span>
-                  {day.activities.length > 1 && <RemoveBtn onClick={() => removeAct(day.id, act.id)} />}
-                </div>
-                <FieldGrid cols={2}>
-                  <div>
-                    <Label>Attraction / Activity</Label>
-                    {/* ── Searchable dropdown + Add/Edit (HotelTab jaisa) ── */}
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1 min-w-0">
-                        <SightseeingSearchDropdown
-                          value={act.attraction}
-                          onSelect={(item) => handleAttractionSelect(day.id, act.id, item)}
-                          allItems={allItems}
-                          loading={itemsLoading}
-                          defaultCity={dayCity}
-                          placeholder={dayCity ? `Search attractions in ${dayCity}...` : "Type to search attractions..."}
-                        />
-                      </div>
-                      {/* ➕ Add new sightseeing */}
-                      <button type="button" onClick={() => openAddModal(day.id, act.id)} title="Add new attraction"
-                        className="flex-shrink-0 w-9 sm:w-10 h-10 flex items-center justify-center rounded-xl border border-blue-500 text-blue-600 hover:bg-blue-600 hover:text-white transition shadow-sm">
-                        <Plus size={16} strokeWidth={2.5} />
-                      </button>
-                      {/* ✏️ Edit selected sightseeing */}
-                      <button type="button" onClick={() => openEditModal(day.id, act.id, act)} title="Edit selected attraction"
-                        disabled={!act.attraction}
-                        className="flex-shrink-0 w-9 sm:w-10 h-10 flex items-center justify-center rounded-xl border border-slate-300 text-slate-600 hover:bg-slate-100 transition shadow-sm disabled:opacity-40 disabled:cursor-not-allowed">
-                        <Pencil size={15} />
-                      </button>
-                    </div>
-                  </div>
-                  <div><Label>Start Time</Label><Input type="time" value={act.startTime} onChange={e => updateAct(day.id, act.id, "startTime", e.target.value)} /></div>
-                </FieldGrid>
+      {included && days.map((day, di) => {
+        // Day city lead itinerary se
+        const dayNum = day.day || di + 1;
+        const dayCity = dayCityMap[dayNum] || day.city || "";
 
-                {/* ── Attraction image preview (select hone par) ── */}
-                {act.imagePath && (
-                  <div className="mt-3 flex items-center gap-3 p-2.5 bg-blue-50 rounded-xl border border-blue-100">
-                    <img src={act.imagePath} alt={act.attraction}
-                      className="w-20 h-16 rounded-lg object-cover flex-shrink-0 border border-blue-200 shadow-sm" />
-                    <div className="min-w-0">
-                      <p className="text-sm font-bold text-slate-800 truncate">{act.attraction}</p>
-                      {act.city && (
-                        <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1">
-                          <MapPin size={10} className="text-rose-400" /> {act.city}
-                        </p>
-                      )}
-                      <span className="inline-block mt-1 text-[10px] font-bold text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full">
-                        ✓ From Sightseeing Master
-                      </span>
-                    </div>
-                  </div>
+        // Departure day par special heading
+        const dayTitle = day.isDepartureDay
+          ? `Day ${dayNum} · Departure from ${dayCity || "Destination"}`
+          : `Day ${dayNum}${dayCity ? ` · ${dayCity}` : ""}`;
+
+        return (
+          <DashCard
+            key={day.id}
+            title={dayTitle}
+            icon={Sun}
+            iconColor="text-amber-600"
+            headerRight={
+              <div className="flex items-center gap-2 min-w-0 flex-wrap">
+
+                {/* Departure Day badge */}
+                {day.isDepartureDay && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-rose-50 border border-rose-200 text-[11px] font-bold text-rose-700 flex-shrink-0">
+                    Departure Day
+                  </span>
                 )}
 
-                <div className="mt-3"><Label>Description</Label>
-                  <Textarea value={act.description} onChange={e => updateAct(day.id, act.id, "description", e.target.value)} rows={2} placeholder="Describe this activity..." />
+                {dayCity && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-violet-50 border border-violet-200 text-[11px] font-bold text-violet-700 flex-shrink-0"
+                    title="City locked from lead itinerary">
+                    <MapPin size={11} className="flex-shrink-0" /> {dayCity}
+                  </span>
+                )}
+                <Input type="date" value={day.date} onChange={e => updateDay(day.id, "date", e.target.value)} className="flex-1 sm:flex-initial sm:w-36 min-w-0 text-xs py-1.5" />
+                {days.length > 1 && <RemoveBtn onClick={() => removeDay(day.id)} />}
+              </div>
+            }>
+            <div className="space-y-4">
+
+              {/* ── Price Box per Day ── */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3 rounded-2xl bg-amber-50 border border-amber-100">
+                <div>
+                  <Label>Price / Pax (₹)</Label>
+                  <Input type="number" min={0} value={day.pricePerPax}
+                    onChange={e => updateDay(day.id, "pricePerPax", e.target.value)} placeholder="0" />
                 </div>
-                <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <Label>Meals Included</Label>
-                    <div className="flex gap-2 mt-1.5 flex-wrap">
-                      {MEALS_OPT.map(m => (
-                        <button key={m} type="button" onClick={() => toggleMeal(day.id, act.id, m)}
-                          className={`px-3 py-1.5 text-xs font-bold rounded-xl border transition-all flex items-center gap-1.5
-                            ${act.meals.includes(m) ? "bg-blue-600 border-blue-600 text-white" : "bg-white border-slate-200 text-slate-600 hover:border-blue-300"}`}>
-                          {m === "Breakfast" && <Coffee size={11} />}{m === "Lunch" && <Utensils size={11} />}{m === "Dinner" && <Moon size={11} />}{m}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <Label>Daily Transfer</Label>
-                    <div className="flex gap-2 mt-1.5 flex-wrap">
-                      {TRANSFER.map(t => (
-                        <button key={t} type="button" onClick={() => updateAct(day.id, act.id, "transfer", t)}
-                          className={`px-3 py-1.5 text-xs font-bold rounded-xl border transition-all
-                            ${act.transfer === t ? "bg-blue-600 border-blue-600 text-white" : "bg-white border-slate-200 text-slate-600 hover:border-blue-300"}`}>{t}
-                        </button>
-                      ))}
-                    </div>
+                <div>
+                  <Label>No. of Pax</Label>
+                  <Input type="number" min={1} value={day.pax}
+                    onChange={e => setDays(p => p.map(d => d.id === day.id ? { ...d, pax: e.target.value, _paxTouched: true } : d))} placeholder="1" />
+                </div>
+                <div>
+                  <Label>Day Total</Label>
+                  <div className="h-10 flex items-center justify-center bg-amber-600 rounded-xl text-sm font-extrabold text-white">
+                    ₹{dayTotals[di].toLocaleString("en-IN")}
                   </div>
                 </div>
               </div>
-            ))}
-            <div className="pt-3 border-t border-slate-100">
-              <AddBtn onClick={() => addAct(day.id)} label="Add Activity" />
+
+              {/* ── Activities ── */}
+              {day.activities.map((act, ai) => (
+                <div key={act.id} className={ai > 0 ? "pt-4 border-t border-slate-100" : ""}>
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-xs font-bold text-slate-500 uppercase tracking-wide">Activity {ai + 1}</span>
+                    {day.activities.length > 1 && <RemoveBtn onClick={() => removeAct(day.id, act.id)} />}
+                  </div>
+                  <FieldGrid cols={2}>
+                    <div>
+                      <Label>Attraction / Activity</Label>
+                      {/* ── Searchable dropdown + Add/Edit (HotelTab jaisa) ── */}
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 min-w-0">
+                          <SightseeingSearchDropdown
+                            value={act.attraction}
+                            onSelect={(item) => handleAttractionSelect(day.id, act.id, item)}
+                            allItems={allItems}
+                            loading={itemsLoading}
+                            defaultCity={dayCity}
+                            placeholder={dayCity ? `Search attractions in ${dayCity}...` : "Type to search attractions..."}
+                          />
+                        </div>
+                        {/* ➕ Add new sightseeing */}
+                        <button type="button" onClick={() => openAddModal(day.id, act.id)} title="Add new attraction"
+                          className="flex-shrink-0 w-9 sm:w-10 h-10 flex items-center justify-center rounded-xl border border-blue-500 text-blue-600 hover:bg-blue-600 hover:text-white transition shadow-sm">
+                          <Plus size={16} strokeWidth={2.5} />
+                        </button>
+                        {/* ✏️ Edit selected sightseeing */}
+                        <button type="button" onClick={() => openEditModal(day.id, act.id, act)} title="Edit selected attraction"
+                          disabled={!act.attraction}
+                          className="flex-shrink-0 w-9 sm:w-10 h-10 flex items-center justify-center rounded-xl border border-slate-300 text-slate-600 hover:bg-slate-100 transition shadow-sm disabled:opacity-40 disabled:cursor-not-allowed">
+                          <Pencil size={15} />
+                        </button>
+                      </div>
+                    </div>
+                    <div><Label>Start Time</Label><Input type="time" value={act.startTime} onChange={e => updateAct(day.id, act.id, "startTime", e.target.value)} /></div>
+                  </FieldGrid>
+
+                  {/* ── Attraction image preview (select hone par) ── */}
+                  {act.imagePath && (
+                    <div className="mt-3 flex items-center gap-3 p-2.5 bg-blue-50 rounded-xl border border-blue-100">
+                      <img src={act.imagePath} alt={act.attraction}
+                        className="w-20 h-16 rounded-lg object-cover flex-shrink-0 border border-blue-200 shadow-sm" />
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold text-slate-800 truncate">{act.attraction}</p>
+                        {act.city && (
+                          <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1">
+                            <MapPin size={10} className="text-rose-400" /> {act.city}
+                          </p>
+                        )}
+                        <span className="inline-block mt-1 text-[10px] font-bold text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full">
+                          ✓ From Sightseeing Master
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="mt-3"><Label>Description</Label>
+                    <Textarea value={act.description} onChange={e => updateAct(day.id, act.id, "description", e.target.value)} rows={2} placeholder="Describe this activity..." />
+                  </div>
+                  <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <Label>Meals Included</Label>
+                      <div className="flex gap-2 mt-1.5 flex-wrap">
+                        {MEALS_OPT.map(m => (
+                          <button key={m} type="button" onClick={() => toggleMeal(day.id, act.id, m)}
+                            className={`px-3 py-1.5 text-xs font-bold rounded-xl border transition-all flex items-center gap-1.5
+                            ${act.meals.includes(m) ? "bg-blue-600 border-blue-600 text-white" : "bg-white border-slate-200 text-slate-600 hover:border-blue-300"}`}>
+                            {m === "Breakfast" && <Coffee size={11} />}{m === "Lunch" && <Utensils size={11} />}{m === "Dinner" && <Moon size={11} />}{m}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <Label>Daily Transfer</Label>
+                      <div className="flex gap-2 mt-1.5 flex-wrap">
+                        {TRANSFER.map(t => (
+                          <button key={t} type="button" onClick={() => updateAct(day.id, act.id, "transfer", t)}
+                            className={`px-3 py-1.5 text-xs font-bold rounded-xl border transition-all
+                            ${act.transfer === t ? "bg-blue-600 border-blue-600 text-white" : "bg-white border-slate-200 text-slate-600 hover:border-blue-300"}`}>{t}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+              <div className="pt-3 border-t border-slate-100">
+                <AddBtn onClick={() => addAct(day.id)} label="Add Activity" />
+              </div>
             </div>
-          </div>
-        </DashCard>
+          </DashCard>
         );
       })}
 
@@ -2652,7 +2781,7 @@ export default function SightseeingTab({ onDataChange, paxInfo = {}, dayCityMap 
         onClose={() => { setModalOpen(false); setEditingItem(null); }}
         editingItem={editingItem}
         onSaved={handleModalSaved}
-      /> 
+      />
     </div>
   );
 }
