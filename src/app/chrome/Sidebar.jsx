@@ -5,7 +5,7 @@ import { LayoutDashboard, Users, Database, ChevronDown, Circle, Plane, FileText,
 import { isSuperAdmin, isTenantAdmin, isSubAgent, hasPermission, hasAnyPermission, hasModule, loadMyEntitlements, clearMyPermissions, clearMyEntitlements, P } from "@shared/lib/access";
 import { companyService } from "@features/settings";
 
-// "Nepal Tours And Travels" -> "NT". Shown until the logo loads, and for any tenant
+
 // that has not uploaded one.
 // (name || "") — NOT a `= ""` default: a default only fires on `undefined`, so a null company name
 // (any tenant that has not filled its profile) would hit null.trim() and crash the whole shell.

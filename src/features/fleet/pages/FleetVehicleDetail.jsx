@@ -1,3 +1,7 @@
+
+
+
+
 // src/fleet/FleetVehicleDetail.jsx
 // Vehicle detail — profile, compliance docs, and the fuel / maintenance / trip diaries.
 import { useCallback, useEffect, useState } from "react";
@@ -22,11 +26,11 @@ import { VehicleStatusDialog } from "./FleetVehicles";
 
 function Info({ label, value, icon: Icon }) {
   return (
-    <div className="flex items-start gap-2.5">
+    <div className="flex items-start gap-2.5 min-w-0">
       {Icon && <Icon className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />}
-      <div>
-        <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">{label}</p>
-        <p className="text-sm font-semibold text-slate-700">{value ?? "—"}</p>
+      <div className="min-w-0 flex-1">
+        <p className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wide text-slate-400 truncate">{label}</p>
+        <p className="text-sm font-semibold text-slate-700 truncate">{value ?? "—"}</p>
       </div>
     </div>
   );
@@ -35,12 +39,12 @@ function Info({ label, value, icon: Icon }) {
 function DocChip({ label, date }) {
   const info = expiryInfo(date);
   return (
-    <div className="rounded-xl border border-slate-100 bg-white/60 p-3">
-      <p className="mb-1 text-[11px] font-bold uppercase tracking-wide text-slate-400">{label}</p>
+    <div className="rounded-xl border border-slate-100 bg-white/60 p-3 flex flex-col justify-center min-w-0 w-full">
+      <p className="mb-1 text-[10px] sm:text-[11px] font-bold uppercase tracking-wide text-slate-400 truncate">{label}</p>
       {date ? (
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold text-slate-700">{fmtDate(date)}</span>
-          <Badge variant={info.variant}>{info.text}</Badge>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm font-semibold text-slate-700 whitespace-nowrap">{fmtDate(date)}</span>
+          <Badge variant={info.variant} className="whitespace-nowrap">{info.text}</Badge>
         </div>
       ) : (
         <span className="text-sm text-slate-300">Not set</span>
@@ -132,44 +136,46 @@ export default function FleetVehicleDetail() {
 
       {/* Hero */}
       <GlassCard className="mb-5 overflow-hidden">
-        <div className="flex flex-col gap-4 bg-gradient-to-br from-blue-50/60 to-transparent p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
-          <div className="flex items-center gap-4">
-            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-lg shadow-blue-600/20">
-              <Car className="h-7 w-7" />
+        <div className="flex flex-col gap-4 bg-gradient-to-br from-blue-50/60 to-transparent p-4 sm:p-5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3 sm:gap-4 w-full min-w-0">
+            <div className="flex h-12 w-12 sm:h-14 sm:w-14 shrink-0 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-lg shadow-blue-600/20">
+              <Car className="h-6 w-6 sm:h-7 sm:w-7" />
             </div>
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2.5">
-                <h1 className="text-xl font-extrabold text-slate-800 sm:text-2xl">{vehicle.vehicleNumber}</h1>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-lg font-extrabold text-slate-800 sm:text-2xl truncate">{vehicle.vehicleNumber}</h1>
                 <StatusBadge config={VEHICLE_STATUS} value={vehicle.status} />
               </div>
-              {spec && <p className="text-sm text-slate-500">{spec}</p>}
+              {spec && <p className="text-xs sm:text-sm text-slate-500 truncate">{spec}</p>}
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto mt-2 sm:mt-0">
             {canUpdate && (
               <>
-                <Button variant="outline" size="sm" onClick={() => setShowStatus(true)}>
-                  <Settings2 /> Status
+                <Button variant="outline" size="sm" className="flex-1 sm:flex-none justify-center" onClick={() => setShowStatus(true)}>
+                  <Settings2 className="mr-1.5 h-4 w-4" /> Status
                 </Button>
-                <Button variant="outline" size="sm" onClick={() => navigate(`/fleet/vehicles/${publicId}/edit`)}>
-                  <Pencil /> Edit
+                <Button variant="outline" size="sm" className="flex-1 sm:flex-none justify-center" onClick={() => navigate(`/fleet/vehicles/${publicId}/edit`)}>
+                  <Pencil className="mr-1.5 h-4 w-4" /> Edit
                 </Button>
               </>
             )}
             {canDelete && (
-              <Button variant="ghost" size="sm" className="text-red-500 hover:bg-red-50 hover:text-red-600"
+              <Button variant="ghost" size="sm" className="flex-1 sm:flex-none justify-center text-red-500 hover:bg-red-50 hover:text-red-600"
                 onClick={() => setShowDelete(true)}>
-                <Trash2 /> Delete
+                <Trash2 className="mr-1.5 h-4 w-4" /> Delete
               </Button>
             )}
           </div>
         </div>
       </GlassCard>
 
-      <StatStrip items={kpi} />
+      <div className="overflow-x-auto pb-2 scrollbar-hide">
+        <StatStrip items={kpi} />
+      </div>
 
       {/* Profile */}
-      <FormSection title="Profile" subtitle="Ownership & specifications" icon={Car} className="mb-5">
+      <FormSection title="Profile" subtitle="Ownership & specifications" icon={Car} className="mb-5 mt-2">
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
           <Info label="Owner" value={OWNER_TYPE[vehicle.ownerType] || vehicle.ownerType} />
           <Info label="Vendor" value={vehicle.vendorName} />
@@ -181,13 +187,13 @@ export default function FleetVehicleDetail() {
           <Info label="Added" value={fmtDate(vehicle.createdAt)} />
         </div>
         {vehicle.notes && (
-          <div className="mt-4 rounded-xl bg-slate-50/70 p-3 text-sm text-slate-600">{vehicle.notes}</div>
+          <div className="mt-4 rounded-xl bg-slate-50/70 p-3 text-sm text-slate-600 break-words">{vehicle.notes}</div>
         )}
       </FormSection>
 
       {/* Documents */}
       <FormSection title="Compliance Documents" subtitle="Expiry status across the four documents" icon={ShieldCheck} className="mb-5">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <DocChip label="Insurance" date={vehicle.insuranceExpiry} />
           <DocChip label="Registration (RC)" date={vehicle.rcExpiry} />
           <DocChip label="Permit" date={vehicle.permitExpiry} />
@@ -195,14 +201,14 @@ export default function FleetVehicleDetail() {
         </div>
       </FormSection>
 
-      {/* Diary tabs */}
-      <div className="mb-4 inline-flex rounded-2xl border border-slate-100 bg-white/70 p-1 backdrop-blur">
+      {/* Diary tabs - Horizontal scrollable container */}
+      <div className="mb-4 flex overflow-x-auto scrollbar-hide rounded-2xl border border-slate-100 bg-white/70 p-1 backdrop-blur max-w-full">
         {TABS.map((t) => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold transition-all ${
-              tab === t.key ? "bg-blue-600 text-white shadow-sm" : "text-slate-500 hover:text-slate-700"
+            className={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 sm:py-2 text-sm font-bold transition-all whitespace-nowrap shrink-0 flex-1 sm:flex-none ${
+              tab === t.key ? "bg-blue-600 text-white shadow-sm" : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
             }`}
           >
             <t.icon className="h-4 w-4" /> {t.label}
@@ -210,23 +216,25 @@ export default function FleetVehicleDetail() {
         ))}
       </div>
 
-      {tab === "fuel" && (
-        <FuelLogsPanel
-          vehiclePublicId={publicId}
-          canCreate={canCreate} canUpdate={canUpdate} canDelete={canDelete}
-          showToast={showToast} onChange={loadVehicle}
-        />
-      )}
-      {tab === "maintenance" && (
-        <MaintenanceLogsPanel
-          vehiclePublicId={publicId}
-          canCreate={canCreate} canUpdate={canUpdate} canDelete={canDelete}
-          showToast={showToast} onChange={loadVehicle}
-        />
-      )}
-      {tab === "trips" && (
-        <VehicleTripsPanel vehiclePublicId={publicId} showToast={showToast} navigate={navigate} />
-      )}
+      <div className="w-full">
+        {tab === "fuel" && (
+          <FuelLogsPanel
+            vehiclePublicId={publicId}
+            canCreate={canCreate} canUpdate={canUpdate} canDelete={canDelete}
+            showToast={showToast} onChange={loadVehicle}
+          />
+        )}
+        {tab === "maintenance" && (
+          <MaintenanceLogsPanel
+            vehiclePublicId={publicId}
+            canCreate={canCreate} canUpdate={canUpdate} canDelete={canDelete}
+            showToast={showToast} onChange={loadVehicle}
+          />
+        )}
+        {tab === "trips" && (
+          <VehicleTripsPanel vehiclePublicId={publicId} showToast={showToast} navigate={navigate} />
+        )}
+      </div>
 
       <ConfirmDialog
         open={showDelete}
@@ -277,42 +285,46 @@ function VehicleTripsPanel({ vehiclePublicId, showToast, navigate }) {
       ) : items.length === 0 ? (
         <EmptyState icon={RouteIcon} title="No trips for this vehicle yet" />
       ) : (
-        <Table className="fleet-table">
-          <TableHeader>
-            <TableRow className="hover:bg-transparent">
-              <TableHead>Start</TableHead>
-              <TableHead>Route</TableHead>
-              <TableHead>Driver</TableHead>
-              <TableHead>Distance</TableHead>
-              <TableHead>Expense</TableHead>
-              <TableHead>Status</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {items.map((t) => (
-              <TableRow key={t.publicId} className="cursor-pointer" onClick={() => navigate(`/fleet/trips/${t.publicId}`)}>
-                <TableCell className="font-medium">{fmtDateTime(t.startDatetime)}</TableCell>
-                <TableCell className="text-slate-600">
-                  {[t.routeFrom, t.routeTo].filter(Boolean).join(" → ") || "—"}
-                </TableCell>
-                <TableCell className="text-slate-600">{t.driverName || "—"}</TableCell>
-                <TableCell>{fmtNumber(t.distanceKm, " km")}</TableCell>
-                <TableCell>{fmtMoney(t.totalExpense)}</TableCell>
-                <TableCell><StatusBadge config={TRIP_STATUS} value={t.status} /></TableCell>
+        <div className="w-full overflow-x-auto">
+          <Table className="fleet-table min-w-[800px]">
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead>Start</TableHead>
+                <TableHead>Route</TableHead>
+                <TableHead>Driver</TableHead>
+                <TableHead>Distance</TableHead>
+                <TableHead>Expense</TableHead>
+                <TableHead>Status</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {items.map((t) => (
+                <TableRow key={t.publicId} className="cursor-pointer" onClick={() => navigate(`/fleet/trips/${t.publicId}`)}>
+                  <TableCell className="font-medium whitespace-nowrap">{fmtDateTime(t.startDatetime)}</TableCell>
+                  <TableCell className="text-slate-600 min-w-[150px]">
+                    {[t.routeFrom, t.routeTo].filter(Boolean).join(" → ") || "—"}
+                  </TableCell>
+                  <TableCell className="text-slate-600 whitespace-nowrap">{t.driverName || "—"}</TableCell>
+                  <TableCell className="whitespace-nowrap">{fmtNumber(t.distanceKm, " km")}</TableCell>
+                  <TableCell className="whitespace-nowrap">{fmtMoney(t.totalExpense)}</TableCell>
+                  <TableCell><StatusBadge config={TRIP_STATUS} value={t.status} /></TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
       )}
       {!loading && items.length > 0 && (
-        <CommonPagination
-          pageIndex={pagination?.page ?? 0}
-          pageSize={pagination?.size ?? size}
-          totalElements={pagination?.totalElements ?? items.length}
-          totalPages={pagination?.totalPages ?? 1}
-          goToPage={setPage}
-          changePageSize={(s) => { setSize(s); setPage(0); }}
-        />
+        <div className="mt-4 w-full overflow-x-auto pb-4">
+          <CommonPagination
+            pageIndex={pagination?.page ?? 0}
+            pageSize={pagination?.size ?? size}
+            totalElements={pagination?.totalElements ?? items.length}
+            totalPages={pagination?.totalPages ?? 1}
+            goToPage={setPage}
+            changePageSize={(s) => { setSize(s); setPage(0); }}
+          />
+        </div>
       )}
     </GlassCard>
   );

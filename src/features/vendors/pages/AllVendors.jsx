@@ -469,6 +469,9 @@ export default function Vendors() {
 
   const [vendorStatsOpen, setVendorStatsOpen] = useState(false);
 
+  const [vendorDistributionOpen, setVendorDistributionOpen] =
+  useState(false);
+
   const PER = 8;
 
   const [viewV,    setView]     = useState(null);
@@ -773,7 +776,7 @@ export default function Vendors() {
 </div>
 
         {/* ── VENDOR DISTRIBUTION ── */}
-        <div className="bg-white/80 backdrop-blur-md rounded-2xl border border-slate-200/60 shadow-sm p-5 fade-up">
+        {/* <div className="bg-white/80 backdrop-blur-md rounded-2xl border border-slate-200/60 shadow-sm p-5 fade-up">
           <p className="text-xs font-extrabold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
             <HiSparkles className="text-blue-500 w-4 h-4"/> Vendor Distribution
           </p>
@@ -794,7 +797,112 @@ export default function Vendors() {
               );
             })}
           </div>
+        </div> */}
+
+
+{/* ── COLLAPSIBLE VENDOR DISTRIBUTION ── */}
+<div className="bg-white/80 backdrop-blur-md rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden fade-up">
+
+  {/* Toggle header */}
+  <button
+    type="button"
+    onClick={() =>
+      setVendorDistributionOpen((previous) => !previous)
+    }
+    aria-expanded={vendorDistributionOpen}
+    className="w-full px-4 sm:px-5 py-3 flex items-center justify-between gap-3 hover:bg-slate-50 transition-colors"
+  >
+    <div className="flex items-center gap-3 flex-wrap min-w-0">
+      <div className="flex items-center gap-2">
+        <HiSparkles className="w-4 h-4 text-blue-500" />
+
+        <span className="text-sm font-extrabold text-slate-700">
+          Vendor Distribution
+        </span>
+      </div>
+
+      {!vendorDistributionOpen && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="px-2.5 py-1 rounded-full bg-blue-100 text-blue-700 text-[11px] font-bold">
+            {distStats.Hotel} Hotels
+          </span>
+
+          <span className="px-2.5 py-1 rounded-full bg-sky-100 text-sky-700 text-[11px] font-bold">
+            {distStats.Airlines} Airlines
+          </span>
+
+          <span className="px-2.5 py-1 rounded-full bg-orange-100 text-orange-700 text-[11px] font-bold">
+            {distStats.Transport} Transport
+          </span>
+
+          <span className="px-2.5 py-1 rounded-full bg-teal-100 text-teal-700 text-[11px] font-bold">
+            {distStats.DMC} DMCs
+          </span>
+
+          <span className="px-2.5 py-1 rounded-full bg-indigo-100 text-indigo-700 text-[11px] font-bold">
+            {distStats.bookings} Bookings
+          </span>
+
+          <span className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 text-[11px] font-bold">
+            Cost {fmtINR(distStats.cost)}
+          </span>
         </div>
+      )}
+    </div>
+
+    <div className="w-8 h-8 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center flex-shrink-0">
+      {vendorDistributionOpen ? (
+        <FiChevronUp className="w-4 h-4" />
+      ) : (
+        <FiChevronDown className="w-4 h-4" />
+      )}
+    </div>
+  </button>
+
+  <div
+    className={`grid transition-all duration-300 ease-in-out ${
+      vendorDistributionOpen
+        ? "grid-rows-[1fr] opacity-100"
+        : "grid-rows-[0fr] opacity-0"
+    }`}
+  >
+    <div className="min-h-0 overflow-hidden">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 p-4 pt-1">
+        {DIST_CARDS.map((card) => {
+          const value = distStats[card.key] || 0;
+          const isMoney = card.key === "cost";
+          const Icon = card.icon;
+
+          return (
+            <div
+              key={card.key}
+              className={`${card.color} rounded-2xl p-4 text-white relative overflow-hidden
+                hover:-translate-y-0.5 hover:shadow-lg transition-all duration-200 cursor-default`}
+            >
+              <div className="absolute -right-4 -bottom-4 w-16 h-16 rounded-full bg-white/10" />
+
+              <Icon className="w-6 h-6 mb-2 opacity-90" />
+
+              <p className="text-lg font-extrabold leading-none">
+                {isMoney ? (
+                  <AnimNum target={value} prefix="₹" />
+                ) : (
+                  <AnimNum target={value} />
+                )}
+              </p>
+
+              <p className="text-xs font-bold opacity-80 mt-0.5">
+                {card.label}
+              </p>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  </div>
+</div>
+
+
 
         {/* ── VENDOR LIST CARD ── */}
         <div className="bg-white/80 backdrop-blur-md rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden fade-up">

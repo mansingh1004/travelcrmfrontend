@@ -171,6 +171,9 @@ export default function TravelDateAnalysis() {
   const [filtersOpen,  setFiltersOpen]  = useState(true);
   const [showEntries,  setShowEntries]  = useState("25");
   const [page,         setPage]         = useState(1);
+
+  const [travelStatsOpen, setTravelStatsOpen] = useState(false);
+
   const [applied,      setApplied]      = useState({
     startDate:TRAVEL_START, endDate:TRAVEL_END,
     analysisType:"Monthly", bookingType:"All Types", status:"All Statuses",
@@ -381,12 +384,114 @@ export default function TravelDateAnalysis() {
         </div>
 
         {/* ── 4 HERO STAT CARDS ── */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <HeroCard value={summary.totalBookings}  label="Total Bookings"     bg="bg-gradient-to-br from-teal-500 to-cyan-600"     icon={<FaCalendarCheck/>}  delay={0}  />
           <HeroCard value={summary.totalTravelers} label="Total Travelers"    bg="bg-gradient-to-br from-green-500 to-emerald-600"  icon={<FiUsers/>}          delay={60} />
           <HeroCard value={summary.avgPerPeriod}   label="Avg Bookings/Period" bg="bg-gradient-to-br from-amber-500 to-orange-500"  icon={<MdOutlineBarChart/>} isFloat delay={120}/>
           <HeroCard value={summary.totalRevenue}   label="Total Revenue"      bg="bg-gradient-to-br from-red-500 to-rose-600"       icon={<FaRupeeSign/>}      isRevenue delay={180}/>
+        </div> */}
+
+        {/* ── COLLAPSIBLE TRAVEL DATE ANALYTICS ── */}
+<div className="bg-white/80 backdrop-blur-md rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden fade-up">
+
+  {/* Toggle header */}
+  <button
+    type="button"
+    onClick={() =>
+      setTravelStatsOpen((previous) => !previous)
+    }
+    aria-expanded={travelStatsOpen}
+    className="w-full px-4 sm:px-5 py-3 flex items-center justify-between gap-3 hover:bg-slate-50 transition-colors"
+  >
+    <div className="flex items-center gap-3 flex-wrap min-w-0">
+      <div className="flex items-center gap-2">
+        <FaCalendarAlt className="w-4 h-4 text-teal-600" />
+
+        <span className="text-sm font-extrabold text-slate-700">
+          Travel Date Analytics
+        </span>
+      </div>
+
+      {/* Compact values shown while cards are closed */}
+      {!travelStatsOpen && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="px-2.5 py-1 rounded-full bg-teal-100 text-teal-700 text-[11px] font-bold">
+            {summary.totalBookings} Bookings
+          </span>
+
+          <span className="px-2.5 py-1 rounded-full bg-green-100 text-green-700 text-[11px] font-bold">
+            {summary.totalTravelers} Travelers
+          </span>
+
+          <span className="px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 text-[11px] font-bold">
+            Avg {Number(summary.avgPerPeriod).toFixed(1)} / Period
+          </span>
+
+          <span className="px-2.5 py-1 rounded-full bg-rose-100 text-rose-700 text-[11px] font-bold">
+            Revenue {fmt(summary.totalRevenue)}
+          </span>
         </div>
+      )}
+    </div>
+
+    <div className="w-8 h-8 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center flex-shrink-0">
+      {travelStatsOpen ? (
+        <FiChevronUp className="w-4 h-4" />
+      ) : (
+        <FiChevronDown className="w-4 h-4" />
+      )}
+    </div>
+  </button>
+
+  {/* Expandable cards */}
+  <div
+    className={`grid transition-all duration-300 ease-in-out ${
+      travelStatsOpen
+        ? "grid-rows-[1fr] opacity-100"
+        : "grid-rows-[0fr] opacity-0"
+    }`}
+  >
+    <div className="min-h-0 overflow-hidden">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 p-4 pt-1">
+
+        <HeroCard
+          value={summary.totalBookings}
+          label="Total Bookings"
+          bg="bg-gradient-to-br from-teal-500 to-cyan-600"
+          icon={<FaCalendarCheck />}
+          delay={0}
+        />
+
+        <HeroCard
+          value={summary.totalTravelers}
+          label="Total Travelers"
+          bg="bg-gradient-to-br from-green-500 to-emerald-600"
+          icon={<FiUsers />}
+          delay={60}
+        />
+
+        <HeroCard
+          value={summary.avgPerPeriod}
+          label="Avg Bookings/Period"
+          bg="bg-gradient-to-br from-amber-500 to-orange-500"
+          icon={<MdOutlineBarChart />}
+          isFloat
+          delay={120}
+        />
+
+        <HeroCard
+          value={summary.totalRevenue}
+          label="Total Revenue"
+          bg="bg-gradient-to-br from-red-500 to-rose-600"
+          icon={<FaRupeeSign />}
+          isRevenue
+          delay={180}
+        />
+
+      </div>
+    </div>
+  </div>
+</div>
 
         {/* ── TREND CHART + PEAK DATES ── */}
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-5">

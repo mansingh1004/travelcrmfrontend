@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { ChartColumn as FiBarChart2, Activity as FiActivity, Clock as FiClock, TrendingUp as FiTrendingUp, Calendar as FiCalendar, Globe as FiGlobe, Eye as FiEye, Download as FiDownload, RefreshCw as FiRefreshCw, ArrowRight as FiArrowRight, Users as FiUsers, FileText as FiFileText, MapPinned as FaMapMarkedAlt, IndianRupee as FaRupeeSign, Globe as FaGlobe, Clock as FaRegClock } from "lucide-react";
+import { ChartColumn as FiBarChart2, Activity as FiActivity, Clock as FiClock, TrendingUp as FiTrendingUp, Calendar as FiCalendar, Globe as FiGlobe, Eye as FiEye, Download as FiDownload, RefreshCw as FiRefreshCw, ArrowRight as FiArrowRight, Users as FiUsers, FileText as FiFileText, MapPinned as FaMapMarkedAlt, IndianRupee as FaRupeeSign, Globe as FaGlobe, Clock as FaRegClock, ChevronDown as FiChevronDown,
+ChevronUp as FiChevronUp } from "lucide-react";
 
 
 import reportsDashboardService from "../api/reportsDashboardService";
@@ -227,6 +228,8 @@ export default function ReportsDashboard() {
   const [toast,        setToast]        = useState(null);
   const [summary,      setSummary]      = useState(null);
 
+  const [reportStatsOpen, setReportStatsOpen] = useState(false);
+
   const showToast = useCallback((msg, type="success")=>setToast({msg,type}),[]);
 
   useEffect(()=>{
@@ -340,11 +343,85 @@ export default function ReportsDashboard() {
       <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 py-6 space-y-6">
 
         {/* ── STAT CARDS ── */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        {/* <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           {STAT_CARDS.map(s=>(
             <StatCard key={s.label} {...s} value={statValues[s.label]}/>
           ))}
+        </div> */}
+
+        {/* ── COLLAPSIBLE REPORT DASHBOARD ANALYTICS ── */}
+<div className="bg-white/80 backdrop-blur-md rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden fade-up">
+
+  {/* Toggle header */}
+  <button
+    type="button"
+    onClick={() =>
+      setReportStatsOpen((previous) => !previous)
+    }
+    aria-expanded={reportStatsOpen}
+    className="w-full px-4 sm:px-5 py-3 flex items-center justify-between gap-3 hover:bg-slate-50 transition-colors"
+  >
+    <div className="flex items-center gap-3 flex-wrap min-w-0">
+      <div className="flex items-center gap-2">
+        <FiBarChart2 className="w-4 h-4 text-blue-600" />
+
+        <span className="text-sm font-extrabold text-slate-700">
+          Reports Analytics
+        </span>
+      </div>
+
+      {/* Compact values shown while cards are closed */}
+      {!reportStatsOpen && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="px-2.5 py-1 rounded-full bg-blue-100 text-blue-700 text-[11px] font-bold">
+            {statValues["Total Reports"]} Reports
+          </span>
+
+          <span className="px-2.5 py-1 rounded-full bg-green-100 text-green-700 text-[11px] font-bold">
+            {statValues["Active Users"]} Active Users
+          </span>
+
+          <span className="px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 text-[11px] font-bold">
+            {statValues["This Month"]} This Month
+          </span>
+
+          <span className="px-2.5 py-1 rounded-full bg-teal-100 text-teal-700 text-[11px] font-bold">
+            Revenue {statValues["Revenue Tracked"]}
+          </span>
         </div>
+      )}
+    </div>
+
+    <div className="w-8 h-8 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center flex-shrink-0">
+      {reportStatsOpen ? (
+        <FiChevronUp className="w-4 h-4" />
+      ) : (
+        <FiChevronDown className="w-4 h-4" />
+      )}
+    </div>
+  </button>
+
+  {/* Expandable cards */}
+  <div
+    className={`grid transition-all duration-300 ease-in-out ${
+      reportStatsOpen
+        ? "grid-rows-[1fr] opacity-100"
+        : "grid-rows-[0fr] opacity-0"
+    }`}
+  >
+    <div className="min-h-0 overflow-hidden">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 p-4 pt-1">
+        {STAT_CARDS.map((stat) => (
+          <StatCard
+            key={stat.label}
+            {...stat}
+            value={statValues[stat.label]}
+          />
+        ))}
+      </div>
+    </div>
+  </div>
+</div>
 
         {/* ── DATE FILTER BAR ── */}
         <div className="bg-white/80 backdrop-blur-md rounded-2xl border border-slate-200/60 shadow-sm p-4 fade-up">

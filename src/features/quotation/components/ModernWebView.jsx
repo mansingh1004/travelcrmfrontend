@@ -242,6 +242,7 @@ export default function ModernWebView({ data, pdfUrl }) {
         .mv-hero { position: relative; min-height: 100vh; min-height: 100svh; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; overflow: hidden; padding: 96px 24px 110px; color: #f6f2e9; }
         .mv-hero-media { position: absolute; inset: 0; }
         .mv-hero-media img { width: 100%; height: 100%; object-fit: cover; }
+
         .mv-hero-media::after { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(20,16,10,.52) 0%, rgba(20,16,10,.28) 42%, rgba(20,16,10,.78) 100%); }
         .mv-hero-fallback { position: absolute; inset: 0; background: linear-gradient(158deg, #2a251b 0%, #38311f 46%, #17140d 100%); }
         .mv-hero-fallback::before { content: ''; position: absolute; inset: 0; background: radial-gradient(ellipse 70% 55% at 70% 18%, rgba(156,91,51,0.35), transparent 65%); }
@@ -859,3 +860,9 @@ export default function ModernWebView({ data, pdfUrl }) {
     </div>
   );
 }
+
+
+
+
+
+
