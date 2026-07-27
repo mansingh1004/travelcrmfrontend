@@ -8,14 +8,16 @@ import StatusPill from "../components/StatusPill";
 
 function HardDeleteModal({ tenant, onClose, onDeleted, showToast }) {
   const [typed, setTyped] = useState("");
+  const [mfaCode, setMfaCode] = useState("");
   const [busy, setBusy] = useState(false);
   const match = typed.trim().toLowerCase() === (tenant.organizationCode || "").toLowerCase();
+  const mfaReady = /^\d{6}$/.test(mfaCode);
 
   const confirm = async () => {
-    if (!match) return;
+    if (!match || !mfaReady) return;
     setBusy(true);
     try {
-      await opsService.hardDeleteTenant(tenant.publicId, typed.trim());
+      await opsService.hardDeleteTenant(tenant.publicId, typed.trim(), mfaCode);
       showToast("success", `Permanently deleted ${tenant.organizationCode}`);
       onDeleted(tenant.publicId);
     } catch (e) {
@@ -48,14 +50,69 @@ function HardDeleteModal({ tenant, onClose, onDeleted, showToast }) {
           <input autoFocus value={typed} onChange={(e) => setTyped(e.target.value)}
             className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-heading focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/30" />
         </div>
+        <div className="mt-4">
+          <label className="mb-1 block text-xs font-semibold text-muted">Authenticator code</label>
+          <input
+            type="text"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            value={mfaCode}
+            onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+            placeholder="000000"
+            className="w-full rounded-lg border border-border bg-surface px-3 py-2 font-mono text-sm tracking-[0.24em] text-heading focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/30"
+          />
+        </div>
         <div className="mt-5 flex justify-end gap-3">
           <button onClick={onClose} disabled={busy}
             className="rounded-lg border border-border-strong bg-surface px-4 py-2 text-sm font-semibold text-body hover:bg-surface-hover">
             Cancel
           </button>
-          <button onClick={confirm} disabled={!match || busy}
+          <button onClick={confirm} disabled={!match || !mfaReady || busy}
             className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-40">
             {busy ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />} Delete forever
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StepUpModal({ busy, onClose, onConfirm }) {
+  const [mfaCode, setMfaCode] = useState("");
+  const ready = /^\d{6}$/.test(mfaCode);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-slate-950/50" onClick={busy ? undefined : onClose} />
+      <div className="relative w-full max-w-sm rounded-xl border border-border bg-surface p-5 shadow-xl">
+        <div className="flex items-center gap-2">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent-soft text-accent-soft-text">
+            <Download size={17} />
+          </div>
+          <h3 className="text-sm font-bold text-heading">Export tenant registry</h3>
+        </div>
+        <p className="mt-2 text-sm text-body">Enter the current authenticator code to continue.</p>
+        <label className="mt-4 block text-xs font-semibold text-body">
+          Authenticator code
+          <input
+            autoFocus
+            type="text"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            value={mfaCode}
+            onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+            placeholder="000000"
+            className="mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 font-mono text-sm tracking-[0.24em] text-heading focus:border-accent focus:outline-none focus:ring-2 focus:ring-focus"
+          />
+        </label>
+        <div className="mt-5 flex justify-end gap-3">
+          <button onClick={onClose} disabled={busy}
+            className="rounded-lg border border-border-strong bg-surface px-4 py-2 text-sm font-semibold text-body hover:bg-surface-hover">
+            Cancel
+          </button>
+          <button onClick={() => onConfirm(mfaCode)} disabled={!ready || busy}
+            className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-60">
+            {busy ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />} Export
           </button>
         </div>
       </div>
@@ -67,6 +124,7 @@ export default function Ops() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
+  const [exportMfaOpen, setExportMfaOpen] = useState(false);
   const [target, setTarget] = useState(null);
   const [toast, setToast] = useState(null);
 
@@ -87,12 +145,15 @@ export default function Ops() {
     }
   }, [showToast]);
 
-  useEffect(() => { loadDeleted(); }, [loadDeleted]);
+  useEffect(() => {
+    const id = window.setTimeout(loadDeleted, 0);
+    return () => window.clearTimeout(id);
+  }, [loadDeleted]);
 
-  const exportCsv = async () => {
+  const exportCsv = async (mfaCode) => {
     setExporting(true);
     try {
-      const blob = await opsService.downloadTenantsCsv();
+      const blob = await opsService.downloadTenantsCsv(mfaCode);
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -101,6 +162,7 @@ export default function Ops() {
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
+      setExportMfaOpen(false);
       showToast("success", "Tenant registry exported");
     } catch (e) {
       showToast("error", e?.response?.data?.message || "Export failed");
@@ -126,7 +188,7 @@ export default function Ops() {
               <p className="text-xs text-muted">All tenants — code, name, status, plan, users, subscription dates — as CSV.</p>
             </div>
           </div>
-          <button onClick={exportCsv} disabled={exporting}
+          <button onClick={() => setExportMfaOpen(true)} disabled={exporting}
             className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-60">
             {exporting ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />} Download CSV
           </button>
@@ -176,6 +238,14 @@ export default function Ops() {
           onClose={() => setTarget(null)}
           onDeleted={(publicId) => { setTarget(null); setRows((r) => r.filter((x) => x.publicId !== publicId)); }}
           showToast={showToast}
+        />
+      )}
+
+      {exportMfaOpen && (
+        <StepUpModal
+          busy={exporting}
+          onClose={() => setExportMfaOpen(false)}
+          onConfirm={exportCsv}
         />
       )}
 

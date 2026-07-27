@@ -4,6 +4,7 @@ import {
   ChevronLeft, ChevronRight,
 } from "lucide-react";
 import { announcementService } from "../api/announcementService";
+import SuperAdminMfaActionModal from "../components/SuperAdminMfaActionModal";
 
 const inputCls =
   "w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-heading placeholder:text-muted focus:border-accent focus:outline-none focus:ring-2 focus:ring-focus";
@@ -35,6 +36,8 @@ export default function Announcements() {
   const [pagination, setPagination] = useState({});
   const [page, setPage] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [mfaOpen, setMfaOpen] = useState(false);
+  const [mfaError, setMfaError] = useState("");
   const [toast, setToast] = useState(null);
 
   const showToast = useCallback((type, msg) => {
@@ -60,17 +63,24 @@ export default function Announcements() {
   const setField = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const canSend = form.title.trim() && form.message.trim();
 
-  const send = async () => {
+  const requestSend = () => {
+    setMfaError("");
+    setConfirming(false);
+    setMfaOpen(true);
+  };
+
+  const send = async (mfaCode) => {
     setSending(true);
+    setMfaError("");
     try {
-      const res = await announcementService.send(form);
-      setConfirming(false);
+      const res = await announcementService.send(form, mfaCode);
+      setMfaOpen(false);
       showToast("success", `Sent to ${res.tenantCount} tenant(s) · ${res.recipientCount} user(s)`);
       setForm({ title: "", message: "", audience: "ALL", recipientScope: "ADMINS" });
       setPage(0);
       loadHistory();
     } catch (e) {
-      showToast("error", e?.response?.data?.message || "Send failed");
+      setMfaError(e?.response?.data?.message || "Send failed");
     } finally {
       setSending(false);
     }
@@ -210,7 +220,7 @@ export default function Announcements() {
                 className="rounded-lg border border-border-strong bg-surface px-4 py-2 text-sm font-semibold text-body hover:bg-surface-hover">
                 Cancel
               </button>
-              <button onClick={send} disabled={sending}
+              <button onClick={requestSend} disabled={sending}
                 className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-60">
                 {sending ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />} Send
               </button>
@@ -226,6 +236,18 @@ export default function Announcements() {
           {toast.type === "success" ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
           {toast.msg}
         </div>
+      )}
+
+      {mfaOpen && (
+        <SuperAdminMfaActionModal
+          title="Confirm announcement send"
+          description="Enter your authenticator code to send this announcement to tenants."
+          confirmLabel="Send"
+          saving={sending}
+          error={mfaError}
+          onClose={() => (sending ? undefined : setMfaOpen(false))}
+          onConfirm={send}
+        />
       )}
     </div>
   );

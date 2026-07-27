@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
-import { Navigate, Outlet, useNavigate } from "react-router-dom";
-import { KeyRound, LogOut, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { Navigate, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { KeyRound, Loader2, LogOut, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 
 import ConsoleThemeProvider from "./theme/ConsoleThemeProvider";
 import ThemeToggle from "./theme/ThemeToggle";
@@ -15,6 +15,8 @@ import {
   setConsoleSession,
 } from "./lib/consoleAuth";
 
+const CONSOLE_IDLE_TIMEOUT_MS = 15 * 60 * 1000;
+
 /**
  * Guarded console shell. Self-guards on the console token (→ /superadmin/login), confirms the
  * session against GET /api/super-admin/me, and renders the collapsible sidebar + header.
@@ -22,9 +24,16 @@ import {
  */
 export default function ConsoleLayout() {
   const nav = useNavigate();
+  const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
   const [me, setMe] = useState(getConsoleIdentity());
+  const [profileLoaded, setProfileLoaded] = useState(!isConsoleAuthed());
   const [changingPassword, setChangingPassword] = useState(false);
+
+  const logout = useCallback(() => {
+    clearConsoleSession();
+    nav("/superadmin/login", { replace: true });
+  }, [nav]);
 
   useEffect(() => {
     if (!isConsoleAuthed()) return;
@@ -32,21 +41,79 @@ export default function ConsoleLayout() {
       .then((res) => {
         const body = unwrap(res);
         if (body) {
-          setMe((prev) => ({ ...prev, name: body.name, email: body.email }));
+          setMe((prev) => ({
+            ...prev,
+            name: body.name,
+            email: body.email,
+            mfaEnabled: body.mfaEnabled,
+            mustChangePassword: body.mustChangePassword,
+            setupComplete: body.setupComplete,
+          }));
           setConsoleSession({ name: body.name, email: body.email });
         }
       })
       .catch(() => {
         /* 401 is handled by the interceptor (redirect); other errors keep cached identity */
-      });
+      })
+      .finally(() => setProfileLoaded(true));
   }, []);
+
+  useEffect(() => {
+    if (!profileLoaded || !isConsoleAuthed()) return;
+    const onSetupRoute = location.pathname === "/console/setup";
+    if (me?.setupComplete === false && !onSetupRoute) {
+      nav("/console/setup", { replace: true });
+    } else if (me?.setupComplete === true && onSetupRoute) {
+      nav("/console", { replace: true });
+    }
+  }, [location.pathname, me?.setupComplete, nav, profileLoaded]);
+
+  useEffect(() => {
+    if (!isConsoleAuthed()) return undefined;
+
+    let timer;
+    const resetTimer = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(logout, CONSOLE_IDLE_TIMEOUT_MS);
+    };
+    const events = ["click", "keydown", "mousemove", "scroll", "touchstart"];
+    events.forEach((event) => window.addEventListener(event, resetTimer, { passive: true }));
+    resetTimer();
+
+    return () => {
+      window.clearTimeout(timer);
+      events.forEach((event) => window.removeEventListener(event, resetTimer));
+    };
+  }, [logout]);
 
   if (!isConsoleAuthed()) return <Navigate to="/superadmin/login" replace />;
 
-  const logout = () => {
-    clearConsoleSession();
-    nav("/superadmin/login", { replace: true });
-  };
+  if (!profileLoaded) {
+    return (
+      <ConsoleThemeProvider>
+        <div className="flex min-h-screen items-center justify-center bg-page text-muted">
+          <Loader2 size={22} className="animate-spin" />
+        </div>
+      </ConsoleThemeProvider>
+    );
+  }
+
+  if (me?.setupComplete === false) {
+    const onSetupRoute = location.pathname === "/console/setup";
+    return (
+      <ConsoleThemeProvider>
+        <div className="min-h-screen bg-page">
+          <main className="mx-auto w-full max-w-screen-md p-4 sm:p-6">
+            {onSetupRoute ? <Outlet /> : (
+              <div className="flex min-h-[50vh] items-center justify-center text-muted">
+                <Loader2 size={22} className="animate-spin" />
+              </div>
+            )}
+          </main>
+        </div>
+      </ConsoleThemeProvider>
+    );
+  }
 
   return (
     <ConsoleThemeProvider>
@@ -96,7 +163,12 @@ export default function ConsoleLayout() {
         </div>
       </div>
 
-      {changingPassword && <ChangePasswordModal onClose={() => setChangingPassword(false)} />}
+      {changingPassword && (
+        <ChangePasswordModal
+          onClose={() => setChangingPassword(false)}
+          onChanged={logout}
+        />
+      )}
     </ConsoleThemeProvider>
   );
 }

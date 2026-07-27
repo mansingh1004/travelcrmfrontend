@@ -1,4 +1,9 @@
 import ConsoleAPI, { unwrap } from "./consoleHttp";
+import { SUPERADMIN_MFA_HEADER } from "./userService";
+
+const stepUpHeaders = (mfaCode) => ({
+  headers: { [SUPERADMIN_MFA_HEADER]: mfaCode },
+});
 
 /**
  * Platform plan-upgrade request review API. `list` takes an optional status filter (PENDING/APPROVED/
@@ -12,11 +17,11 @@ export const upgradeRequestService = {
   pendingCount: () =>
     ConsoleAPI.get("/super-admin/upgrade-requests/pending-count").then(unwrap),
 
-  approve: (publicId) =>
-    ConsoleAPI.post(`/super-admin/upgrade-requests/${publicId}/approve`).then(unwrap),
+  approve: (publicId, mfaCode) =>
+    ConsoleAPI.post(`/super-admin/upgrade-requests/${publicId}/approve`, null, stepUpHeaders(mfaCode)).then(unwrap),
 
-  reject: (publicId, reason) =>
-    ConsoleAPI.post(`/super-admin/upgrade-requests/${publicId}/reject`, { reason }).then(unwrap),
+  reject: (publicId, reason, mfaCode) =>
+    ConsoleAPI.post(`/super-admin/upgrade-requests/${publicId}/reject`, { reason }, stepUpHeaders(mfaCode)).then(unwrap),
 };
 
 export default upgradeRequestService;

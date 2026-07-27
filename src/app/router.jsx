@@ -99,8 +99,10 @@ const Calendar         = lazyPage(() => import("@features/calendar"), "Calendar"
 // ── Platform SuperAdmin Console — SEPARATE realm (own token "sa_token", violet/dark theme) ──
 const consoleFeature = () => import("@/console");
 const ConsoleLogin   = lazyPage(consoleFeature, "ConsoleLogin");
+const ConsoleInviteAccept = lazyPage(consoleFeature, "ConsoleInviteAccept");
 const ConsoleLayout  = lazyPage(consoleFeature, "ConsoleLayout");
 const ConsoleHome    = lazyPage(consoleFeature, "ConsoleHome");
+const ConsoleSetup   = lazyPage(consoleFeature, "ConsoleSetup");
 const ConsolePalette = lazyPage(consoleFeature, "ConsolePalette");
 const ConsoleTenants = lazyPage(consoleFeature, "ConsoleTenants");
 const ConsolePlans   = lazyPage(consoleFeature, "ConsolePlans");
@@ -112,6 +114,7 @@ const ConsoleGlobalConfig = lazyPage(consoleFeature, "ConsoleGlobalConfig");
 const ConsoleAuditLog = lazyPage(consoleFeature, "ConsoleAuditLog");
 const ConsoleAnnouncements = lazyPage(consoleFeature, "ConsoleAnnouncements");
 const ConsoleOps = lazyPage(consoleFeature, "ConsoleOps");
+const ConsoleSuperAdmins = lazyPage(consoleFeature, "ConsoleSuperAdmins");
 
 const portal = () => import("@features/portal");
 const PortalLogin         = lazyPage(portal, "PortalLogin");
@@ -219,9 +222,11 @@ const AppRouter = () => {
             ConsoleLayout self-guards (no sa_token → /superadmin/login).
             /console/login is the retired route, kept as a redirect for bookmarks. */}
         <Route path="/superadmin/login" element={<ConsoleLogin />} />
+        <Route path="/superadmin/invite" element={<ConsoleInviteAccept />} />
         <Route path="/console/login" element={<Navigate to="/superadmin/login" replace />} />
         <Route path="/console" element={<ConsoleLayout />}>
           <Route index element={<ConsoleHome />} />
+          <Route path="setup" element={<ConsoleSetup />} />
           <Route path="tenants" element={<ConsoleTenants />} />
           <Route path="plans" element={<ConsolePlans />} />
           <Route path="upgrade-requests" element={<ConsoleUpgradeRequests />} />
@@ -232,6 +237,7 @@ const AppRouter = () => {
           <Route path="audit" element={<ConsoleAuditLog />} />
           <Route path="announcements" element={<ConsoleAnnouncements />} />
           <Route path="ops" element={<ConsoleOps />} />
+          <Route path="superadmins" element={<ConsoleSuperAdmins />} />
           <Route path="palette" element={<ConsolePalette />} />
         </Route>
 

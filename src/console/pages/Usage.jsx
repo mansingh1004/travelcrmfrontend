@@ -4,6 +4,7 @@ import {
   Loader2, SlidersHorizontal, RotateCcw, X, Lock, Network,
 } from "lucide-react";
 import { usageService } from "../api/usageService";
+import SuperAdminMfaActionModal from "../components/SuperAdminMfaActionModal";
 
 // Full literal hue classes so Tailwind's scanner emits them (dynamic `bg-hue-${x}` would NOT be).
 const HUE = {
@@ -103,6 +104,8 @@ function OverrideModal({ tenant, onClose, onSaved }) {
   const [subAgents, setSubAgents] = useState(tenant.maxSubAgents ?? "");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [pendingPayload, setPendingPayload] = useState(null);
+  const [mfaError, setMfaError] = useState("");
 
   const submit = async () => {
     const payload = {};
@@ -114,25 +117,36 @@ function OverrideModal({ tenant, onClose, onSaved }) {
       setErr("Enter at least one limit, or use “Revert to plan”.");
       return;
     }
-    await run(payload);
+    requestRun(payload);
   };
 
-  const revert = () => run({ clearOverride: true });
+  const revert = () => requestRun({ clearOverride: true });
 
-  const run = async (payload) => {
+  const requestRun = (payload) => {
+    setErr("");
+    setMfaError("");
+    setPendingPayload(payload);
+  };
+
+  const run = async (mfaCode) => {
+    if (!pendingPayload) return;
     setBusy(true);
     setErr("");
+    setMfaError("");
     try {
-      await usageService.overrideQuota(tenant.tenantPublicId, payload);
+      await usageService.overrideQuota(tenant.tenantPublicId, pendingPayload, mfaCode);
       onSaved();
     } catch (e) {
-      setErr(e?.response?.data?.message || "Failed to update quota.");
+      setMfaError(e?.response?.data?.message || "Failed to update quota.");
       setBusy(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={busy ? undefined : onClose}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onClick={busy || pendingPayload ? undefined : onClose}
+    >
       <div
         className="w-full max-w-md rounded-2xl border border-border bg-surface p-5 shadow-[var(--sa-card-shadow)]"
         onClick={(e) => e.stopPropagation()}
@@ -185,6 +199,17 @@ function OverrideModal({ tenant, onClose, onSaved }) {
           </div>
         </div>
       </div>
+      {pendingPayload && (
+        <SuperAdminMfaActionModal
+          title="Confirm quota change"
+          description={`Enter your authenticator code to update quota limits for ${tenant.organizationName}.`}
+          confirmLabel="Save"
+          saving={busy}
+          error={mfaError}
+          onClose={() => (busy ? undefined : setPendingPayload(null))}
+          onConfirm={run}
+        />
+      )}
     </div>
   );
 }

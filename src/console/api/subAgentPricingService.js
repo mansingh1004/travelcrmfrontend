@@ -1,4 +1,9 @@
 import ConsoleAPI, { unwrap } from "./consoleHttp";
+import { SUPERADMIN_MFA_HEADER } from "./userService";
+
+const stepUpHeaders = (mfaCode) => ({
+  headers: { [SUPERADMIN_MFA_HEADER]: mfaCode },
+});
 
 /**
  * Platform-wide Travel Partner (sub-agent) seat pricing — the SAME amount across every tenant.
@@ -13,7 +18,8 @@ import ConsoleAPI, { unwrap } from "./consoleHttp";
  */
 export const subAgentPricingService = {
   get: () => ConsoleAPI.get("/super-admin/subagent-pricing").then(unwrap),
-  set: (payload) => ConsoleAPI.put("/super-admin/subagent-pricing", payload).then(unwrap),
+  set: (payload, mfaCode) =>
+    ConsoleAPI.put("/super-admin/subagent-pricing", payload, stepUpHeaders(mfaCode)).then(unwrap),
 };
 
 export default subAgentPricingService;

@@ -1,4 +1,9 @@
 import ConsoleAPI, { unwrap } from "./consoleHttp";
+import { SUPERADMIN_MFA_HEADER } from "./userService";
+
+const stepUpHeaders = (mfaCode) => ({
+  headers: { [SUPERADMIN_MFA_HEADER]: mfaCode },
+});
 
 /**
  * Platform sub-agent (Travel Partner) seat-license request review API — the seat add-on sibling of
@@ -15,11 +20,19 @@ export const subAgentLicenseService = {
   pendingCount: () =>
     ConsoleAPI.get("/super-admin/subagent-license-requests/pending-count").then(unwrap),
 
-  approve: (publicId) =>
-    ConsoleAPI.post(`/super-admin/subagent-license-requests/${publicId}/approve`).then(unwrap),
+  approve: (publicId, mfaCode) =>
+    ConsoleAPI.post(
+      `/super-admin/subagent-license-requests/${publicId}/approve`,
+      null,
+      stepUpHeaders(mfaCode)
+    ).then(unwrap),
 
-  reject: (publicId, reason) =>
-    ConsoleAPI.post(`/super-admin/subagent-license-requests/${publicId}/reject`, { reason }).then(unwrap),
+  reject: (publicId, reason, mfaCode) =>
+    ConsoleAPI.post(
+      `/super-admin/subagent-license-requests/${publicId}/reject`,
+      { reason },
+      stepUpHeaders(mfaCode)
+    ).then(unwrap),
 };
 
 export default subAgentLicenseService;

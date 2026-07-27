@@ -3,6 +3,7 @@ import { X, Loader2, Plus, CheckCircle2, RotateCcw, Receipt, Network } from "luc
 import { billingService } from "../api/billingService";
 import { planService } from "../api/planService";
 import { tenantService } from "../api/tenantService";
+import SuperAdminMfaActionModal from "./SuperAdminMfaActionModal";
 
 const inputCls =
   "w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-heading placeholder:text-muted focus:border-accent focus:outline-none focus:ring-2 focus:ring-focus";
@@ -43,6 +44,8 @@ export default function BillingDrawer({ tenant, onClose, onChanged, showToast })
   // null) so the backend folds in the current seat fee; a custom amount is taken verbatim (no seat fee).
   const [planPrice, setPlanPrice] = useState(null);
   const [customAmount, setCustomAmount] = useState(false);
+  const [mfaAction, setMfaAction] = useState(null);
+  const [mfaError, setMfaError] = useState("");
 
   // Sub-agent seat fee (per-tenant override vs platform default).
   const [seatInfo, setSeatInfo] = useState(null);
@@ -92,58 +95,114 @@ export default function BillingDrawer({ tenant, onClose, onChanged, showToast })
   useEffect(() => { loadSeatFee(); }, [loadSeatFee]);
 
   const saveSeatFee = async () => {
-    setSeatSaving(true);
-    try {
-      const monthlySeatFee = seatInput.trim() === "" ? null : Number(seatInput);
-      const info = await tenantService.setSeatFee(tenant.publicId, { monthlySeatFee });
-      setSeatInfo(info);
-      setSeatInput(info?.overrideRate != null ? String(info.overrideRate) : "");
-      showToast("success", monthlySeatFee == null ? "Reverted to platform default" : "Seat fee updated");
-      onChanged?.();
-    } catch (e2) {
-      showToast("error", e2?.response?.data?.message || "Could not update seat fee");
-    } finally {
-      setSeatSaving(false);
+    const monthlySeatFee = seatInput.trim() === "" ? null : Number(seatInput);
+    if (monthlySeatFee != null && (Number.isNaN(monthlySeatFee) || monthlySeatFee < 0)) {
+      showToast("error", "Enter a valid seat fee.");
+      return;
     }
+    setMfaError("");
+    setMfaAction({ type: "seatFee", monthlySeatFee });
   };
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
   const issue = async (e) => {
     e.preventDefault();
-    setSaving(true);
-    try {
-      await billingService.create(tenant.publicId, {
-        // Plan-derived (null) → backend charges plan price + sub-agent seat fee. A custom amount is
+    const amount = customAmount ? (form.amount === "" ? null : Number(form.amount)) : null;
+    if (customAmount && amount != null && (Number.isNaN(amount) || amount < 0)) {
+      showToast("error", "Enter a valid invoice amount.");
+      return;
+    }
+    setMfaError("");
+    setMfaAction({
+      type: "issueInvoice",
+      payload: {
+        // Plan-derived (null) -> backend charges plan price + sub-agent seat fee. A custom amount is
         // billed verbatim (seat fee NOT auto-added), matching BillingServiceImpl.create.
-        amount: customAmount ? (form.amount === "" ? null : Number(form.amount)) : null,
+        amount,
         currency: form.currency || null,
         dueDate: form.dueDate || null,
         notes: form.notes || null,
-      });
-      showToast("success", "Invoice issued");
-      setShowForm(false);
-      await load();
-      onChanged?.();
-    } catch (e2) {
-      showToast("error", e2?.response?.data?.message || "Could not issue invoice");
-    } finally {
-      setSaving(false);
-    }
+      },
+    });
   };
 
   const setPaid = async (r, paid) => {
-    setBusyId(r.publicId);
+    setMfaError("");
+    setMfaAction({ type: paid ? "markPaid" : "markUnpaid", record: r });
+  };
+
+  const confirmMfaAction = async (mfaCode) => {
+    if (!mfaAction) return;
+    const action = mfaAction;
+    setMfaError("");
+
+    if (action.type === "seatFee") setSeatSaving(true);
+    else if (action.type === "issueInvoice") setSaving(true);
+    else setBusyId(action.record.publicId);
+
     try {
-      await (paid ? billingService.markPaid(r.publicId) : billingService.markUnpaid(r.publicId));
-      showToast("success", paid ? "Marked paid" : "Marked unpaid");
-      await load();
-      onChanged?.();
-    } catch {
-      showToast("error", "Update failed");
+      if (action.type === "seatFee") {
+        const info = await tenantService.setSeatFee(tenant.publicId, { monthlySeatFee: action.monthlySeatFee }, mfaCode);
+        setSeatInfo(info);
+        setSeatInput(info?.overrideRate != null ? String(info.overrideRate) : "");
+        showToast("success", action.monthlySeatFee == null ? "Reverted to platform default" : "Seat fee updated");
+        onChanged?.();
+      } else if (action.type === "issueInvoice") {
+        await billingService.create(tenant.publicId, action.payload, mfaCode);
+        showToast("success", "Invoice issued");
+        setShowForm(false);
+        await load();
+        onChanged?.();
+      } else {
+        const paid = action.type === "markPaid";
+        await (paid
+          ? billingService.markPaid(action.record.publicId, mfaCode)
+          : billingService.markUnpaid(action.record.publicId, mfaCode));
+        showToast("success", paid ? "Marked paid" : "Marked unpaid");
+        await load();
+        onChanged?.();
+      }
+      setMfaAction(null);
+    } catch (e2) {
+      const msg = e2?.response?.data?.message || "Authenticator verification failed.";
+      setMfaError(msg);
+      showToast("error", msg);
     } finally {
       setBusyId(null);
+      setSaving(false);
+      setSeatSaving(false);
     }
+  };
+
+  const actionCopy = () => {
+    if (!mfaAction) return {};
+    if (mfaAction.type === "seatFee") {
+      return {
+        title: "Confirm seat-fee change",
+        description: `Verify before changing billing seat pricing for ${tenant.organizationName}.`,
+        confirmLabel: "Save fee",
+      };
+    }
+    if (mfaAction.type === "issueInvoice") {
+      return {
+        title: "Confirm invoice issue",
+        description: `Verify before issuing a billing invoice for ${tenant.organizationName}.`,
+        confirmLabel: "Issue invoice",
+      };
+    }
+    return {
+      title: mfaAction.type === "markPaid" ? "Confirm mark paid" : "Confirm mark unpaid",
+      description: `Verify before updating invoice ${mfaAction.record?.invoiceNumber || ""}.`,
+      confirmLabel: mfaAction.type === "markPaid" ? "Mark paid" : "Mark unpaid",
+    };
+  };
+
+  const actionSaving = () => {
+    if (!mfaAction) return false;
+    if (mfaAction.type === "seatFee") return seatSaving;
+    if (mfaAction.type === "issueInvoice") return saving;
+    return busyId === mfaAction.record?.publicId;
   };
 
   const seatTotal = Number(seatInfo?.monthlyTotal || 0);
@@ -333,6 +392,15 @@ export default function BillingDrawer({ tenant, onClose, onChanged, showToast })
             </div>
           )}
         </div>
+        {mfaAction && (
+          <SuperAdminMfaActionModal
+            {...actionCopy()}
+            saving={actionSaving()}
+            error={mfaError}
+            onClose={actionSaving() ? undefined : () => setMfaAction(null)}
+            onConfirm={confirmMfaAction}
+          />
+        )}
       </div>
     </div>
   );

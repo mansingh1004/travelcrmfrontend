@@ -1,38 +1,53 @@
 // Platform console session storage.
 //
-// Uses DISTINCT localStorage keys ("sa_*") from the tenant app ("token" / "userRole"),
-// mirroring the traveler portal's separate-key design. This guarantees a SuperAdmin console
-// session and a tenant session can coexist in the same browser without clobbering each other,
-// and that clearing one never logs the other out.
+// SuperAdmin tokens are deliberately tab-scoped: sessionStorage survives reloads in
+// the current tab, but not browser restarts and not new tabs. Old localStorage keys
+// are cleared on read/write as a one-time migration from the previous implementation.
 
 const TOKEN_KEY = "sa_token";
 const NAME_KEY = "sa_name";
 const EMAIL_KEY = "sa_email";
 const ROLE_KEY = "sa_role";
+const KEYS = [TOKEN_KEY, NAME_KEY, EMAIL_KEY, ROLE_KEY];
+
+function read(key) {
+  const current = sessionStorage.getItem(key);
+  const legacy = localStorage.getItem(key);
+  if (legacy) localStorage.removeItem(key);
+  return current || legacy;
+}
+
+function write(key, value) {
+  if (value) sessionStorage.setItem(key, value);
+  localStorage.removeItem(key);
+}
 
 export function getConsoleToken() {
-  return localStorage.getItem(TOKEN_KEY);
+  return read(TOKEN_KEY);
 }
 
 export function isConsoleAuthed() {
-  return !!localStorage.getItem(TOKEN_KEY);
+  return !!getConsoleToken();
 }
 
 export function setConsoleSession({ token, name, email, role } = {}) {
-  if (token) localStorage.setItem(TOKEN_KEY, token);
-  if (name) localStorage.setItem(NAME_KEY, name);
-  if (email) localStorage.setItem(EMAIL_KEY, email);
-  if (role) localStorage.setItem(ROLE_KEY, role);
+  write(TOKEN_KEY, token);
+  write(NAME_KEY, name);
+  write(EMAIL_KEY, email);
+  write(ROLE_KEY, role);
 }
 
 export function getConsoleIdentity() {
   return {
-    name: localStorage.getItem(NAME_KEY) || "Super Admin",
-    email: localStorage.getItem(EMAIL_KEY) || "",
-    role: localStorage.getItem(ROLE_KEY) || "SUPER_ADMIN",
+    name: read(NAME_KEY) || "Super Admin",
+    email: read(EMAIL_KEY) || "",
+    role: read(ROLE_KEY) || "SUPER_ADMIN",
   };
 }
 
 export function clearConsoleSession() {
-  [TOKEN_KEY, NAME_KEY, EMAIL_KEY, ROLE_KEY].forEach((k) => localStorage.removeItem(k));
+  KEYS.forEach((key) => {
+    sessionStorage.removeItem(key);
+    localStorage.removeItem(key);
+  });
 }

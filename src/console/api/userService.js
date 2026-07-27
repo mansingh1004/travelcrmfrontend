@@ -1,5 +1,11 @@
 import ConsoleAPI, { unwrap } from "./consoleHttp";
 
+export const SUPERADMIN_MFA_HEADER = "X-SuperAdmin-Mfa-Code";
+
+const mfaHeaders = (mfaCode) => ({
+  headers: { [SUPERADMIN_MFA_HEADER]: mfaCode },
+});
+
 /**
  * Cross-tenant user control (SuperAdmin). `list` returns the paged envelope split into
  * `{ rows, pagination }`; the mutations return the unwrapped updated user.
@@ -14,11 +20,21 @@ export const userService = {
     return { rows: body.data ?? [], pagination: body.pagination ?? {} };
   },
 
-  lock: (publicId) => ConsoleAPI.post(`/super-admin/users/${publicId}/lock`).then(unwrap),
-  unlock: (publicId) => ConsoleAPI.post(`/super-admin/users/${publicId}/unlock`).then(unwrap),
-  resetPassword: (publicId, newPassword) =>
-    ConsoleAPI.post(`/super-admin/users/${publicId}/reset-password`, { newPassword }).then(unwrap),
+  lock: (publicId, mfaCode) =>
+    ConsoleAPI.post(`/super-admin/users/${publicId}/lock`, null, mfaHeaders(mfaCode)).then(unwrap),
+  unlock: (publicId, mfaCode) =>
+    ConsoleAPI.post(`/super-admin/users/${publicId}/unlock`, null, mfaHeaders(mfaCode)).then(unwrap),
+  resetPassword: (publicId, newPassword, mfaCode) =>
+    ConsoleAPI.post(
+      `/super-admin/users/${publicId}/reset-password`,
+      { newPassword },
+      mfaHeaders(mfaCode)
+    ).then(unwrap),
 
-  impersonate: (publicId) =>
-    ConsoleAPI.post(`/super-admin/users/${publicId}/impersonate`).then(unwrap),
+  impersonate: (publicId, mfaCode) =>
+    ConsoleAPI.post(
+      `/super-admin/users/${publicId}/impersonate`,
+      null,
+      mfaHeaders(mfaCode)
+    ).then(unwrap),
 };

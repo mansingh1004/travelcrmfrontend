@@ -6,8 +6,10 @@ const COLOR_KEYS=["primaryColor","secondaryColor","accentColor","sidebarBg","hea
 const label=(s)=>s.replace(/([A-Z])/g," $1").replace(/^./,c=>c.toUpperCase());
 
 export default function Themes(){
-  const [tenantId,setTenantId]=useState(""); const [sourceId,setSourceId]=useState("");
-  const [data,setData]=useState(null); const [busy,setBusy]=useState(false); const [error,setError]=useState("");
+  const [tenantId,setTenantId]=useState("");
+  const [sourceId,setSourceId]=useState("");
+  const [data,setData]=useState(null); 
+  const [busy,setBusy]=useState(false); const [error,setError]=useState("");
   const importInput=useRef(null);
   const run=async(fn)=>{setBusy(true);setError("");try{setData(await fn());}catch(e){setError(e.response?.data?.message||"Theme operation failed");}finally{setBusy(false);}};
   const change=(key,value)=>setData(d=>({...d,values:{...d.values,[key]:value}}));

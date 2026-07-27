@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import { planService, ALL_MODULES } from "../api/planService";
 import { subAgentPricingService } from "../api/subAgentPricingService";
+import SuperAdminMfaActionModal from "../components/SuperAdminMfaActionModal";
 
 const inputCls =
   "w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-heading placeholder:text-muted focus:border-accent focus:outline-none focus:ring-2 focus:ring-focus";
@@ -40,6 +41,8 @@ function PlanEditDrawer({ plan, onClose, onSaved, showToast }) {
     active: plan.active ?? true,
   }));
   const [saving, setSaving] = useState(false);
+  const [pendingPayload, setPendingPayload] = useState(null);
+  const [mfaError, setMfaError] = useState("");
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const toggleModule = (m) =>
     setForm((f) => {
@@ -50,24 +53,33 @@ function PlanEditDrawer({ plan, onClose, onSaved, showToast }) {
 
   const submit = async (e) => {
     e.preventDefault();
+    setMfaError("");
+    setPendingPayload({
+      displayName: form.displayName,
+      monthlyPrice: Number(form.monthlyPrice),
+      currency: form.currency,
+      maxUsers: form.maxUsers === "" ? null : Number(form.maxUsers),
+      maxLeads: form.maxLeads === "" ? null : Number(form.maxLeads),
+      maxBookingsPerMonth: form.maxBookingsPerMonth === "" ? null : Number(form.maxBookingsPerMonth),
+      maxStorageMb: form.maxStorageMb === "" ? null : Number(form.maxStorageMb),
+      maxSubAgents: form.maxSubAgents === "" ? null : Number(form.maxSubAgents),
+      modules: Array.from(form.modules),
+      active: form.active,
+    });
+  };
+
+  const confirmSave = async (mfaCode) => {
+    if (!pendingPayload) return;
     setSaving(true);
     try {
-      await planService.update(plan.publicId, {
-        displayName: form.displayName,
-        monthlyPrice: Number(form.monthlyPrice),
-        currency: form.currency,
-        maxUsers: form.maxUsers === "" ? null : Number(form.maxUsers),
-        maxLeads: form.maxLeads === "" ? null : Number(form.maxLeads),
-        maxBookingsPerMonth: form.maxBookingsPerMonth === "" ? null : Number(form.maxBookingsPerMonth),
-        maxStorageMb: form.maxStorageMb === "" ? null : Number(form.maxStorageMb),
-        maxSubAgents: form.maxSubAgents === "" ? null : Number(form.maxSubAgents),
-        modules: Array.from(form.modules),
-        active: form.active,
-      });
+      await planService.update(plan.publicId, pendingPayload, mfaCode);
       showToast("success", "Plan updated");
+      setPendingPayload(null);
       onSaved();
     } catch (e2) {
-      showToast("error", e2?.response?.data?.message || "Save failed");
+      const msg = e2?.response?.data?.message || "Save failed";
+      setMfaError(msg);
+      showToast("error", msg);
     } finally {
       setSaving(false);
     }
@@ -167,6 +179,17 @@ function PlanEditDrawer({ plan, onClose, onSaved, showToast }) {
             </button>
           </div>
         </form>
+        {pendingPayload && (
+          <SuperAdminMfaActionModal
+            title="Confirm plan change"
+            description={`Verify before changing limits, modules, or pricing for ${plan.code}.`}
+            confirmLabel="Save plan"
+            saving={saving}
+            error={mfaError}
+            onClose={saving ? undefined : () => setPendingPayload(null)}
+            onConfirm={confirmSave}
+          />
+        )}
       </div>
     </div>
   );
@@ -179,6 +202,8 @@ function SeatPricingCard({ showToast }) {
   const [saving, setSaving] = useState(false);
   const [recurring, setRecurring] = useState("");
   const [oneTime, setOneTime] = useState("");   // "" = fall back to recurring
+  const [pendingPayload, setPendingPayload] = useState(null);
+  const [mfaError, setMfaError] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -201,15 +226,24 @@ function SeatPricingCard({ showToast }) {
     if (recurring === "" || isNaN(rec) || rec < 0) { showToast("error", "Enter a valid recurring seat fee (0 or more)."); return; }
     const one = oneTime.trim() === "" ? null : Number(oneTime);
     if (one != null && (isNaN(one) || one < 0)) { showToast("error", "One-time fee must be 0 or more (or blank)."); return; }
+    setMfaError("");
+    setPendingPayload({ recurringSeatFee: rec, oneTimeLicenseFee: one });
+  };
+
+  const confirmSave = async (mfaCode) => {
+    if (!pendingPayload) return;
     setSaving(true);
     try {
-      const d = await subAgentPricingService.set({ recurringSeatFee: rec, oneTimeLicenseFee: one });
+      const d = await subAgentPricingService.set(pendingPayload, mfaCode);
       setData(d);
       setRecurring(d?.recurringSeatFee != null ? String(d.recurringSeatFee) : "");
       setOneTime(d?.oneTimeLicenseFee != null ? String(d.oneTimeLicenseFee) : "");
-      showToast("success", "Travel Partner seat pricing saved — applies to all tenants.");
+      setPendingPayload(null);
+      showToast("success", "Travel Partner seat pricing saved - applies to all tenants.");
     } catch (e2) {
-      showToast("error", e2?.response?.data?.message || "Couldn't save pricing.");
+      const msg = e2?.response?.data?.message || "Couldn't save pricing.";
+      setMfaError(msg);
+      showToast("error", msg);
     } finally {
       setSaving(false);
     }
@@ -270,6 +304,17 @@ function SeatPricingCard({ showToast }) {
           </div>
         </form>
       )}
+      {pendingPayload && (
+        <SuperAdminMfaActionModal
+          title="Confirm platform seat pricing"
+          description="Verify before changing the Travel Partner seat pricing applied across tenants."
+          confirmLabel="Save pricing"
+          saving={saving}
+          error={mfaError}
+          onClose={saving ? undefined : () => setPendingPayload(null)}
+          onConfirm={confirmSave}
+        />
+      )}
     </div>
   );
 }
@@ -280,6 +325,8 @@ export default function Plans() {
   const [editing, setEditing] = useState(null);
   const [expiring, setExpiring] = useState(false);
   const [dunning, setDunning] = useState(false);
+  const [mfaAction, setMfaAction] = useState(null);
+  const [mfaError, setMfaError] = useState("");
   const [toast, setToast] = useState(null);
 
   const showToast = useCallback((type, msg) => {
@@ -301,28 +348,41 @@ export default function Plans() {
   useEffect(() => { load(); }, [load]);
 
   const runExpiry = async () => {
-    setExpiring(true);
-    try {
-      const r = await planService.runExpiry();
-      showToast("success", `Expiry sweep complete — ${r?.expired ?? 0} tenant(s) expired`);
-    } catch {
-      showToast("error", "Expiry sweep failed");
-    } finally {
-      setExpiring(false);
-    }
+    setMfaError("");
+    setMfaAction({ type: "expiry" });
   };
 
   const runDunning = async () => {
-    setDunning(true);
+    setMfaError("");
+    setMfaAction({ type: "dunning" });
+  };
+
+  const confirmMfaAction = async (mfaCode) => {
+    if (!mfaAction) return;
+    const action = mfaAction;
+    if (action.type === "expiry") setExpiring(true);
+    else setDunning(true);
+    setMfaError("");
     try {
-      const r = await planService.runDunning();
-      showToast("success", `Dunning sweep complete — ${r?.changed ?? 0} tenant(s) updated`);
-    } catch {
-      showToast("error", "Dunning sweep failed");
+      if (action.type === "expiry") {
+        const r = await planService.runExpiry(mfaCode);
+        showToast("success", `Expiry sweep complete - ${r?.expired ?? 0} tenant(s) expired`);
+      } else {
+        const r = await planService.runDunning(mfaCode);
+        showToast("success", `Dunning sweep complete - ${r?.changed ?? 0} tenant(s) updated`);
+      }
+      setMfaAction(null);
+    } catch (e) {
+      const msg = e?.response?.data?.message || (action.type === "expiry" ? "Expiry sweep failed" : "Dunning sweep failed");
+      setMfaError(msg);
+      showToast("error", msg);
     } finally {
+      setExpiring(false);
       setDunning(false);
     }
   };
+
+  const sweepSaving = mfaAction?.type === "expiry" ? expiring : dunning;
 
   return (
     <div className="space-y-5">
@@ -413,6 +473,22 @@ export default function Plans() {
       {editing && (
         <PlanEditDrawer plan={editing} onClose={() => setEditing(null)}
           onSaved={() => { setEditing(null); load(); }} showToast={showToast} />
+      )}
+
+      {mfaAction && (
+        <SuperAdminMfaActionModal
+          title={mfaAction.type === "expiry" ? "Confirm expiry sweep" : "Confirm dunning sweep"}
+          description={
+            mfaAction.type === "expiry"
+              ? "Verify before expiring tenants whose subscription period has ended."
+              : "Verify before updating overdue tenants into dunning states."
+          }
+          confirmLabel={mfaAction.type === "expiry" ? "Run expiry" : "Run dunning"}
+          saving={sweepSaving}
+          error={mfaError}
+          onClose={sweepSaving ? undefined : () => setMfaAction(null)}
+          onConfirm={confirmMfaAction}
+        />
       )}
 
       {toast && (

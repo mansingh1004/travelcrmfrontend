@@ -6,6 +6,7 @@ import {
 import { tenantService } from "../api/tenantService";
 import { featureFlagService } from "../api/featureFlagService";
 import StatusPill from "../components/StatusPill";
+import SuperAdminMfaActionModal from "../components/SuperAdminMfaActionModal";
 
 const inputCls =
   "w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-heading placeholder:text-muted focus:border-accent focus:outline-none focus:ring-2 focus:ring-focus";
@@ -16,6 +17,8 @@ function ModulesModal({ tenant, onClose, showToast }) {
   const [planModules, setPlanModules] = useState(new Set());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [mfaError, setMfaError] = useState("");
 
   useEffect(() => {
     featureFlagService.getModules(tenant.publicId)
@@ -35,14 +38,20 @@ function ModulesModal({ tenant, onClose, showToast }) {
       return next;
     });
 
-  const save = async () => {
+  const save = () => {
+    setMfaError("");
+    setConfirming(true);
+  };
+
+  const confirmSave = async (mfaCode) => {
     setSaving(true);
+    setMfaError("");
     try {
-      await featureFlagService.updateModules(tenant.publicId, Array.from(enabled));
+      await featureFlagService.updateModules(tenant.publicId, Array.from(enabled), mfaCode);
       showToast("success", "Modules updated");
       onClose();
     } catch (e) {
-      showToast("error", e?.response?.data?.message || "Save failed");
+      setMfaError(e?.response?.data?.message || "Save failed");
     } finally {
       setSaving(false);
     }
@@ -110,6 +119,17 @@ function ModulesModal({ tenant, onClose, showToast }) {
           </>
         )}
       </div>
+      {confirming && (
+        <SuperAdminMfaActionModal
+          title="Confirm feature flag change"
+          description={`Enter your authenticator code to update modules for ${tenant.organizationName}.`}
+          confirmLabel="Save"
+          saving={saving}
+          error={mfaError}
+          onClose={() => (saving ? undefined : setConfirming(false))}
+          onConfirm={confirmSave}
+        />
+      )}
     </div>
   );
 }

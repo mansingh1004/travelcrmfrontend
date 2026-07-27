@@ -3,6 +3,7 @@ import {
   Loader2, AlertTriangle, CheckCircle2, ShieldAlert, Save, Settings2, Power,
 } from "lucide-react";
 import { configService } from "../api/configService";
+import SuperAdminMfaActionModal from "../components/SuperAdminMfaActionModal";
 
 const inputCls =
   "w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-heading placeholder:text-muted focus:border-accent focus:outline-none focus:ring-2 focus:ring-focus";
@@ -15,6 +16,8 @@ export default function GlobalConfig() {
   const [savingMaint, setSavingMaint] = useState(false);
   const [edits, setEdits] = useState({});
   const [savingKey, setSavingKey] = useState(null);
+  const [mfaAction, setMfaAction] = useState(null);
+  const [mfaError, setMfaError] = useState("");
   const [toast, setToast] = useState(null);
 
   const showToast = useCallback((type, msg) => {
@@ -38,34 +41,69 @@ export default function GlobalConfig() {
 
   useEffect(() => { load(); }, [load]);
 
-  const saveMaintenance = async (nextEnabled) => {
-    setSavingMaint(true);
-    try {
-      const res = await configService.setMaintenance(nextEnabled, message);
-      setEnabled(!!res.enabled);
-      setMessage(res.message || "");
-      showToast("success", nextEnabled ? "Maintenance mode ENABLED" : "Maintenance mode disabled");
-      load();
-    } catch (e) {
-      showToast("error", e?.response?.data?.message || "Save failed");
-    } finally {
-      setSavingMaint(false);
-    }
+  const saveMaintenance = (nextEnabled) => {
+    setMfaError("");
+    setMfaAction({ type: "maintenance", nextEnabled });
   };
 
-  const saveConfigRow = async (key) => {
-    setSavingKey(key);
+  const saveConfigRow = (key) => {
+    setMfaError("");
+    setMfaAction({ type: "config", key });
+  };
+
+  const confirmMfaAction = async (mfaCode) => {
+    const action = mfaAction;
+    if (!action) return;
+    setMfaError("");
+
+    if (action.type === "maintenance") {
+      setSavingMaint(true);
+      try {
+        const res = await configService.setMaintenance(action.nextEnabled, message, mfaCode);
+        setEnabled(!!res.enabled);
+        setMessage(res.message || "");
+        showToast("success", action.nextEnabled ? "Maintenance mode ENABLED" : "Maintenance mode disabled");
+        setMfaAction(null);
+        load();
+      } catch (e) {
+        setMfaError(e?.response?.data?.message || "Save failed");
+      } finally {
+        setSavingMaint(false);
+      }
+      return;
+    }
+
+    setSavingKey(action.key);
     try {
-      await configService.setConfig(key, edits[key]);
-      showToast("success", `Saved ${key}`);
-      setEdits((e) => { const n = { ...e }; delete n[key]; return n; });
+      await configService.setConfig(action.key, edits[action.key], undefined, mfaCode);
+      showToast("success", `Saved ${action.key}`);
+      setEdits((e) => { const n = { ...e }; delete n[action.key]; return n; });
+      setMfaAction(null);
       load();
     } catch (e) {
-      showToast("error", e?.response?.data?.message || "Save failed");
+      setMfaError(e?.response?.data?.message || "Save failed");
     } finally {
       setSavingKey(null);
     }
   };
+
+  const actionCopy = () => {
+    if (mfaAction?.type === "maintenance") {
+      return {
+        title: "Confirm maintenance change",
+        description: "Enter your authenticator code to update maintenance mode.",
+        confirmLabel: "Save",
+      };
+    }
+    return {
+      title: "Confirm config change",
+      description: `Enter your authenticator code to update ${mfaAction?.key || "this setting"}.`,
+      confirmLabel: "Save",
+    };
+  };
+
+  const copy = actionCopy();
+  const actionSaving = mfaAction?.type === "maintenance" ? savingMaint : savingKey === mfaAction?.key;
 
   return (
     <div className="space-y-6">
@@ -201,6 +239,18 @@ export default function GlobalConfig() {
           {toast.type === "success" ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
           {toast.msg}
         </div>
+      )}
+
+      {mfaAction && (
+        <SuperAdminMfaActionModal
+          title={copy.title}
+          description={copy.description}
+          confirmLabel={copy.confirmLabel}
+          saving={actionSaving}
+          error={mfaError}
+          onClose={() => (actionSaving ? undefined : setMfaAction(null))}
+          onConfirm={confirmMfaAction}
+        />
       )}
     </div>
   );

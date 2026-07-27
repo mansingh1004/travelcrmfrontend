@@ -1,13 +1,20 @@
 import ConsoleAPI, { unwrap } from "./consoleHttp";
+import { SUPERADMIN_MFA_HEADER } from "./userService";
+
+const stepUpHeaders = (mfaCode) => ({
+  headers: { [SUPERADMIN_MFA_HEADER]: mfaCode },
+});
 
 /** Platform plan catalogue + subscription ops. */
 export const planService = {
   list: () => ConsoleAPI.get("/super-admin/plans").then(unwrap),
-  update: (publicId, payload) =>
-    ConsoleAPI.put(`/super-admin/plans/${publicId}`, payload).then(unwrap),
-  runExpiry: () => ConsoleAPI.post("/super-admin/subscriptions/run-expiry").then(unwrap),
+  update: (publicId, payload, mfaCode) =>
+    ConsoleAPI.put(`/super-admin/plans/${publicId}`, payload, stepUpHeaders(mfaCode)).then(unwrap),
+  runExpiry: (mfaCode) =>
+    ConsoleAPI.post("/super-admin/subscriptions/run-expiry", null, stepUpHeaders(mfaCode)).then(unwrap),
   // Invoice-dunning sweep: ACTIVE→PAST_DUE (overdue) and PAST_DUE→EXPIRED (past grace).
-  runDunning: () => ConsoleAPI.post("/super-admin/subscriptions/run-dunning").then(unwrap),
+  runDunning: (mfaCode) =>
+    ConsoleAPI.post("/super-admin/subscriptions/run-dunning", null, stepUpHeaders(mfaCode)).then(unwrap),
 };
 
 /** Canonical module keys a plan can unlock (display/edit only this phase; enforced in Feature Flags). */

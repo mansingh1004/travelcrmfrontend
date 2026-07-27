@@ -1809,7 +1809,7 @@ import { formatToWhatsAppLink } from "../lib/whatsapp";
 import WhatsAppPanel from "./WhatsAppPanel";
 import {
   Users, Trophy, PieChart, TrendingUp, Search,
-  DownloadCloud, FileText, Plus,
+  DownloadCloud, FileText, Plus, Upload,
   Inbox, User, Calendar, ChevronDown, ChevronRight,
   Eye, Pencil, Trash2, X, Mail, Phone, MapPin, Briefcase, CheckCircle, Copy, BarChart3, ArrowRightLeft, MessageCircle, NotebookPen, Bell, AlertCircle, DollarSign, Sparkles
 } from 'lucide-react';
@@ -3467,16 +3467,19 @@ const Leads = () => {
               </div>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
-              <button onClick={fetchLeads} className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 hover:border-blue-300 bg-white hover:bg-blue-50 text-slate-600 hover:text-blue-600 text-sm font-bold transition-all shadow-sm">
-                <DownloadCloud size={15} /> Refresh Data
-              </button>
               <Link to="/AllLeadLogs" className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 hover:border-blue-300 bg-white hover:bg-blue-50 text-slate-600 hover:text-blue-600 text-sm font-bold transition-all shadow-sm">
                 <FileText size={15} /> Logs
               </Link>
               {hasPermission(P.LEAD_CREATE) && (
-                <Link to="/CreateLead" className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold shadow-md shadow-blue-200 hover:shadow-lg transition-all">
-                  <Plus size={16} strokeWidth={2.5} /> Create Lead
-                </Link>
+                <>
+                  <label className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 hover:border-blue-300 bg-white hover:bg-blue-50 text-slate-600 hover:text-blue-600 text-sm font-bold transition-all shadow-sm cursor-pointer">
+                    <Upload size={15} /> Import
+                    <input type="file" accept=".csv,.xls,.xlsx,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="hidden" />
+                  </label>
+                  <Link to="/CreateLead" className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold shadow-md shadow-blue-200 hover:shadow-lg transition-all">
+                    <Plus size={16} strokeWidth={2.5} /> Create Lead
+                  </Link>
+                </>
               )}
             </div>
           </div>

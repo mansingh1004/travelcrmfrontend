@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import StatusPill from "../components/StatusPill";
 import BillingDrawer from "../components/BillingDrawer";
+import SuperAdminMfaActionModal from "../components/SuperAdminMfaActionModal";
 import { tenantService } from "../api/tenantService";
 import { planService } from "../api/planService";
 
@@ -241,7 +242,12 @@ function TenantDrawer({ mode, tenant, onClose, onSaved, showToast }) {
 
 // ── Confirm dialog ──────────────────────────────────────────────────────────
 function ConfirmModal({ state, busy, onClose }) {
+  const [mfaCode, setMfaCode] = useState("");
+
   if (!state) return null;
+
+  const mfaReady = !state.requireMfa || /^\d{6}$/.test(mfaCode);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-950/50" onClick={busy ? undefined : onClose} />
@@ -255,12 +261,28 @@ function ConfirmModal({ state, busy, onClose }) {
             <p className="mt-1 text-sm text-body">{state.message}</p>
           </div>
         </div>
+        {state.requireMfa && (
+          <label className="mt-4 block text-xs font-semibold text-body">
+            Authenticator code
+            <input
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              value={mfaCode}
+              onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              placeholder="000000"
+              className={`${inputCls} mt-1 font-mono tracking-[0.24em]`}
+              autoFocus
+              required
+            />
+          </label>
+        )}
         <div className="mt-5 flex justify-end gap-3">
           <button onClick={onClose} disabled={busy}
             className="rounded-lg border border-border-strong bg-surface px-4 py-2 text-sm font-semibold text-body hover:bg-surface-hover">
             Cancel
           </button>
-          <button onClick={state.onConfirm} disabled={busy}
+          <button onClick={() => state.onConfirm(mfaCode)} disabled={busy || !mfaReady}
             className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 ${
               state.danger ? "bg-red-600 hover:bg-red-700 dark:hover:bg-red-500" : "bg-accent hover:bg-accent-hover"
             }`}>
@@ -278,19 +300,28 @@ function ChangePlanModal({ tenant, onClose, onDone, showToast }) {
   const [plans, setPlans] = useState([]);
   const [selected, setSelected] = useState(tenant.plan);
   const [saving, setSaving] = useState(false);
+  const [mfaOpen, setMfaOpen] = useState(false);
+  const [mfaError, setMfaError] = useState("");
 
   useEffect(() => {
     planService.list().then((p) => setPlans(p || [])).catch(() => setPlans([]));
   }, []);
 
   const confirm = async () => {
+    setMfaError("");
+    setMfaOpen(true);
+  };
+
+  const confirmChange = async (mfaCode) => {
     setSaving(true);
     try {
-      await tenantService.changePlan(tenant.publicId, selected);
+      await tenantService.changePlan(tenant.publicId, selected, mfaCode);
       showToast("success", `Plan changed to ${selected}`);
       onDone();
     } catch (e) {
-      showToast("error", e?.response?.data?.message || "Plan change failed");
+      const msg = e?.response?.data?.message || "Plan change failed";
+      setMfaError(msg);
+      showToast("error", msg);
     } finally {
       setSaving(false);
     }
@@ -334,6 +365,17 @@ function ChangePlanModal({ tenant, onClose, onDone, showToast }) {
             {saving && <Loader2 size={15} className="animate-spin" />} Change plan
           </button>
         </div>
+        {mfaOpen && (
+          <SuperAdminMfaActionModal
+            title="Confirm tenant plan change"
+            description={`Verify before changing ${tenant.organizationName} from ${tenant.plan} to ${selected}.`}
+            confirmLabel="Change plan"
+            saving={saving}
+            error={mfaError}
+            onClose={saving ? undefined : () => setMfaOpen(false)}
+            onConfirm={confirmChange}
+          />
+        )}
       </div>
     </div>
   );
@@ -386,12 +428,15 @@ export default function Tenants() {
     }
   }, [debounced, statusFilter, showDeleted, page]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const id = window.setTimeout(load, 0);
+    return () => window.clearTimeout(id);
+  }, [load]);
 
-  const runAction = async (fn, publicId, successMsg) => {
+  const runAction = async (fn, publicId, successMsg, mfaCode) => {
     setBusyId(publicId);
     try {
-      await fn(publicId);
+      await fn(publicId, mfaCode);
       showToast("success", successMsg);
       setConfirm(null);
       await load();
@@ -412,7 +457,8 @@ export default function Tenants() {
     title: `Delete ${t.organizationName}?`,
     message: "Soft-deletes the tenant (recoverable from the deleted view). Its users can no longer sign in.",
     confirmLabel: "Delete", danger: true,
-    onConfirm: () => runAction(tenantService.remove, t.publicId, "Tenant deleted"),
+    requireMfa: true,
+    onConfirm: (mfaCode) => runAction(tenantService.remove, t.publicId, "Tenant deleted", mfaCode),
   });
 
   const totalPages = pagination.totalPages ?? 1;
@@ -574,7 +620,12 @@ export default function Tenants() {
         />
       )}
 
-      <ConfirmModal state={confirm} busy={!!busyId} onClose={() => setConfirm(null)} />
+      <ConfirmModal
+        key={confirm?.title || "confirm"}
+        state={confirm}
+        busy={!!busyId}
+        onClose={() => setConfirm(null)}
+      />
 
       {planModal && (
         <ChangePlanModal tenant={planModal} onClose={() => setPlanModal(null)}

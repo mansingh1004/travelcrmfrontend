@@ -7,6 +7,7 @@ import { toast } from "@shared/ui/toast";
 import { getErrorMessage } from "@shared/api/apiError";
 import { upgradeRequestService } from "../api/upgradeRequestService";
 import { subAgentLicenseService } from "../api/subAgentLicenseService";
+import SuperAdminMfaActionModal from "../components/SuperAdminMfaActionModal";
 
 // The queue merges two request kinds. `serviceFor` routes approve/reject to the right backend.
 const serviceFor = (req) => (req._kind === "SEAT" ? subAgentLicenseService : upgradeRequestService);
@@ -95,17 +96,26 @@ function DecisionModal({ req, type, onClose, onDone }) {
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [mfaOpen, setMfaOpen] = useState(false);
+  const [mfaError, setMfaError] = useState("");
   const isReject = type === "reject";
 
   const seat = isSeat(req);
   const submit = async () => {
     if (isReject && !reason.trim()) { setErr("A rejection reason is required."); return; }
+    setErr("");
+    setMfaError("");
+    setMfaOpen(true);
+  };
+
+  const confirmDecision = async (mfaCode) => {
     setBusy(true);
     setErr("");
+    setMfaError("");
     try {
       const svc = serviceFor(req);
-      if (isReject) await svc.reject(req.publicId, reason.trim());
-      else await svc.approve(req.publicId);
+      if (isReject) await svc.reject(req.publicId, reason.trim(), mfaCode);
+      else await svc.approve(req.publicId, mfaCode);
       toast.success(
         isReject ? "Request rejected."
           : seat ? `Seat licensed — ${req.subAgentName || "partner"} activated.`
@@ -114,6 +124,7 @@ function DecisionModal({ req, type, onClose, onDone }) {
     } catch (e) {
       const msg = getErrorMessage(e, isReject ? "Could not reject the request." : "Could not approve the request.");
       setErr(msg);
+      setMfaError(msg);
       setBusy(false);
     }
   };
@@ -182,6 +193,23 @@ function DecisionModal({ req, type, onClose, onDone }) {
           </button>
         </div>
       </div>
+      {mfaOpen && (
+        <SuperAdminMfaActionModal
+          title={isReject ? "Confirm request rejection" : "Confirm request approval"}
+          description={
+            isReject
+              ? "Verify before rejecting this tenant request."
+              : seat
+                ? "Verify before approving the seat license and activating access."
+                : "Verify before approving the plan upgrade and changing tenant limits."
+          }
+          confirmLabel={isReject ? "Reject request" : "Approve request"}
+          saving={busy}
+          error={mfaError}
+          onClose={busy ? undefined : () => setMfaOpen(false)}
+          onConfirm={confirmDecision}
+        />
+      )}
     </div>
   );
 }

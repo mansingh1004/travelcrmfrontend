@@ -2,11 +2,19 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import bookingService                from "../api/bookingService";
 import CancelBookingModal            from "../components/CancelBookingModal";
+import BookingExpenseModal           from "../components/BookingExpenseModal"
 import { hasPermission, P }          from "@shared/lib/access";
 import { useToast }                  from "@shared/ui/toast";
 import { getErrorMessage, isAlreadyReported } from "@shared/api/apiError";
 import { downloadBlob, hydrateBlobError }     from "@shared/lib/download";
-import { Search as FiSearch, RefreshCw as FiRefreshCw, Filter as FiFilter, Download as FiDownload, ChevronDown as FiChevronDown, ChevronUp as FiChevronUp, Eye as FiEye, Pen as FiEdit2, Trash2 as FiTrash2, X as FiX, FileText as FiFileText, ChevronLeft as FiChevronLeft, ChevronRight as FiChevronRight, Plane as FaPlane, ChevronsLeft as FaAngleDoubleLeft, ChevronsRight as FaAngleDoubleRight, IndianRupee as FaRupeeSign, CircleCheck as FaCheckCircle, CircleX as FaTimesCircle, ReceiptText as FaFileInvoiceDollar, HandCoins as FaHandHoldingUsd, ReceiptText as MdOutlineReceiptLong } from "lucide-react";
+import { Search as FiSearch, RefreshCw as FiRefreshCw, Filter as FiFilter, 
+        Download as FiDownload, ChevronDown as FiChevronDown, ChevronUp as 
+        FiChevronUp, Eye as FiEye, Pen as FiEdit2, Trash2 as FiTrash2, X as FiX,
+         FileText as FiFileText, ChevronLeft as FiChevronLeft, ChevronRight as FiChevronRight, 
+         Plane as FaPlane, ChevronsLeft as FaAngleDoubleLeft, ChevronsRight as FaAngleDoubleRight, 
+         IndianRupee as FaRupeeSign, CircleCheck as FaCheckCircle, CircleX as FaTimesCircle, 
+         ReceiptText as FaFileInvoiceDollar, HandCoins as FaHandHoldingUsd, 
+         ReceiptText as MdOutlineReceiptLong , WalletCards as FiWalletCards} from "lucide-react";
 
 /* ─── SHARED PDF DOWNLOAD HELPERS ────────────────────────────── */
 async function downloadDoc(kind, booking, showToast) {
@@ -511,6 +519,8 @@ export default function BookingsPage({
   const [selected,      setSelected]      = useState(new Set());
   const [modal,         setModal]         = useState(null);
   const [cancelBooking, setCancelBooking] = useState(null);
+  const [expenseBooking, setExpenseBooking] = useState(null);
+  const [expenseSaving, setExpenseSaving] = useState(false);
   const [rowDownloading, setRowDownloading] = useState(null); // `${publicId}:${kind}` of doc downloading
   const [deletingId,    setDeletingId]    = useState(null);  // publicId of row being deleted
   const [bulkDeleting,  setBulkDeleting]  = useState(false);
@@ -579,6 +589,37 @@ export default function BookingsPage({
     navigate(`/EditBooking/${b.id}`);
   };
   const openCancel = b => setCancelBooking(b);
+  const openExpense = booking => {
+  setExpenseBooking(booking);
+};
+const saveBookingExpenses = async (expenses) => {
+  if (!expenseBooking?.id) return;
+
+  setExpenseSaving(true);
+
+  try {
+    await bookingService.addExpenses(expenseBooking.id, {
+      expenses,
+    });
+
+    showToast(
+      `${expenses.length} booking expense(s) saved successfully.`,
+      "success"
+    );
+
+    setExpenseBooking(null);
+    refreshList?.();
+  } catch (error) {
+    if (isAlreadyReported(error)) return;
+
+    showToast(
+      getErrorMessage(error, "Couldn't save booking expenses."),
+      "error"
+    );
+  } finally {
+    setExpenseSaving(false);
+  }
+};
   const refreshList = onRefresh||fetchBookings;
 
   const runRowDownload = useCallback(async (kind, b)=>{
@@ -672,8 +713,22 @@ export default function BookingsPage({
       `}</style>
 
       {/* modals */}
-      {modal && <BookingModal booking={modal} onClose={()=>setModal(null)} onEdit={openEdit} onCancel={openCancel} onRefresh={refreshList}/>}
-      {cancelBooking && <CancelBookingModal booking={cancelBooking} onClose={()=>setCancelBooking(null)} onCancelled={refreshList} onToast={showToast}/>}
+      {modal && <BookingModal booking={modal} onClose={() => setModal(null)} onEdit={openEdit} onCancel={openCancel} onRefresh={refreshList} />}
+      {cancelBooking && <CancelBookingModal booking={cancelBooking} onClose={() => setCancelBooking(null)} onCancelled={refreshList} onToast={showToast} />}
+
+      {/* Booking Expense Modal */}
+      {expenseBooking && (
+        <BookingExpenseModal
+          booking={expenseBooking}
+          saving={expenseSaving}
+          onClose={() => {
+            if (!expenseSaving) {
+              setExpenseBooking(null);
+            }
+          }}
+          onSave={saveBookingExpenses}
+        />
+      )}
 
       {/* ── PAGE HEADER ── */}
       <div className="bg-white/70 backdrop-blur-md border-b border-slate-100">
@@ -1054,6 +1109,17 @@ export default function BookingsPage({
                               className="w-8 h-8 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-600 flex items-center justify-center transition-all border border-slate-200">
                               <FiEdit2 className="w-3.5 h-3.5"/>
                             </button>
+                            {hasPermission(P.BOOKING_UPDATE) && (
+                              <button
+                                onClick={() => openExpense(b)}
+                                title="Add Booking Expense"
+                                className="w-8 h-8 rounded-lg bg-purple-50 hover:bg-purple-100
+                                  text-purple-600 flex items-center justify-center
+                                  transition-all border border-purple-200"
+                              >
+                                <FiWalletCards className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                             {hasPermission(P.BOOKING_READ)&&(
                               <>
                                 <button onClick={()=>runRowDownload("invoice",b)} title="Download Invoice"

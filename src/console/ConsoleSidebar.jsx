@@ -12,6 +12,7 @@ import {
   Megaphone,
   Wrench,
   Gauge,
+  UserCog,
   Palette as PaletteIcon,
   ShieldCheck,
 } from "lucide-react";
@@ -28,6 +29,7 @@ const NAV = [
   { to: "/console/upgrade-requests", label: "Subscription & Add-ons", Icon: ArrowUpCircle, badge: "upgrades" },
   { to: "/console/usage", label: "Usage & Quotas", Icon: Gauge },
   { to: "/console/users", label: "Users", Icon: Users },
+  { to: "/console/superadmins", label: "SuperAdmins", Icon: UserCog },
   { to: "/console/feature-flags", label: "Feature Flags", Icon: ToggleLeft },
   { to: "/console/config", label: "Global Config", Icon: Settings2 },
   { to: "/console/audit", label: "Audit Log", Icon: ScrollText },
