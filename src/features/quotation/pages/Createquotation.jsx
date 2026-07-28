@@ -310,7 +310,7 @@ export default function CreateQuotation() {
     bookingTerms: inclusionsData.bookingTerms || [],
     discount: summaryData.discount || 0,
     discType: summaryData.discType || "Fixed",
-    tax: summaryData.tax || 18,
+    tax: summaryData.tax || 0,
     markup: summaryData.markup || 0,
     // leadData bhi dep hai — svcOn() isi se derive hota hai, warna lead aane ke baad bhi
     // ye callback purane (sab-ON) gate ke saath memoized reh jaata.

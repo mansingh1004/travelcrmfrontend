@@ -69,7 +69,7 @@ export function buildQuotationPayload({
   // Tab 8 — Summary & Pricing
   discount = 0,
   discType = "Fixed",
-  tax      = 18,
+  tax      = 0,
   markup   = 0,
 
 } = {}) {  // ← default empty object — prevents crash if called with no args
@@ -223,7 +223,7 @@ export function buildQuotationPayload({
     pricing: {
       discount : Number(discount) || 0,
       discType : discType || "Fixed",
-      tax      : Number(tax)    || 18,
+      tax      : Number(tax)    || 0,
       markup   : Number(markup) || 0,
     },
   };
