@@ -115,7 +115,7 @@ function Breadcrumb({ items }) {
 
 const Navbar = memo(function Navbar({
   toggleSidebar,
-  appName     = "Travixa",
+  appName     = "TravelCRM",
   breadcrumb,
   onNewBooking,
 }) {
