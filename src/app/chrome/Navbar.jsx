@@ -115,7 +115,7 @@ function Breadcrumb({ items }) {
 
 const Navbar = memo(function Navbar({
   toggleSidebar,
-  appName     = "TravelCRM",
+  appName     = "Travixa",
   breadcrumb,
   onNewBooking,
 }) {
@@ -479,18 +479,18 @@ const Navbar = memo(function Navbar({
               {/* Menu Links */}
               
 
-<div className="py-2">
-  {menuItems.map(({ icon: Icon, label, path }) => (
-    <button
-      key={label}
-      onClick={() => navigate(path)}
-      className="w-full flex items-center gap-3 px-4 py-2.5 text-[13px] font-medium text-slate-600 hover:bg-slate-50 hover:text-blue-600 transition-colors text-left"
-    >
-      <Icon size={16} className="text-slate-400" />
-      <span>{label}</span>
-    </button>
-  ))}
-</div>
+              <div className="py-2">
+                {menuItems.map(({ icon: Icon, label, path }) => (
+                  <button
+                    key={label}
+                    onClick={() => navigate(path)}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 text-[13px] font-medium text-slate-600 hover:bg-slate-50 hover:text-blue-600 transition-colors text-left"
+                  >
+                    <Icon size={16} className="text-slate-400" />
+                    <span>{label}</span>
+                  </button>
+                ))}
+              </div>
 
               {/* Logout Button */}
               <div className="border-t border-slate-100 py-2">
