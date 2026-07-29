@@ -16,7 +16,7 @@ dist-ssr
 .env
 .env.*
 !.env.example
-
+.Dockerfile
 
 # Editor directories and files
 .vscode/*
