@@ -36,28 +36,44 @@ function SummaryRow({ icon: Icon, label, value, accent = false }) {
 export default function LeadSummary({ watch, selectedServices, itinerary }) {
   const name = watch("customerName");
   const travelDate = watch("travelDate");
-  const rooms = watch("rooms") || 1;
-  const adults = watch("adults") || 2;
-  const children = watch("children") || 0;
-  const infants = watch("infants") || 0;
+  // Empty string / undefined ko 0 maano — TravelDetails ke counters 0 se shuru hote
+  // hain, isliye yahan `|| 2` jaisa fallback rakha to preview galat count dikhata hai.
+  const num = (v) => {
+    const n = Number(v);
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+  };
+
+  const rooms = num(watch("rooms"));
+  const male = num(watch("male"));
+  const female = num(watch("female"));
+  const children = num(watch("children"));
+  const handicap = num(watch("handicap"));
+  const infants = num(watch("infants"));
   const stage = watch("leadStage");
   const source = watch("leadSource");
   // ── NEW: budget ──
   const budget = watch("budget");
 
+  // Adults = Male + Female (TravelDetails mein counter ab gender-wise hai)
+  const adults = male + female;
+
   const travellers = [
-    adults > 0 && `${adults} Adult${adults > 1 ? "s" : ""}`,
+    male > 0 && `${male} Male`,
+    female > 0 && `${female} Female`,
     children > 0 && `${children} Child${children > 1 ? "ren" : ""}`,
+    handicap > 0 && `${handicap} Handicap`,
     infants > 0 && `${infants} Infant${infants > 1 ? "s" : ""}`,
   ].filter(Boolean).join(", ");
 
   const completedDestinations = itinerary.filter((r) => r.destination).length;
   const totalNights = itinerary.reduce((sum, r) => sum + (r.nights || 1), 0);
 
+  const totalTravellers = adults + children + handicap;
+
   const completeness = [
     !!name,
     !!travelDate,
-    adults > 0,
+    totalTravellers > 0,
     selectedServices.length > 0,
     completedDestinations > 0,
   ];
@@ -85,7 +101,7 @@ export default function LeadSummary({ watch, selectedServices, itinerary }) {
           {[
             ["Customer Name", !!name],
             ["Travel Date", !!travelDate],
-            ["Travellers", adults > 0],
+            ["Travellers", totalTravellers > 0],
             ["Services", selectedServices.length > 0],
             ["Itinerary", completedDestinations > 0],
           ].map(([label, done]) => (

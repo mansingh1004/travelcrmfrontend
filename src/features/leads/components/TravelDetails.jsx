@@ -816,7 +816,7 @@
 
 
 import { useEffect, useState } from "react";
-import { Calendar as FiCalendar, Globe as FiGlobe, MapPin as FiMapPin, House as FiHome, Users as FiUsers, PersonStanding as MdChildCare, Baby as MdBabyChangingStation, BedDouble as MdHotel, Accessibility } from "lucide-react";
+import { Calendar as FiCalendar, Globe as FiGlobe, MapPin as FiMapPin, House as FiHome, Users as FiUsers, PersonStanding as MdChildCare, Baby as MdBabyChangingStation, BedDouble as MdHotel, Accessibility, Mars, Venus } from "lucide-react";
 
 import { geographyService } from "@shared/api/geographyService";
 import { getErrorMessage } from "@shared/api/apiError";
@@ -922,7 +922,8 @@ export default function TravelDetails({
 
   // Raw values input field ko jaate hain (typing smooth rahe)
   const roomsRaw = watch("rooms") ?? 0;
-  const adultsRaw = watch("adults") ?? 0;
+  const maleRaw = watch("male") ?? 0;
+  const femaleRaw = watch("female") ?? 0;
   const childrenRaw = watch("children") ?? 0;
   const infantsRaw = watch("infants") ?? 0;
   const extraBedsRaw = watch("extraBeds") ?? 0;
@@ -930,11 +931,26 @@ export default function TravelDetails({
 
   // Numeric values calculation ke liye
   const rooms = toNum(roomsRaw);
-  const adults = toNum(adultsRaw);
+  const male = toNum(maleRaw);
+  const female = toNum(femaleRaw);
   const children = toNum(childrenRaw);
   const infants = toNum(infantsRaw);
   const extraBeds = toNum(extraBedsRaw);
   const handicap = toNum(handicapRaw);
+
+  /*
+   * "Adults" ab apna counter nahi hai — Male + Female ka derived total hai.
+   * Backend abhi bhi `adults` column hi rakhta hai (male/female wahan exist
+   * nahi karte), isliye har change par adults ko sync karte rehte hain warna
+   * save hone par traveller count 0 chala jayega.
+   */
+  const adults = male + female;
+
+  useEffect(() => {
+    if (toNum(getValues?.("adults")) !== adults) {
+      setValue("adults", adults, { shouldDirty: false, shouldValidate: false });
+    }
+  }, [adults, getValues, setValue]);
 
   useEffect(() => {
     let active = true;
@@ -1054,7 +1070,8 @@ export default function TravelDetails({
   const totalTravellers = adults + children + handicap;
 
   const summary = [
-    adults > 0 && `${adults} Adult${adults > 1 ? "s" : ""}`,
+    male > 0 && `${male} Male`,
+    female > 0 && `${female} Female`,
     children > 0 && `${children} Child${children > 1 ? "ren" : ""}`,
     handicap > 0 && `${handicap} Handicap`,
     infants > 0 && `${infants} Infant${infants > 1 ? "s" : ""}`,
@@ -1140,11 +1157,12 @@ export default function TravelDetails({
 
         {/* Counters — mobile: 2 cols stacked | tablet: 2 cols inline | desktop: 3 cols inline */}
         <div className="grid grid-cols-2 lg:grid-cols-3 gap-2.5 sm:gap-3">
-          <NumberInput label="Adults" icon={FiUsers} value={adultsRaw} onChange={(v) => setValue("adults", v)} color="green" />
+          <NumberInput label="Male" icon={Mars} value={maleRaw} onChange={(v) => setValue("male", v)} color="blue" />
+          <NumberInput label="Female" icon={Venus} value={femaleRaw} onChange={(v) => setValue("female", v)} color="rose" />
           <NumberInput label="Children" icon={MdChildCare} value={childrenRaw} onChange={(v) => setValue("children", v)} color="orange" />
-          <NumberInput label="Handicap" icon={Accessibility} value={handicapRaw} onChange={(v) => setValue("handicap", v)} color="blue" />
-          <NumberInput label="Infants" icon={MdBabyChangingStation} value={infantsRaw} onChange={(v) => setValue("infants", v)} color="purple" />
-          <NumberInput label="Extra Beds" icon={MdHotel} value={extraBedsRaw} onChange={(v) => setValue("extraBeds", v)} color="rose" />
+          <NumberInput label="Handicap" icon={Accessibility} value={handicapRaw} onChange={(v) => setValue("handicap", v)} color="purple" />
+          <NumberInput label="Infants" icon={MdBabyChangingStation} value={infantsRaw} onChange={(v) => setValue("infants", v)} color="green" />
+          <NumberInput label="Extra Beds" icon={MdHotel} value={extraBedsRaw} onChange={(v) => setValue("extraBeds", v)} color="orange" />
           <NumberInput label="Rooms" icon={FiHome} value={roomsRaw} onChange={(v) => setValue("rooms", v)} color="blue" />
         </div>
 

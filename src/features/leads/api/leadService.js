@@ -15,6 +15,12 @@ function transformFormData(formData, services = [], itinerary = []) {
     departCountry:  formData.departCountry          || "Not Specified",
     departCity:     formData.departCity             || "Not Specified",
     rooms:          Number(formData.rooms)          || 1,
+    // adults = male + female (TravelDetails derive karke form mein set karta hai).
+    // Backend mein abhi male/female/handicap columns nahi hain, isliye unhe bhejte
+    // nahi — sirf total adults jaata hai. Backend ready hone par yahan add karo:
+    //   male:      Number(formData.male)      || 0,
+    //   female:    Number(formData.female)    || 0,
+    //   handicap:  Number(formData.handicap)  || 0,
     adults:         Number(formData.adults)         || 1,
     children:       Number(formData.children)       || 0,
     infants:        Number(formData.infants)        || 0,

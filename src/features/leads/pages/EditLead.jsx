@@ -116,7 +116,8 @@ export default function EditLead() {
       leadSource: "", leadType: "", leadStage: "New Lead",
       assignedUserId: "", birthDate: "",
       travelDate: "", departCountry: "India", departCity: "",
-      rooms: 1, adults: 2, children: 0, infants: 0, extraBeds: 0,
+      // adults ab derived hai (male + female) — TravelDetails ise auto set karta hai
+      rooms: 1, male: 1, female: 1, adults: 2, children: 0, handicap: 0, infants: 0, extraBeds: 0,
       notes: "",
     },
   });
@@ -297,9 +298,34 @@ export default function EditLead() {
             2
           ),
 
+          /*
+           * Male / Female backend se abhi nahi aate (Lead entity mein ye columns
+           * nahi hain). Purane leads mein sirf `adults` ka total hota hai, isliye
+           * gender split unknown hai — total bachane ke liye poora count Male mein
+           * seed kar dete hain aur user isse correct kar sakta hai. Warna save par
+           * adults (= male + female) 0 ho jaata.
+           */
+          male: Number(
+            lead.male ??
+            lead.maleCount ??
+            (lead.female != null ? 0 : (lead.adults ?? lead.adultCount ?? 0))
+          ),
+
+          female: Number(
+            lead.female ??
+            lead.femaleCount ??
+            0
+          ),
+
           children: Number(
             lead.children ??
             lead.childCount ??
+            0
+          ),
+
+          handicap: Number(
+            lead.handicap ??
+            lead.handicapCount ??
             0
           ),
 
