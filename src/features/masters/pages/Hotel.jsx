@@ -1324,11 +1324,13 @@
 
 
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { Search, Plus, ChevronDown, ChevronUp, X, Star, MapPin, Phone, Globe, Upload, Hotel, Building2, Utensils, Wifi, Car, Dumbbell, Waves, ConciergeBell, PlaneTakeoff, Edit2, Trash2, Check, AlertCircle, Home, ChevronRight, Shield } from "lucide-react";
 import { hotelService, transformHotelResponse, uploadHotelImageToCloudinary } from "../api/HotelService";
 import { geographyService } from "@shared/api/geographyService";
 import { getErrorMessage } from "@shared/api/apiError";
+import { usePagedList } from "@shared/api/usePagedList";
+import { Pager } from "@shared/ui/Pager";
 import { toast } from "@shared/ui/toast";
 
 /* ─── CONSTANTS ──────────────────────────────────────────── */
@@ -1498,8 +1500,11 @@ function NestedModal({ title, subtitle, icon: Icon, iconBg, onClose, children })
 
 /* ─── MAIN COMPONENT ─────────────────────────────────────── */
 export default function HotelMaster() {
+  // `destinations` is the DESTINATION FILTER's option list (every destination the tenant has),
+  // deliberately not derived from the hotels on screen: with a paged list, options built from the
+  // current page would appear and vanish as you page, and you could never filter to a destination
+  // whose hotels happen to sit on page 3.
   const [destinations,     setDestinations]     = useState([]);
-  const [loading,          setLoading]          = useState(true);
   const [apiError,         setApiError]         = useState("");
   const [formCountries,    setFormCountries]    = useState([]);
   const [formCountryId,    setFormCountryId]    = useState("");
@@ -1507,10 +1512,10 @@ export default function HotelMaster() {
   const [formCities,       setFormCities]       = useState([]);
   const [loadingFormDest,  setLoadingFormDest]  = useState(false);
   const [loadingFormCity,  setLoadingFormCity]  = useState(false);
-  const [search,           setSearch]           = useState("");
   const [filterDest,       setFilterDest]       = useState("");
   const [filterCity,       setFilterCity]       = useState("");
   const [filterStar,       setFilterStar]       = useState("");
+  const [cityOptions,      setCityOptions]      = useState([]);
   const [expanded,         setExpanded]         = useState({});
   const [showModal,        setShowModal]        = useState(false);
   const [editingHotel,     setEditingHotel]     = useState(null);
@@ -1557,64 +1562,73 @@ export default function HotelMaster() {
     }
   };
 
+  /* ── Server-side paged hotel list ──────────────────────────────────────────
+     Search + all three filters are sent to the backend. They must NOT be applied in the browser:
+     a client-side predicate can only see the rows on the current page, so "3 Star" would mean
+     "the 3-star hotels that happen to be on this page" — and past the page size, rows the user
+     saved would look deleted. That is the exact defect this replaced. */
+  const fetchHotels = useCallback((params) => hotelService.listHotels(params), []);
+
+  const {
+    rows, loading, error: listError,
+    page, setPage, pageSize, setPageSize,
+    q: search, setQ: setSearch,
+    total, totalPages, reload,
+  } = usePagedList(fetchHotels, {
+    size: 25,
+    sortBy: "name",
+    sortDir: "asc",
+    filters: {
+      destinationId: filterDest || undefined,
+      city:          filterCity || undefined,
+      stars:         filterStar || undefined,
+    },
+  });
+
+  useEffect(() => {
+    setApiError(listError ? "Could not load hotels. Please try again." : "");
+  }, [listError]);
+
+  // Destination options for the filter — the full list, independent of what's on this page.
   useEffect(() => {
     (async () => {
-      try {
-        // 1. Fetch all hotels (flat list)
-        const res = await hotelService.getAllHotels();
-        const raw  = res.data?.data ?? res.data;
-        const list = Array.isArray(raw)
-          ? raw
-          : Array.isArray(raw?.content)
-          ? raw.content
-          : [];
-
-        
-
-        // 2. Fetch all destinations to get names
-        let allDestinations = [];
-        try {
-          allDestinations = await geographyService.getAllDestinations();
-        } catch { allDestinations = []; }
-
-        // Build destinationId → name map
-        const destNameMap = new Map();
-        allDestinations.forEach(d => destNameMap.set(String(d.id), d.name));
-
-        // 3. Group hotels by destinationId
-        const destMap = new Map();
-        
-        list.forEach(rawHotel => {
-          // FIX: Normalize the ID on fetch to prevent "undefined" keys/errors later
-          const hotel = {
-            ...rawHotel,
-            id: rawHotel.id || rawHotel.hotelId || rawHotel._id || rawHotel.publicId
-          };
-
-          const dId   = String(hotel.destinationId ?? hotel.destination?.id ?? "unknown");
-          const dName = destNameMap.get(dId)
-            ?? hotel.destinationName
-            ?? hotel.destination?.name
-            ?? `Destination ${dId}`;
-
-          if (!destMap.has(dId)) {
-            destMap.set(dId, { id: dId, name: dName, hotels: [] });
-          }
-          destMap.get(dId).hotels.push(hotel);
-        });
-
-        const grouped = Array.from(destMap.values());
-        // console.log("Grouped destinations:", grouped);
-        setDestinations(grouped);
-      } catch (err) {
-        console.error("Hotels fetch error:", err);
-        setDestinations([]);
-        setApiError("Could not load hotels. Please try again.");
-      } finally {
-        setLoading(false);
-      }
+      try { setDestinations(await geographyService.getAllDestinations()); }
+      catch { setDestinations([]); }
     })();
   }, []);
+
+  // City options follow the selected destination. Without a destination there is no bounded city
+  // list to offer, so the dropdown falls back to the cities visible on this page.
+  useEffect(() => {
+    (async () => {
+      if (!filterDest) { setCityOptions([]); return; }
+      try {
+        const cities = await geographyService.getCitiesByDestination(filterDest);
+        setCityOptions(cities.map(c => c.name ?? c.label).filter(Boolean));
+      } catch { setCityOptions([]); }
+    })();
+  }, [filterDest]);
+
+  // Group THIS PAGE's hotels under their destination for the existing grouped layout.
+  const filtered = useMemo(() => {
+    const nameById = new Map((destinations || []).map(d => [String(d.id), d.name]));
+    const grouped  = new Map();
+
+    (rows || []).forEach(rawHotel => {
+      // Normalise the id up front: HotelDto carries hotelId, some paths carry publicId, and the
+      // row actions below all key off `.id`.
+      const hotel = {
+        ...rawHotel,
+        id: rawHotel.id || rawHotel.hotelId || rawHotel._id || rawHotel.publicId,
+      };
+      const dId   = String(hotel.destinationId ?? hotel.destination?.id ?? "unknown");
+      const dName = nameById.get(dId) ?? hotel.destinationName ?? hotel.destination?.name ?? `Destination ${dId}`;
+      if (!grouped.has(dId)) grouped.set(dId, { id: dId, name: dName, hotels: [] });
+      grouped.get(dId).hotels.push(hotel);
+    });
+
+    return Array.from(grouped.values());
+  }, [rows, destinations]);
 
   useEffect(() => {
     (async () => {
@@ -1674,41 +1688,13 @@ export default function HotelMaster() {
     setLoadingFormDest(false); setLoadingFormCity(false);
   };
 
-  const allCities = useMemo(
-    () => [...new Set(
-      (Array.isArray(destinations) ? destinations : [])
-        .flatMap(d => d?.hotels?.map(h => h?.city).filter(Boolean) ?? [])
-    )],
-    [destinations]
-  );
-
-  const filtered = useMemo(() => (Array.isArray(destinations) ? destinations : [])
-    .filter(d => {
-      if (!d) return false;
-      if (filterDest && d.id !== parseInt(filterDest)) return false;
-      const hotels = (d.hotels || []).filter(h => {
-        if (!h) return false;
-        if (filterCity && h.city !== filterCity) return false;
-        if (filterStar && h.stars !== parseInt(filterStar)) return false;
-        if (search && !h.name?.toLowerCase().includes(search.toLowerCase()) &&
-            !d.name?.toLowerCase().includes(search.toLowerCase())) return false;
-        return true;
-      });
-      return hotels.length > 0 || (!filterCity && !filterStar && !search);
-    })
-    .map(d => ({
-      ...d,
-      hotels: (d.hotels || []).filter(h => {
-        if (!h) return false;
-        if (filterCity && h.city !== filterCity) return false;
-        if (filterStar && h.stars !== parseInt(filterStar)) return false;
-        if (search && !h.name?.toLowerCase().includes(search.toLowerCase()) &&
-            !d.name?.toLowerCase().includes(search.toLowerCase())) return false;
-        return true;
-      }),
-    })),
-    [destinations, search, filterDest, filterCity, filterStar]
-  );
+  // City filter options: the selected destination's cities when there is one, otherwise whatever
+  // cities this page happens to show. No client-side narrowing of the list itself happens here —
+  // `filtered` above is already exactly what the server returned for the active query.
+  const allCities = useMemo(() => {
+    if (cityOptions.length) return cityOptions;
+    return [...new Set((rows || []).map(h => h?.city).filter(Boolean))];
+  }, [cityOptions, rows]);
 
   const openAdd = () => {
     setEditingHotel(null); setForm(emptyHotel); setErrors({});
@@ -1769,45 +1755,11 @@ console.log("✅ New Hotel Created! Backend assigned ID:", savedHotel.id || save
       // (purana uploadHotelImage call hata diya)
       if (form.isDefault && savedHotel?.id) await hotelService.setDefaultHotel(savedHotel.id, form.destinationId);
 
-      // Refetch latest data from backend after save
-      try {
-        const refreshRes = await hotelService.getAllHotels();
-        const raw2   = refreshRes.data?.data ?? refreshRes.data;
-        const list2  = Array.isArray(raw2) ? raw2
-          : Array.isArray(raw2?.content) ? raw2.content : [];
-        let allDest2 = [];
-        try { allDest2 = await geographyService.getAllDestinations(); } catch { /* destination list is best-effort */ }
-        const dNameMap2 = new Map();
-        allDest2.forEach(d => dNameMap2.set(String(d.id), d.name));
-        const destMap2 = new Map();
-        list2.forEach(rawHotel2 => {
-          
-          // FIX: Normalize the ID on refetch
-          const hotel = {
-            ...rawHotel2,
-            id: rawHotel2.id || rawHotel2.hotelId || rawHotel2._id || rawHotel2.publicId
-          };
-
-          const dId   = String(hotel.destinationId ?? hotel.destination?.id ?? "unknown");
-          const dName = dNameMap2.get(dId) ?? hotel.destinationName ?? hotel.destination?.name ?? `Destination ${dId}`;
-          if (!destMap2.has(dId)) {
-            destMap2.set(dId, { id: dId, name: dName, hotels: [] });
-          }
-          destMap2.get(dId).hotels.push(hotel);
-        });
-        setDestinations(Array.from(destMap2.values()));
-      } catch {
-        const destId = parseInt(form.destinationId);
-        setDestinations(prev => prev.map(d => {
-          if (d.id !== destId) return d;
-          
-          // FIX: Safely fallback to multiple ID types in case refetch fails
-          const newHotel = { ...form, id: savedHotel?.id || savedHotel?.hotelId || (editingHotel ? editingHotel.id : Date.now()), stars: parseInt(form.stars) };
-          
-          if (editingHotel) return { ...d, hotels: d.hotels.map(h => h.id === editingHotel.id ? newHotel : h) };
-          return { ...d, hotels: [...d.hotels, newHotel] };
-        }));
-      }
+      // Refetch the current page from the backend. reload() re-runs the SAME paged query (page,
+      // search and filters intact), so the saved row lands wherever the server says it belongs.
+      // Splicing it into a locally-held array — the old behaviour — is what made the list drift
+      // out of sync with the query the user was actually looking at.
+      await reload();
       closeModal();
     } catch (err) {
       setSaveError(err?.response?.data?.message || "Failed to save hotel. Please try again.");
@@ -1821,8 +1773,10 @@ console.log("✅ New Hotel Created! Backend assigned ID:", savedHotel.id || save
     if (!window.confirm("Delete this hotel?")) return;
     try {
       await hotelService.deleteHotel(hotelId);
-      setDestinations(prev => prev.map(d => d.id === destId ? { ...d, hotels: (d.hotels || []).filter(h => h.id !== hotelId) } : d));
-toast.success("Hotel deleted successfully!");
+      // Re-query rather than filtering the row out locally: deleting the last row on a page has to
+      // pull the next page's rows up, and only the server knows what those are.
+      await reload();
+      toast.success("Hotel deleted successfully!");
 
     } catch (err) {
       toast.error(getErrorMessage(err, "Failed to delete hotel."));
@@ -2203,6 +2157,17 @@ toast.success("Hotel deleted successfully!");
                 </div>
               );
             })}
+
+            <Pager
+              page={page}
+              totalPages={totalPages}
+              total={total}
+              pageSize={pageSize}
+              onPage={setPage}
+              onPageSize={setPageSize}
+              loading={loading}
+              label="hotels"
+            />
           </div>
         )}
       </div>

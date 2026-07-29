@@ -2352,13 +2352,13 @@ export default function HotelTab({ onDataChange, paxInfo = {}, destinations = []
   const [activeRowId, setActiveRowId] = useState(null); // kis hotel row ke liye modal khula
 
   // ── Hotels load (reusable) ──
+  // fetchAllHotels, NOT the paged list: the picker must be able to offer EVERY hotel the tenant
+  // has. It used to call a bare GET that returned only the server's first page, so any hotel past
+  // the newest 20 was unquotable — invisible here while sitting fine in the master.
   const loadHotels = useCallback(async () => {
     try {
       setHotelsLoading(true);
-      const res  = await hotelService.getAllHotels();
-      const raw  = res.data?.data ?? res.data;
-      const list = Array.isArray(raw) ? raw
-        : Array.isArray(raw?.content) ? raw.content : [];
+      const list = await hotelService.fetchAllHotels();
       setAllHotels(list);
       return list;
     } catch (err) {

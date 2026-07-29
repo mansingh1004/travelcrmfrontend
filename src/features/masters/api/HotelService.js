@@ -334,14 +334,63 @@ export function transformHotelResponse(backendData) {
 }
 
 export const hotelService = {
-  // 1. GET ALL HOTELS
-  getAllHotels: () => {
-    return API.get("/hotels");
+  /* 1. PAGED HOTEL LIST
+     GET /api/hotels?page&size&sortBy&sortDir&q&destinationId&city&stars
+     Returns the raw PagedApiResponse envelope: { data: [...], pagination: {...} }.
+
+     Search and filters are SERVER-side on purpose. Filtering a single page in the browser
+     would only ever search the rows that page happened to contain — the defect this replaced.
+     Callers should drive this through `usePagedList` rather than calling it bare. */
+  listHotels: ({ page = 0, size = 25, sortBy = "name", sortDir = "asc",
+                 q, destinationId, city, stars } = {}) =>
+    API.get("/hotels", {
+      params: {
+        page, size, sortBy, sortDir,
+        q: q || undefined,
+        destinationId: destinationId || undefined,
+        city: city || undefined,
+        stars: stars || undefined,
+      },
+    }),
+
+  /* 1b. EVERY HOTEL, ALL PAGES DRAINED
+     For the few screens that genuinely need the complete master list rather than a page —
+     the quotation builder's hotel picker, which must be able to offer any hotel. Explicit and
+     loop-bounded, so "fetch everything" is a deliberate choice at the call site instead of an
+     accident of forgetting the page params. */
+  fetchAllHotels: async ({ pageSize = 200, maxPages = 25, ...filters } = {}) => {
+    const all = [];
+    for (let page = 0; page < maxPages; page++) {
+      const res  = await hotelService.listHotels({ ...filters, page, size: pageSize });
+      const body = res?.data ?? {};
+      all.push(...(Array.isArray(body.data) ? body.data : []));
+
+      // hasNext is the SERVER's answer, so the loop ends exactly when the data does — 200 hotels
+      // is one request, 250 is two, 1,000 is five. pageSize matches the backend's MAX_PAGE_SIZE,
+      // so asking for more per page would just be clamped and change nothing.
+      if (body?.pagination?.hasNext !== true) break;
+
+      // maxPages is a runaway guard, not a business limit. If it ever actually bites, the picker
+      // is silently incomplete — say so loudly rather than let it look like missing hotels.
+      if (page === maxPages - 1) {
+        console.warn(
+          `[hotelService] fetchAllHotels stopped at the ${maxPages}-page guard ` +
+          `(${all.length} of ${body?.pagination?.totalElements ?? "?"} hotels). Raise maxPages.`,
+        );
+      }
+    }
+    return all;
   },
 
+  // Back-compat shim: same call shape as before, but no longer silently truncated at the
+  // server default. Prefer listHotels (paged) or fetchAllHotels (complete) in new code.
+  getAllHotels: (params = {}) => hotelService.listHotels({ size: 200, ...params }),
+
   // 2. GET HOTELS BY DESTINATION ID
-  getHotelsByDestination: (destinationId) => {
-    return API.get(`/hotels/destination/${destinationId}`);
+  getHotelsByDestination: (destinationId, { page = 0, size = 200, sortBy = "name", sortDir = "asc" } = {}) => {
+    return API.get(`/hotels/destination/${destinationId}`, {
+      params: { page, size, sortBy, sortDir },
+    });
   },
 
   // 3. GET HOTEL BY ID
