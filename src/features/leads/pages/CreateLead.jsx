@@ -35,7 +35,8 @@ export default function CreateLead() {
       assignedUserId: "",          // ← logged-in user auto-select hota hai (LeadInformation mein)
       birthDate: "",
       travelDate: "", departCountry: "India", departCity: "",
-      rooms: 1, adults: 2, children: 0, infants: 0, extraBeds: 0,
+      // adults ab derived hai (male + female) — TravelDetails ise auto set karta hai
+      rooms: 1, male: 1, female: 1, adults: 2, children: 0, handicap: 0, infants: 0, extraBeds: 0,
       notes: "",
     },
   });

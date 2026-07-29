@@ -1,6 +1,6 @@
 // src/App.jsx — thin shell; the route tree lives in app/router.jsx (Phase 5a).
 //
-// <ToastHost/> is deliberately a SIBLING of the router, not a child of it.
+
 //
 // RouteErrorBoundary wraps the whole route tree inside router.jsx. Anything mounted below that
 // boundary — MaintenanceOverlay, for instance — is unmounted when a render crash swaps the tree for
