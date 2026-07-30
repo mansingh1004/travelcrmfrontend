@@ -879,7 +879,8 @@
 import { useNavigate } from "react-router-dom";
 import { useState, useMemo, useEffect, useCallback } from "react";
 import customerService from "../api/customerService";
-import { Users as FaUsers, UserCheck as FaUserCheck, Crown as FaCrown, IndianRupee as FaRupeeSign, Plane as FaPlane, RotateCw as FaRedoAlt, SquarePen as FaEdit, Trash2 as FaTrash, Eye as FaEye, Search as FaSearch, X as FaTimes, Download as FaDownload, UserPlus as FaUserPlus, ArrowUpDown as FaSort, ChevronUp as FaSortUp, ChevronDown as FaSortDown, MapPin as FaMapMarkerAlt, Mail as FaEnvelope, Smartphone as FaMobileAlt, Calendar as FaCalendarAlt, ChevronLeft as FaChevronLeft, ChevronRight as FaChevronRight, ChevronsLeft as FaAngleDoubleLeft, ChevronsRight as FaAngleDoubleRight, History as FaHistory, StickyNote as FaStickyNote, Share2 as FaShareAlt, Building as MdLocationCity } from "lucide-react";
+import { usePagedList } from "@shared/api/usePagedList";
+import { Users as FaUsers, UserCheck as FaUserCheck, Crown as FaCrown, IndianRupee as FaRupeeSign, Plane as FaPlane, RotateCw as FaRedoAlt, SquarePen as FaEdit, Trash2 as FaTrash, Eye as FaEye, Search as FaSearch, Download as FaDownload, UserPlus as FaUserPlus, ArrowUpDown as FaSort, ChevronUp as FaSortUp, ChevronDown as FaSortDown, Filter as FaFilter, ChevronUp as FaChevronUp, ChevronDown as FaChevronDown, MapPin as FaMapMarkerAlt, Mail as FaEnvelope, Smartphone as FaMobileAlt, Calendar as FaCalendarAlt, ChevronLeft as FaChevronLeft, ChevronRight as FaChevronRight, ChevronsLeft as FaAngleDoubleLeft, ChevronsRight as FaAngleDoubleRight, History as FaHistory, StickyNote as FaStickyNote, Share2 as FaShareAlt, Building as MdLocationCity } from "lucide-react";
 import { WhatsAppIcon as FaWhatsapp } from "@shared/ui/WhatsAppIcon";
 import { GridStyles, GridHead, GridRow, Cell, Avatar, GridSkeleton, GridEmpty } from "@shared/ui/gridTable";
 
@@ -1173,9 +1174,9 @@ function SkeletonRow() {
 }
 
 /* ─── SELECT WRAPPER ─────────────────────────────────────────── */
-function Sel({ value, onChange, opts }) {
+function Sel({ value, onChange, opts, className="w-full sm:w-auto flex-1 min-w-[120px]" }) {
   return (
-    <div className="relative w-full sm:w-auto flex-1 min-w-[120px]">
+    <div className={`relative ${className}`}>
       <select value={value} onChange={e => onChange(e.target.value)}
         className="w-full pl-3 pr-8 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-600
           font-medium focus:border-blue-400 focus:ring-2 focus:ring-blue-50 outline-none appearance-none cursor-pointer transition-all hover:border-slate-300">
@@ -1192,75 +1193,78 @@ function Sel({ value, onChange, opts }) {
 export default function Customers() {
   const navigate = useNavigate();
 
-  const [customers, setCustomers] = useState([]);
-  const [search, setSearch]         = useState("");
   const [filterStatus, setFStatus]  = useState("All Status");
   const [filterType, setFType]      = useState("All Types");
   const [filterTier, setFTier]      = useState("All Tiers");
   const [sortKey, setSortKey]       = useState("name");
   const [sortDir, setSortDir]       = useState("asc");
-  const [page, setPage]             = useState(1);
-  const perPage = 8;
+  const [serverStats, setServerStats] = useState(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);   // collapsed by default, like All Bookings
 
   const [viewCustomer, setView]      = useState(null);
   const [deleteTarget, setDelTarget] = useState(null);
-  const [loading, setLoading]        = useState(true);
   const [toast, setToast]            = useState(null);
 
   const [customerStatsOpen, setCustomerStatsOpen] = useState(false);
 
   const showToast = useCallback((msg, type = "success") => setToast({ msg, type }), []);
 
-  /* ── Load customers ── */
+  /* ── Server-side paged list ────────────────────────────────────────────────
+     Search, the three filters, sorting and paging all run on the backend. Sub-agent row scoping
+     is applied server-side too and cannot be widened from here by typing a search term. */
+  const fetchCustomers = useCallback((params) => customerService.list(params), []);
+
+  const {
+    rows: customers, loading, error: listError,
+    page, setPage, pageSize, setPageSize,
+    q: search, setQ: setSearch,
+    total, totalPages, reload,
+  } = usePagedList(fetchCustomers, {
+    size: 10,
+    sortBy: sortKey,
+    sortDir,
+    filters: {
+      status: filterStatus === "All Status" ? undefined : filterStatus,
+      type:   filterType   === "All Types"  ? undefined : filterType,
+      tier:   filterTier   === "All Tiers"  ? undefined : filterTier,
+    },
+  });
+
   useEffect(() => {
-    setLoading(true);
-    customerService
-      .getAll()
-      .then((res) => {
-        const raw = res.data?.data ?? res.data ?? [];
-        setCustomers(Array.isArray(raw) ? raw : []);
-      })
-      .catch(() => showToast("Failed to load customers.", "error"))
-      .finally(() => setLoading(false));
-  }, [showToast]);
+    if (listError) showToast("Failed to load customers.", "error");
+  }, [listError, showToast]);
 
-  /* ── Stats ── */
+  /* ── Stats ──
+     From GET /customers/stats, NOT from the rows on screen. These are tenant-wide COUNT/SUM
+     figures; computing them from one page would make "Total Customers" mean "customers on this
+     page" and understate revenue by however much the page happened to exclude. */
+  useEffect(() => {
+    customerService.getStats()
+      .then(res => setServerStats(res.data?.data ?? res.data ?? null))
+      .catch(() => setServerStats(null));   // cards degrade to 0, never a toast
+  }, []);
+
   const stats = useMemo(() => ({
-    total:    customers.length,
-    active:   customers.filter(c => c.status === "Active").length,
-    vip:      customers.filter(c => c.type === "VIP").length,
-    revenue:  customers.reduce((s, c) => s + (c.spent || 0), 0),
-    bookings: customers.reduce((s, c) => s + (c.bookings || 0), 0),
-    repeat:   customers.filter(c => (c.bookings || 0) >= 3).length,
-  }), [customers]);
+    total:    serverStats?.total ?? total ?? 0,
+    active:   serverStats?.active ?? 0,
+    vip:      serverStats?.vip ?? 0,
+    revenue:  Number(serverStats?.totalRevenue ?? 0),
+    bookings: serverStats?.totalBookings ?? 0,
+    repeat:   serverStats?.repeatCustomers ?? 0,
+  }), [serverStats, total]);
 
-  /* ── Filter + sort ── */
-  const filtered = useMemo(() => {
-    let out = [...customers];
-    const q = search.toLowerCase();
-    if (q) out = out.filter(c =>
-      (c.name || "").toLowerCase().includes(q) ||
-      (c.id   || "").toLowerCase().includes(q) ||
-      (c.phone|| "").includes(q) ||
-      (c.email|| "").toLowerCase().includes(q) ||
-      (c.city || "").toLowerCase().includes(q)
-    );
-    if (filterStatus !== "All Status") out = out.filter(c => c.status === filterStatus);
-    if (filterType   !== "All Types")  out = out.filter(c => c.type   === filterType);
-    if (filterTier   !== "All Tiers")  out = out.filter(c => c.tier   === filterTier);
-    out.sort((a, b) => {
-      let av = a[sortKey], bv = b[sortKey];
-      if (typeof av === "string") { av = av.toLowerCase(); bv = bv.toLowerCase(); }
-      if (av < bv) return sortDir === "asc" ? -1 : 1;
-      if (av > bv) return sortDir === "asc" ?  1 : -1;
-      return 0;
-    });
-    return out;
-  }, [customers, search, filterStatus, filterType, filterTier, sortKey, sortDir]);
+  // The server returns exactly the rows for this page, already narrowed and sorted — there is no
+  // client-side `filtered` step any more.
+  const filtered = customers;
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / perPage));
-  const pageData   = filtered.slice((page - 1) * perPage, page * perPage);
+  // `pageData` IS the server's page — no local slicing. `totalPages`/`total` come from the
+  // response's pagination block, so the pager reflects the whole tenant, not what's in memory.
+  const pageData   = filtered;
   const anyFilter  = search || filterStatus !== "All Status" || filterType !== "All Types" || filterTier !== "All Tiers";
+  const activeFilterCount = [search, filterStatus !== "All Status", filterType !== "All Types",
+    filterTier !== "All Tiers"].filter(Boolean).length;
+  // Same input styling as the All Bookings filter panel, so the screens read as one product.
+  const inputCls = "w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-700 placeholder-slate-400 font-medium focus:border-blue-400 focus:ring-2 focus:ring-blue-100 outline-none transition-all hover:border-slate-300";
 
   const handleSort = key => {
     if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
@@ -1271,7 +1275,8 @@ export default function Customers() {
     return sortDir === "asc" ? <FaSortUp className="inline ml-1 text-blue-500 text-xs"/> : <FaSortDown className="inline ml-1 text-blue-500 text-xs"/>;
   };
 
-  const resetFilters = () => { setSearch(""); setFStatus("All Status"); setFType("All Types"); setFTier("All Tiers"); setPage(1); };
+  // No setPage here: usePagedList resets to page 0 itself whenever the query changes.
+  const resetFilters = () => { setSearch(""); setFStatus("All Status"); setFType("All Types"); setFTier("All Tiers"); };
 
   /* ── Navigate to Edit page ── */
   const handleNavigateEdit = useCallback((customerId) => {
@@ -1282,7 +1287,8 @@ export default function Customers() {
   const handleDelete = async () => {
     try {
       await customerService.delete(deleteTarget.id);
-      setCustomers(prev => prev.filter(c => c.id !== deleteTarget.id));
+      // Re-query: deleting the last row on a page must pull the next page's rows up.
+      await reload();
       showToast(`${deleteTarget.name} deleted.`);
     } catch {
       showToast("Failed to delete customer.", "error");
@@ -1429,37 +1435,77 @@ export default function Customers() {
         {/* ── CUSTOMER LIST CARD ── */}
         <div className="bg-white/80 backdrop-blur-md rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden">
 
-          {/* List header */}
-          <div className="px-4 sm:px-5 py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <div className="flex items-center gap-3 flex-wrap">
-              <h2 className="text-base font-extrabold text-slate-700">Customer List</h2>
-              <span className="text-xs bg-blue-100 text-blue-700 font-bold px-2.5 py-1 rounded-full">{filtered.length} results</span>
+          {/* ── COLLAPSIBLE FILTER HEADER — same control as All Bookings ── */}
+          <button type="button" onClick={()=>setFiltersOpen(v=>!v)}
+            className="w-full flex items-center justify-between px-5 py-4 bg-slate-600 hover:bg-slate-700 transition-colors">
+            <div className="flex items-center gap-2.5">
+              <FaFilter className="w-4 h-4 text-white"/>
+              <span className="text-sm font-extrabold text-white">Filters &amp; Search</span>
+              {activeFilterCount>0 && (
+                <span className="bg-blue-500 text-white text-[10px] font-extrabold px-2 py-0.5 rounded-full">
+                  {activeFilterCount} active
+                </span>
+              )}
             </div>
-            {anyFilter && (
-              <button onClick={resetFilters}
-                className="text-xs text-slate-400 hover:text-red-500 font-bold flex items-center gap-1.5 transition-colors">
-                <FaTimes/> Clear all filters
-              </button>
-            )}
-          </div>
+            <div className="flex items-center gap-3">
+              <span className="text-white/70 text-xs font-bold">{total} customers</span>
+              {anyFilter && (
+                <button type="button" onClick={e=>{e.stopPropagation();resetFilters();}}
+                  className="text-white/70 hover:text-white text-xs font-bold transition-colors">
+                  Clear all
+                </button>
+              )}
+              {filtersOpen
+                ?<FaChevronUp   className="w-4 h-4 text-white"/>
+                :<FaChevronDown className="w-4 h-4 text-white"/>}
+            </div>
+          </button>
 
-          {/* Filters */}
-          <div className="px-4 sm:px-5 py-4 border-b border-slate-100 bg-slate-50/60">
-            <div className="flex flex-col sm:flex-row gap-3 flex-wrap">
-              <div className="relative flex-1 min-w-[100%] sm:min-w-[200px]">
-                <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"/>
-                <input type="text" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }}
-                  placeholder="Search by name, ID, phone, email, city..."
-                  className="w-full pl-8 pr-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-700 placeholder-slate-400
-                    focus:border-blue-400 focus:ring-2 focus:ring-blue-50 outline-none transition-all"/>
+          {/* Filter body — every control below queries the SERVER, not the loaded page */}
+          {filtersOpen && (
+            <div className="p-5 space-y-4 border-b border-slate-100 bg-slate-50/60"
+              style={{animation:"fadeUp .25s ease both"}}>
+              {/* Row 1: Search + Status + Type */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
+                <div className="lg:col-span-2">
+                  <label className="block text-xs font-extrabold text-slate-500 uppercase tracking-wide mb-1.5">Search</label>
+                  <div className="relative">
+                    <FaSearch className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"/>
+                    <input type="text" value={search} onChange={e => setSearch(e.target.value)}
+                      placeholder="Name, customer code, phone, email, city…"
+                      className={inputCls+" pl-10"}/>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-extrabold text-slate-500 uppercase tracking-wide mb-1.5">Status</label>
+                  <Sel value={filterStatus} onChange={setFStatus} opts={["All Status","Active","Inactive","Blocked"]} className="w-full"/>
+                </div>
+                <div>
+                  <label className="block text-xs font-extrabold text-slate-500 uppercase tracking-wide mb-1.5">Type</label>
+                  <Sel value={filterType} onChange={setFType} opts={["All Types","Regular","Corporate","VIP"]} className="w-full"/>
+                </div>
               </div>
-              <div className="flex gap-3 flex-wrap sm:flex-nowrap w-full sm:w-auto">
-                <Sel value={filterStatus} onChange={v => { setFStatus(v); setPage(1); }} opts={["All Status","Active","Inactive","Blocked"]}/>
-                <Sel value={filterType}   onChange={v => { setFType(v);   setPage(1); }} opts={["All Types","Regular","Corporate","VIP"]}/>
-                <Sel value={filterTier}   onChange={v => { setFTier(v);   setPage(1); }} opts={["All Tiers","Platinum","Gold","Silver","Bronze"]}/>
+              {/* Row 2: Tier + action buttons */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
+                <div>
+                  <label className="block text-xs font-extrabold text-slate-500 uppercase tracking-wide mb-1.5">Loyalty Tier</label>
+                  <Sel value={filterTier} onChange={setFTier} opts={["All Tiers","Platinum","Gold","Silver","Bronze"]} className="w-full"/>
+                </div>
+                <div className="flex items-end gap-3 lg:col-span-3">
+                  <button onClick={reload}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl border-2 border-slate-200 hover:border-slate-300
+                      bg-white hover:bg-slate-50 text-slate-600 text-sm font-bold transition-all h-[42px]">
+                    <FaRedoAlt className={`w-3.5 h-3.5 ${loading?"animate-spin":""}`}/> Refresh
+                  </button>
+                  <button onClick={handleExport}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700
+                      text-white text-sm font-bold shadow-md shadow-emerald-200 transition-all h-[42px]">
+                    <FaDownload className="w-3.5 h-3.5"/> Export CSV
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
           {/* ── DESKTOP GRID (Leads-directory style, no expandable) ── */}
           <div className="hidden lg:block">
@@ -1642,39 +1688,47 @@ export default function Customers() {
             }
           </div>
 
-          {/* ── PAGINATION ── */}
-          {filtered.length > 0 && (
+          {/* ── PAGINATION ──
+              Same control, now server-driven. `page` is 0-based like the API; the buttons stay
+              1-based for the user, so every number shown is `page + 1` and every click sends
+              `n - 1`. `total`/`totalPages` come from the response's pagination block. */}
+          {total > 0 && (
             <div className="px-4 sm:px-5 py-4 border-t border-slate-100 bg-slate-50/60 flex flex-col sm:flex-row items-center justify-between gap-4">
               <p className="text-xs text-slate-400 font-medium text-center sm:text-left">
-                Showing <span className="font-bold text-slate-600">{(page-1)*perPage+1}</span>–<span className="font-bold text-slate-600">{Math.min(page*perPage,filtered.length)}</span> of <span className="font-bold text-slate-600">{filtered.length}</span> customers
+                Showing <span className="font-bold text-slate-600">{page*pageSize+1}</span>–<span className="font-bold text-slate-600">{Math.min((page+1)*pageSize,total)}</span> of <span className="font-bold text-slate-600">{total}</span> customers
               </p>
               <div className="flex items-center justify-center flex-wrap gap-1.5">
-                <button disabled={page===1} onClick={()=>setPage(1)}
+                <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))}
+                  className="h-8 rounded-lg bg-white border border-slate-200 text-slate-600 text-xs font-bold px-2 hover:border-blue-300 outline-none focus:border-blue-400"
+                  aria-label="Rows per page">
+                  {[10,25,50,100].map(s => <option key={s} value={s}>{s} / page</option>)}
+                </select>
+                <button disabled={page===0||loading} onClick={()=>setPage(0)}
                   className="w-8 h-8 rounded-lg bg-white border border-slate-200 text-slate-500 hover:border-blue-300 hover:text-blue-600 text-xs font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center">
                   <FaAngleDoubleLeft className="text-xs"/>
                 </button>
-                <button disabled={page===1} onClick={()=>setPage(p=>p-1)}
+                <button disabled={page===0||loading} onClick={()=>setPage(p=>Math.max(0,p-1))}
                   className="w-8 h-8 rounded-lg bg-white border border-slate-200 text-slate-500 hover:border-blue-300 hover:text-blue-600 text-xs font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center">
                   <FaChevronLeft className="text-xs"/>
                 </button>
                 {Array.from({length:totalPages},(_,i)=>i+1)
-                  .filter(p=>p===1||p===totalPages||Math.abs(p-page)<=1)
+                  .filter(p=>p===1||p===totalPages||Math.abs(p-(page+1))<=1)
                   .reduce((acc,p,i,arr)=>{ if(i>0&&p-arr[i-1]>1) acc.push("…"); acc.push(p); return acc; },[])
                   .map((p,i)=>
                     typeof p==="string"
                     ? <span key={`e${i}`} className="w-8 h-8 flex items-center justify-center text-xs text-slate-400">…</span>
-                    : <button key={p} onClick={()=>setPage(p)}
+                    : <button key={p} onClick={()=>setPage(p-1)}
                         className={`w-8 h-8 rounded-lg text-xs font-bold transition-all border
-                          ${page===p?"bg-blue-600 border-blue-600 text-white shadow-sm":"bg-white border-slate-200 text-slate-600 hover:border-blue-300 hover:text-blue-600"}`}>
+                          ${page+1===p?"bg-blue-600 border-blue-600 text-white shadow-sm":"bg-white border-slate-200 text-slate-600 hover:border-blue-300 hover:text-blue-600"}`}>
                         {p}
                       </button>
                   )
                 }
-                <button disabled={page===totalPages} onClick={()=>setPage(p=>p+1)}
+                <button disabled={page+1>=totalPages||loading} onClick={()=>setPage(p=>Math.min(totalPages-1,p+1))}
                   className="w-8 h-8 rounded-lg bg-white border border-slate-200 text-slate-500 hover:border-blue-300 hover:text-blue-600 text-xs font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center">
                   <FaChevronRight className="text-xs"/>
                 </button>
-                <button disabled={page===totalPages} onClick={()=>setPage(totalPages)}
+                <button disabled={page+1>=totalPages||loading} onClick={()=>setPage(Math.max(0,totalPages-1))}
                   className="w-8 h-8 rounded-lg bg-white border border-slate-200 text-slate-500 hover:border-blue-300 hover:text-blue-600 text-xs font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center">
                   <FaAngleDoubleRight className="text-xs"/>
                 </button>

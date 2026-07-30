@@ -13,14 +13,45 @@ import API from "@shared/api/http";
    All methods return Axios Promise → { data, status, headers }
 ───────────────────────────────────────────────────────────── */
 
+/* The table's column keys are DTO field names; the backend sorts by ENTITY property names.
+   Three of them differ, and an unmapped key silently falls back to createdAt server-side — which
+   looks like "sorting is broken" rather than an error. Mapped here, once. */
+const SORT_KEY_MAP = {
+  name: "vendorName",
+  code: "vendorCode",
+  type: "vendorType",
+};
+
 const vendorService = {
 
-  /* ── GET ALL VENDORS ────────────────────────────────────────
-     GET /api/vendors
-     Response: VendorResponseDTO[]
+  /* ── PAGED VENDOR LIST ──────────────────────────────────────
+     GET /api/vendors?page&size&sortBy&sortDir&q&status&type&payStatus
+     Returns the raw PagedApiResponse envelope: { data: [...], pagination: {...} }.
+
+     Search and filters are SERVER-side. The standalone /search and /filter endpoints return
+     unpaged lists, so they cannot back a paginated table — narrowing has to happen in the same
+     query that pages. Drive this through `usePagedList`.
   ──────────────────────────────────────────────────────────── */
-  getAll: () =>
-    API.get("/vendors"),
+  list: ({ page = 0, size = 25, sortBy = "vendorName", sortDir = "asc",
+           q, status, type, payStatus } = {}) =>
+    API.get("/vendors", {
+      params: {
+        page, size,
+        sortBy: SORT_KEY_MAP[sortBy] ?? sortBy,
+        sortDir,
+        q: q || undefined,
+        status: status || undefined,
+        type: type || undefined,
+        payStatus: payStatus || undefined,
+      },
+    }),
+
+  /* ── GET ALL VENDORS ────────────────────────────────────────
+     Back-compat shim for callers that want a plain list (e.g. a booking's vendor dropdown).
+     Explicitly asks for the max page size instead of silently taking the server default of 10.
+  ──────────────────────────────────────────────────────────── */
+  getAll: (params = {}) =>
+    vendorService.list({ size: 200, ...params }),
 
   /* ── GET VENDOR BY ID ───────────────────────────────────────
      GET /api/vendors/:id

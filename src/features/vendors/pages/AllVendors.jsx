@@ -1,7 +1,8 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import vendorService from "../api/vendorService";
-import { Search as FiSearch, Plus as FiPlus, Pen as FiEdit2, Trash2 as FiTrash2, Eye as FiEye, Download as FiDownload, Phone as FiPhone, Mail as FiMail, MapPin as FiMapPin, Star as FiStar, ChevronDown as FiChevronDown,
+import { usePagedList } from "@shared/api/usePagedList";
+import { Search as FiSearch, Plus as FiPlus, Pen as FiEdit2, Trash2 as FiTrash2, Eye as FiEye, Download as FiDownload, Phone as FiPhone, Mail as FiMail, MapPin as FiMapPin, Star as FiStar, ChevronDown as FiChevronDown, Filter as FiFilter, RefreshCw as FiRefreshCw,
          ChevronUp as FiChevronUp, CircleCheck as FiCheckCircle, Hotel as FaHotel, Plane as FaPlane, Bus as FaBus, MapPinned as FaMapMarkedAlt, Handshake as FaHandshake, Percent as FaPercentage, Star as FaStar, Banknote as FaMoneyBillWave, Star as FaRegStar, BadgeCheck as MdVerified, Sparkles as HiSparkles } from "lucide-react";
 import { WhatsAppIcon as FaWhatsapp } from "@shared/ui/WhatsAppIcon";
 
@@ -9,6 +10,11 @@ import { WhatsAppIcon as FaWhatsapp } from "@shared/ui/WhatsAppIcon";
 /* ─── CONSTANTS ──────────────────────────────────────────────── */
 const VENDOR_TYPES = ["Hotel", "Airlines", "Transport", "DMC"];
 const STATUSES     = ["ACTIVE", "INACTIVE", "SUSPENDED", "BLACKLISTED"];
+// Mirrors VendorPayStatus on the backend. The list already shows a Pay Status column and the
+// paged endpoint already filters on it — this is what makes the column actionable.
+const PAY_STATUSES = ["PAID", "UNPAID", "PARTIALLY_PAID", "OVERDUE"];
+// Same input styling as the All Bookings filter panel, so the two screens read as one product.
+const inputCls = "w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-700 placeholder-slate-400 font-medium focus:border-blue-400 focus:ring-2 focus:ring-blue-100 outline-none transition-all hover:border-slate-300";
 
 const enumLabel = (v) =>
   (v || "").replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
@@ -440,9 +446,9 @@ function MobileVendorCard({ v, onView, onNavigateEdit, onDelete, idx }) {
 }
 
 /* ─── SELECT WRAPPER ─────────────────────────────────────────── */
-function Sel({ val, onChange, opts, fmt }) {
+function Sel({ val, onChange, opts, fmt, className="" }) {
   return (
-    <div className="relative">
+    <div className={`relative ${className}`}>
       <select value={val} onChange={e => onChange(e.target.value)}
         className="w-full pl-3.5 pr-9 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-700
           font-medium focus:border-blue-400 focus:ring-2 focus:ring-blue-50 outline-none appearance-none cursor-pointer transition-all hover:border-slate-300">
@@ -459,96 +465,98 @@ function Sel({ val, onChange, opts, fmt }) {
 export default function Vendors() {
   const navigate = useNavigate();
 
-  const [vendors,  setVendors]  = useState([]);
-  const [search,   setSearch]   = useState("");
   const [fStatus,  setFStatus]  = useState("All Status");
   const [fType,    setFType]    = useState("All Types");
-  const [sortKey,  setSortKey]  = useState("id");
+  const [fPay,     setFPay]     = useState("All Pay Status");
+  const [filtersOpen, setFiltersOpen] = useState(false);   // collapsed by default, like All Bookings
+  const [sortKey,  setSortKey]  = useState("vendorName");
   const [sortDir,  setSortDir]  = useState("asc");
-  const [page,     setPage]     = useState(1);
+  const [serverStats, setServerStats] = useState(null);
 
   const [vendorStatsOpen, setVendorStatsOpen] = useState(false);
 
   const [vendorDistributionOpen, setVendorDistributionOpen] =
   useState(false);
 
-  const PER = 8;
-
   const [viewV,    setView]     = useState(null);
   const [deleteV,  setDeleteV]  = useState(null);
-  const [loading,  setLoading]  = useState(true);
   const [toast,    setToast]    = useState(null);
 
   const showToast = useCallback((msg, type="success") => setToast({msg, type}), []);
 
-  /* ── Load vendors ── */
-  useEffect(() => {
-    setLoading(true);
-    vendorService.getAll()
-      .then((res) => {
-        const raw = res.data?.data ?? res.data ?? [];
-        const list = Array.isArray(raw) ? raw : [];
-        setVendors(list.map(v => ({
-          ...v,
-          name:          v.name         || v.companyName    || "",
-          contact:       v.contact      || v.contactPerson  || "",
-          phone:         v.phone        || v.mobile         || "",
-          state:         v.state        || v.country        || "",
-          services:      Array.isArray(v.services) ? v.services : [],
-          rating:        v.rating       || 0,
-          totalBusiness: v.totalBusiness || 0,
-          totalPaid:     v.totalPaid    || 0,
-          outstanding:   v.outstanding  || 0,
-          bookings:      v.bookings     || 0,
-        })));
-      })
-      .catch(() => showToast("Failed to load vendors.", "error"))
-      .finally(() => setLoading(false));
-  }, [showToast]);
+  /* ── Server-side paged list ────────────────────────────────────────────────
+     Search, status/type filters, sorting and paging all run on the backend. Doing any of it in
+     the browser would only ever narrow the rows the current page happened to contain — and with
+     the server default at 10 rows, that meant a tenant with 30 vendors could only ever see 10. */
+  const fetchVendors = useCallback((params) => vendorService.list(params), []);
 
-  /* ── Stats ── */
+  const {
+    rows, loading, error: listError,
+    page, setPage, pageSize, setPageSize,
+    q: search, setQ: setSearch,
+    total, totalPages, reload,
+  } = usePagedList(fetchVendors, {
+    size: 10,
+    sortBy: sortKey,
+    sortDir,
+    filters: {
+      status:    fStatus === "All Status"     ? undefined : fStatus,
+      type:      fType   === "All Types"      ? undefined : fType,
+      payStatus: fPay    === "All Pay Status" ? undefined : fPay,
+    },
+  });
+
+  useEffect(() => {
+    if (listError) showToast("Failed to load vendors.", "error");
+  }, [listError, showToast]);
+
+  /* Normalise the page's rows into the shape the table renders. */
+  const pageData = useMemo(() => (rows || []).map(v => ({
+    ...v,
+    name:          v.name         || v.companyName    || "",
+    contact:       v.contact      || v.contactPerson  || "",
+    phone:         v.phone        || v.mobile         || "",
+    state:         v.state        || v.country        || "",
+    services:      Array.isArray(v.services) ? v.services : [],
+    rating:        v.rating       || 0,
+    totalBusiness: v.totalBusiness || 0,
+    totalPaid:     v.totalPaid    || 0,
+    outstanding:   v.outstanding  || 0,
+    bookings:      v.bookings     || 0,
+  })), [rows]);
+
+  /* ── Stats ──
+     From GET /vendors/stats, NOT from the rows on screen. These are tenant-wide figures; deriving
+     them from a page would make "Total Vendors" mean "vendors on this page" and quietly understate
+     every rupee total. The server already computes them with COUNT/SUM/AVG over the whole tenant. */
+  useEffect(() => {
+    vendorService.getStats()
+      .then(res => setServerStats(res.data?.data ?? res.data ?? null))
+      .catch(() => setServerStats(null));   // cards degrade to 0, never a toast
+  }, []);
+
   const stats = useMemo(() => ({
-    total:     vendors.length,
-    active:    vendors.filter(v => v.status==="ACTIVE").length,
-    cost:      vendors.reduce((s,v) => s+(v.totalBusiness||0), 0),
-    avgRating: vendors.length ? vendors.reduce((s,v) => s+(v.rating||0), 0) / vendors.length : 0,
-  }), [vendors]);
+    total:     serverStats?.total     ?? total ?? 0,
+    active:    serverStats?.active    ?? 0,
+    cost:      Number(serverStats?.totalBusiness ?? 0),
+    avgRating: Number(serverStats?.avgRating     ?? 0),
+  }), [serverStats, total]);
 
   const distStats = useMemo(() => ({
-    Hotel:     vendors.filter(v=>v.type==="Hotel").length,
-    Airlines:  vendors.filter(v=>v.type==="Airlines").length,
-    Transport: vendors.filter(v=>v.type==="Transport").length,
-    DMC:       vendors.filter(v=>v.type==="DMC").length,
-    bookings:  vendors.reduce((s,v)=>s+(v.bookings||0),0),
-    cost:      vendors.reduce((s,v)=>s+(v.totalBusiness||0),0),
-  }), [vendors]);
+    Hotel:     serverStats?.totalByType?.Hotel     ?? 0,
+    Airlines:  serverStats?.totalByType?.Airlines  ?? 0,
+    Transport: serverStats?.totalByType?.Transport ?? 0,
+    DMC:       serverStats?.totalByType?.DMC       ?? 0,
+    bookings:  serverStats?.totalBookings ?? 0,
+    cost:      Number(serverStats?.totalBusiness ?? 0),
+  }), [serverStats]);
 
-  /* ── Filter + sort ── */
-  const filtered = useMemo(() => {
-    let out = [...vendors];
-    const q = search.toLowerCase();
-    if (q) out = out.filter(v =>
-      (v.name||"").toLowerCase().includes(q) ||
-      (v.code||"").toLowerCase().includes(q) ||
-      (v.contact||"").toLowerCase().includes(q) ||
-      (v.city||"").toLowerCase().includes(q) ||
-      (v.email||"").toLowerCase().includes(q)
-    );
-    if (fStatus !== "All Status") out = out.filter(v => v.status === fStatus);
-    if (fType   !== "All Types")  out = out.filter(v => v.type   === fType);
-    out.sort((a,b) => {
-      let av = a[sortKey], bv = b[sortKey];
-      if (typeof av === "string") { av = av.toLowerCase(); bv = bv.toLowerCase(); }
-      if (av < bv) return sortDir==="asc" ? -1 : 1;
-      if (av > bv) return sortDir==="asc" ?  1 : -1;
-      return 0;
-    });
-    return out;
-  }, [vendors, search, fStatus, fType, sortKey, sortDir]);
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PER));
-  const pageData   = filtered.slice((page-1)*PER, page*PER);
-  const anyFilter  = search || fStatus !== "All Status" || fType !== "All Types";
+  // There is no client-side `filtered` any more: the server does the narrowing, so the rows in
+  // hand ARE the result. `pageData` is what the table renders; `total` is the tenant-wide count.
+  const anyFilter = search || fStatus !== "All Status" || fType !== "All Types"
+                    || fPay !== "All Pay Status";
+  const activeFilterCount = [search, fStatus !== "All Status", fType !== "All Types",
+    fPay !== "All Pay Status"].filter(Boolean).length;
 
   const handleSort = key => {
     if (sortKey === key) setSortDir(d => d==="asc"?"desc":"asc");
@@ -560,7 +568,10 @@ export default function Vendors() {
     </span>
   );
 
-  const resetFilters = () => { setSearch(""); setFStatus("All Status"); setFType("All Types"); setPage(1); };
+  // No setPage here: usePagedList resets to page 0 itself whenever the query narrows or widens.
+  const resetFilters = () => {
+    setSearch(""); setFStatus("All Status"); setFType("All Types"); setFPay("All Pay Status");
+  };
 
   /* ── Navigate to edit page ── */
   const handleNavigateEdit = useCallback((vendorId) => {
@@ -576,7 +587,9 @@ export default function Vendors() {
   const handleDelete = async () => {
     try {
       await vendorService.delete(deleteV.id);
-      setVendors(prev => prev.filter(v => v.id !== deleteV.id));
+      // Re-query instead of splicing locally: removing the last row on a page has to pull the
+      // next page's rows up, and only the server knows what those are.
+      await reload();
       showToast(`${deleteV.name} deleted.`);
     } catch {
       showToast("Failed to delete vendor.", "error");
@@ -907,38 +920,80 @@ export default function Vendors() {
         {/* ── VENDOR LIST CARD ── */}
         <div className="bg-white/80 backdrop-blur-md rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden fade-up">
 
-          {/* Header */}
-          <div className="px-5 py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <div className="flex items-center gap-3 flex-wrap">
-              <h2 className="text-base font-extrabold text-slate-700">Vendor List</h2>
-              <span className="text-xs bg-blue-100 text-blue-700 font-extrabold px-2.5 py-1 rounded-full border border-blue-200">
-                {filtered.length} vendors
-              </span>
+          {/* ── COLLAPSIBLE FILTER HEADER — same control as All Bookings ── */}
+          <button type="button" onClick={()=>setFiltersOpen(v=>!v)}
+            className="w-full flex items-center justify-between px-5 py-4 bg-slate-600 hover:bg-slate-700 transition-colors">
+            <div className="flex items-center gap-2.5">
+              <FiFilter className="w-4 h-4 text-white"/>
+              <span className="text-sm font-extrabold text-white">Filters &amp; Search</span>
+              {activeFilterCount>0 && (
+                <span className="bg-blue-500 text-white text-[10px] font-extrabold px-2 py-0.5 rounded-full">
+                  {activeFilterCount} active
+                </span>
+              )}
             </div>
-            {anyFilter && (
-              <button onClick={resetFilters}
-                className="text-xs text-red-400 hover:text-red-600 font-bold flex items-center gap-1 transition-colors">
-                ✕ Clear filters
-              </button>
-            )}
-          </div>
+            <div className="flex items-center gap-3">
+              <span className="text-white/70 text-xs font-bold">{total} vendors</span>
+              {anyFilter && (
+                <button type="button" onClick={e=>{e.stopPropagation();resetFilters();}}
+                  className="text-white/70 hover:text-white text-xs font-bold transition-colors">
+                  Clear all
+                </button>
+              )}
+              {filtersOpen
+                ?<FiChevronUp   className="w-4 h-4 text-white"/>
+                :<FiChevronDown className="w-4 h-4 text-white"/>}
+            </div>
+          </button>
 
-          {/* Filters */}
-          <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/60">
-            <div className="flex flex-col sm:flex-row gap-3 flex-wrap">
-              <div className="relative flex-1 min-w-[200px]">
-                <FiSearch className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"/>
-                <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }}
-                  placeholder="Search by name, code, contact, city…"
-                  className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-700
-                    placeholder-slate-400 focus:border-blue-400 focus:ring-2 focus:ring-blue-50 outline-none transition-all hover:border-slate-300"/>
+          {/* Filter body — every control below queries the SERVER, not the loaded page */}
+          {filtersOpen && (
+            <div className="p-5 space-y-4 border-b border-slate-100 bg-slate-50/60"
+              style={{animation:"fadeUp .25s ease both"}}>
+              {/* Row 1: Search + Status + Type */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
+                <div className="lg:col-span-2">
+                  <label className="block text-xs font-extrabold text-slate-500 uppercase tracking-wide mb-1.5">Search</label>
+                  <div className="relative">
+                    <FiSearch className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"/>
+                    <input type="text" value={search} onChange={e => setSearch(e.target.value)}
+                      placeholder="Vendor name, code, contact, city, email…"
+                      className={inputCls+" pl-10"}/>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-extrabold text-slate-500 uppercase tracking-wide mb-1.5">Status</label>
+                  <Sel val={fStatus} onChange={setFStatus}
+                    opts={["All Status", ...STATUSES]} fmt={enumLabel} className="w-full"/>
+                </div>
+                <div>
+                  <label className="block text-xs font-extrabold text-slate-500 uppercase tracking-wide mb-1.5">Type</label>
+                  <Sel val={fType} onChange={setFType}
+                    opts={["All Types", ...VENDOR_TYPES]} className="w-full"/>
+                </div>
               </div>
-              <Sel val={fStatus} onChange={v => { setFStatus(v); setPage(1); }}
-                opts={["All Status", ...STATUSES]} fmt={enumLabel}/>
-              <Sel val={fType} onChange={v => { setFType(v); setPage(1); }}
-                opts={["All Types", ...VENDOR_TYPES]}/>
+              {/* Row 2: Pay Status + action buttons */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
+                <div>
+                  <label className="block text-xs font-extrabold text-slate-500 uppercase tracking-wide mb-1.5">Pay Status</label>
+                  <Sel val={fPay} onChange={setFPay}
+                    opts={["All Pay Status", ...PAY_STATUSES]} fmt={enumLabel} className="w-full"/>
+                </div>
+                <div className="flex items-end gap-3 lg:col-span-3">
+                  <button onClick={reload}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl border-2 border-slate-200 hover:border-slate-300
+                      bg-white hover:bg-slate-50 text-slate-600 text-sm font-bold transition-all h-[42px]">
+                    <FiRefreshCw className={`w-3.5 h-3.5 ${loading?"animate-spin":""}`}/> Refresh
+                  </button>
+                  <button onClick={handleExport}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700
+                      text-white text-sm font-bold shadow-md shadow-emerald-200 transition-all h-[42px]">
+                    <FiDownload className="w-3.5 h-3.5"/> Export CSV
+                  </button>
+                </div>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* ── DESKTOP TABLE ── */}
           <div className="hidden lg:block overflow-x-auto">
@@ -1132,20 +1187,31 @@ export default function Vendors() {
             )}
           </div>
 
-          {/* ── PAGINATION ── */}
-          {filtered.length > 0 && (
+          {/* ── PAGINATION ──
+              Same control as before, now driven by the SERVER's pagination block. `page` is
+              0-based (as the API uses) while the buttons stay 1-based for the user, so every
+              number rendered is `page + 1` and every click sends `n - 1`. `total` is the tenant's
+              full count from the server, not the length of what's on screen. */}
+          {total > 0 && (
             <div className="px-5 py-4 border-t border-slate-100 bg-slate-50/60
               flex flex-col sm:flex-row items-center justify-between gap-3">
               <p className="text-xs text-slate-400 font-medium">
                 Showing{" "}
-                <span className="font-bold text-slate-600">{(page-1)*PER+1}</span>–
-                <span className="font-bold text-slate-600">{Math.min(page*PER,filtered.length)}</span>
+                <span className="font-bold text-slate-600">{page*pageSize+1}</span>–
+                <span className="font-bold text-slate-600">{Math.min((page+1)*pageSize,total)}</span>
                 {" "}of{" "}
-                <span className="font-bold text-slate-600">{filtered.length}</span> vendors
+                <span className="font-bold text-slate-600">{total}</span> vendors
               </p>
               <div className="flex items-center gap-1.5">
-                {[["«",()=>setPage(1)],["‹",()=>setPage(p=>Math.max(1,p-1))]].map(([l,fn]) => (
-                  <button key={l} disabled={page===1} onClick={fn}
+                <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))}
+                  className="h-8 rounded-lg bg-white border border-slate-200 text-slate-600 text-xs font-bold px-2
+                    hover:border-blue-300 outline-none focus:border-blue-400"
+                  aria-label="Rows per page">
+                  {[10,25,50,100].map(s => <option key={s} value={s}>{s} / page</option>)}
+                </select>
+
+                {[["«",()=>setPage(0)],["‹",()=>setPage(p=>Math.max(0,p-1))]].map(([l,fn]) => (
+                  <button key={l} disabled={page===0||loading} onClick={fn}
                     className="w-8 h-8 rounded-lg bg-white border border-slate-200 text-slate-500
                       hover:border-blue-300 hover:text-blue-600 text-xs font-bold transition-all
                       disabled:opacity-40 disabled:cursor-not-allowed">
@@ -1153,19 +1219,19 @@ export default function Vendors() {
                   </button>
                 ))}
                 {Array.from({length:totalPages},(_,i)=>i+1)
-                  .filter(p=>p===1||p===totalPages||Math.abs(p-page)<=1)
+                  .filter(p=>p===1||p===totalPages||Math.abs(p-(page+1))<=1)
                   .reduce((acc,p,i,arr)=>{ if(i>0&&p-arr[i-1]>1) acc.push("…"); acc.push(p); return acc; },[])
                   .map((p,i) =>
                     typeof p==="string"
                       ? <span key={`e${i}`} className="w-8 text-center text-xs text-slate-400">…</span>
-                      : <button key={p} onClick={()=>setPage(p)}
+                      : <button key={p} onClick={()=>setPage(p-1)}
                           className={`w-8 h-8 rounded-lg text-xs font-bold transition-all border
-                            ${page===p?"bg-blue-600 border-blue-600 text-white shadow-sm":"bg-white border-slate-200 text-slate-600 hover:border-blue-300 hover:text-blue-600"}`}>
+                            ${page+1===p?"bg-blue-600 border-blue-600 text-white shadow-sm":"bg-white border-slate-200 text-slate-600 hover:border-blue-300 hover:text-blue-600"}`}>
                           {p}
                         </button>
                   )}
-                {[["›",()=>setPage(p=>Math.min(totalPages,p+1))],["»",()=>setPage(totalPages)]].map(([l,fn]) => (
-                  <button key={l} disabled={page===totalPages} onClick={fn}
+                {[["›",()=>setPage(p=>Math.min(totalPages-1,p+1))],["»",()=>setPage(Math.max(0,totalPages-1))]].map(([l,fn]) => (
+                  <button key={l} disabled={page+1>=totalPages||loading} onClick={fn}
                     className="w-8 h-8 rounded-lg bg-white border border-slate-200 text-slate-500
                       hover:border-blue-300 hover:text-blue-600 text-xs font-bold transition-all
                       disabled:opacity-40 disabled:cursor-not-allowed">

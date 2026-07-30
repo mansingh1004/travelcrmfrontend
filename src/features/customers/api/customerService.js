@@ -14,8 +14,31 @@ const customerService = {
      GET /api/customers
      Response: CustomerResponseDTO[]
   ──────────────────────────────────────────────────────────── */
-  getAll: () =>
-    API.get("/customers"),
+  /* ── PAGED CUSTOMER LIST ────────────────────────────────────
+     GET /api/customers?page&size&sortBy&sortDir&q&status&type&tier
+     Returns the raw PagedApiResponse envelope: { data: [...], pagination: {...} }.
+
+     Search and filters are SERVER-side. /search-name and /filter return unpaged lists and so
+     cannot back a paginated table — the narrowing has to happen in the query that pages. Note the
+     enum params take the DISPLAY value ("Active", "VIP", "Gold"); the backend's fromValue()
+     accepts either that or the enum name.
+  ──────────────────────────────────────────────────────────── */
+  list: ({ page = 0, size = 25, sortBy = "createdAt", sortDir = "desc",
+           q, status, type, tier } = {}) =>
+    API.get("/customers", {
+      params: {
+        page, size, sortBy, sortDir,
+        q: q || undefined,
+        status: status || undefined,
+        type: type || undefined,
+        tier: tier || undefined,
+      },
+    }),
+
+  /* Back-compat shim for callers that want a plain list. Asks for the max page size explicitly
+     rather than silently accepting the server default of 25. */
+  getAll: (params = {}) =>
+    customerService.list({ size: 200, ...params }),
 
   /* ── GET CUSTOMER BY ID ─────────────────────────────────────
      GET /api/customers/:id

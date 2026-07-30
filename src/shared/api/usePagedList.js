@@ -39,9 +39,10 @@ export function usePagedList(fetcher, {
     return () => clearTimeout(t);
   }, [q, debounceMs]);
 
-  // Any narrowing change invalidates the current page number. Without this you stay on page 5
-  // of a result that now has 2 pages and stare at an empty table.
-  useEffect(() => { setPage(0); }, [debouncedQ, pageSize, filterKey]);
+  // Any change to WHAT is being listed or in WHAT ORDER invalidates the current page number.
+  // Without this, narrowing leaves you on page 5 of a 2-page result staring at an empty table,
+  // and re-sorting leaves you looking at the middle of a list you just reordered.
+  useEffect(() => { setPage(0); }, [debouncedQ, pageSize, filterKey, sortBy, sortDir]);
 
   // Guards against out-of-order responses: a slow page-1 request must not overwrite the page-2
   // rows that already came back. Only the newest request in flight is allowed to render.
