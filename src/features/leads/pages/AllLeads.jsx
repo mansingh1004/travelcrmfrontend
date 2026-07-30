@@ -1,3 +1,11 @@
+
+
+
+
+
+
+
+
 // import { useState, useEffect, memo, useMemo, useSyncExternalStore } from 'react';
 // import { useNavigate } from 'react-router-dom';
 // import { leadService } from "../api/leadService";
@@ -10,7 +18,7 @@
 // import WhatsAppPanel from "./WhatsAppPanel";
 // import {
 //   Users, Trophy, PieChart, TrendingUp, Search,
-//   DownloadCloud, FileText, Plus,
+//   DownloadCloud, FileText, Plus, Upload,
 //   Inbox, User, Calendar, ChevronDown, ChevronRight,
 //   Eye, Pencil, Trash2, X, Mail, Phone, MapPin, Briefcase, CheckCircle, Copy, BarChart3, ArrowRightLeft, MessageCircle, NotebookPen, Bell, AlertCircle, DollarSign, Sparkles
 // } from 'lucide-react';
@@ -84,7 +92,7 @@
 
 // /* Single source of truth for every traveller/pax display.
 //    long  → "2 Adults · 1 Child · 1 Infant"  (detail views: modal, expand panel)
-//    short → "2A · 1C · 1I"                    (dense table cells)
+//    short → "2A · 1C · 1I"                   (dense table cells)
 //    Zero values are omitted; pluralisation is correct in long mode. */
 // function formatTravellers(adults = 0, children = 0, infants = 0, { short = false } = {}) {
 //   const long = { a: ['Adult', 'Adults'], c: ['Child', 'Children'], i: ['Infant', 'Infants'] };
@@ -95,6 +103,7 @@
 //   if (infants) parts.push(cell(infants, 'i', 'I'));
 //   return parts.length ? parts.join(' · ') : (short ? '—' : 'No travellers');
 // }
+
 
 // const fmtMoneyINR = (v) => v == null ? null
 //   : new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(v);
@@ -198,6 +207,46 @@
 // }
 
 // /* ─── STAT CARD ──────────────────────────────────────── */
+// // function StatCard({ icon: Icon, label, value, suffix = '', gradient, delay = 0 }) {
+// //   const [displayed, setDisplayed] = useState(0);
+// //   useEffect(() => {
+// //     let start = 0;
+// //     const target = typeof value === 'number' ? value : 0;
+// //     if (target === 0) { setDisplayed(0); return; }
+// //     const step = Math.ceil(target / 60);
+// //     const interval = setInterval(() => {
+// //       start = Math.min(start + step, target);
+// //       setDisplayed(start);
+// //       if (start >= target) clearInterval(interval);
+// //     }, 16);
+// //     return () => clearInterval(interval);
+// //   }, [value]);
+
+// //   return (
+// //     <div
+// //       className={`relative overflow-hidden rounded-2xl bg-gradient-to-br ${gradient} p-5 sm:p-6 text-white
+// //         shadow-lg hover:-translate-y-1 hover:shadow-2xl transition-all duration-300 cursor-pointer group fade-up`}
+// //       style={{ animationDelay: `${delay}ms` }}
+// //     >
+// //       {/* Decorative overlapping circles — same treatment as the Vendors cards */}
+// //       <span className="pointer-events-none absolute -right-6 -bottom-12 w-40 h-40 rounded-full bg-white/10 group-hover:bg-white/20 transition-colors" />
+// //       <span className="pointer-events-none absolute right-6 bottom-2 w-20 h-20 rounded-full bg-white/10" />
+// //       <span className="pointer-events-none absolute -right-8 -top-8 w-28 h-28 rounded-full bg-white/5" />
+
+// //       <div className="relative z-10">
+// //         <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-white/20 group-hover:bg-white/30 backdrop-blur-sm flex items-center justify-center transition-all mb-4 sm:mb-5">
+// //           <Icon size={22} strokeWidth={2.2} />
+// //         </div>
+// //         <p className="text-3xl sm:text-4xl font-extrabold leading-none tracking-tight mb-1.5">
+// //           {displayed.toLocaleString('en-IN')}{suffix}
+// //         </p>
+// //         <p className="text-xs font-bold uppercase tracking-widest text-white/80">{label}</p>
+// //       </div>
+// //     </div>
+// //   );
+// // }
+
+
 // function StatCard({ icon: Icon, label, value, suffix = '', gradient, delay = 0 }) {
 //   const [displayed, setDisplayed] = useState(0);
 //   useEffect(() => {
@@ -219,7 +268,6 @@
 //         shadow-lg hover:-translate-y-1 hover:shadow-2xl transition-all duration-300 cursor-pointer group fade-up`}
 //       style={{ animationDelay: `${delay}ms` }}
 //     >
-//       {/* Decorative overlapping circles — same treatment as the Vendors cards */}
 //       <span className="pointer-events-none absolute -right-6 -bottom-12 w-40 h-40 rounded-full bg-white/10 group-hover:bg-white/20 transition-colors" />
 //       <span className="pointer-events-none absolute right-6 bottom-2 w-20 h-20 rounded-full bg-white/10" />
 //       <span className="pointer-events-none absolute -right-8 -top-8 w-28 h-28 rounded-full bg-white/5" />
@@ -746,33 +794,38 @@
 //                 <span style={{ fontSize: '9px', fontFamily: 'monospace', color: '#eeda92', fontWeight: 700 }}>{String(lead.publicId || lead.id).slice(0, 14)}...</span>
 //               </div>
 //               <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-//                 {/* Add an activity log for this specific lead (LEAD_UPDATE-gated, like the backend) */}
+                
+//                 {/* 1. Add Log: Hamesha dikhega */}
 //                 {canEdit && (
 //                   <button onClick={() => onAddLog(lead)}
 //                     style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '5px 11px', borderRadius: '7px', background: '#1E293B', color: '#eeda92', fontSize: '10px', fontWeight: 700, border: '1px solid #eeda92', cursor: 'pointer' }}>
 //                     <NotebookPen size={11} /> Add Log
 //                   </button>
 //                 )}
-//                 {/* View all activity logs for this lead (read — same popup pattern as View Quotations) */}
-//                 <button onClick={() => onViewLogs(lead)}
-//                   style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '5px 11px', borderRadius: '7px', background: '#eeda9225', color: '#7a5a00', fontSize: '10px', fontWeight: 700, border: '1px solid #eeda92', cursor: 'pointer' }}>
-//                   <Eye size={11} /> View Logs
-//                 </button>
+
+                
+//                 {(lead.logCount > 0 || (lead.logs && lead.logs.length > 0)) && (
+//                   <button onClick={() => onViewLogs(lead)}
+//                     style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '5px 11px', borderRadius: '7px', background: '#eeda9225', color: '#7a5a00', fontSize: '10px', fontWeight: 700, border: '1px solid #eeda92', cursor: 'pointer' }}>
+//                     <Eye size={11} /> View Logs
+//                   </button>
+//                 )}
+
+            
 //                 {canCreateQuotation && (
 //                   <button onClick={() => onSuggestPackages(lead)}
 //                     style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '5px 11px', borderRadius: '7px', background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: '#fff', fontSize: '10px', fontWeight: 700, border: 'none', cursor: 'pointer', boxShadow: '0 2px 8px #6366f155' }}>
 //                     <Sparkles size={11} /> Suggest Packages
 //                   </button>
 //                 )}
+
+              
 //                 {lead.latestQuotation?.publicId ? (
 //                   <>
-//                     {/* Existing quotation(s) → open a popup listing all of them, latest first */}
 //                     <button onClick={() => onViewQuotations(lead)}
 //                       style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '5px 11px', borderRadius: '7px', background: '#eeda9225', color: '#7a5a00', fontSize: '10px', fontWeight: 700, border: '1px solid #eeda92', cursor: 'pointer' }}>
 //                       <Eye size={11} /> View Quotations
 //                     </button>
-//                     {/* …and still allow creating a fresh one. No design chooser here on purpose —
-//                         the design is picked at DOWNLOAD time, not while building. */}
 //                     <Link to={`/createquotation?leadId=${lead.publicId || lead.id}`}
 //                       style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '5px 11px', borderRadius: '7px', background: '#eeda92', color: '#3d2a00', fontSize: '10px', fontWeight: 700, textDecoration: 'none', boxShadow: '0 2px 8px #eeda9266' }}>
 //                       <FileText size={11} /> Create New Quotation ↗
@@ -784,6 +837,8 @@
 //                     <FileText size={11} /> Create Quotation ↗
 //                   </Link>
 //                 )}
+
+//                 {/* 5. Convert to Booking: Hamesha dikhega (agar convert hone ki condition meet ho rahi hai) */}
 //                 {isConverted ? (
 //                   <Link to={`/BookingDetails/${lead.convertedBookingPublicId || lead.bookingPublicId || ''}`}
 //                     style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '5px 11px', borderRadius: '7px', background: '#DCFCE7', color: '#15803D', fontSize: '10px', fontWeight: 700, textDecoration: 'none', border: '1px solid #BBF7D0' }}>
@@ -1014,7 +1069,7 @@
 //                       <Eye size={13} /> Weblink
 //                     </button>
 //                     {/* Edit → opens CreateQuotation in edit mode (quotationId in the URL) */}
-                   
+                    
 
 //                     <button onClick={() => setStylePickFor(q)} disabled={downloadingId === q.publicId}
 //                       className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 hover:border-blue-300 text-slate-600 hover:text-blue-600 text-xs font-bold transition-all disabled:opacity-50">
@@ -1109,7 +1164,7 @@
 // /* ─── ADD LOG MODAL ──────────────────────────────────── */
 // /* Popup version of the old AddLeadLog page: read-only current stage + hint, inline field
 //    validation, and an amber follow-up box that auto-creates a reminder assigned to you. */
-// function AddLogModal({ lead, onClose }) {
+// function AddLogModal({ lead, onClose, onLogAdded }) {
 //   const [comment, setComment] = useState('');
 //   const [createReminder, setCreateReminder] = useState(false);
 //   const [followUpDate, setFollowUpDate] = useState('');
@@ -1135,6 +1190,7 @@
 //       setSaving(true);
 //       await leadService.addLog(leadId, { comment, createReminder, followUpDate, stage: lead.leadStage });
 //       showToast('Log saved successfully!', 'success');
+//       if (onLogAdded) onLogAdded(leadId);
 //       onClose();
 //     } catch (err) {
 //       if (isAlreadyReported(err)) return;   // <ToastHost/> already showed it
@@ -1355,6 +1411,8 @@
 
 //   const [expanded, setExpanded] = useState({});   // TanStack expansion (kept single-open below)
 
+//   const [analyticsOpen, setAnalyticsOpen] = useState(false);
+
 //   const [viewLead, setViewLead] = useState(null);
 //   // ── editLead state removed — Edit now navigates to /EditLead/:id ──
 //   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -1455,6 +1513,16 @@
 //       : l));
 //   };
 
+//   const handleLogAdded = (leadId) => {
+//     setLeads(prev => prev.map(l =>
+//       (l.id === leadId || l.publicId === leadId)
+//         ? { ...l, logCount: (l.logCount || 0) + 1 }
+//         : l
+//     ));
+//   };
+
+ 
+
 //   // Single-open expansion — preserves the original one-row-at-a-time behaviour.
 //   const toggleRow = (id) => setExpanded(prev => (prev[id] ? {} : { [id]: true }));
 
@@ -1515,7 +1583,7 @@
 //   }, [safeLeads, searchTerm, dateFilter, startDate, endDate, activeTab]);
 
 //   // ── TanStack Table: drives sorting, pagination and row-expansion (headless — the
-//   //    existing markup below renders row.original, so the layout is unchanged). ──
+//   //   existing markup below renders row.original, so the layout is unchanged). ──
 //   // Sort is controlled by the existing "newest/oldest" toggle (sortOrder) on createdAt.
 //   const sorting = useMemo(() => [{ id: 'createdAt', desc: sortOrder !== 'asc' }], [sortOrder]);
 
@@ -1585,7 +1653,7 @@
 //       {quotationsLead && <QuotationsModal lead={quotationsLead} onClose={() => setQuotationsLead(null)} canEdit={hasPermission(P.QUOTATION_UPDATE)} canDelete={hasPermission(P.QUOTATION_DELETE)} />}
 //       {suggestLead && <SuggestPackagesModal lead={suggestLead} onClose={() => setSuggestLead(null)} />}
 //       {convertLead && <ConvertToBookingModal lead={convertLead} onClose={() => setConvertLead(null)} onConverted={handleConverted} />}
-//       {logLead && <AddLogModal lead={logLead} onClose={() => setLogLead(null)} />}
+//       {logLead && <AddLogModal lead={logLead} onClose={() => setLogLead(null)} onLogAdded={handleLogAdded} />}
 //       {logsViewLead && <LogsModal lead={logsViewLead} onClose={() => setLogsViewLead(null)} canDelete={hasPermission(P.LEAD_UPDATE)} />}
 
 //       <div className="bg-white/70 backdrop-blur-md border-b border-slate-100">
@@ -1608,16 +1676,19 @@
 //               </div>
 //             </div>
 //             <div className="flex items-center gap-2 flex-wrap">
-//               <button onClick={fetchLeads} className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 hover:border-blue-300 bg-white hover:bg-blue-50 text-slate-600 hover:text-blue-600 text-sm font-bold transition-all shadow-sm">
-//                 <DownloadCloud size={15} /> Refresh Data
-//               </button>
 //               <Link to="/AllLeadLogs" className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 hover:border-blue-300 bg-white hover:bg-blue-50 text-slate-600 hover:text-blue-600 text-sm font-bold transition-all shadow-sm">
 //                 <FileText size={15} /> Logs
 //               </Link>
 //               {hasPermission(P.LEAD_CREATE) && (
-//                 <Link to="/CreateLead" className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold shadow-md shadow-blue-200 hover:shadow-lg transition-all">
-//                   <Plus size={16} strokeWidth={2.5} /> Create Lead
-//                 </Link>
+//                 <>
+//                   <label className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 hover:border-blue-300 bg-white hover:bg-blue-50 text-slate-600 hover:text-blue-600 text-sm font-bold transition-all shadow-sm cursor-pointer">
+//                     <Upload size={15} /> Import
+//                     <input type="file" accept=".csv,.xls,.xlsx,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="hidden" />
+//                   </label>
+//                   <Link to="/CreateLead" className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold shadow-md shadow-blue-200 hover:shadow-lg transition-all">
+//                     <Plus size={16} strokeWidth={2.5} /> Create Lead
+//                   </Link>
+//                 </>
 //               )}
 //             </div>
 //           </div>
@@ -1626,12 +1697,54 @@
 
 //       <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 py-6 space-y-6">
 
-//         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+//         {/* <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
 //           <StatCard icon={Users} label="Total Leads" value={safeLeads.length} gradient="from-cyan-400 via-teal-500 to-teal-600" delay={0} />
 //           <StatCard icon={Trophy} label="Bookings" value={stats.bookings} gradient="from-emerald-400 via-green-500 to-green-600" delay={60} />
 //           <StatCard icon={PieChart} label="Conversion" value={stats.conversion} suffix="%" gradient="from-amber-400 via-orange-500 to-orange-600" delay={120} />
 //           <StatCard icon={TrendingUp} label="Win Rate" value={stats.winRate} suffix="%" gradient="from-rose-400 via-red-500 to-red-600" delay={180} />
-//         </div>
+//         </div> */}
+
+//         <div className="bg-white/80 backdrop-blur-md rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden">
+//   {/* Collapsed/expanded toggle bar — always visible */}
+//   <button
+//     onClick={() => setAnalyticsOpen(o => !o)}
+//     className="w-full flex items-center gap-3 px-5 py-4 hover:bg-slate-50/60 transition-colors text-left"
+//   >
+//     <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center flex-shrink-0">
+//       <BarChart3 size={16} />
+//     </div>
+//     <span className="text-sm font-extrabold text-slate-700 flex-shrink-0">Analytics</span>
+
+//     {/* Summary pills — only shown when collapsed, exactly like reference bar */}
+//     {!analyticsOpen && (
+//       <div className="flex items-center gap-2 flex-wrap ml-1">
+//         <span className="text-xs font-bold px-3 py-1 rounded-full bg-teal-100 text-teal-700 border border-teal-200">{safeLeads.length} Leads</span>
+//         <span className="text-xs font-bold px-3 py-1 rounded-full bg-green-100 text-green-700 border border-green-200">{stats.bookings} Booked</span>
+//         <span className="text-xs font-bold px-3 py-1 rounded-full bg-amber-100 text-amber-700 border border-amber-200">{stats.conversion}% Conv.</span>
+//         <span className="text-xs font-bold px-3 py-1 rounded-full bg-red-100 text-red-700 border border-red-200">{stats.winRate}% Win</span>
+//       </div>
+//     )}
+
+//     <ChevronDown
+//       size={16}
+//       className="text-slate-400 ml-auto flex-shrink-0 transition-transform duration-300"
+//       style={{ transform: analyticsOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}
+//     />
+//   </button>
+
+//   {/* Full gradient cards — only rendered when open */}
+//   {analyticsOpen && (
+//     <div
+//       className="grid grid-cols-2 md:grid-cols-4 gap-4 px-5 pb-5"
+//       style={{ animation: 'fadeIn .25s ease both' }}
+//     >
+//       <StatCard icon={Users} label="Total Leads" value={safeLeads.length} gradient="from-cyan-400 via-teal-500 to-teal-600" delay={0} />
+//       <StatCard icon={Trophy} label="Bookings" value={stats.bookings} gradient="from-emerald-400 via-green-500 to-green-600" delay={60} />
+//       <StatCard icon={PieChart} label="Conversion" value={stats.conversion} suffix="%" gradient="from-amber-400 via-orange-500 to-orange-600" delay={120} />
+//       <StatCard icon={TrendingUp} label="Win Rate" value={stats.winRate} suffix="%" gradient="from-rose-400 via-red-500 to-red-600" delay={180} />
+//     </div>
+//   )}
+// </div>
 
 //         <div className="bg-white/80 backdrop-blur-md rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden">
 
@@ -1795,9 +1908,8 @@
 
 
 
-
-
-import { useState, useEffect, memo, useMemo, useSyncExternalStore } from 'react';
+import { useState, useEffect, memo, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { leadService } from "../api/leadService";
 import { quotationService } from "@features/quotation";
@@ -1810,8 +1922,11 @@ import WhatsAppPanel from "./WhatsAppPanel";
 import {
   Users, Trophy, PieChart, TrendingUp, Search,
   DownloadCloud, FileText, Plus, Upload,
-  Inbox, User, Calendar, ChevronDown, ChevronRight,
-  Eye, Pencil, Trash2, X, Mail, Phone, MapPin, Briefcase, CheckCircle, Copy, BarChart3, ArrowRightLeft, MessageCircle, NotebookPen, Bell, AlertCircle, DollarSign, Sparkles
+  Inbox, User, Calendar, ChevronDown,
+  Eye, Pencil, Trash2, X, Mail, Phone, MapPin, Briefcase, CheckCircle, Copy,
+  BarChart3, ArrowRightLeft, MessageCircle, NotebookPen, Bell, AlertCircle,
+  DollarSign, Sparkles,
+  Building2, Plane, Ship, Car, Camera, BookOpen, Shield, ExternalLink
 } from 'lucide-react';
 import { WhatsAppIcon as FaWhatsapp } from "@shared/ui/WhatsAppIcon";
 import { Link } from 'react-router-dom';
@@ -1822,7 +1937,7 @@ import { QuotationStyleModal } from "@features/quotation";
 import ConvertToBookingModal from "../components/ConvertToBookingModal";
 import {
   useReactTable, getCoreRowModel, getSortedRowModel,
-  getPaginationRowModel, getExpandedRowModel,
+  getPaginationRowModel,
 } from '@tanstack/react-table';
 
 /* ─── COLOR HELPERS ───────────────────────────────────── */
@@ -1868,21 +1983,43 @@ const TYPE_PILL = {
 };
 const typePill = (type) => TYPE_PILL[type] || 'bg-slate-100 text-slate-700 border-slate-200';
 
+/* Selectable lead types for the Type dropdown — keys match TYPE_PILL. */
+const LEAD_TYPES = ['Fresh Lead', 'Hot Lead', 'Warm Lead', 'Cold Lead', 'VIP', 'Corporate', 'Repeat Customer'];
+
+/* A lead's services are stored as the lowercase ids the form emits — "hotel", "vehicle" —
+   see leads/components/ServicesSection.jsx. Both maps below are keyed that way, and every
+   lookup goes through svcKey, so a backend that sends "Hotel" or "HOTEL" still resolves
+   instead of silently falling through to the generic briefcase. */
+const svcKey = (svc) => String(svc || '').trim().toLowerCase();
 
 // Exact pastel colors per service, matched to the design mockup
 const SERVICE_COLORS = {
-  Hotel: { bg: '#E6F1FB', text: '#042C53' },
-  Flight: { bg: '#EEEDFE', text: '#26215C' },
-  Cruise: { bg: '#E1F5EE', text: '#04342C' },
-  Vehicle: { bg: '#FAECE7', text: '#4A1B0C' },
-  Visa: { bg: '#FBEAF0', text: '#4B1528' },
-  Passport: { bg: '#F1EFE8', text: '#2C2C2A' },
-  Sightseeing: { bg: '#FAEEDA', text: '#412402' },
+  hotel: { bg: '#E6F1FB', text: '#042C53' },
+  flight: { bg: '#EEEDFE', text: '#26215C' },
+  cruise: { bg: '#E1F5EE', text: '#04342C' },
+  vehicle: { bg: '#FAECE7', text: '#4A1B0C' },
+  visa: { bg: '#FBEAF0', text: '#4B1528' },
+  passport: { bg: '#F1EFE8', text: '#2C2C2A' },
+  sightseeing: { bg: '#FAEEDA', text: '#412402' },
+  insurance: { bg: '#F3E8FF', text: '#3B0764' },
 };
-const serviceColor = (svc) => SERVICE_COLORS[svc] || { bg: '#F1F5F9', text: '#334155' };
+const serviceColor = (svc) => SERVICE_COLORS[svcKey(svc)] || { bg: '#F1F5F9', text: '#334155' };
+
+/* One glyph per service — the Services column shows an icon strip, not text chips. */
+const SERVICE_ICON = {
+  hotel: Building2,
+  flight: Plane,
+  cruise: Ship,
+  vehicle: Car,
+  visa: FileText,
+  passport: BookOpen,
+  sightseeing: Camera,
+  insurance: Shield,
+};
+const serviceIcon = (svc) => SERVICE_ICON[svcKey(svc)] || Briefcase;
 
 /* Single source of truth for every traveller/pax display.
-   long  → "2 Adults · 1 Child · 1 Infant"  (detail views: modal, expand panel)
+   long  → "2 Adults · 1 Child · 1 Infant"  (detail views: modal)
    short → "2A · 1C · 1I"                   (dense table cells)
    Zero values are omitted; pluralisation is correct in long mode. */
 function formatTravellers(adults = 0, children = 0, infants = 0, { short = false } = {}) {
@@ -1895,27 +2032,40 @@ function formatTravellers(adults = 0, children = 0, infants = 0, { short = false
   return parts.length ? parts.join(' · ') : (short ? '—' : 'No travellers');
 }
 
-
 const fmtMoneyINR = (v) => v == null ? null
   : new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(v);
 
-/* One source of truth for the leads table column widths — the header, every row and the
-   loading skeleton all read this, so the columns can never drift out of alignment. */
-const LEAD_GRID_COLS = '28px 1.6fr 0.95fr 0.95fr 0.9fr 0.85fr 124px';
+/* Amount / Margin columns show paise, matching the old CRM's "₹310,000.00". */
+const fmtAmountINR = (v) => v == null ? null
+  : new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
 
-/* True when the viewport is phone-width. Lets the expand panel swap its dense multi-column
-   grid for a stacked, readable layout. Uses useSyncExternalStore (no render-time window read,
-   SSR-safe) with a single resize subscription. */
-function useIsMobile(breakpoint = 768) {
-  return useSyncExternalStore(
-    (onChange) => {
-      window.addEventListener('resize', onChange);
-      return () => window.removeEventListener('resize', onChange);
-    },
-    () => window.innerWidth < breakpoint,
-    () => false,
-  );
-}
+/* ─── TABLE LAYOUT ────────────────────────────────────── */
+/* One source of truth for the columns — header, every row and the loading skeleton read
+   this, so nothing can drift out of alignment. The table scrolls horizontally inside its
+   wrapper (16 columns don't fit any laptop, same as the legacy CRM). */
+const LEAD_COLUMNS = [
+  { key: 'select', label: '', width: 44, align: 'center' },
+  { key: 'leadId', label: 'Lead ID', width: 132 },
+  { key: 'info', label: 'Lead Info', width: 208 },
+  { key: 'dest', label: 'Destination', width: 152 },
+  { key: 'travel', label: 'Travelers Info', width: 176 },
+  { key: 'services', label: 'Services', width: 96, align: 'center' },
+  { key: 'quote', label: 'Quotation', width: 160, align: 'center' },
+  { key: 'booking', label: 'Booking', width: 122, align: 'center' },
+  { key: 'weblink', label: 'Weblink', width: 126, align: 'center' },
+  { key: 'logging', label: 'Logging', width: 94, align: 'center' },
+  { key: 'assigned', label: 'Assigned To', width: 150 },
+  { key: 'amount', label: 'Amount', width: 132, align: 'right' },
+  { key: 'margin', label: 'Margin', width: 120, align: 'right' },
+  { key: 'type', label: 'Type', width: 128, align: 'center' },
+  { key: 'stage', label: 'Stage', width: 138, align: 'center' },
+  { key: 'actions', label: 'Actions', width: 112, align: 'center' },
+];
+const LEAD_TABLE_MIN_W = LEAD_COLUMNS.reduce((sum, c) => sum + c.width, 0);
+
+/* Shared cell chrome — vertical rules between columns, consistent padding. */
+const TD = 'px-2.5 py-2.5 align-middle border-r border-slate-100 last:border-r-0';
+const alignClass = (a) => a === 'right' ? 'text-right' : a === 'center' ? 'text-center' : 'text-left';
 
 /* ─── PAGINATION ─────────────────────────────────────── */
 function buildPageNumbers(totalPages, pageIndex) {
@@ -1998,46 +2148,6 @@ function CommonPagination({ pageIndex, pageSize, totalElements, totalPages, goTo
 }
 
 /* ─── STAT CARD ──────────────────────────────────────── */
-// function StatCard({ icon: Icon, label, value, suffix = '', gradient, delay = 0 }) {
-//   const [displayed, setDisplayed] = useState(0);
-//   useEffect(() => {
-//     let start = 0;
-//     const target = typeof value === 'number' ? value : 0;
-//     if (target === 0) { setDisplayed(0); return; }
-//     const step = Math.ceil(target / 60);
-//     const interval = setInterval(() => {
-//       start = Math.min(start + step, target);
-//       setDisplayed(start);
-//       if (start >= target) clearInterval(interval);
-//     }, 16);
-//     return () => clearInterval(interval);
-//   }, [value]);
-
-//   return (
-//     <div
-//       className={`relative overflow-hidden rounded-2xl bg-gradient-to-br ${gradient} p-5 sm:p-6 text-white
-//         shadow-lg hover:-translate-y-1 hover:shadow-2xl transition-all duration-300 cursor-pointer group fade-up`}
-//       style={{ animationDelay: `${delay}ms` }}
-//     >
-//       {/* Decorative overlapping circles — same treatment as the Vendors cards */}
-//       <span className="pointer-events-none absolute -right-6 -bottom-12 w-40 h-40 rounded-full bg-white/10 group-hover:bg-white/20 transition-colors" />
-//       <span className="pointer-events-none absolute right-6 bottom-2 w-20 h-20 rounded-full bg-white/10" />
-//       <span className="pointer-events-none absolute -right-8 -top-8 w-28 h-28 rounded-full bg-white/5" />
-
-//       <div className="relative z-10">
-//         <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-white/20 group-hover:bg-white/30 backdrop-blur-sm flex items-center justify-center transition-all mb-4 sm:mb-5">
-//           <Icon size={22} strokeWidth={2.2} />
-//         </div>
-//         <p className="text-3xl sm:text-4xl font-extrabold leading-none tracking-tight mb-1.5">
-//           {displayed.toLocaleString('en-IN')}{suffix}
-//         </p>
-//         <p className="text-xs font-bold uppercase tracking-widest text-white/80">{label}</p>
-//       </div>
-//     </div>
-//   );
-// }
-
-
 function StatCard({ icon: Icon, label, value, suffix = '', gradient, delay = 0 }) {
   const [displayed, setDisplayed] = useState(0);
   useEffect(() => {
@@ -2079,16 +2189,18 @@ function StatCard({ icon: Icon, label, value, suffix = '', gradient, delay = 0 }
 /* ─── SKELETON ROW ───────────────────────────────────── */
 function SkeletonRow() {
   return (
-    <div className="grid items-center gap-0 px-5 py-4" style={{ gridTemplateColumns: LEAD_GRID_COLS }}>
-      {[...Array(7)].map((_, i) => (
-        <div key={i} className="h-4 rounded-lg bg-slate-200 animate-pulse mx-1" style={{ width: `${40 + Math.random() * 50}%` }} />
+    <tr className="border-t border-slate-100">
+      {LEAD_COLUMNS.map(c => (
+        <td key={c.key} className={TD}>
+          <div className="h-4 rounded-lg bg-slate-200 animate-pulse" style={{ width: `${45 + Math.random() * 45}%` }} />
+        </td>
       ))}
-    </div>
+    </tr>
   );
 }
 
 /* ─── VIEW LEAD MODAL ────────────────────────────────── */
-/* "Edit" here now NAVIGATES to the standalone /EditLead/:id page instead of
+/* "Edit" here NAVIGATES to the standalone /EditLead/:id page instead of
    opening a popup — see onEdit prop wired in the main component below. */
 function ViewLeadModal({ lead, onClose, onEdit, canEdit }) {
   if (!lead) return null;
@@ -2128,7 +2240,6 @@ function ViewLeadModal({ lead, onClose, onEdit, canEdit }) {
               [User, 'Assigned To', lead.assignedUser?.fullName || lead.assignedUser?.name || lead.assignedUser?.username || lead.assignedUserName || lead.assignTo || 'Unassigned', 'bg-orange-50 text-orange-600'],
               [Calendar, 'Created', lead.createdAt ? new Date(lead.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '\u2014', 'bg-teal-50 text-teal-600'],
               [Briefcase, 'Lead Type', lead.leadType, 'bg-indigo-50 text-indigo-600'],
-              // ── NEW: Budget row ──
               [DollarSign, 'Budget', budgetStr, 'bg-yellow-50 text-yellow-700'],
               [MapPin, 'Departure City', lead.departCity, 'bg-rose-50 text-rose-600'],
             ].map(([Icon, label, val, ic]) => (
@@ -2205,27 +2316,8 @@ function DeleteConfirm({ lead, onClose, onConfirm }) {
   );
 }
 
-/* One uniform cell for the expand panel — label on top, value below. Shared by both grid rows. */
-function Cell({ label, value, divider }) {
-  return (
-    <div style={{ minWidth: 0, ...(divider ? { borderLeft: '1px solid #eeda9255', paddingLeft: '10px' } : null) }}>
-      <p style={{
-        fontSize: '10px', color: '#a07830', fontWeight: 700,
-        textTransform: 'uppercase', letterSpacing: '.06em',
-        marginBottom: '2px', whiteSpace: 'nowrap'
-      }}>{label}</p>
-      <p style={{
-        fontSize: '13px', fontWeight: 600, color: '#334155',
-        whiteSpace: 'nowrap', overflow: 'hidden',
-        textOverflow: 'ellipsis'
-      }}>{value || '—'}</p>
-    </div>
-  );
-}
-
 /* Phone number rendered as a WhatsApp click-to-chat link (opens wa.me in a new tab).
-   Empty / unparseable phone → plain "—". stopPropagation so clicking the link inside a
-   table row never toggles that row's expand/collapse. */
+   Empty / unparseable phone → plain "—". */
 function PhoneLink({ phone, iconSize = 11, className = '', onWhatsApp }) {
   const href = formatToWhatsAppLink(phone);
   if (!href) return <span className={className}>—</span>;
@@ -2244,37 +2336,91 @@ function PhoneLink({ phone, iconSize = 11, className = '', onWhatsApp }) {
   );
 }
 
-/* Email value with a small click-to-copy icon. Empty email → plain "—". */
-function CopyableEmail({ email }) {
-  const [copied, setCopied] = useState(false);
-  if (!email) return <p style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>—</p>;
-  const copy = (e) => {
-    e.stopPropagation();
-    if (!navigator.clipboard) return;
-    navigator.clipboard.writeText(email)
-      .then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); })
-      .catch(() => { });
+/* Hover tooltip listing a lead's full itinerary — the Destination cell shows only the first
+   city, and the "+N cities" hint opens this instead of growing the row.
+
+   Rendered through a portal into <body> on purpose: the table sits inside overflow-x-auto,
+   and setting overflow-x also makes overflow-y scroll, so an absolutely-positioned tip would
+   be clipped away on the top and bottom rows. Fixed coordinates are measured off the trigger,
+   flipped above it when there is no room below, and clamped to the viewport. Any scroll closes
+   the tip — those coordinates go stale the moment the table or page moves.
+
+   Tap toggles it as well, since touch devices never fire hover. */
+function CityTip({ destinations, children }) {
+  const [pos, setPos] = useState(null);
+  const totalNights = destinations.reduce((s, d) => s + (Number(d.nights) || 0), 0);
+
+  useEffect(() => {
+    if (!pos) return;
+    const close = () => setPos(null);
+    window.addEventListener('scroll', close, true);   // capture — catches the table's own scroll too
+    window.addEventListener('resize', close);
+    return () => {
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+    };
+  }, [pos]);
+
+  const open = (e) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const W = 210;
+    // Height is estimated from the row count so the flip is decided before the tip paints.
+    const h = 42 + destinations.length * 20;
+    const below = window.innerHeight - r.bottom > h + 12;
+    setPos({
+      top: below ? r.bottom + 8 : r.top - h - 8,
+      left: Math.min(Math.max(8, r.left + r.width / 2 - W / 2), window.innerWidth - W - 8),
+      width: W,
+    });
   };
+
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', minWidth: 0 }}>
-      <span title={email} style={{
-        fontSize: '13px', fontWeight: 600, color: '#334155',
-        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0
-      }}>{email}</span>
-      <button onClick={copy} title={copied ? 'Copied!' : 'Copy email'}
-        style={{
-          flexShrink: 0, border: 'none', background: 'transparent', cursor: 'pointer',
-          padding: 0, display: 'inline-flex', color: copied ? '#16a34a' : '#94a3b8'
-        }}>
-        {copied ? <CheckCircle size={12} /> : <Copy size={12} />}
-      </button>
-    </div>
+    <>
+      <span
+        onMouseEnter={open}
+        onMouseLeave={() => setPos(null)}
+        onClick={(e) => pos ? setPos(null) : open(e)}
+        className="mt-0.5 inline-block text-[10px] font-bold text-blue-600 hover:text-blue-700 cursor-pointer underline decoration-dotted underline-offset-2"
+      >
+        {children}
+      </span>
+
+      {pos && createPortal(
+        <div
+          style={{ position: 'fixed', top: pos.top, left: pos.left, width: pos.width, zIndex: 9999, animation: 'fadeIn .15s ease both' }}
+          className="pointer-events-none rounded-xl border border-slate-200 bg-white p-2.5 shadow-xl"
+        >
+          <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-1.5">
+            Itinerary {'·'} {totalNights}N
+          </p>
+          <div className="space-y-1">
+            {destinations.map((d, i) => (
+              <div key={i} className="flex items-center justify-between gap-2">
+                <span className="text-[11px] font-bold text-slate-700 truncate">
+                  <span className="text-slate-300 mr-1">{i + 1}.</span>{d.destination}
+                </span>
+                <span className="text-[11px] font-extrabold text-[#a07830] flex-shrink-0">{d.nights}N</span>
+              </div>
+            ))}
+          </div>
+        </div>,
+        document.body
+      )}
+    </>
   );
 }
 
-/* ─── EXPANDABLE LEAD ROW ─────────────────────────────── */
-function LeadRow({ lead, index, isOpen, onToggle, onView, onEditNavigate, onDelete, onStageChange, onViewQuotations, onSuggestPackages, onConvert, onAddLog, onViewLogs, canEdit, canDelete, canConvert, canCreateQuotation, isMobile, onWhatsApp }) {
-  const isConverted = lead.leadStage === 'Converted' || !!lead.convertedBookingPublicId;
+/* ─── LEAD ROW ────────────────────────────────────────── */
+/* Flat table row — every field is its own column. No expand panel: what used to be
+   hidden inside it (email, itinerary, services, logs, quotation and booking actions)
+   now lives in the columns below. */
+function LeadRow({
+  lead, index, selected, onToggleSelect,
+  onView, onEditNavigate, onDelete, onStageChange, onTypeChange,
+  onViewQuotations, onSuggestPackages, onConvert, onAddLog, onViewLogs,
+  onWeblinkStats, onWhatsApp,
+  canEdit, canDelete, canConvert, canCreateQuotation,
+}) {
   const { avatar, accent } = colorForIndex(index);
   const name = lead.customerName || 'N/A';
   const initial = (name || 'U').charAt(0).toUpperCase();
@@ -2287,370 +2433,302 @@ function LeadRow({ lead, index, isOpen, onToggle, onView, onEditNavigate, onDele
     lead.assignTo ||
     null;
 
-  // Render every destination as a pill (matches the leads-list design); collapse to 2 with a
-  // "+N more" toggle so a long itinerary never blows out the row height.
-  const [showAllDest, setShowAllDest] = useState(false);
-  const [showAllServices, setShowAllServices] = useState(false);
+  const q = lead.latestQuotation;
+  const isConverted = lead.leadStage === 'Converted' || !!lead.convertedBookingPublicId;
+
+  // Human-readable code when the backend sends one (tenant_sequences), else a short publicId.
+  const displayCode = lead.displayCode || lead.leadCode
+    || (lead.publicId ? String(lead.publicId).slice(0, 8).toUpperCase() : `LD-${lead.id}`);
+
   const destinations = Array.isArray(lead.itinerary) ? lead.itinerary.filter(d => d && d.destination) : [];
-  const totalNights = destinations.reduce((sum, d) => sum + (Number(d.nights) || 0), 0);
+  const totalNights = destinations.reduce((s, d) => s + (Number(d.nights) || 0), 0);
   const services = Array.isArray(lead.services) ? lead.services : [];
 
   const fmtDate = (d, withYear) =>
     d ? new Date(d).toLocaleDateString('en-US', withYear
-      ? { day: 'numeric', month: 'short', year: '2-digit' }
+      ? { day: 'numeric', month: 'short', year: 'numeric' }
       : { day: 'numeric', month: 'short' }) : null;
   const travelStr = fmtDate(lead.travelDate, true);
   const createdStr = fmtDate(lead.createdAt, false);
-  // Lead age = whole days since it was created. "Today" for same-day, else "Nd".
-  const leadAgeDays = lead.createdAt
-    ? Math.max(0, Math.floor((Date.now() - new Date(lead.createdAt).getTime()) / 86400000))
-    : null;
-  const ageStr = leadAgeDays == null ? null : (leadAgeDays === 0 ? 'Today' : `${leadAgeDays}d old`);
-  // Created date + age in one string for the Created cell, e.g. "Jun 30 · 12d old".
-  const createdWithAge = createdStr ? (ageStr ? `${createdStr} · ${ageStr}` : createdStr) : null;
-  // Deal value = grand total of the lead's LATEST quotation (sent from the backend on
-  // latestQuotation.grandTotal). No quotation yet → shown as "—".
-  const valueStr = lead.latestQuotation?.grandTotal != null
-    ? fmtMoneyINR(lead.latestQuotation.grandTotal)
-    : null;
-  // Customer's stated budget (Lead.budget). No budget set → "—".
-  const budgetStr = lead.budget != null ? fmtMoneyINR(lead.budget) : null;
-  // Always show the lead's real stage even if it's outside the manually-selectable set (e.g. Converted).
+
+  const amountStr = q?.grandTotal != null ? fmtAmountINR(q.grandTotal) : null;
+  // Margin comes off the quotation when the backend exposes it; "—" until then.
+  const marginVal = q?.margin ?? q?.marginAmount ?? lead.margin ?? null;
+  const marginStr = marginVal != null ? fmtAmountINR(marginVal) : null;
+
+  // Weblink view count — whichever field the analytics payload carries.
+  const weblinkViews = q?.viewCount ?? q?.weblinkViews ?? q?.views ?? 0;
+  const logCount = lead.logCount ?? (Array.isArray(lead.logs) ? lead.logs.length : 0);
+  const webLink = q?.publicId ? `${window.location.origin}/q/${q.publicId}` : null;
+
+  // Always show the lead's real stage/type even if it's outside the manually-selectable set.
   const stageOptions = STAGES.includes(lead.leadStage) ? STAGES : [lead.leadStage, ...STAGES].filter(Boolean);
+  const typeOptions = LEAD_TYPES.includes(lead.leadType) ? LEAD_TYPES : [lead.leadType, ...LEAD_TYPES].filter(Boolean);
+
+  // Quick share — pure client-side, no API call. The full "email the PDF from the server"
+  // flow still lives in QuotationsModal.
+  // Both work with or without a quotation: when there is no weblink yet these just open the
+  // chat / mail draft on a plain greeting, so an agent can reach a brand-new lead from the row.
+  const waShare = () => {
+    const msg = webLink
+      ? `Hi ${lead.customerName || ''}, here is your travel quotation ${q?.version || ''}: ${webLink}`.trim()
+      : `Hi ${lead.customerName || ''},`.trim();
+    const phone = (lead.phone || '').replace(/\D/g, '');
+    window.open(
+      phone ? `https://wa.me/${phone}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`,
+      '_blank', 'noopener,noreferrer'
+    );
+  };
+  const mailShare = () => {
+    const subject = webLink ? `Travel Quotation ${q?.version || ''}`.trim() : 'Your travel enquiry';
+    const body = webLink
+      ? `Dear ${lead.customerName || 'Customer'},\n\nView your travel quotation online: ${webLink}\n\nRegards,\nTeam`
+      : `Dear ${lead.customerName || 'Customer'},\n\n\nRegards,\nTeam`;
+    window.location.href = `mailto:${lead.email || ''}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  };
+
+  const iconBtn = 'w-7 h-7 rounded-lg flex items-center justify-center transition-all flex-shrink-0';
 
   return (
-    <div
-      className="border-t border-slate-100 first:border-t-0 transition-colors"
-      style={{
-        borderLeft: `3px solid ${accent}`,
-        background: isOpen ? '#eeda9215' : 'transparent',
-        animation: 'fadeUp .35s ease both',
-        animationDelay: `${index * 30}ms`,
-      }}
+    <tr
+      className="border-t border-slate-100 hover:bg-slate-50/70 transition-colors"
+      style={{ animation: 'fadeUp .35s ease both', animationDelay: `${index * 30}ms` }}
     >
-      {/* ── Desktop row ── */}
-      <div
-        onClick={() => onToggle(lead.id)}
-        className="hidden md:grid items-stretch gap-0 px-5 py-3.5 cursor-pointer transition-colors"
-        style={{ gridTemplateColumns: LEAD_GRID_COLS, background: isOpen ? '#eeda9230' : 'transparent' }}
-        onMouseEnter={e => { if (!isOpen) e.currentTarget.style.background = '#eeda9218'; }}
-        onMouseLeave={e => { if (!isOpen) e.currentTarget.style.background = 'transparent'; }}
-      >
-        {/* expand */}
-        <div className="flex items-center justify-center">
-          <ChevronRight size={16} className="text-slate-400 transition-transform flex-shrink-0" style={{ transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)' }} />
-        </div>
+      {/* ── Select ── */}
+      <td className={`${TD} text-center`} style={{ borderLeft: `3px solid ${accent}` }}>
+        <input
+          type="checkbox" checked={selected} onChange={() => onToggleSelect(lead.id)}
+          className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-400 cursor-pointer"
+        />
+      </td>
 
-        {/* Lead */}
-        <div className="flex items-center gap-3 min-w-0 pr-3">
-          <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${avatar} flex items-center justify-center text-white text-sm font-extrabold shadow-sm flex-shrink-0`}>{initial}</div>
+      {/* ── Lead ID ── */}
+      <td className={TD}>
+        <p className="text-xs font-extrabold text-slate-700 font-mono truncate" title={lead.publicId || lead.id}>{displayCode}</p>
+        <p className="text-[10px] text-slate-400 font-medium mt-0.5">{createdStr ? `Added ${createdStr}` : '—'}</p>
+      </td>
+
+      {/* ── Lead Info ── */}
+      <td className={TD}>
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className={`w-9 h-9 rounded-full bg-gradient-to-br ${avatar} flex items-center justify-center text-white text-xs font-extrabold shadow-sm flex-shrink-0`}>{initial}</div>
           <div className="min-w-0">
-            <div className="flex items-center gap-1.5 min-w-0">
-              <p className="text-sm font-bold text-slate-800 capitalize truncate">{name}</p>
-              {lead.leadType && (
-                <span className={`flex-shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-md border ${typePill(lead.leadType)}`}>{lead.leadType}</span>
-              )}
-            </div>
-            <div className="flex items-center gap-2.5 text-xs text-slate-400 min-w-0">
-              <PhoneLink phone={lead.phone} iconSize={11} className="flex-shrink-0 text-slate-400" onWhatsApp={onWhatsApp ? () => onWhatsApp(lead) : undefined} />
-            </div>
+            <button onClick={() => onView(lead)}
+              className="text-sm font-bold text-blue-600 hover:text-blue-700 capitalize truncate block max-w-full text-left">
+              {name}
+            </button>
+            <PhoneLink phone={lead.phone} iconSize={10}
+              className="text-[11px] text-slate-500 max-w-full"
+              onWhatsApp={onWhatsApp ? () => onWhatsApp(lead) : undefined} />
+            {lead.email && (
+              <p className="text-[11px] text-slate-400 truncate max-w-full inline-flex items-center gap-1" title={lead.email}>
+                <Mail size={10} className="flex-shrink-0" /> <span className="truncate">{lead.email}</span>
+              </p>
+            )}
           </div>
         </div>
+      </td>
 
-        {/* Travel date / added */}
-        <div className="flex flex-col justify-center items-center text-center min-w-0 border-l border-slate-200/70 pl-3">
-          <span className={`inline-flex items-center gap-1 text-xs font-semibold truncate max-w-full ${travelStr ? 'text-slate-700' : 'text-slate-300'}`} title="Travel date">
-            <Calendar size={11} className="flex-shrink-0" /><span className="truncate">{travelStr || 'Not set'}</span>
+      {/* ── Destination ── */}
+      <td className={TD}>
+        {destinations.length > 0 ? (
+          <>
+            <span className="inline-block text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-100 mb-1.5">
+              {totalNights}N Total
+            </span>
+            {/* Only ever the first city — the rest live in the hover tip, so the row height
+                stays fixed no matter how long the itinerary is. */}
+            <div className="rounded-lg border border-slate-200 bg-slate-50/70 px-2 py-1.5 text-center">
+              <div className="truncate" title={`${destinations[0].destination} · ${destinations[0].nights}N`}>
+                <span className="text-[11px] font-extrabold text-slate-700 uppercase">{destinations[0].destination}</span>
+                <span className="block text-[11px] font-extrabold text-[#a07830]">{destinations[0].nights}N</span>
+              </div>
+              {destinations.length > 1 && (
+                <CityTip destinations={destinations}>
+                  +{destinations.length - 1} cities
+                </CityTip>
+              )}
+            </div>
+          </>
+        ) : <span className="text-xs text-slate-300">—</span>}
+      </td>
+
+      {/* ── Travelers Info ── */}
+      <td className={TD}>
+        <div className="space-y-1">
+          {lead.departCity && (
+            <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-md bg-slate-50 text-slate-600 border border-slate-200 max-w-full">
+              <MapPin size={10} className="flex-shrink-0 text-blue-500" /> <span className="truncate">{lead.departCity}</span>
+            </span>
+          )}
+          <span className={`inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-md border max-w-full ${travelStr ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-slate-50 text-slate-300 border-slate-200'}`}>
+            <Calendar size={10} className="flex-shrink-0" /> <span className="truncate">{travelStr || 'Not set'}</span>
           </span>
-          <span className="text-[10px] text-slate-400 truncate max-w-full mt-0.5">Added {createdStr}</span>
+          <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 max-w-full">
+            <Users size={10} className="flex-shrink-0" />
+            <span className="truncate">{formatTravellers(lead.adults, lead.children, lead.infants, { short: true })}</span>
+          </span>
         </div>
+      </td>
 
-        {/* Assigned */}
-        <div className="flex items-center justify-center gap-2 min-w-0 border-l border-slate-200/70 pl-3">
+      {/* ── Services ── */}
+      <td className={`${TD} text-center`}>
+        {services.length > 0 ? (
+          <div className="flex flex-wrap gap-1 justify-center">
+            {services.map((s, i) => {
+              const Icon = serviceIcon(s);
+              const c = serviceColor(s);
+              return (
+                <span key={i} title={s}
+                  className="w-6 h-6 rounded-md flex items-center justify-center"
+                  style={{ background: c.bg, color: c.text }}>
+                  <Icon size={12} />
+                </span>
+              );
+            })}
+          </div>
+        ) : <span className="text-xs text-slate-300">—</span>}
+      </td>
+
+      {/* ── Quotation ── */}
+      <td className={`${TD} text-center`}>
+        <div className="flex flex-col items-center gap-1.5">
+          <div className="flex items-center gap-1">
+            {q?.publicId && (
+              <button onClick={() => onViewQuotations(lead)}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold transition-all">
+                <Eye size={11} /> View
+              </button>
+            )}
+            {canCreateQuotation && (
+              <Link to={`/createquotation?leadId=${lead.publicId || lead.id}`}
+                className="inline-flex items-center gap-0.5 px-2 py-1 rounded-md bg-slate-100 hover:bg-blue-100 text-slate-600 hover:text-blue-700 border border-slate-200 text-[10px] font-bold transition-all">
+                <Plus size={11} /> New
+              </Link>
+            )}
+          </div>
+          <div className="flex items-center gap-1">
+            <button onClick={waShare} title={webLink ? 'Share weblink on WhatsApp' : 'Message on WhatsApp'}
+              className={`${iconBtn} bg-green-500 hover:bg-green-600 text-white`}>
+              <FaWhatsapp size={13} />
+            </button>
+            <button onClick={mailShare} title={webLink ? 'Email the weblink' : 'Email this lead'}
+              className={`${iconBtn} bg-blue-500 hover:bg-blue-600 text-white`}>
+              <Mail size={12} />
+            </button>
+            {canCreateQuotation && (
+              <button onClick={() => onSuggestPackages(lead)} title="Suggest packages"
+                className={`${iconBtn} bg-violet-50 hover:bg-violet-100 text-violet-600 border border-violet-200`}>
+                <Sparkles size={12} />
+              </button>
+            )}
+          </div>
+        </div>
+      </td>
+
+      {/* ── Booking ── */}
+      <td className={`${TD} text-center`}>
+        {isConverted ? (
+          <Link to={`/BookingDetails/${lead.convertedBookingPublicId || lead.bookingPublicId || ''}`}
+            className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-green-50 text-green-700 border border-green-200 text-[10px] font-bold hover:bg-green-100 transition-all">
+            <CheckCircle size={11} /> Booked ↗
+          </Link>
+        ) : !q?.publicId ? (
+          <span className="text-[11px] font-semibold text-slate-400 leading-tight">Quote<br />Required</span>
+        ) : canConvert ? (
+          <button onClick={() => onConvert(lead)}
+            className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold transition-all">
+            <ArrowRightLeft size={11} /> Convert
+          </button>
+        ) : <span className="text-xs text-slate-300">—</span>}
+      </td>
+
+      {/* ── Weblink ── */}
+      <td className={`${TD} text-center`}>
+        {webLink ? (
+          <div className="inline-flex items-center rounded-lg overflow-hidden shadow-sm">
+            <a href={webLink} target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 px-2 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold transition-all">
+              <ExternalLink size={11} /> VIEW
+            </a>
+            <button onClick={() => onWeblinkStats(lead)} title="Weblink views"
+              className="inline-flex items-center gap-1 px-2 py-1.5 bg-[#eeda92] hover:bg-[#e6ce78] text-[#3d2a00] text-[10px] font-extrabold transition-all">
+              <Eye size={11} /> {weblinkViews}
+            </button>
+          </div>
+        ) : <span className="text-xs text-slate-300">—</span>}
+      </td>
+
+      {/* ── Logging ── */}
+      <td className={`${TD} text-center`}>
+        <div className="inline-flex items-center gap-1">
+          {canEdit && (
+            <button onClick={() => onAddLog(lead)} title="Add log"
+              className={`${iconBtn} bg-blue-600 hover:bg-blue-700 text-white`}>
+              <Plus size={13} />
+            </button>
+          )}
+          <button onClick={() => onViewLogs(lead)} disabled={!logCount} title={logCount ? `${logCount} log(s)` : 'No logs yet'}
+            className={`${iconBtn} relative bg-blue-50 hover:bg-blue-100 text-blue-600 disabled:opacity-40`}>
+            <Eye size={12} />
+            {logCount > 0 && (
+              <span className="absolute -top-1 -right-1 min-w-[14px] h-[14px] px-0.5 rounded-full bg-[#eeda92] text-[#3d2a00] text-[9px] font-extrabold flex items-center justify-center">
+                {logCount}
+              </span>
+            )}
+          </button>
+        </div>
+      </td>
+
+      {/* ── Assigned To ── */}
+      <td className={TD}>
+        <div className="flex items-center gap-1.5 min-w-0">
           <div className="w-6 h-6 rounded-full bg-gradient-to-br from-purple-400 to-purple-600 text-white flex items-center justify-center text-[10px] font-extrabold flex-shrink-0">
             {assigneeName ? assigneeName.charAt(0).toUpperCase() : 'U'}
           </div>
-          <span className="text-sm font-semibold text-slate-700 truncate">{assigneeName || 'Unassigned'}</span>
+          <span className="text-xs font-semibold text-slate-700 truncate" title={assigneeName || 'Unassigned'}>
+            {assigneeName || 'Unassigned'}
+          </span>
         </div>
+      </td>
 
-        {/* Stage */}
-        <div className="flex items-center justify-center border-l border-slate-200/70 pl-3" onClick={e => e.stopPropagation()}>
-          <select value={lead.leadStage || 'New Lead'} onChange={e => onStageChange(lead, e.target.value)} disabled={!canEdit}
-            className={`text-xs font-bold px-2.5 py-1 rounded-full border outline-none appearance-none text-center transition-all max-w-full truncate ${canEdit ? 'cursor-pointer' : 'opacity-60 cursor-not-allowed'} ${stagePill(lead.leadStage)}`}>
-            {stageOptions.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
+      {/* ── Amount ── */}
+      <td className={`${TD} text-right`}>
+        <span className={`text-sm font-extrabold ${amountStr ? 'text-slate-800' : 'text-slate-300'}`}>{amountStr || '—'}</span>
+      </td>
+
+      {/* ── Margin ── */}
+      <td className={`${TD} text-right`}>
+        <span className={`text-sm font-bold ${marginStr ? 'text-emerald-700' : 'text-slate-300'}`}>{marginStr || '—'}</span>
+      </td>
+
+      {/* ── Type ── */}
+      <td className={`${TD} text-center`}>
+        <select value={lead.leadType || 'Fresh Lead'} onChange={e => onTypeChange(lead, e.target.value)} disabled={!canEdit}
+          className={`text-[11px] font-bold px-2 py-1 rounded-full border outline-none appearance-none text-center transition-all max-w-full truncate ${canEdit ? 'cursor-pointer' : 'opacity-60 cursor-not-allowed'} ${typePill(lead.leadType)}`}>
+          {typeOptions.map(t => <option key={t} value={t}>{t}</option>)}
+        </select>
+      </td>
+
+      {/* ── Stage ── */}
+      <td className={`${TD} text-center`}>
+        <select value={lead.leadStage || 'New Lead'} onChange={e => onStageChange(lead, e.target.value)} disabled={!canEdit}
+          className={`text-[11px] font-bold px-2 py-1 rounded-full border outline-none appearance-none text-center transition-all max-w-full truncate ${canEdit ? 'cursor-pointer' : 'opacity-60 cursor-not-allowed'} ${stagePill(lead.leadStage)}`}>
+          {stageOptions.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+      </td>
+
+      {/* ── Actions ── */}
+      <td className={`${TD} text-center`}>
+        <div className="inline-flex items-center gap-1">
+          <button onClick={() => onView(lead)} title="View" className={`${iconBtn} bg-blue-50 hover:bg-blue-100 text-blue-600`}><Eye size={13} /></button>
+          {canEdit && <button onClick={() => onEditNavigate(lead)} title="Edit" className={`${iconBtn} bg-indigo-50 hover:bg-indigo-100 text-indigo-600`}><Pencil size={13} /></button>}
+          {canDelete && <button onClick={() => onDelete(lead)} title="Delete" className={`${iconBtn} bg-red-50 hover:bg-red-100 text-red-600`}><Trash2 size={13} /></button>}
         </div>
-
-        {/* Estimated value */}
-        <div className="flex flex-col items-center justify-center text-center min-w-0 border-l border-slate-200/70 pl-3">
-          <span className={`text-sm font-extrabold truncate max-w-full ${valueStr ? 'text-slate-800' : 'text-slate-300'}`}>{valueStr || '—'}</span>
-          <span className="text-[9px] uppercase tracking-wide text-slate-400 font-bold">Latest quote</span>
-        </div>
-
-        {/* Actions */}
-        <div className="flex items-center justify-center gap-1.5 border-l border-slate-200/70 pl-2" onClick={e => e.stopPropagation()}>
-          <button onClick={() => onView(lead)} title="View" className="w-8 h-8 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 flex items-center justify-center transition-all"><Eye size={14} /></button>
-          {/* Edit → navigate to standalone /EditLead/:id page (no popup) */}
-          {canEdit && <button onClick={() => onEditNavigate(lead)} title="Edit" className="w-8 h-8 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-600 flex items-center justify-center transition-all"><Pencil size={14} /></button>}
-          {canDelete && <button onClick={() => onDelete(lead)} title="Delete" className="w-8 h-8 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 flex items-center justify-center transition-all"><Trash2 size={14} /></button>}
-        </div>
-      </div>
-
-      {/* ── Mobile row ── */}
-      <div
-        onClick={() => onToggle(lead.id)}
-        className="md:hidden px-4 py-3.5 cursor-pointer transition-colors"
-        style={{ background: isOpen ? '#eeda9230' : 'transparent' }}
-        onMouseEnter={e => { if (!isOpen) e.currentTarget.style.background = '#eeda9218'; }}
-        onMouseLeave={e => { if (!isOpen) e.currentTarget.style.background = 'transparent'; }}
-      >
-        <div className="flex items-start gap-3">
-          <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${avatar} flex items-center justify-center text-white text-sm font-extrabold shadow-sm flex-shrink-0 mt-0.5`}>{initial}</div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
-                <p className="text-sm font-bold text-slate-800 capitalize truncate">{name}</p>
-                <div className="flex items-center gap-2.5 text-xs text-slate-400 min-w-0"><PhoneLink phone={lead.phone} iconSize={11} className="flex-shrink-0 text-slate-400" onWhatsApp={onWhatsApp ? () => onWhatsApp(lead) : undefined} /></div>
-              </div>
-              <ChevronRight size={16} className="text-slate-400 transition-transform flex-shrink-0 mt-1" style={{ transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)' }} />
-            </div>
-            {/* Destination/itinerary intentionally omitted here — it lives in the expand panel's
-                Itinerary row, so the collapsed card stays clean (no duplicated data on mobile). */}
-            <div className="flex items-center gap-2 flex-wrap mt-2">
-              <div onClick={e => e.stopPropagation()}>
-                <select value={lead.leadStage || 'New Lead'} onChange={e => onStageChange(lead, e.target.value)} disabled={!canEdit}
-                  className={`text-xs font-bold px-2.5 py-1 rounded-full border outline-none appearance-none text-center transition-all ${canEdit ? 'cursor-pointer' : 'opacity-60 cursor-not-allowed'} ${stagePill(lead.leadStage)}`}>
-                  {stageOptions.map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </div>
-            </div>
-            <div className="flex items-center justify-between mt-2.5 gap-2">
-              <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                <div className="w-5 h-5 rounded-full bg-gradient-to-br from-purple-400 to-purple-600 text-white flex items-center justify-center text-[9px] font-extrabold flex-shrink-0">
-                  {assigneeName ? assigneeName.charAt(0).toUpperCase() : 'U'}
-                </div>
-                <span className="text-xs font-semibold text-slate-600 truncate">{assigneeName || 'Unassigned'}</span>
-              </div>
-              <div className="flex items-center gap-1 flex-shrink-0" onClick={e => e.stopPropagation()}>
-                <button onClick={() => onView(lead)} className="w-7 h-7 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 flex items-center justify-center transition-all"><Eye size={13} /></button>
-                {canEdit && <button onClick={() => onEditNavigate(lead)} className="w-7 h-7 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-600 flex items-center justify-center transition-all"><Pencil size={13} /></button>}
-                {canDelete && <button onClick={() => onDelete(lead)} className="w-7 h-7 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 flex items-center justify-center transition-all"><Trash2 size={13} /></button>}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Expand Panel ── */}
-      {isOpen && (
-        <div style={{ animation: 'fadeIn .2s ease both' }}>
-
-          {/* Top line — #eeda92 */}
-          <div style={{ height: '2px', background: '#eeda92' }} />
-
-          {/* Panel body — #eeda92 tint background */}
-          <div style={{
-            background: '#fffdf0',
-            padding: isMobile ? '10px 12px' : '10px 12px 12px 44px',
-            borderBottom: '2px solid #eeda92',
-          }}>
-
-            {/* Row 1 — uniform cells (6 across on desktop, 2 across / 3 sub-rows on mobile) */}
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : 'repeat(6, minmax(0, 1fr))',
-              gap: isMobile ? '12px 10px' : '6px',
-              padding: '8px 0',
-              borderBottom: '1px dashed #eeda92',
-            }}>
-              {/* Travellers — spelled out in full, e.g. "2 Adults · 1 Child · 4N" */}
-              <div style={{ minWidth: 0 }}>
-                <p style={{
-                  fontSize: '10px', color: '#a07830', fontWeight: 700,
-                  textTransform: 'uppercase', letterSpacing: '.06em',
-                  marginBottom: '2px', whiteSpace: 'nowrap'
-                }}>Travellers</p>
-                <p style={{
-                  fontSize: '13px', fontWeight: 600, color: '#334155',
-                  whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
-                }}
-                  title={`${formatTravellers(lead.adults, lead.children, lead.infants)}${totalNights > 0 ? ` · ${totalNights}N` : ''}`}>
-                  {formatTravellers(lead.adults, lead.children, lead.infants)}{totalNights > 0 ? ` · ${totalNights}N` : ''}
-                </p>
-              </div>
-              {/* Email — copyable, with a small copy icon */}
-              <div style={{ minWidth: 0, ...(!isMobile ? { borderLeft: '1px solid #eeda9255', paddingLeft: '10px' } : null) }}>
-                <p style={{
-                  fontSize: '10px', color: '#a07830', fontWeight: 700,
-                  textTransform: 'uppercase', letterSpacing: '.06em',
-                  marginBottom: '2px', whiteSpace: 'nowrap'
-                }}>Email</p>
-                <CopyableEmail email={lead.email} />
-              </div>
-              <Cell label="Budget" value={budgetStr} divider={!isMobile} />
-              <Cell label="Departure City" value={lead.departCity} divider={!isMobile} />
-              <Cell label="Lead Source" value={lead.leadSource} divider={!isMobile} />
-              <Cell label="Created" value={createdWithAge} divider={!isMobile} />
-            </div>
-
-            {/* Row 2 — Itinerary (66%) + Services (33%) side by side; stacked on mobile */}
-            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(0, 2fr) minmax(0, 1fr)', gap: '10px', padding: '8px 0', borderBottom: '1px dashed #eeda92' }}>
-              {/* Itinerary — gold day-wise chips; overflow collapses to a "+N" toggle, just like Services */}
-              <div style={{ minWidth: 0 }}>
-                <p style={{
-                  fontSize: '10px', color: '#a07830', fontWeight: 700,
-                  textTransform: 'uppercase', letterSpacing: '.06em',
-                  marginBottom: '6px', whiteSpace: 'nowrap'
-                }}>Itinerary</p>
-                {destinations.length > 0 ? (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px' }}>
-                    {(showAllDest ? destinations : destinations.slice(0, 3)).map((d, i) => (
-                      <span key={i} style={{
-                        display: 'inline-flex', alignItems: 'center', gap: '7px', flexShrink: 0,
-                        background: '#eeda9222', border: '1px solid #eeda92', borderRadius: '9px', padding: '4px 10px'
-                      }}>
-                        {/* day number disc */}
-                        <span style={{
-                          width: '18px', height: '18px', borderRadius: '50%', background: '#eeda92',
-                          color: '#3d2a00', fontSize: '9px', fontWeight: 800, flexShrink: 0,
-                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center'
-                        }}
-                          title={`Day ${d.dayNumber || i + 1}`}>
-                          {d.dayNumber || i + 1}
-                        </span>
-                        <span style={{ fontSize: '11px', fontWeight: 700, color: '#334155', whiteSpace: 'nowrap' }}>
-                          {d.destination}{d.city ? ` → ${d.city}` : ''}
-                        </span>
-                        <span style={{
-                          fontSize: '9px', fontWeight: 700, color: '#7a5a00', background: '#eeda9240',
-                          borderRadius: '10px', padding: '1px 6px', whiteSpace: 'nowrap'
-                        }}>
-                          {d.nights}N
-                        </span>
-                      </span>
-                    ))}
-                    {destinations.length > 3 && (
-                      <button onClick={(e) => { e.stopPropagation(); setShowAllDest(v => !v); }}
-                        style={{
-                          background: '#eeda92', color: '#3d2a00', padding: '4px 10px', borderRadius: '9px',
-                          fontSize: '10px', fontWeight: 800, border: 'none', cursor: 'pointer', whiteSpace: 'nowrap'
-                        }}>
-                        {showAllDest ? '− less' : `+${destinations.length - 3}`}
-                      </button>
-                    )}
-                  </div>
-                ) : (
-                  <span style={{ fontSize: '11px', color: '#94A3B8' }}>No itinerary added</span>
-                )}
-              </div>
-              {/* Services — colored chips in the remaining 33%; overflow collapses to a "+N" toggle.
-                  On mobile it stacks under Itinerary, so the divider moves from left edge to top. */}
-              <div style={{
-                minWidth: 0, ...(isMobile
-                  ? { borderTop: '1px dashed #eeda9255', paddingTop: '8px', marginTop: '4px' }
-                  : { borderLeft: '1px solid #eeda9255', paddingLeft: '10px' })
-              }}>
-                <p style={{
-                  fontSize: '10px', color: '#a07830', fontWeight: 700,
-                  textTransform: 'uppercase', letterSpacing: '.06em',
-                  marginBottom: '6px', whiteSpace: 'nowrap'
-                }}>Services</p>
-                {services.length > 0 ? (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px' }}>
-                    {(showAllServices ? services : services.slice(0, 3)).map((s, i) => {
-                      const c = serviceColor(s);
-                      return <span key={i} style={{ background: c.bg, color: c.text, padding: '3px 9px', borderRadius: '6px', fontSize: '11px', fontWeight: 600, whiteSpace: 'nowrap' }}>{s}</span>;
-                    })}
-                    {services.length > 3 && (
-                      <button onClick={(e) => { e.stopPropagation(); setShowAllServices(v => !v); }}
-                        style={{
-                          background: '#eeda92', color: '#3d2a00', padding: '3px 9px', borderRadius: '6px',
-                          fontSize: '11px', fontWeight: 800, border: 'none', cursor: 'pointer', whiteSpace: 'nowrap'
-                        }}>
-                        {showAllServices ? '− less' : `+${services.length - 3}`}
-                      </button>
-                    )}
-                  </div>
-                ) : (
-                  <span style={{ fontSize: '10px', color: '#94A3B8' }}>None</span>
-                )}
-              </div>
-            </div>
-
-            {/* Row 3: ID + Action buttons */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', paddingTop: '10px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', background: '#1E293B', borderRadius: '6px', padding: '4px 10px' }}>
-                <div style={{ width: '4px', height: '4px', borderRadius: '50%', background: '#eeda92' }} />
-                <span style={{ fontSize: '9px', color: '#94A3B8', fontWeight: 600 }}>ID:</span>
-                <span style={{ fontSize: '9px', fontFamily: 'monospace', color: '#eeda92', fontWeight: 700 }}>{String(lead.publicId || lead.id).slice(0, 14)}...</span>
-              </div>
-              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                
-                {/* 1. Add Log: Hamesha dikhega */}
-                {canEdit && (
-                  <button onClick={() => onAddLog(lead)}
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '5px 11px', borderRadius: '7px', background: '#1E293B', color: '#eeda92', fontSize: '10px', fontWeight: 700, border: '1px solid #eeda92', cursor: 'pointer' }}>
-                    <NotebookPen size={11} /> Add Log
-                  </button>
-                )}
-
-                
-                {(lead.logCount > 0 || (lead.logs && lead.logs.length > 0)) && (
-                  <button onClick={() => onViewLogs(lead)}
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '5px 11px', borderRadius: '7px', background: '#eeda9225', color: '#7a5a00', fontSize: '10px', fontWeight: 700, border: '1px solid #eeda92', cursor: 'pointer' }}>
-                    <Eye size={11} /> View Logs
-                  </button>
-                )}
-
-            
-                {canCreateQuotation && (
-                  <button onClick={() => onSuggestPackages(lead)}
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '5px 11px', borderRadius: '7px', background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: '#fff', fontSize: '10px', fontWeight: 700, border: 'none', cursor: 'pointer', boxShadow: '0 2px 8px #6366f155' }}>
-                    <Sparkles size={11} /> Suggest Packages
-                  </button>
-                )}
-
-              
-                {lead.latestQuotation?.publicId ? (
-                  <>
-                    <button onClick={() => onViewQuotations(lead)}
-                      style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '5px 11px', borderRadius: '7px', background: '#eeda9225', color: '#7a5a00', fontSize: '10px', fontWeight: 700, border: '1px solid #eeda92', cursor: 'pointer' }}>
-                      <Eye size={11} /> View Quotations
-                    </button>
-                    <Link to={`/createquotation?leadId=${lead.publicId || lead.id}`}
-                      style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '5px 11px', borderRadius: '7px', background: '#eeda92', color: '#3d2a00', fontSize: '10px', fontWeight: 700, textDecoration: 'none', boxShadow: '0 2px 8px #eeda9266' }}>
-                      <FileText size={11} /> Create New Quotation ↗
-                    </Link>
-                  </>
-                ) : (
-                  <Link to={`/createquotation?leadId=${lead.publicId || lead.id}`}
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '5px 11px', borderRadius: '7px', background: '#eeda92', color: '#3d2a00', fontSize: '10px', fontWeight: 700, textDecoration: 'none', boxShadow: '0 2px 8px #eeda9266' }}>
-                    <FileText size={11} /> Create Quotation ↗
-                  </Link>
-                )}
-
-                {/* 5. Convert to Booking: Hamesha dikhega (agar convert hone ki condition meet ho rahi hai) */}
-                {isConverted ? (
-                  <Link to={`/BookingDetails/${lead.convertedBookingPublicId || lead.bookingPublicId || ''}`}
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '5px 11px', borderRadius: '7px', background: '#DCFCE7', color: '#15803D', fontSize: '10px', fontWeight: 700, textDecoration: 'none', border: '1px solid #BBF7D0' }}>
-                    <CheckCircle size={11} /> Booked ↗
-                  </Link>
-                ) : canConvert && (
-                  <button onClick={() => onConvert(lead)}
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '5px 11px', borderRadius: '7px', background: '#2563EB', color: '#fff', fontSize: '10px', fontWeight: 700, border: 'none', cursor: 'pointer', boxShadow: '0 2px 8px #2563eb55' }}>
-                    <ArrowRightLeft size={11} /> Convert to Booking
-                  </button>
-                )}
-              </div>
-            </div>
-
-          </div>
-        </div>
-      )}
-    </div>
+      </td>
+    </tr>
   );
 }
-
 
 /* ─── QUOTATIONS LIST MODAL ──────────────────────────── */
 const QUOTE_STAGE_PILL = {
@@ -2732,7 +2810,6 @@ function QuotationsModal({ lead, onClose, canDelete, canEdit }) {
       a.remove();
       window.URL.revokeObjectURL(url);
     } catch (e) {
-      // Was console-only: the button just stopped spinning and the user was left guessing.
       // The response is a Blob here, so there is no envelope to read — the fallback carries it.
       if (isAlreadyReported(e)) return;
       showToast(getErrorMessage(e, 'Could not download the PDF. Please try again.'), 'error');
@@ -2802,8 +2879,8 @@ function QuotationsModal({ lead, onClose, canDelete, canEdit }) {
       });
       showToast(`Quotation emailed to ${lead.email}`, 'success');
     } catch (e) {
-      // A mail failure comes back as a 502 whose copy the server wrote ("We couldn't send that
-      // email…"), so it lands in the interceptor's INTERNAL_ERROR branch and is already toasted.
+      // A mail failure comes back as a 502 whose copy the server wrote, so it lands in the
+      // interceptor's INTERNAL_ERROR branch and is already toasted.
       if (isAlreadyReported(e)) return;
       showToast(getErrorMessage(e, 'Failed to send the email.'), 'error');
     } finally {
@@ -2859,8 +2936,6 @@ function QuotationsModal({ lead, onClose, canDelete, canEdit }) {
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all">
                       <Eye size={13} /> Weblink
                     </button>
-                    {/* Edit → opens CreateQuotation in edit mode (quotationId in the URL) */}
-                    
 
                     <button onClick={() => setStylePickFor(q)} disabled={downloadingId === q.publicId}
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 hover:border-blue-300 text-slate-600 hover:text-blue-600 text-xs font-bold transition-all disabled:opacity-50">
@@ -2880,22 +2955,22 @@ function QuotationsModal({ lead, onClose, canDelete, canEdit }) {
                       <BarChart3 size={14} />
                     </button>
 
-<div className="ml-auto flex items-center gap-2">
-  {canEdit && (
-    <button onClick={() => { onClose(); navigate(`/createquotation?leadId=${lead.publicId || lead.id}&quotationId=${q.publicId}`); }}
-      title="Edit quotation"
-      className="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-600 transition-all">
-      <Pencil size={14} />
-    </button>
-  )}
+                    <div className="ml-auto flex items-center gap-2">
+                      {canEdit && (
+                        <button onClick={() => { onClose(); navigate(`/createquotation?leadId=${lead.publicId || lead.id}&quotationId=${q.publicId}`); }}
+                          title="Edit quotation"
+                          className="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-600 transition-all">
+                          <Pencil size={14} />
+                        </button>
+                      )}
 
-  {canDelete && (
-    <button onClick={() => removeQuotation(q)} disabled={deletingId === q.publicId} title="Delete quotation"
-      className="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-red-200 bg-red-50 hover:bg-red-100 text-red-500 transition-all disabled:opacity-50">
-      <Trash2 size={14} />
-    </button>
-  )}
-</div>
+                      {canDelete && (
+                        <button onClick={() => removeQuotation(q)} disabled={deletingId === q.publicId} title="Delete quotation"
+                          className="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-red-200 bg-red-50 hover:bg-red-100 text-red-500 transition-all disabled:opacity-50">
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               ))}
@@ -3200,20 +3275,18 @@ const Leads = () => {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
 
-  const [expanded, setExpanded] = useState({});   // TanStack expansion (kept single-open below)
-
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
 
   const [viewLead, setViewLead] = useState(null);
-  // ── editLead state removed — Edit now navigates to /EditLead/:id ──
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [quotationsLead, setQuotationsLead] = useState(null);
   const [suggestLead, setSuggestLead] = useState(null);   // "Suggest packages" modal target
   const [convertLead, setConvertLead] = useState(null);
   const [logLead, setLogLead] = useState(null);
   const [logsViewLead, setLogsViewLead] = useState(null);
-  const [waLead, setWaLead] = useState(null); // WhatsApp panel
-  const isMobile = useIsMobile();
+  const [weblinkLead, setWeblinkLead] = useState(null);   // lead whose weblink analytics are open
+  const [waLead, setWaLead] = useState(null);             // WhatsApp panel
+  const [selectedIds, setSelectedIds] = useState([]);     // row checkbox selection
   const [denied, setDenied] = useState(false);
 
   // Centralized toaster: <ToastHost/> (mounted beside the router in App.jsx) renders it.
@@ -3248,7 +3321,7 @@ const Leads = () => {
     }
   };
 
-  // ── Navigate to standalone /EditLead/:id page (replaces the old popup) ──
+  // ── Navigate to standalone /EditLead/:id page ──
   const handleEditNavigate = (lead) => {
     navigate(`/EditLead/${lead.publicId || lead.id}`);
   };
@@ -3282,12 +3355,37 @@ const Leads = () => {
     }
   };
 
+  // Same "send the complete payload" pattern as the stage change — the Type column is a dropdown.
+  const handleTypeChange = async (leadToUpdate, newType) => {
+    try {
+      const safeAssignedUserId =
+        leadToUpdate.assignedUserId ||
+        leadToUpdate.assignedUser?.publicId ||
+        leadToUpdate.assignedUser?.id ||
+        null;
+
+      await leadService.updateLead(
+        leadToUpdate.publicId || leadToUpdate.id,
+        { ...leadToUpdate, leadType: newType, assignedUserId: safeAssignedUserId },
+        leadToUpdate.services || [],
+        leadToUpdate.itinerary || []
+      );
+
+      setLeads(prev => prev.map(l => l.id === leadToUpdate.id ? { ...l, leadType: newType } : l));
+      showToast(`Lead #${leadToUpdate.id} set to ${newType}!`);
+    } catch (err) {
+      if (isAlreadyReported(err)) return;   // <ToastHost/> already showed it
+      showToast(getErrorMessage(err, 'Error updating lead type. Please try again.'), 'error');
+    }
+  };
+
   const handleDelete = async () => {
     try {
       if (typeof leadService.deleteLead === 'function') {
         await leadService.deleteLead(deleteTarget.publicId || deleteTarget.id);
       }
       setLeads(prev => prev.filter(l => l.id !== deleteTarget.id));
+      setSelectedIds(prev => prev.filter(id => id !== deleteTarget.id));
       showToast(`Lead #${deleteTarget.id} has been deleted.`);
       setDeleteTarget(null);
     } catch (err) {
@@ -3311,11 +3409,6 @@ const Leads = () => {
         : l
     ));
   };
-
- 
-
-  // Single-open expansion — preserves the original one-row-at-a-time behaviour.
-  const toggleRow = (id) => setExpanded(prev => (prev[id] ? {} : { [id]: true }));
 
   const safeLeads = useMemo(() => (Array.isArray(leads) ? leads : []), [leads]);
 
@@ -3373,9 +3466,8 @@ const Leads = () => {
     });
   }, [safeLeads, searchTerm, dateFilter, startDate, endDate, activeTab]);
 
-  // ── TanStack Table: drives sorting, pagination and row-expansion (headless — the
-  //   existing markup below renders row.original, so the layout is unchanged). ──
-  // Sort is controlled by the existing "newest/oldest" toggle (sortOrder) on createdAt.
+  // ── TanStack Table: drives sorting and pagination (headless — the markup below
+  //   renders row.original). Sort is controlled by sortOrder on createdAt. ──
   const sorting = useMemo(() => [{ id: 'createdAt', desc: sortOrder !== 'asc' }], [sortOrder]);
 
   const columns = useMemo(() => [
@@ -3389,15 +3481,13 @@ const Leads = () => {
   const table = useReactTable({
     data: filteredLeads,
     columns,
-    state: { sorting, pagination, expanded },
+    state: { sorting, pagination },
     onPaginationChange: setPagination,
-    onExpandedChange: setExpanded,
     getRowId: (row) => String(row.id),
     autoResetPageIndex: false,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
-    getExpandedRowModel: getExpandedRowModel(),
   });
 
   const pageRows = table.getRowModel().rows;
@@ -3405,7 +3495,15 @@ const Leads = () => {
   const totalPages = Math.max(1, table.getPageCount());
   const { pageIndex: safePageIndex, pageSize } = table.getState().pagination;
 
-  // Reset to first page when a filter changes (matches the prior behaviour; row edits don't reset).
+  // Header checkbox works on the current page, like the old CRM.
+  const pageIds = pageRows.map(r => r.original.id);
+  const allPageSelected = pageIds.length > 0 && pageIds.every(id => selectedIds.includes(id));
+  const toggleSelect = (id) => setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  const toggleSelectAll = () => setSelectedIds(prev => allPageSelected
+    ? prev.filter(id => !pageIds.includes(id))
+    : [...new Set([...prev, ...pageIds])]);
+
+  // Reset to first page when a filter changes (row edits don't reset).
   useEffect(() => {
     setPagination(p => ({ ...p, pageIndex: 0 }));
   }, [searchTerm, dateFilter, startDate, endDate, activeTab]);
@@ -3438,7 +3536,6 @@ const Leads = () => {
 
       {waLead && <WhatsAppPanel lead={waLead} onClose={() => setWaLead(null)} />}
       {viewLead && <ViewLeadModal lead={viewLead} onClose={() => setViewLead(null)} onEdit={l => { setViewLead(null); handleEditNavigate(l); }} canEdit={hasPermission(P.LEAD_UPDATE)} />}
-      {/* EditLeadModal removed — Edit now navigates to /EditLead/:id */}
       {deleteTarget && <DeleteConfirm lead={deleteTarget} onClose={() => setDeleteTarget(null)} onConfirm={handleDelete} />}
       {/* No onToast prop: every modal reaches the shared toast store directly. */}
       {quotationsLead && <QuotationsModal lead={quotationsLead} onClose={() => setQuotationsLead(null)} canEdit={hasPermission(P.QUOTATION_UPDATE)} canDelete={hasPermission(P.QUOTATION_DELETE)} />}
@@ -3446,6 +3543,7 @@ const Leads = () => {
       {convertLead && <ConvertToBookingModal lead={convertLead} onClose={() => setConvertLead(null)} onConverted={handleConverted} />}
       {logLead && <AddLogModal lead={logLead} onClose={() => setLogLead(null)} onLogAdded={handleLogAdded} />}
       {logsViewLead && <LogsModal lead={logsViewLead} onClose={() => setLogsViewLead(null)} canDelete={hasPermission(P.LEAD_UPDATE)} />}
+      {weblinkLead?.latestQuotation && <WeblinkAnalyticsModal quotation={weblinkLead.latestQuotation} onClose={() => setWeblinkLead(null)} />}
 
       <div className="bg-white/70 backdrop-blur-md border-b border-slate-100">
         <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 py-5">
@@ -3488,54 +3586,47 @@ const Leads = () => {
 
       <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 py-6 space-y-6">
 
-        {/* <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <StatCard icon={Users} label="Total Leads" value={safeLeads.length} gradient="from-cyan-400 via-teal-500 to-teal-600" delay={0} />
-          <StatCard icon={Trophy} label="Bookings" value={stats.bookings} gradient="from-emerald-400 via-green-500 to-green-600" delay={60} />
-          <StatCard icon={PieChart} label="Conversion" value={stats.conversion} suffix="%" gradient="from-amber-400 via-orange-500 to-orange-600" delay={120} />
-          <StatCard icon={TrendingUp} label="Win Rate" value={stats.winRate} suffix="%" gradient="from-rose-400 via-red-500 to-red-600" delay={180} />
-        </div> */}
-
         <div className="bg-white/80 backdrop-blur-md rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden">
-  {/* Collapsed/expanded toggle bar — always visible */}
-  <button
-    onClick={() => setAnalyticsOpen(o => !o)}
-    className="w-full flex items-center gap-3 px-5 py-4 hover:bg-slate-50/60 transition-colors text-left"
-  >
-    <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center flex-shrink-0">
-      <BarChart3 size={16} />
-    </div>
-    <span className="text-sm font-extrabold text-slate-700 flex-shrink-0">Analytics</span>
+          {/* Collapsed/expanded toggle bar — always visible */}
+          <button
+            onClick={() => setAnalyticsOpen(o => !o)}
+            className="w-full flex items-center gap-3 px-5 py-4 hover:bg-slate-50/60 transition-colors text-left"
+          >
+            <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center flex-shrink-0">
+              <BarChart3 size={16} />
+            </div>
+            <span className="text-sm font-extrabold text-slate-700 flex-shrink-0">Analytics</span>
 
-    {/* Summary pills — only shown when collapsed, exactly like reference bar */}
-    {!analyticsOpen && (
-      <div className="flex items-center gap-2 flex-wrap ml-1">
-        <span className="text-xs font-bold px-3 py-1 rounded-full bg-teal-100 text-teal-700 border border-teal-200">{safeLeads.length} Leads</span>
-        <span className="text-xs font-bold px-3 py-1 rounded-full bg-green-100 text-green-700 border border-green-200">{stats.bookings} Booked</span>
-        <span className="text-xs font-bold px-3 py-1 rounded-full bg-amber-100 text-amber-700 border border-amber-200">{stats.conversion}% Conv.</span>
-        <span className="text-xs font-bold px-3 py-1 rounded-full bg-red-100 text-red-700 border border-red-200">{stats.winRate}% Win</span>
-      </div>
-    )}
+            {/* Summary pills — only shown when collapsed */}
+            {!analyticsOpen && (
+              <div className="flex items-center gap-2 flex-wrap ml-1">
+                <span className="text-xs font-bold px-3 py-1 rounded-full bg-teal-100 text-teal-700 border border-teal-200">{safeLeads.length} Leads</span>
+                <span className="text-xs font-bold px-3 py-1 rounded-full bg-green-100 text-green-700 border border-green-200">{stats.bookings} Booked</span>
+                <span className="text-xs font-bold px-3 py-1 rounded-full bg-amber-100 text-amber-700 border border-amber-200">{stats.conversion}% Conv.</span>
+                <span className="text-xs font-bold px-3 py-1 rounded-full bg-red-100 text-red-700 border border-red-200">{stats.winRate}% Win</span>
+              </div>
+            )}
 
-    <ChevronDown
-      size={16}
-      className="text-slate-400 ml-auto flex-shrink-0 transition-transform duration-300"
-      style={{ transform: analyticsOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}
-    />
-  </button>
+            <ChevronDown
+              size={16}
+              className="text-slate-400 ml-auto flex-shrink-0 transition-transform duration-300"
+              style={{ transform: analyticsOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}
+            />
+          </button>
 
-  {/* Full gradient cards — only rendered when open */}
-  {analyticsOpen && (
-    <div
-      className="grid grid-cols-2 md:grid-cols-4 gap-4 px-5 pb-5"
-      style={{ animation: 'fadeIn .25s ease both' }}
-    >
-      <StatCard icon={Users} label="Total Leads" value={safeLeads.length} gradient="from-cyan-400 via-teal-500 to-teal-600" delay={0} />
-      <StatCard icon={Trophy} label="Bookings" value={stats.bookings} gradient="from-emerald-400 via-green-500 to-green-600" delay={60} />
-      <StatCard icon={PieChart} label="Conversion" value={stats.conversion} suffix="%" gradient="from-amber-400 via-orange-500 to-orange-600" delay={120} />
-      <StatCard icon={TrendingUp} label="Win Rate" value={stats.winRate} suffix="%" gradient="from-rose-400 via-red-500 to-red-600" delay={180} />
-    </div>
-  )}
-</div>
+          {/* Full gradient cards — only rendered when open */}
+          {analyticsOpen && (
+            <div
+              className="grid grid-cols-2 md:grid-cols-4 gap-4 px-5 pb-5"
+              style={{ animation: 'fadeIn .25s ease both' }}
+            >
+              <StatCard icon={Users} label="Total Leads" value={safeLeads.length} gradient="from-cyan-400 via-teal-500 to-teal-600" delay={0} />
+              <StatCard icon={Trophy} label="Bookings" value={stats.bookings} gradient="from-emerald-400 via-green-500 to-green-600" delay={60} />
+              <StatCard icon={PieChart} label="Conversion" value={stats.conversion} suffix="%" gradient="from-amber-400 via-orange-500 to-orange-600" delay={120} />
+              <StatCard icon={TrendingUp} label="Win Rate" value={stats.winRate} suffix="%" gradient="from-rose-400 via-red-500 to-red-600" delay={180} />
+            </div>
+          )}
+        </div>
 
         <div className="bg-white/80 backdrop-blur-md rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden">
 
@@ -3617,62 +3708,85 @@ const Leads = () => {
             })()}
           </div>
 
-          <div
-            className="hidden md:grid items-stretch gap-0 px-5 py-3 bg-slate-50/80 text-[11px] font-extrabold text-slate-400 uppercase tracking-wider"
-            style={{ gridTemplateColumns: LEAD_GRID_COLS }}
-          >
-            <div></div>
-            <div className="flex items-center pr-3">Lead</div>
-            <div className="flex items-center justify-center border-l border-slate-200/70 pl-3">Travel Date</div>
-            <div className="flex items-center justify-center border-l border-slate-200/70 pl-3">Assigned</div>
-            <div className="flex items-center justify-center border-l border-slate-200/70 pl-3">Stage</div>
-            <div className="flex items-center justify-center border-l border-slate-200/70 pl-3">Quote Value</div>
-            <div className="flex items-center justify-center border-l border-slate-200/70 pl-3">Actions</div>
-          </div>
+          {/* Selection strip — only visible when something is ticked */}
+          {selectedIds.length > 0 && (
+            <div className="px-5 py-2.5 bg-blue-50 border-b border-blue-100 flex items-center gap-3 flex-wrap" style={{ animation: 'fadeIn .2s ease both' }}>
+              <span className="text-xs font-extrabold text-blue-700">{selectedIds.length} selected</span>
+              <button onClick={() => setSelectedIds([])} className="text-xs font-bold text-slate-500 hover:text-red-500 transition-colors">Clear</button>
+            </div>
+          )}
 
-          <div>
-            {loading ? (
-              [...Array(Math.min(pageSize, 5))].map((_, i) => <SkeletonRow key={i} />)
-            ) : pageRows.length === 0 ? (
-              <div className="text-center py-24 px-5">
-                <div className="flex flex-col items-center justify-center">
-                  <div className="w-20 h-20 bg-slate-50 border border-slate-100 rounded-2xl flex items-center justify-center mb-5 shadow-sm transform -rotate-3">
-                    <Inbox size={32} className="text-slate-400" />
-                  </div>
-                  <p className="text-lg font-extrabold text-slate-600 mb-1">No Leads Found</p>
-                  <p className="text-sm text-slate-400 mb-5 max-w-sm mx-auto leading-relaxed">We couldn't find any leads matching your selected criteria.</p>
-                  <button onClick={() => { setDateFilter('all'); setSearchTerm(''); setActiveTab('All'); }} className="px-4 py-2 rounded-xl bg-blue-50 text-blue-600 font-bold text-sm hover:bg-blue-100 transition-all">Clear Filters</button>
-                </div>
-              </div>
-            ) : (
-              pageRows.map((row, idx) => {
-                const lead = row.original;
-                return (
-                  <LeadRow
-                    key={lead.id}
-                    lead={lead}
-                    index={idx}
-                    isOpen={row.getIsExpanded()}
-                    onToggle={toggleRow}
-                    onView={setViewLead}
-                    onEditNavigate={handleEditNavigate}
-                    onDelete={setDeleteTarget}
-                    onStageChange={handleStageChange}
-                    onViewQuotations={setQuotationsLead}
-                    onSuggestPackages={setSuggestLead}
-                    onConvert={setConvertLead}
-                    onAddLog={setLogLead}
-                    onViewLogs={setLogsViewLead}
-                    onWhatsApp={setWaLead}
-                    canEdit={hasPermission(P.LEAD_UPDATE)}
-                    canDelete={hasPermission(P.LEAD_DELETE)}
-                    canConvert={hasPermission(P.BOOKING_CREATE)}
-                    canCreateQuotation={hasPermission(P.QUOTATION_CREATE)}
-                    isMobile={isMobile}
-                  />
-                );
-              })
-            )}
+          {/* ── The table. 16 columns, horizontally scrollable — same shape as the old CRM. ── */}
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse" style={{ minWidth: `${LEAD_TABLE_MIN_W}px` }}>
+              <colgroup>
+                {LEAD_COLUMNS.map(c => <col key={c.key} style={{ width: `${c.width}px` }} />)}
+              </colgroup>
+
+              <thead>
+                <tr className="bg-blue-600  text-[11px] font-extrabold text-white uppercase tracking-wider">
+                  {LEAD_COLUMNS.map(c => (
+                    <th key={c.key}
+                      className={`px-2.5 py-3 border-r border-blue-500/60 last:border-r-0 whitespace-nowrap ${alignClass(c.align)}`}>
+                      {c.key === 'select' ? (
+                        <input
+                          type="checkbox" checked={allPageSelected} onChange={toggleSelectAll}
+                          className="w-4 h-4 rounded border-white/60 text-emerald-700 focus:ring-white cursor-pointer"
+                        />
+                      ) : c.label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+
+              <tbody>
+                {loading ? (
+                  [...Array(Math.min(pageSize, 5))].map((_, i) => <SkeletonRow key={i} />)
+                ) : pageRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={LEAD_COLUMNS.length} className="text-center py-24 px-5">
+                      <div className="flex flex-col items-center justify-center">
+                        <div className="w-20 h-20 bg-slate-50 border border-slate-100 rounded-2xl flex items-center justify-center mb-5 shadow-sm transform -rotate-3">
+                          <Inbox size={32} className="text-slate-400" />
+                        </div>
+                        <p className="text-lg font-extrabold text-slate-600 mb-1">No Leads Found</p>
+                        <p className="text-sm text-slate-400 mb-5 max-w-sm mx-auto leading-relaxed">We couldn't find any leads matching your selected criteria.</p>
+                        <button onClick={() => { setDateFilter('all'); setSearchTerm(''); setActiveTab('All'); }} className="px-4 py-2 rounded-xl bg-blue-50 text-blue-600 font-bold text-sm hover:bg-blue-100 transition-all">Clear Filters</button>
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  pageRows.map((row, idx) => {
+                    const lead = row.original;
+                    return (
+                      <LeadRow
+                        key={lead.id}
+                        lead={lead}
+                        index={idx}
+                        selected={selectedIds.includes(lead.id)}
+                        onToggleSelect={toggleSelect}
+                        onView={setViewLead}
+                        onEditNavigate={handleEditNavigate}
+                        onDelete={setDeleteTarget}
+                        onStageChange={handleStageChange}
+                        onTypeChange={handleTypeChange}
+                        onViewQuotations={setQuotationsLead}
+                        onSuggestPackages={setSuggestLead}
+                        onConvert={setConvertLead}
+                        onAddLog={setLogLead}
+                        onViewLogs={setLogsViewLead}
+                        onWeblinkStats={setWeblinkLead}
+                        onWhatsApp={setWaLead}
+                        canEdit={hasPermission(P.LEAD_UPDATE)}
+                        canDelete={hasPermission(P.LEAD_DELETE)}
+                        canConvert={hasPermission(P.BOOKING_CREATE)}
+                        canCreateQuotation={hasPermission(P.QUOTATION_CREATE)}
+                      />
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
           </div>
 
           <CommonPagination

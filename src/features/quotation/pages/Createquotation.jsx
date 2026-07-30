@@ -156,6 +156,22 @@ export default function CreateQuotation() {
   const [leadLoading, setLeadLoading] = useState(false);
   const [destinationId, setDestinationId] = useState(null);
 
+  // ── Edit mode ka fetched quotation — TABS ko prefill dene ke liye ──
+  // Ye alag state isliye hai (flightData/hotelData ke bajaye): tabs ko wahi object wapas
+  // bhejna jo wo khud emit karte hain, ek infinite loop banata. loadedData sirf ek baar
+  // API se set hota hai aur uske baad kabhi nahi badalta, isliye har tab ise safely
+  // "ek baar seed karo" signal ki tarah treat kar sakta hai.
+  const [loadedData, setLoadedData] = useState(null);
+
+  // Inclusions/policies quotation ke TOP level pe aati hain (nested object nahi), isliye
+  // InclusionsExclusionsTab ke liye unhe ek object me baandh dete hain.
+  const inclusionsInitial = useMemo(() => {
+    if (!loadedData) return null;
+    const { inclusions, exclusions, paymentPolicies, cancellationPolicies, bookingTerms } = loadedData;
+    if (!inclusions && !exclusions && !paymentPolicies && !cancellationPolicies && !bookingTerms) return null;
+    return { inclusions, exclusions, paymentPolicies, cancellationPolicies, bookingTerms };
+  }, [loadedData]);
+
 
   const [flightData, setFlightData] = useState({});
   const [hotelData, setHotelData] = useState({});
@@ -237,6 +253,8 @@ export default function CreateQuotation() {
         const data = res.data?.data || res.data || {};
         setQtTitle(data.title || "");
         setTemplateStyle(data.templateStyle || "CLASSIC");
+        // Tabs isi se apni internal state seed karte hain (initialData prop).
+        setLoadedData(data);
         if (data.flight) setFlightData(data.flight);
         if (data.hotel) setHotelData(data.hotel);
         if (data.sightseeing) setSightseeingData(data.sightseeing);
@@ -264,6 +282,18 @@ export default function CreateQuotation() {
       }
     })();
   }, [editId]);
+
+  /* ── Prefill settle hone ke baad form ko wapas "clean" mark karo ──
+     Tabs apni state `loadedData` se seed karte hain, aur seed hote hi apna data parent ko
+     emit karte hain. Wo emit ek real user change nahi hai, par edit-effect ka
+     `hydratingRef` tab tak false ho chuka hota hai — to Update button bina kisi change ke
+     enable dikhta tha. Child effects parent effects se pehle chalte hain, isliye jab ye
+     effect chalta hai tab tak saare tabs seed ho chuke hote hain. */
+  useEffect(() => {
+    if (!editId || !loadedData) return;
+    const t = setTimeout(() => setIsDirty(false), 0);
+    return () => clearTimeout(t);
+  }, [editId, loadedData]);
 
   /* ── Collect all data ─ */
   const collectAllData = useCallback(() => ({
@@ -931,29 +961,34 @@ export default function CreateQuotation() {
           {/* Tab content */}
           <div className="relative overflow-hidden">
             <div style={{ minHeight: 260 }}>
-              <div style={{ display: activeTab === "flight" ? "block" : "none" }} className="p-3 sm:p-5 lg:p-6"><FlightTab key={`flight-inc-${svcOn("Flight")}`} onDataChange={onFlightChange} paxInfo={paxInfo} defaultIncluded={svcOn("Flight")} /></div>
-              <div style={{ display: activeTab === "hotel" ? "block" : "none" }} className="p-3 sm:p-5 lg:p-6"><HotelTab key={`hotel-inc-${svcOn("Hotel")}`} onDataChange={onHotelChange} paxInfo={paxInfo} destinations={cityStays} defaultIncluded={svcOn("Hotel")} /></div>
+              {/* `key` props JAAN-BOOJHKAR hata di gayi hain.
+                  Pehle key me svcOn()/costs the, to lead resolve hote hi (ya kisi bhi amount
+                  ke badalte hi) React tab ko unmount karke naya bana deta tha — aur naya tab
+                  apni KHAALI state parent pe emit kar deta tha, jisse edit mode ka load kiya
+                  hua data mit jaata tha. Ab `defaultIncluded` ko har tab andar hi ek effect
+                  se sync karta hai, remount ke bina. */}
+              <div style={{ display: activeTab === "flight" ? "block" : "none" }} className="p-3 sm:p-5 lg:p-6"><FlightTab onDataChange={onFlightChange} paxInfo={paxInfo} defaultIncluded={svcOn("Flight")} initialData={loadedData?.flight} /></div>
+              <div style={{ display: activeTab === "hotel" ? "block" : "none" }} className="p-3 sm:p-5 lg:p-6"><HotelTab onDataChange={onHotelChange} paxInfo={paxInfo} destinations={cityStays} defaultIncluded={svcOn("Hotel")} initialData={loadedData?.hotel} /></div>
               <div style={{ display: activeTab === "sightseeing" ? "block" : "none" }} className="p-3 sm:p-5 lg:p-6">
-                {/* <SightseeingTab   key={`sight-inc-${svcOn("Sightseeing")}`} onDataChange={onSightseeingChange} paxInfo={paxInfo} dayCityMap={dayCityMap} defaultIncluded={svcOn("Sightseeing")} />   */}
                 <SightseeingTab
-                  key={`sight-inc-${svcOn("Sightseeing")}`}
                   onDataChange={onSightseeingChange}
                   paxInfo={paxInfo}
                   dayCityMap={dayCityMap}
                   departureDay={departureDay}
                   travelDate={leadData?.travelDate || ""}
                   defaultIncluded={svcOn("Sightseeing")}
+                  initialData={loadedData?.sightseeing}
                 />
               </div>
-              <div style={{ display: activeTab === "cruise" ? "block" : "none" }} className="p-3 sm:p-5 lg:p-6"><CruiseTab key={`cruise-inc-${svcOn("Cruise")}`} onDataChange={onCruiseChange} defaultIncluded={svcOn("Cruise")} /></div>
-              <div style={{ display: activeTab === "vehicle" ? "block" : "none" }} className="p-3 sm:p-5 lg:p-6"><VehicleTab key={`vehicle-inc-${svcOn("Vehicle")}`} onDataChange={onVehicleChange} defaultIncluded={svcOn("Vehicle")} /></div>
-              <div style={{ display: activeTab === "addons" ? "block" : "none" }} className="p-3 sm:p-5 lg:p-6"><AddOnServicesTab onDataChange={onAddonChange} /></div>
-              <div style={{ display: activeTab === "inclusions" ? "block" : "none" }} className="p-3 sm:p-5 lg:p-6"><InclusionsExclusionsTab onDataChange={onInclusionsChange} /></div>
+              <div style={{ display: activeTab === "cruise" ? "block" : "none" }} className="p-3 sm:p-5 lg:p-6"><CruiseTab onDataChange={onCruiseChange} defaultIncluded={svcOn("Cruise")} initialData={loadedData?.cruise} /></div>
+              <div style={{ display: activeTab === "vehicle" ? "block" : "none" }} className="p-3 sm:p-5 lg:p-6"><VehicleTab onDataChange={onVehicleChange} defaultIncluded={svcOn("Vehicle")} initialData={loadedData?.vehicle} /></div>
+              <div style={{ display: activeTab === "addons" ? "block" : "none" }} className="p-3 sm:p-5 lg:p-6"><AddOnServicesTab onDataChange={onAddonChange} initialData={loadedData?.addons} /></div>
+              <div style={{ display: activeTab === "inclusions" ? "block" : "none" }} className="p-3 sm:p-5 lg:p-6"><InclusionsExclusionsTab onDataChange={onInclusionsChange} initialData={inclusionsInitial} /></div>
               <div style={{ display: activeTab === "summary" ? "block" : "none" }} className="p-3 sm:p-5 lg:p-6">
                 <SummaryPricingTab
                   onDataChange={onSummaryChange}
                   costs={costs}
-                  key={`summary-${costs.flight}-${costs.hotel}-${costs.sightseeing}-${costs.cruise}-${costs.vehicle}-${costs.addons}`}
+                  initialData={loadedData?.pricing}
                 />
               </div>
             </div>

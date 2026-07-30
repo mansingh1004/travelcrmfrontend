@@ -2294,12 +2294,15 @@ export default function SightseeingTab({
   departureDay = null,
   travelDate = "",
   defaultIncluded = true,
+  initialData = null,
 }) {
   const [included, setIncluded] = useState(defaultIncluded);
   const [title, setTitle] = useState("Sightseeing");
   const [notes, setNotes] = useState("");
   const [days, setDays] = useState([newDay(1)]);
   const daysAutoFilledRef = useRef(false);  // dayCityMap se days ek hi baar auto-build ho
+  const hydratedRef = useRef(false);        // saved quotation ek hi baar seed ho
+  const includeTouchedRef = useRef(false);
 
   // ── Sightseeing Master se saare attractions (ek baar load) ──
   const [allItems, setAllItems] = useState([]);
@@ -2446,6 +2449,41 @@ export default function SightseeingTab({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dayCityMap, departureDay, travelDate]);
 
+  // ── EDIT MODE PREFILL — saved quotation se state seed karo (ek hi baar) ──
+  // days/activities me id nahi hota (payload strip kar deta hai) — UI keys aur update/remove
+  // usi id pe chalte hain, isliye naye lagate hain. `_paxTouched` isliye ki saved pax ko
+  // lead-wala auto-fill dobara na badle. daysAutoFilledRef band — saved data lead ke
+  // itinerary-derived days se upar hai.
+  useEffect(() => {
+    if (hydratedRef.current || !initialData) return;
+    hydratedRef.current = true;
+    includeTouchedRef.current = true;
+    daysAutoFilledRef.current = true;
+
+    if (typeof initialData.included === "boolean") setIncluded(initialData.included);
+    if (initialData.title) setTitle(initialData.title);
+    if (initialData.notes) setNotes(initialData.notes);
+    if (Array.isArray(initialData.days) && initialData.days.length > 0) {
+      setDays(initialData.days.map((d, i) => ({
+        ...newDay(d.day || i + 1),
+        ...d,
+        id: Date.now() + Math.random(),
+        _paxTouched: true,
+        activities: (d.activities || []).map(a => ({
+          ...newActivity(),
+          ...a,
+          id: Date.now() + Math.random(),
+        })),
+      })));
+    }
+  }, [initialData]);
+
+  // ── Lead ke services se Include default (remount key ki jagah) ──
+  useEffect(() => {
+    if (includeTouchedRef.current) return;
+    setIncluded(defaultIncluded);
+  }, [defaultIncluded]);
+
   // ── Auto price ────────────────────────────────────────────
   const dayTotals = days.map(d => Number(d.pricePerPax) * Number(d.pax) || 0);
   const sightseeingTotal = dayTotals.reduce((a, b) => a + b, 0);
@@ -2580,7 +2618,7 @@ export default function SightseeingTab({
 
       <DashCard title="Sightseeing Settings" icon={Map}>
         <div className="space-y-4">
-          <IncludeToggle included={included} onChange={() => setIncluded(p => !p)} label="Include Sightseeing in Quotation" />
+          <IncludeToggle included={included} onChange={() => { includeTouchedRef.current = true; setIncluded(p => !p); }} label="Include Sightseeing in Quotation" />
           {included && (
             <>
               <div><Label>Section Title</Label><Input value={title} onChange={e => setTitle(e.target.value)} /></div>

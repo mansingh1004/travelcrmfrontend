@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Car, Plus, IndianRupee, Users, Image as ImageIcon } from "lucide-react";
 import { Label, Input, Textarea, SectionCard, RemoveBtn, IncludeToggle, EmptyState } from "./Ui";
 import { vehicleService } from "@features/masters";
@@ -6,10 +6,13 @@ import { vehicleService } from "@features/masters";
 // export default function VehicleTab({ onDataChange }) {
 //   const [included, setIncluded] = useState(true);
 
-   export default function VehicleTab({ onDataChange, paxInfo = {}, defaultIncluded = true }) {
+   export default function VehicleTab({ onDataChange, paxInfo = {}, defaultIncluded = true, initialData = null }) {
   const [included, setIncluded] = useState(defaultIncluded);
   const [title,    setTitle]    = useState("Vehicle Details");
   const [vehicles, setVehicles] = useState([newVehicle()]);
+
+  const hydratedRef = useRef(false);
+  const includeTouchedRef = useRef(false);
 
   // ── Vehicle Master se saare vehicles (ek baar load) ──
   const [masterList,   setMasterList]   = useState([]);
@@ -56,6 +59,29 @@ import { vehicleService } from "@features/masters";
   // ── Auto price ────────────────────────────────────────────
   const vehicleTotals = vehicles.map(v => Number(v.pricePerVehicle) * Number(v.qty) || 0);
   const vehicleTotal  = vehicleTotals.reduce((a, b) => a + b, 0);
+
+  // ── EDIT MODE PREFILL — saved quotation se state seed karo (ek hi baar) ──
+  useEffect(() => {
+    if (hydratedRef.current || !initialData) return;
+    hydratedRef.current = true;
+    includeTouchedRef.current = true;
+
+    if (typeof initialData.included === "boolean") setIncluded(initialData.included);
+    if (initialData.title) setTitle(initialData.title);
+    if (Array.isArray(initialData.vehicles) && initialData.vehicles.length > 0) {
+      setVehicles(initialData.vehicles.map(v => ({
+        ...newVehicle(),
+        ...v,
+        id: Date.now() + Math.random(),
+      })));
+    }
+  }, [initialData]);
+
+  // ── Lead ke services se Include default (remount key ki jagah) ──
+  useEffect(() => {
+    if (includeTouchedRef.current) return;
+    setIncluded(defaultIncluded);
+  }, [defaultIncluded]);
 
   useEffect(() => {
     onDataChange?.({ included, title, vehicles, amount: vehicleTotal });
@@ -105,7 +131,7 @@ import { vehicleService } from "@features/masters";
         <div className="space-y-4">
           <IncludeToggle
             included={included}
-            onChange={() => setIncluded(p => !p)}
+            onChange={() => { includeTouchedRef.current = true; setIncluded(p => !p); }}
             label="Include Vehicle in Quotation"
           />
           {included && (

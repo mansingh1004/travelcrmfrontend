@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Plane, Plus, IndianRupee, Users } from "lucide-react";
 import { Label, Input, Select, SectionCard, AddBtn, RemoveBtn, IncludeToggle, FieldGrid } from "./Ui";
 import { AIRLINES, CLASSES, AIRPORTS, JOURNEY_TYPES } from "../Constants";
@@ -14,11 +14,50 @@ function PriceBox({ label, value, highlight = false }) {
   );
 }
 
-export default function FlightTab({ onDataChange, paxInfo = {}, defaultIncluded = true }) {
+export default function FlightTab({ onDataChange, paxInfo = {}, defaultIncluded = true, initialData = null }) {
   const [included, setIncluded] = useState(defaultIncluded);
   const [title,    setTitle]    = useState("Flight Details");
   const [journey,  setJourney]  = useState("Round Trip");
   const [segments, setSegments] = useState([newSegment()]);
+
+  // hydratedRef — saved quotation sirf EK BAAR seed ho.
+  // includeTouchedRef — Include toggle ko lead ka default tabhi chhue jab user (ya saved
+  // data) ne wo decision khud na liya ho.
+  const hydratedRef = useRef(false);
+  const includeTouchedRef = useRef(false);
+
+  // ── EDIT MODE PREFILL ──
+  // Backend se aaye segments/connections me `id` nahi hota (payload use strip kar deta hai),
+  // par UI list keys aur update/remove usi id pe chalte hain — isliye yahan naye id lagate hain.
+  useEffect(() => {
+    if (hydratedRef.current || !initialData) return;
+    hydratedRef.current = true;
+    includeTouchedRef.current = true;   // saved choice jeetegi, lead ka default nahi
+
+    if (typeof initialData.included === "boolean") setIncluded(initialData.included);
+    if (initialData.title) setTitle(initialData.title);
+    if (initialData.journey) setJourney(initialData.journey);
+
+    if (Array.isArray(initialData.segments) && initialData.segments.length > 0) {
+      setSegments(initialData.segments.map(seg => ({
+        ...newSegment(),
+        ...seg,
+        id: Date.now() + Math.random(),
+        connections: (seg.connections || []).map(conn => ({
+          ...newConn(),
+          ...conn,
+          id: Date.now() + Math.random(),
+        })),
+      })));
+    }
+  }, [initialData]);
+
+  // ── Lead ke services resolve hone par Include ka default set karo ──
+  // Pehle ye parent ki remount `key` se hota tha, jo tab ki poori state uda deti thi.
+  useEffect(() => {
+    if (includeTouchedRef.current) return;
+    setIncluded(defaultIncluded);
+  }, [defaultIncluded]);
 
   function newSegment() {
     return {
@@ -92,7 +131,7 @@ export default function FlightTab({ onDataChange, paxInfo = {}, defaultIncluded 
       {/* ── Settings ── */}
       <SectionCard title="Flight Settings" icon={Plane}>
         <div className="space-y-4">
-          <IncludeToggle included={included} onChange={() => setIncluded(p => !p)} label="Include Flight in Quotation" />
+          <IncludeToggle included={included} onChange={() => { includeTouchedRef.current = true; setIncluded(p => !p); }} label="Include Flight in Quotation" />
           {included && (
             <FieldGrid cols={2}>
               <div><Label>Section Title</Label><Input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Flight Details" /></div>

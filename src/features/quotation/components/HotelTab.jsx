@@ -2336,12 +2336,14 @@ function HotelFormModal({ open, onClose, editHotel, onSaved }) {
 /* ════════════════════════════════════════════════════════
    MAIN HOTEL TAB
 ═══════════════════════════════════════════════════════ */
-export default function HotelTab({ onDataChange, paxInfo = {}, destinations = [], defaultIncluded = true }) {
+export default function HotelTab({ onDataChange, paxInfo = {}, destinations = [], defaultIncluded = true, initialData = null }) {
   const [included, setIncluded] = useState(defaultIncluded);
   const [title,    setTitle]    = useState("Hotel Details");
   const [notes,    setNotes]    = useState("");
   const [hotels,   setHotels]   = useState([newHotel()]);
   const hotelsAutoFilledRef = useRef(false);  // destinations se hotels ek hi baar auto-build ho
+  const hydratedRef = useRef(false);          // saved quotation ek hi baar seed ho
+  const includeTouchedRef = useRef(false);
 
   const [allHotels,     setAllHotels]     = useState([]);
   const [hotelsLoading, setHotelsLoading] = useState(true);
@@ -2382,6 +2384,37 @@ export default function HotelTab({ onDataChange, paxInfo = {}, destinations = []
       _nightsHint: nights,  // display ke liye, backend ko nahi jaata
     };
   }
+
+  // ── EDIT MODE PREFILL — saved quotation se state seed karo (ek hi baar) ──
+  // Saved rows me `id` nahi hota (payload strip kar deta hai) par UI keys aur update/remove
+  // usi id pe chalte hain — isliye naye id lagate hain.
+  // Saath hi auto-build/auto-fill ko band kar dete hain: saved data hamesha lead ke
+  // itinerary-derived defaults se upar hai.
+  useEffect(() => {
+    if (hydratedRef.current || !initialData) return;
+    hydratedRef.current = true;
+    includeTouchedRef.current = true;
+    hotelsAutoFilledRef.current = true;
+
+    if (typeof initialData.included === "boolean") setIncluded(initialData.included);
+    if (initialData.title) setTitle(initialData.title);
+    if (initialData.notes) setNotes(initialData.notes);
+    if (Array.isArray(initialData.hotels) && initialData.hotels.length > 0) {
+      setHotels(initialData.hotels.map(h => ({
+        ...newHotel(),
+        ...h,
+        id: Date.now() + Math.random(),
+        // Saved rooms ko lead-wala auto-fill dobara na chhue.
+        _roomsTouched: true,
+      })));
+    }
+  }, [initialData]);
+
+  // ── Lead ke services se Include default (remount key ki jagah) ──
+  useEffect(() => {
+    if (includeTouchedRef.current) return;
+    setIncluded(defaultIncluded);
+  }, [defaultIncluded]);
 
   // ── Lead ke itinerary se ek hotel-row per city auto-build ──
   // Sirf EK BAAR chalta hai jab destinations aata hai aur hotels abhi tak default/pristine hai.
@@ -2519,7 +2552,7 @@ export default function HotelTab({ onDataChange, paxInfo = {}, destinations = []
         <div className="space-y-4 sm:space-y-5">
           <IncludeToggle
             included={included}
-            onChange={() => setIncluded(p => !p)}
+            onChange={() => { includeTouchedRef.current = true; setIncluded(p => !p); }}
             label="Include Hotels in Quotation"
           />
           {included && (

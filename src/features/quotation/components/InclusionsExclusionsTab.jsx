@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { CheckCircle, XCircle, Plus, X, CreditCard, AlertTriangle, FileText } from "lucide-react";
 import { Input, SectionCard } from "./Ui";
 
@@ -70,7 +70,9 @@ function AddInputRow({ value, onChange, onAdd, onKeyDown, placeholder, btnColor 
 }
 
 /* ─── Main Component ─────────────────────────────────── */
-export default function InclusionsExclusionsTab({ onDataChange }) {
+export default function InclusionsExclusionsTab({ onDataChange, initialData = null }) {
+
+  const hydratedRef = useRef(false);
 
   /* Inclusions & Exclusions */
   const [inclusions, setInclusions] = useState([
@@ -117,6 +119,20 @@ export default function InclusionsExclusionsTab({ onDataChange }) {
   ]);
   const [newTerm, setNewTerm] = useState("");
   const addTerm = () => { if (newTerm.trim()) { setBookingTerms(p => [...p, newTerm.trim()]); setNewTerm(""); } };
+
+  // ── EDIT MODE PREFILL — saved quotation se list seed karo (ek hi baar) ──
+  // Khaali array bhi valid saved value hai (user ne saari lines hata di thi), isliye
+  // Array.isArray() check karte hain, length nahi — warna default suggestions wapas aa jaate.
+  useEffect(() => {
+    if (hydratedRef.current || !initialData) return;
+    hydratedRef.current = true;
+
+    if (Array.isArray(initialData.inclusions)) setInclusions(initialData.inclusions);
+    if (Array.isArray(initialData.exclusions)) setExclusions(initialData.exclusions);
+    if (Array.isArray(initialData.paymentPolicies)) setPaymentPolicies(initialData.paymentPolicies);
+    if (Array.isArray(initialData.cancellationPolicies)) setCancellationPolicies(initialData.cancellationPolicies);
+    if (Array.isArray(initialData.bookingTerms)) setBookingTerms(initialData.bookingTerms);
+  }, [initialData]);
 
   // ── Har state change pe parent ko data do ────────────────
   useEffect(() => {

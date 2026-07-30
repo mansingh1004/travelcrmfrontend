@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Anchor, Plus, IndianRupee } from "lucide-react";
 import { Label, Input, Select, SectionCard, RemoveBtn, IncludeToggle, EmptyState, FieldGrid } from "./Ui";
 import { CRUISE_TYPES, CABIN_CATS } from "../Constants";
@@ -6,14 +6,40 @@ import { CRUISE_TYPES, CABIN_CATS } from "../Constants";
 // export default function CruiseTab({ onDataChange }) {
 //   const [included, setIncluded] = useState(false);
 
-  export default function CruiseTab({ onDataChange, paxInfo = {}, defaultIncluded = true }) {
+  export default function CruiseTab({ onDataChange, paxInfo = {}, defaultIncluded = true, initialData = null }) {
   const [included, setIncluded] = useState(defaultIncluded);
   const [title,    setTitle]    = useState("Cruise Details");
   const [cruises,  setCruises]  = useState([newCruise()]);
 
+  const hydratedRef = useRef(false);
+  const includeTouchedRef = useRef(false);
+
   function newCruise() {
     return { id: Date.now() + Math.random(), name: "", type: "", depPort: "", arrPort: "", depDate: "", nights: 0, cabin: "", pricePerPax: 0, pax: 1 };
   }
+
+  // ── EDIT MODE PREFILL — saved quotation se state seed karo (ek hi baar) ──
+  useEffect(() => {
+    if (hydratedRef.current || !initialData) return;
+    hydratedRef.current = true;
+    includeTouchedRef.current = true;
+
+    if (typeof initialData.included === "boolean") setIncluded(initialData.included);
+    if (initialData.title) setTitle(initialData.title);
+    if (Array.isArray(initialData.cruises) && initialData.cruises.length > 0) {
+      setCruises(initialData.cruises.map(c => ({
+        ...newCruise(),
+        ...c,
+        id: Date.now() + Math.random(),
+      })));
+    }
+  }, [initialData]);
+
+  // ── Lead ke services se Include default (remount key ki jagah) ──
+  useEffect(() => {
+    if (includeTouchedRef.current) return;
+    setIncluded(defaultIncluded);
+  }, [defaultIncluded]);
 
   // ── Auto price ────────────────────────────────────────────
   const cruiseTotals = cruises.map(c => Number(c.pricePerPax) * Number(c.pax) || 0);
@@ -31,7 +57,7 @@ import { CRUISE_TYPES, CABIN_CATS } from "../Constants";
     <div className="space-y-5">
       <SectionCard title="Cruise Settings" icon={Anchor}>
         <div className="space-y-4">
-          <IncludeToggle included={included} onChange={() => setIncluded(p => !p)} label="Include Cruise in Quotation" />
+          <IncludeToggle included={included} onChange={() => { includeTouchedRef.current = true; setIncluded(p => !p); }} label="Include Cruise in Quotation" />
           {included && <div><Label>Section Title</Label><Input value={title} onChange={e => setTitle(e.target.value)} /></div>}
         </div>
       </SectionCard>

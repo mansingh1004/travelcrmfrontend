@@ -1,14 +1,36 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Package, IndianRupee } from "lucide-react";
 import { Label, Input, Select, SectionCard, AddBtn, RemoveBtn, EmptyState, FieldGrid } from "./Ui";
 import { SERVICE_TYPES } from "../Constants";
 
-export default function AddOnServicesTab({ onDataChange }) {
+export default function AddOnServicesTab({ onDataChange, initialData = null }) {
   const [services, setServices] = useState([newService()]);
+
+  const hydratedRef = useRef(false);
 
   function newService() {
     return { id: Date.now() + Math.random(), type: "", description: "", pricePerUnit: 0, qty: 1, included: true };
   }
+
+  // ── EDIT MODE PREFILL — saved quotation se state seed karo (ek hi baar) ──
+  // Payload ke naam local state se alag hain (serviceType→type, quantity→qty),
+  // isliye yahan wapas map karna padta hai.
+  useEffect(() => {
+    if (hydratedRef.current || !initialData) return;
+    hydratedRef.current = true;
+
+    if (Array.isArray(initialData.items) && initialData.items.length > 0) {
+      setServices(initialData.items.map(item => ({
+        ...newService(),
+        id: Date.now() + Math.random(),
+        type: item.serviceType ?? item.type ?? "",
+        description: item.description ?? "",
+        pricePerUnit: item.pricePerUnit ?? 0,
+        qty: item.quantity ?? item.qty ?? 1,
+        included: item.included ?? true,
+      })));
+    }
+  }, [initialData]);
 
   // ── Auto price ────────────────────────────────────────────
   const serviceTotals = services.map(s => Number(s.pricePerUnit) * Number(s.qty) || 0);

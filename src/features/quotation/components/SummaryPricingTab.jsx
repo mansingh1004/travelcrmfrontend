@@ -174,15 +174,30 @@
 
 
 // calculate price==========================================================
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { BarChart2, Plane, Hotel, Map, Anchor, Car, Package, Tag, IndianRupee } from "lucide-react";
 import { Label, Input, Select, SectionCard, FieldGrid } from "./Ui";
 
-export default function SummaryPricingTab({ costs = {}, onDataChange }) {
+export default function SummaryPricingTab({ costs = {}, onDataChange, initialData = null }) {
   const [discount, setDiscount] = useState(0);
   const [discType, setDiscType] = useState("Fixed");
   const [tax,      setTax]      = useState(0);
   const [markup,   setMarkup]   = useState(0);
+
+  const hydratedRef = useRef(false);
+
+  // ── EDIT MODE PREFILL — saved pricing seed karo (ek hi baar) ──
+  // 0 bhi valid saved value hai (0% tax, 0 discount) — isliye `!= null` check,
+  // truthiness nahi.
+  useEffect(() => {
+    if (hydratedRef.current || !initialData) return;
+    hydratedRef.current = true;
+
+    if (initialData.discount != null) setDiscount(initialData.discount);
+    if (initialData.discType) setDiscType(initialData.discType);
+    if (initialData.tax != null) setTax(initialData.tax);
+    if (initialData.markup != null) setMarkup(initialData.markup);
+  }, [initialData]);
 
   // ── Har state change pe parent ko data do ────────────────
   useEffect(() => {
