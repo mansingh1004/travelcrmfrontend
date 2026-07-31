@@ -406,12 +406,6 @@ import { geographyService } from "@shared/api/geographyService";
 import { getErrorMessage } from "@shared/api/apiError";
 import SearchableSelect from "./SearchableSelect";
 
-/** Empty string ko 0 banao — warna adults + children string concat ho jaata hai */
-const toNum = (v) => {
-  const n = Number(v);
-  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
-};
-
 const MAX_WHOLE_NUMBER = 999;
 
 const ASSISTANCE_TYPES = [
@@ -492,15 +486,15 @@ const wholeNumberRules = (label, min = 0, max = MAX_WHOLE_NUMBER) => ({
 });
 
 const getPassengerTotals = (values = {}) => {
-  const adultMale = toWholeNumber(values.adultMale);
-  const adultFemale = toWholeNumber(values.adultFemale);
-  const totalAdults = adultMale + adultFemale;
+  const male = toWholeNumber(values.male);
+  const female = toWholeNumber(values.female);
+  const totalAdults = male + female;
   const children = toWholeNumber(values.children);
   const infants = toWholeNumber(values.infants);
 
   return {
-    adultMale,
-    adultFemale,
+    male,
+    female,
     totalAdults,
     children,
     infants,
@@ -521,83 +515,6 @@ function FieldError({ message }) {
   );
 }
 
-function NumberInput({ label, icon: Icon, value, onChange, min = 0, max = Infinity, color = "blue" }) {
-  const colorMap = {
-    blue: { bg: "bg-blue-50", text: "text-blue-600", border: "border-blue-200", btn: "bg-blue-100 hover:bg-blue-200 active:bg-blue-300 text-blue-700" },
-    green: { bg: "bg-green-50", text: "text-green-600", border: "border-green-200", btn: "bg-green-100 hover:bg-green-200 active:bg-green-300 text-green-700" },
-    orange: { bg: "bg-orange-50", text: "text-orange-600", border: "border-orange-200", btn: "bg-orange-100 hover:bg-orange-200 active:bg-orange-300 text-orange-700" },
-    purple: { bg: "bg-purple-50", text: "text-purple-600", border: "border-purple-200", btn: "bg-purple-100 hover:bg-purple-200 active:bg-purple-300 text-purple-700" },
-    rose: { bg: "bg-rose-50", text: "text-rose-600", border: "border-rose-200", btn: "bg-rose-100 hover:bg-rose-200 active:bg-rose-300 text-rose-700" },
-  };
-  const c = colorMap[color];
-
-  const handleInputChange = (e) => {
-    const raw = e.target.value;
-    if (raw === "") {
-      onChange("");
-      return;
-    }
-    const val = parseInt(raw, 10);
-    if (!Number.isNaN(val)) {
-      onChange(Math.min(max, Math.max(min, val)));
-    }
-  };
-
-  const handleBlur = () => {
-    if (value === "" || value === null || value === undefined || value < min) {
-      onChange(min);
-    }
-  };
-
-  const numValue = toNum(value);
-
-  return (
-    <div
-      className={`${c.bg} rounded-xl border ${c.border} min-w-0 p-2.5 sm:p-3
-        flex flex-col items-center gap-2
-        sm:flex-row sm:items-center sm:justify-between sm:gap-2`}
-    >
-      <div className="flex items-center gap-1.5 min-w-0 max-w-full">
-        <Icon className={`w-4 h-4 shrink-0 ${c.text}`} />
-        <span
-          title={label}
-          className="text-[11px] sm:text-sm font-semibold text-slate-600 truncate whitespace-nowrap"
-        >
-          {label}
-        </span>
-      </div>
-      <div className="flex items-center gap-1 shrink-0">
-        <button
-          type="button"
-          aria-label={`Decrease ${label}`}
-          onClick={() => onChange(Math.max(min, numValue - 1))}
-          className={`w-8 h-8 sm:w-7 sm:h-7 shrink-0 rounded-lg ${c.btn} font-bold text-base sm:text-sm transition-colors flex items-center justify-center select-none`}
-        >
-          −
-        </button>
-        <input
-          type="number"
-          inputMode="numeric"
-          aria-label={label}
-          value={value}
-          onChange={handleInputChange}
-          onBlur={handleBlur}
-          className={`w-9 sm:w-8 text-center text-base font-bold bg-transparent outline-none ${c.text}
-            [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`}
-        />
-        <button
-          type="button"
-          aria-label={`Increase ${label}`}
-          onClick={() => onChange(Math.min(max, numValue + 1))}
-          className={`w-8 h-8 sm:w-7 sm:h-7 shrink-0 rounded-lg ${c.btn} font-bold text-base sm:text-sm transition-colors flex items-center justify-center select-none`}
-        >
-          +
-        </button>
-      </div>
-    </div>
-  );
-}
-
 function PassengerNumberInput({
   name,
   label,
@@ -611,6 +528,8 @@ function PassengerNumberInput({
   color = "blue",
   readOnly = false,
   validate,
+  // Small muted line under the label. Used by Total Adults to show what the number is made of.
+  hint,
 }) {
   const colorMap = {
     blue: { bg: "bg-blue-50", text: "text-blue-600", border: "border-blue-200", button: "bg-blue-100 hover:bg-blue-200 active:bg-blue-300 text-blue-700" },
@@ -657,10 +576,17 @@ function PassengerNumberInput({
         className={`${colors.bg} rounded-xl border ${error ? "border-red-300" : colors.border} h-full min-w-0 p-2.5 sm:p-3
           flex flex-col items-center gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-2`}
       >
-        <label htmlFor={name} className="flex items-center gap-1.5 min-w-0 max-w-full text-[11px] sm:text-xs font-semibold leading-tight text-slate-600">
-          <Icon className={`w-4 h-4 shrink-0 ${colors.text}`} />
-          <span title={label} className="min-w-0 break-words">{label}</span>
-        </label>
+        <div className="min-w-0 max-w-full">
+          <label htmlFor={name} className="flex items-center gap-1.5 min-w-0 max-w-full text-[11px] sm:text-xs font-semibold leading-tight text-slate-600">
+            <Icon className={`w-4 h-4 shrink-0 ${colors.text}`} />
+            <span title={label} className="min-w-0 break-words">{label}</span>
+          </label>
+          {hint && (
+            <p className="text-[10px] font-semibold text-slate-400 leading-tight mt-0.5 pl-[22px] break-words">
+              {hint}
+            </p>
+          )}
+        </div>
 
         <div className="flex items-center gap-1 shrink-0">
           {!readOnly && (
@@ -752,20 +678,20 @@ function AssistanceTypeCard({ type, selected, onToggle }) {
   const Icon = meta.icon || Accessibility;
 
   return (
-    <label
-      className={`relative rounded-xl p-3.5 border-2 transition-all duration-200 text-left group cursor-pointer block
+    /* A button, exactly like ServicesSection — not a label wrapping a hidden checkbox.
+       An sr-only checkbox is still focusable, and clicking the card handed focus to a 1px
+       element pulled out of the layout, which made the browser scroll to "reveal" it. The card
+       jumped on every pick. aria-pressed carries the on/off state the checkbox used to. */
+    <button
+      type="button"
+      onClick={() => onToggle(type)}
+      aria-pressed={selected}
+      className={`relative rounded-xl p-3.5 border-2 transition-all duration-200 text-left group cursor-pointer block w-full
         ${selected
           ? "border-teal-500 bg-teal-50 shadow-teal-100 shadow-md scale-[1.02]"
           : "border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm"
         }`}
     >
-      <input
-        type="checkbox"
-        checked={selected}
-        onChange={() => onToggle(type)}
-        className="sr-only"
-      />
-
       {/* Checkmark */}
       <div className={`absolute top-2 right-2 w-5 h-5 rounded-full flex items-center justify-center transition-all
         ${selected ? "bg-teal-600 shadow-sm" : "bg-slate-100"}`}
@@ -789,196 +715,11 @@ function AssistanceTypeCard({ type, selected, onToggle }) {
           {meta.hint}
         </p>
       )}
-    </label>
+    </button>
   );
 }
 
-function EditTravelDetails({
-  register,
-  watch,
-  setValue,
-  getValues,
-}) {
-  const [countries, setCountries] = useState([]);
-  const [loadingCountries, setLoadingCountries] = useState(true);
-  const [error, setError] = useState(null);
-
-  const roomsRaw = watch("rooms") ?? 0;
-  const maleRaw = watch("male") ?? 0;
-  const femaleRaw = watch("female") ?? 0;
-  const childrenRaw = watch("children") ?? 0;
-  const infantsRaw = watch("infants") ?? 0;
-  const extraBedsRaw = watch("extraBeds") ?? 0;
-  const handicapRaw = watch("handicap") ?? 0;
-
-  const rooms = toNum(roomsRaw);
-  const male = toNum(maleRaw);
-  const female = toNum(femaleRaw);
-  const children = toNum(childrenRaw);
-  const infants = toNum(infantsRaw);
-  const extraBeds = toNum(extraBedsRaw);
-  const handicap = toNum(handicapRaw);
-
-  const adults = male + female;
-
-  useEffect(() => {
-    if (toNum(getValues?.("adults")) !== adults) {
-      setValue("adults", adults, { shouldDirty: false, shouldValidate: false });
-    }
-  }, [adults, getValues, setValue]);
-
-  useEffect(() => {
-    let active = true;
-
-    const loadCountries = async () => {
-      setLoadingCountries(true);
-      setError(null);
-
-      try {
-        const response = await geographyService.getCountries();
-        const rawCountries = Array.isArray(response) ? response : Array.isArray(response?.data) ? response.data : Array.isArray(response?.data?.data) ? response.data.data : [];
-
-        const countryOptions = rawCountries
-          .map((country) => {
-            const countryName = typeof country === "string" ? country.trim() : String(country?.label || country?.name || country?.countryName || "").trim();
-            if (!countryName) return null;
-            return { value: countryName, label: countryName };
-          })
-          .filter(Boolean);
-
-        if (!active) return;
-        setCountries(countryOptions);
-
-        const currentCountry = typeof getValues === "function" ? getValues("departCountry") : watch("departCountry");
-        const matchingCountry = countryOptions.find((country) => country.value.toLowerCase() === String(currentCountry || "").trim().toLowerCase());
-        const indiaOption = countryOptions.find((country) => country.value.toLowerCase() === "india");
-
-        if (matchingCountry) {
-          setValue("departCountry", matchingCountry.value, { shouldValidate: false, shouldDirty: false, shouldTouch: false });
-        } else if (!currentCountry && indiaOption) {
-          setValue("departCountry", indiaOption.value, { shouldValidate: false, shouldDirty: false, shouldTouch: false });
-        }
-      } catch (err) {
-        if (!active) return;
-        console.error("Country loading error:", err);
-        setCountries([]);
-        setError(getErrorMessage(err, "Couldn't load countries."));
-      } finally {
-        if (active) setLoadingCountries(false);
-      }
-    };
-
-    loadCountries();
-    return () => { active = false; };
-  }, [getValues, setValue, watch]);
-
-  const totalTravellers = adults + children + handicap;
-  const summary = [
-    male > 0 && `${male} Male`,
-    female > 0 && `${female} Female`,
-    children > 0 && `${children} Child${children > 1 ? "ren" : ""}`,
-    handicap > 0 && `${handicap} Handicap`,
-    infants > 0 && `${infants} Infant${infants > 1 ? "s" : ""}`,
-    extraBeds > 0 && `${extraBeds} Extra Bed${extraBeds > 1 ? "s" : ""}`,
-    rooms > 0 && `${rooms} Room${rooms > 1 ? "s" : ""}`,
-  ].filter(Boolean).join(" · ");
-
-  return (
-    <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-      <div className="bg-gradient-to-r from-teal-600 to-teal-500 px-4 py-3.5 sm:px-6 sm:py-4 flex items-center gap-3">
-        <div className="w-8 h-8 shrink-0 rounded-lg bg-white/20 flex items-center justify-center">
-          <FiGlobe className="w-4 h-4 text-white" />
-        </div>
-        <div className="min-w-0">
-          <h2 className="text-white font-bold text-sm sm:text-base truncate">Travel Details</h2>
-          <p className="text-teal-100 text-[11px] sm:text-xs truncate">Departure, dates &amp; traveller information</p>
-        </div>
-      </div>
-
-      <div className="p-4 sm:p-6 space-y-4 sm:space-y-5">
-        <div className="flex flex-col gap-1.5">
-          <label className="flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-slate-600">
-            <FiCalendar className="w-3.5 h-3.5 shrink-0 text-teal-500" />
-            Travel Date <span className="text-red-500">*</span>
-          </label>
-          <div className="relative">
-            <FiCalendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-            <input
-              type="date"
-              className="w-full appearance-none pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-700
-                focus:border-teal-400 focus:ring-2 focus:ring-teal-50 outline-none transition-all"
-              {...register("travelDate")}
-            />
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="flex flex-col gap-1.5 min-w-0">
-            <label className="flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-slate-600">
-              <FiGlobe className="w-3.5 h-3.5 shrink-0 text-teal-500" />
-              Departing Country
-            </label>
-            <SearchableSelect
-              options={countries}
-              value={watch("departCountry") || ""}
-              onChange={(value) => {
-                setValue("departCountry", value, { shouldValidate: true, shouldDirty: true, shouldTouch: true });
-              }}
-              placeholder="Select country"
-              loading={loadingCountries}
-              icon={FiGlobe}
-              searchable
-            />
-            {error && (
-              <span className="text-xs text-red-500">Failed to load countries: {error}</span>
-            )}
-          </div>
-
-          <div className="flex flex-col gap-1.5 min-w-0">
-            <label className="flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-slate-600">
-              <FiMapPin className="w-3.5 h-3.5 shrink-0 text-teal-500" />
-              Departing City
-            </label>
-            <div className="relative">
-              <FiMapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-              <input
-                type="text"
-                placeholder="Enter departing city"
-                className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-700
-                  focus:border-teal-400 focus:ring-2 focus:ring-teal-50 outline-none transition-all"
-                {...register("departCity")}
-              />
-            </div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 lg:grid-cols-3 gap-2.5 sm:gap-3">
-          <NumberInput label="Male" icon={Mars} value={maleRaw} onChange={(v) => setValue("male", v)} color="blue" />
-          <NumberInput label="Female" icon={Venus} value={femaleRaw} onChange={(v) => setValue("female", v)} color="rose" />
-          <NumberInput label="Children" icon={MdChildCare} value={childrenRaw} onChange={(v) => setValue("children", v)} color="orange" />
-          <NumberInput label="Handicap" icon={Accessibility} value={handicapRaw} onChange={(v) => setValue("handicap", v)} color="purple" />
-          <NumberInput label="Infants" icon={MdBabyChangingStation} value={infantsRaw} onChange={(v) => setValue("infants", v)} color="green" />
-          <NumberInput label="Extra Beds" icon={MdHotel} value={extraBedsRaw} onChange={(v) => setValue("extraBeds", v)} color="orange" />
-          <NumberInput label="Rooms" icon={FiHome} value={roomsRaw} onChange={(v) => setValue("rooms", v)} color="blue" />
-        </div>
-
-        {totalTravellers > 0 && (
-          <div className="bg-gradient-to-r from-teal-50 to-blue-50 rounded-xl px-3 sm:px-4 py-3 border border-teal-100 flex items-start sm:items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-teal-100 flex items-center justify-center shrink-0">
-              <FiUsers className="w-4 h-4 text-teal-600" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-[11px] sm:text-xs text-slate-500 font-medium">Traveller Summary</p>
-              <p className="text-xs sm:text-sm font-bold text-slate-700 break-words leading-relaxed">{summary}</p>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function CreateLeadTravelDetails({
+function TravelDetails({
   register,
   watch,
   setValue,
@@ -991,8 +732,8 @@ function CreateLeadTravelDetails({
   const [loadingCountries, setLoadingCountries] = useState(true);
   const [countryError, setCountryError] = useState(null);
 
-  const adultMaleRaw = watch("adultMale") ?? 0;
-  const adultFemaleRaw = watch("adultFemale") ?? 0;
+  const maleRaw = watch("male") ?? 0;
+  const femaleRaw = watch("female") ?? 0;
   const childrenRaw = watch("children") ?? 0;
   const infantsRaw = watch("infants") ?? 0;
   const roomsRaw = watch("rooms") ?? 1;
@@ -1012,8 +753,8 @@ function CreateLeadTravelDetails({
       : "text-slate-400";
 
   const totals = getPassengerTotals({
-    adultMale: adultMaleRaw,
-    adultFemale: adultFemaleRaw,
+    male: maleRaw,
+    female: femaleRaw,
     children: childrenRaw,
     infants: infantsRaw,
     rooms: roomsRaw,
@@ -1124,8 +865,8 @@ function CreateLeadTravelDetails({
   };
 
   const summary = [
-    totals.adultMale > 0 && `${totals.adultMale} Adult Male`,
-    totals.adultFemale > 0 && `${totals.adultFemale} Adult Female`,
+    totals.male > 0 && `${totals.male} Male`,
+    totals.female > 0 && `${totals.female} Female`,
     totals.children > 0 && `${totals.children} Child${totals.children > 1 ? "ren" : ""}`,
     totals.infants > 0 && `${totals.infants} Infant${totals.infants > 1 ? "s" : ""}`,
     totals.rooms > 0 && `${totals.rooms} Room${totals.rooms > 1 ? "s" : ""}`,
@@ -1202,9 +943,22 @@ function CreateLeadTravelDetails({
         <div className="space-y-3">
           <h3 className="text-sm font-bold text-slate-700">Passenger Details</h3>
           <div className="grid grid-cols-2 lg:grid-cols-3 gap-2.5 sm:gap-3">
-            <PassengerNumberInput name="adultMale" label="Adult Male" icon={Mars} value={adultMaleRaw} setValue={setValue} register={register} error={errors.adultMale} color="blue" />
-            <PassengerNumberInput name="adultFemale" label="Adult Female" icon={Venus} value={adultFemaleRaw} setValue={setValue} register={register} error={errors.adultFemale} color="rose" />
-            <PassengerNumberInput name="totalAdults" label="Total Adults" icon={FiUsers} value={totals.totalAdults} setValue={setValue} register={register} error={errors.totalAdults} color="slate" readOnly />
+            <PassengerNumberInput name="male" label="Male" icon={Mars} value={maleRaw} setValue={setValue} register={register} error={errors.male} color="blue" />
+            <PassengerNumberInput name="female" label="Female" icon={Venus} value={femaleRaw} setValue={setValue} register={register} error={errors.female} color="rose" />
+            {/* readOnly — it is male + female. The hint spells that out so the number never looks
+                like a figure someone forgot to edit. */}
+            <PassengerNumberInput
+              name="totalAdults"
+              label="Total Adults"
+              hint={`${totals.male} Male · ${totals.female} Female`}
+              icon={FiUsers}
+              value={totals.totalAdults}
+              setValue={setValue}
+              register={register}
+              error={errors.totalAdults}
+              color="slate"
+              readOnly
+            />
             <PassengerNumberInput name="children" label="Children" icon={MdChildCare} value={childrenRaw} setValue={setValue} register={register} error={errors.children} color="orange" />
             <PassengerNumberInput name="infants" label="Infants" icon={MdBabyChangingStation} value={infantsRaw} setValue={setValue} register={register} error={errors.infants} color="green" />
             <PassengerNumberInput name="rooms" label="Rooms" icon={FiHome} value={roomsRaw} setValue={setValue} register={register} error={errors.rooms} min={1} color="blue" />
@@ -1311,10 +1065,9 @@ function CreateLeadTravelDetails({
   );
 }
 
-export default function TravelDetails({ mode = "edit", ...props }) {
-  if (mode === "create") {
-    return <CreateLeadTravelDetails {...props} />;
-  }
-
-  return <EditTravelDetails {...props} />;
-}
+/* One component for both Create and Edit.
+   There used to be two — CreateLeadTravelDetails and EditTravelDetails — and they drifted onto
+   different field names (adultMale/adultFemale vs male/female, totalAdults vs adults). The
+   transformer could only read one set, so every lead update silently wrote 0 over the other.
+   A single component makes that class of bug impossible. */
+export default TravelDetails;

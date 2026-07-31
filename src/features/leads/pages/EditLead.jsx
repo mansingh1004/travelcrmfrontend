@@ -108,16 +108,23 @@ export default function EditLead() {
 
   const {
     register, handleSubmit, watch, setValue, reset, setError, getValues,
+    clearErrors, trigger,
     formState: { errors },
   } = useForm({
+    // Same field names TravelDetails and transformFormData use — this page and CreateLead now
+    // drive one shared component, so the two must not drift apart again.
     defaultValues: {
       customerName: "", phone: "", email: "",
       budget: "",
       leadSource: "", leadType: "", leadStage: "New Lead",
-      assignedUserId: "", birthDate: "",
+      assignedUserId: "", birthDate: "", anniversaryDate: "",
       travelDate: "", departCountry: "India", departCity: "",
-      // adults ab derived hai (male + female) — TravelDetails ise auto set karta hai
-      rooms: 1, male: 1, female: 1, adults: 2, children: 0, handicap: 0, infants: 0, extraBeds: 0,
+      // totalAdults derived hai (male + female) — TravelDetails ise auto set karta hai
+      rooms: 1, male: 1, female: 1, totalAdults: 2, children: 0, infants: 0, extraBeds: 0,
+      specialAssistanceRequired: false,
+      specialAssistanceTypes: [],
+      assistancePassengerCount: 0,
+      specialAssistanceNotes: "",
       notes: "",
     },
   });
@@ -270,6 +277,12 @@ export default function EditLead() {
             lead.dob
           ),
 
+          anniversaryDate: toDateInput(
+            lead.anniversaryDate ??
+            lead.marriageAnniversary ??
+            lead.anniversary
+          ),
+
           travelDate: toDateInput(
             lead.travelDate ??
             lead.departureDate ??
@@ -295,23 +308,23 @@ export default function EditLead() {
             1
           ),
 
-          adults: Number(
+          totalAdults: Number(
+            lead.totalAdults ??
             lead.adults ??
             lead.adultCount ??
             2
           ),
 
           /*
-           * Male / Female backend se abhi nahi aate (Lead entity mein ye columns
-           * nahi hain). Purane leads mein sirf `adults` ka total hota hai, isliye
-           * gender split unknown hai — total bachane ke liye poora count Male mein
-           * seed kar dete hain aur user isse correct kar sakta hai. Warna save par
-           * adults (= male + female) 0 ho jaata.
+           * Male / Female may not come back from the server. Older leads carry only the `adults`
+           * total, so the gender split is unknown — seed the whole count into Male rather than
+           * lose it, and let the user correct it. Otherwise totalAdults (= male + female) would
+           * save as 0.
            */
           male: Number(
             lead.male ??
             lead.maleCount ??
-            (lead.female != null ? 0 : (lead.adults ?? lead.adultCount ?? 0))
+            (lead.female != null ? 0 : (lead.totalAdults ?? lead.adults ?? lead.adultCount ?? 0))
           ),
 
           female: Number(
@@ -326,12 +339,6 @@ export default function EditLead() {
             0
           ),
 
-          handicap: Number(
-            lead.handicap ??
-            lead.handicapCount ??
-            0
-          ),
-
           infants: Number(
             lead.infants ??
             lead.infantCount ??
@@ -343,6 +350,34 @@ export default function EditLead() {
             lead.extraBedCount ??
             0
           ),
+
+          /*
+           * Special assistance. The server may not return these yet — in that case the section
+           * simply opens empty. It is still filled in from the response wherever possible so an
+           * edit does not quietly blank out assistance the lead already had.
+           */
+          specialAssistanceRequired: Boolean(
+            lead.specialAssistanceRequired ??
+            lead.needsSpecialAssistance ??
+            (Array.isArray(lead.specialAssistanceTypes) && lead.specialAssistanceTypes.length > 0)
+          ),
+
+          specialAssistanceTypes: Array.isArray(lead.specialAssistanceTypes)
+            ? lead.specialAssistanceTypes
+            : Array.isArray(lead.assistanceTypes)
+              ? lead.assistanceTypes
+              : [],
+
+          assistancePassengerCount: Number(
+            lead.assistancePassengerCount ??
+            lead.assistancePassengers ??
+            0
+          ),
+
+          specialAssistanceNotes:
+            lead.specialAssistanceNotes ??
+            lead.assistanceNotes ??
+            "",
 
           notes:
             lead.notes ??
@@ -659,6 +694,9 @@ export default function EditLead() {
                   watch={watch}
                   setValue={setValue}
                   getValues={getValues}
+                  errors={errors}
+                  clearErrors={clearErrors}
+                  trigger={trigger}
                 />
                 <ServicesSection
                   selectedServices={selectedServices}

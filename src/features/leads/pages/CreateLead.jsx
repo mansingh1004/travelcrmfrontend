@@ -338,7 +338,7 @@
 
 
 import { useState, useCallback } from "react";
-import { useForm, useWatch } from "react-hook-form";
+import { useForm } from "react-hook-form";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowLeft as FiArrowLeft,
@@ -370,9 +370,9 @@ const toPayloadCount = (value, min = 0) => {
 };
 
 const getCreateLeadPassengerTotals = (values = {}) => {
-  const adultMale = toPayloadCount(values.adultMale);
-  const adultFemale = toPayloadCount(values.adultFemale);
-  const totalAdults = adultMale + adultFemale;
+  const male = toPayloadCount(values.male);
+  const female = toPayloadCount(values.female);
+  const totalAdults = male + female;
   const children = toPayloadCount(values.children);
   const infants = toPayloadCount(values.infants);
 
@@ -389,7 +389,7 @@ export default function CreateLead() {
   const navigate = useNavigate();
 
   const {
-    register, handleSubmit, watch, setValue, setError, getValues, clearErrors, trigger, control,
+    register, handleSubmit, watch, setValue, setError, getValues, clearErrors, trigger,
     formState: { errors },
     reset,
   } = useForm({
@@ -405,9 +405,10 @@ export default function CreateLead() {
       assignTo: "",
       assignedUserId: "",          // ← logged-in user auto-select hota hai (LeadInformation mein)
       birthDate: "",
+      anniversaryDate: "",
       travelDate: "", departCountry: "India", departCity: "",
-      adultMale: 1,
-      adultFemale: 1,
+      male: 1,
+      female: 1,
       totalAdults: 2,
       children: 0,
       infants: 0,
@@ -421,15 +422,9 @@ export default function CreateLead() {
     },
   });
 
-  console.log(handleSubmit)
-  const createLeadValues = useWatch({ control }) || {};
-  const createLeadSummaryWatch = (name) => {
-    if (name === "male") return createLeadValues.adultMale;
-    if (name === "female") return createLeadValues.adultFemale;
-    if (name === "adults") return createLeadValues.totalAdults;
-    if (name === "handicap") return 0;
-    return createLeadValues[name];
-  };
+  /* LeadSummary used to need a translating shim here, because this form called the fields
+     male/female/totalAdults while the summary read male/female/adults. The form and
+     the summary now share one set of names, so the shim is gone and `watch` goes straight in. */
 
   const [selectedServices, setSelectedServices] = useState(["hotel"]);
   const [itinerary, setItinerary] = useState([{ id: nextId++, destination: "", city: "", nights: 2 }]);
@@ -616,7 +611,6 @@ export default function CreateLead() {
                 searching={searching}
               />
               <TravelDetails
-                mode="create"
                 register={register}
                 watch={watch}
                 setValue={setValue}
@@ -710,7 +704,7 @@ export default function CreateLead() {
             <div className="w-full lg:w-72 xl:w-80 flex-shrink-0">
               <div className="lg:sticky lg:top-20">
                 <LeadSummary
-                  watch={createLeadSummaryWatch}
+                  watch={watch}
                   selectedServices={selectedServices}
                   itinerary={itinerary}
                 />
