@@ -176,18 +176,33 @@ const Navbar = memo(function Navbar({
   useEffect(() => {
     const savedEmail = localStorage.getItem('userEmail');
     const savedRole = localStorage.getItem('userRole');
+    // The person's real full name, stamped at login from the API response.
+    const savedName = localStorage.getItem('userName');
 
-    if (savedEmail || savedRole) {
-      const formattedRole = 
+    if (savedEmail || savedRole || savedName) {
+      const formattedRole =
         savedRole === 'super_admin' ? 'Super Admin' :
         savedRole === 'admin' ? 'Tenant Admin' : 'Standard User';
-      const emailName = savedEmail ? savedEmail.split('@')[0] : 'User';
+
+      // Prefer the stored full name. The email local-part is only a last-resort fallback for a
+      // session that predates userName being stamped — it is NOT a valid display name any more,
+      // because staff email is no longer unique: a whole office sharing info@agency.com would
+      // otherwise every one of them show up as "info".
+      const displayName = (savedName && savedName.trim())
+        || (savedEmail ? savedEmail.split('@')[0] : 'User');
+
+      // Initials from the name: first letter of the first two words ("Demo Admin" → "DA"),
+      // falling back to the first two characters for a single-word name.
+      const words = displayName.trim().split(/\s+/).filter(Boolean);
+      const initials = (words.length >= 2
+        ? words[0][0] + words[1][0]
+        : displayName.substring(0, 2)).toUpperCase();
 
       setLocalUser({
         email: savedEmail || 'No Email',
         role: formattedRole,
-        name: emailName,
-        initials: emailName.substring(0, 2).toUpperCase()
+        name: displayName,
+        initials
       });
     }
   }, []);
@@ -279,6 +294,9 @@ const Navbar = memo(function Navbar({
     localStorage.removeItem("token");
     localStorage.removeItem("userEmail");
     localStorage.removeItem("userRole");
+    // Must be cleared with the rest: a surviving userName shows the previous person's name in the
+    // Navbar until the next login overwrites it.
+    localStorage.removeItem("userName");
     navigate("/login");
   };
 
@@ -452,9 +470,15 @@ const Navbar = memo(function Navbar({
             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-[11px] font-bold shadow-sm flex-shrink-0 border-2 border-white">
               {localUser.initials}
             </div>
-            <div className="hidden md:block text-left mr-1">
-              <p className="text-[13px] font-semibold text-slate-800 leading-none mb-0.5">{localUser.name}</p>
-              <p className="text-[10px] text-slate-500 leading-none">{localUser.role}</p>
+            {/* min-w-0 lets this flex child shrink, max-w caps it: without both, a long full name
+                ("Rajeshwari Venkataraman") stretches the button and pushes the navbar layout.
+                `truncate` then renders it as "Rajeshwari Ve…"; title reveals it in full on hover.
+                leading-tight, not leading-none — truncate adds overflow-hidden, and a line box
+                exactly one em tall clips the descenders on g/j/p/q/y. */}
+            <div className="hidden md:block text-left mr-1 min-w-0 max-w-[9.5rem]">
+              <p className="text-[13px] font-semibold text-slate-800 leading-tight mb-0.5 truncate"
+                 title={localUser.name}>{localUser.name}</p>
+              <p className="text-[10px] text-slate-500 leading-none truncate">{localUser.role}</p>
             </div>
             <ChevronDown
               size={14}
@@ -471,8 +495,10 @@ const Navbar = memo(function Navbar({
                   {localUser.initials}
                 </div>
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold text-slate-800 truncate">{localUser.name}</p>
-                  <p className="text-xs text-slate-500 truncate">{localUser.email}</p>
+                  <p className="text-sm font-semibold text-slate-800 truncate"
+                     title={localUser.name}>{localUser.name}</p>
+                  <p className="text-xs text-slate-500 truncate"
+                     title={localUser.email}>{localUser.email}</p>
                 </div>
               </div>
 

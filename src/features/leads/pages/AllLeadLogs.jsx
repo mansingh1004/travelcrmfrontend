@@ -91,7 +91,12 @@ function LeadCard({ lead, onNavigateLogs, onNavigateAddLog, idx }) {
       <div className="p-4 space-y-3">
         {/* Lead name + stage badge */}
         <div className="flex items-start justify-between gap-2">
-          <h3 className="text-base font-extrabold text-slate-800 leading-tight">{lead.leadName}</h3>
+          <div className="min-w-0">
+            <h3 className="text-base font-extrabold text-slate-800 leading-tight">{lead.leadName}</h3>
+            {lead.leadCode && (
+              <p className="text-[10px] font-bold text-slate-400 font-mono mt-0.5">{lead.leadCode}</p>
+            )}
+          </div>
           <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full flex-shrink-0 ${sc.bg} ${sc.text}`}>
             ✦ {lead.stage}
           </span>
@@ -206,6 +211,7 @@ export default function AllLeadLogs() {
     data.filter(l => {
       const q = search.toLowerCase();
       if (q && !l.leadName.toLowerCase().includes(q) &&
+          !(l.leadCode?.toLowerCase().includes(q)) &&
           !(l.latestLog?.comment?.toLowerCase().includes(q))) return false;
       if (stage !== "All Stages" && l.stage !== stage) return false;
       if (user  !== "All Users"  && !l.latestLog?.addedBy?.toLowerCase().includes(user.toLowerCase())) return false;

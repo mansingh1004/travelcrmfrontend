@@ -124,6 +124,9 @@ export default function EditLead() {
 
   const [loadingLead, setLoadingLead] = useState(true);
   const [leadCode, setLeadCode] = useState("");
+  // Label for the assignee already on the lead. LeadInformation needs it to render that
+  // assignee's <option> before /users resolves — without a name it would show a raw id.
+  const [assignedUserName, setAssignedUserName] = useState("");
   const [selectedServices, setSelectedServices] = useState([]);
   // const [itinerary, setItinerary]       = useState([{ id: nextId++, destination: "", city: "", nights: 2 }]);
 
@@ -463,7 +466,19 @@ export default function EditLead() {
 
         setItinerary(hydratedItinerary);
 
-        setLeadCode(lead.publicId || lead.id || id);
+        setAssignedUserName(
+          lead.assignedUser?.fullName ??
+          lead.assignedUser?.name ??
+          lead.assignedUser?.username ??
+          lead.assignedUserName ??
+          lead.assignTo?.fullName ??
+          lead.assignTo?.name ??
+          ""
+        );
+
+        // The human-readable reference now really is a code — it used to hold the raw publicId
+        // UUID, which is what the header rendered. Falls back for rows predating lead_code.
+        setLeadCode(lead.leadCode || lead.publicId || lead.id || id);
       })
       .catch((err) => {
         if (isAlreadyReported(err)) return;   // the interceptor's toast already said it
@@ -586,7 +601,7 @@ export default function EditLead() {
                   <h1 className="text-xl font-extrabold text-slate-800 tracking-tight">Edit Lead</h1>
                   {leadCode && (
                     <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-full border border-indigo-200">
-                      #{leadCode}
+                      {leadCode}
                     </span>
                   )}
                   {loadingLead && (
@@ -639,6 +654,7 @@ export default function EditLead() {
                   setValue={setValue}
                   onPhoneSearch={handlePhoneSearch}
                   searching={searching}
+                  assignedUserName={assignedUserName}
                 />
                 <TravelDetails
                   register={register}
@@ -762,3 +778,9 @@ export default function EditLead() {
     </div>
   );
 }
+
+
+
+
+
+

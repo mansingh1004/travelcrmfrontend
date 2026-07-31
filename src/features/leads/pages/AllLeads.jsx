@@ -309,7 +309,7 @@ function ViewLeadModal({ lead, onClose, onEdit, canEdit }) {
               </div>
               <div>
                 <h2 className="text-white text-xl font-extrabold capitalize">{lead.customerName || 'N/A'}</h2>
-                <p className="text-slate-400 text-sm font-medium">Lead #{lead.id}</p>
+                <p className="text-slate-400 text-sm font-medium">{lead.leadCode || '—'}</p>
                 <div className="flex items-center gap-2 mt-1.5">
                   <span className="text-xs font-bold px-2 py-0.5 rounded-full border border-slate-300 bg-slate-100 text-slate-700">{lead.leadType || 'N/A'}</span>
                   <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
@@ -1440,7 +1440,7 @@ const Leads = () => {
       );
 
       setLeads(prev => prev.map(l => l.id === leadToUpdate.id ? { ...l, leadStage: newStage } : l));
-      showToast(`Lead #${leadToUpdate.id} marked as ${newStage}!`);
+      showToast(`Lead ${leadToUpdate.leadCode || leadToUpdate.customerName || ''} marked as ${newStage}!`);
     } catch (err) {
       if (isAlreadyReported(err)) return;   // <ToastHost/> already showed it
       showToast(getErrorMessage(err, 'Error updating lead stage. Please try again.'), 'error');
@@ -1478,7 +1478,7 @@ const Leads = () => {
       }
       setLeads(prev => prev.filter(l => l.id !== deleteTarget.id));
       setSelectedIds(prev => prev.filter(id => id !== deleteTarget.id));
-      showToast(`Lead #${deleteTarget.id} has been deleted.`);
+      showToast(`Lead ${deleteTarget.leadCode || deleteTarget.customerName || ''} has been deleted.`);
       setDeleteTarget(null);
     } catch (err) {
       if (isAlreadyReported(err)) return;   // <ToastHost/> already showed it
@@ -1527,6 +1527,9 @@ const Leads = () => {
         lead.customerName?.toLowerCase().includes(q) ||
         lead.email?.toLowerCase().includes(q) ||
         lead.phone?.includes(q) ||
+        // The reference a customer quotes back ("LD-26-0001"). Kept alongside the UUID matches so a
+        // pasted publicId still finds its lead — but this is the one a human will actually type.
+        lead.leadCode?.toLowerCase().includes(q) ||
         lead.id?.toString().includes(q) ||
         lead.publicId?.toLowerCase().includes(q);
 
