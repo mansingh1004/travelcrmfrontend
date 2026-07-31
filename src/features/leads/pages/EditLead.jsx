@@ -124,6 +124,9 @@ export default function EditLead() {
 
   const [loadingLead, setLoadingLead] = useState(true);
   const [leadCode, setLeadCode] = useState("");
+  // Label for the assignee already on the lead. LeadInformation needs it to render that
+  // assignee's <option> before /users resolves — without a name it would show a raw id.
+  const [assignedUserName, setAssignedUserName] = useState("");
   const [selectedServices, setSelectedServices] = useState([]);
   // const [itinerary, setItinerary]       = useState([{ id: nextId++, destination: "", city: "", nights: 2 }]);
 
@@ -463,6 +466,16 @@ export default function EditLead() {
 
         setItinerary(hydratedItinerary);
 
+        setAssignedUserName(
+          lead.assignedUser?.fullName ??
+          lead.assignedUser?.name ??
+          lead.assignedUser?.username ??
+          lead.assignedUserName ??
+          lead.assignTo?.fullName ??
+          lead.assignTo?.name ??
+          ""
+        );
+
         setLeadCode(lead.publicId || lead.id || id);
       })
       .catch((err) => {
@@ -639,6 +652,7 @@ export default function EditLead() {
                   setValue={setValue}
                   onPhoneSearch={handlePhoneSearch}
                   searching={searching}
+                  assignedUserName={assignedUserName}
                 />
                 <TravelDetails
                   register={register}
@@ -762,3 +776,9 @@ export default function EditLead() {
     </div>
   );
 }
+
+
+
+
+
+

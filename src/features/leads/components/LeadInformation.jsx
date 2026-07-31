@@ -114,6 +114,9 @@ export default function LeadInformation({
   // "create" → intelligent assignment (load-based recommendation or forced self).
   // "edit"   → keep the assignee already on the lead; plain user dropdown, no recommendation.
   mode = "create",
+  // Display name of the assignee the lead already carries. Only used to label that assignee's
+  // option while /users is still in flight (or came back without them) — see userOptionsFor.
+  assignedUserName = "",
 }) {
   const {
     withCurrent: sourceOptionsFor,
@@ -221,6 +224,26 @@ export default function LeadInformation({
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
+
+  /**
+   * The options to render, given the assignee the lead currently holds.
+   *
+   * `register` leaves this select uncontrolled, so RHF writes the stored id into the DOM the
+   * moment the field registers — which is before /users resolves. A <select> silently discards a
+   * value matching no <option>, and nothing re-applies it once the list lands (the setValue calls
+   * above are all guarded on the value being empty). The result is a blank Assign To on a lead
+   * whose assignee is perfectly fine, inviting the user to overwrite it.
+   *
+   * Prepending the current assignee fixes that, and covers the same case for a list that came
+   * back without them at all — /users needs USER_READ, so an agent editing a lead gets an empty
+   * pool. Exactly the failure leadSource had, and the same cure: see withCurrent() in
+   * lib/useLeadSources.js.
+   */
+  const userOptionsFor = (current) => {
+    const idOf = (u) => u.publicId || u.id;
+    if (!current || users.some((u) => idOf(u) === current)) return users;
+    return [{ publicId: current, name: assignedUserName || "Currently assigned" }, ...users];
+  };
 
   const handleSearch = async () => {
     if (!searchPhone.trim()) return;
@@ -440,7 +463,10 @@ export default function LeadInformation({
                         ? "Failed to load — retry"
                         : "Select team member"}
                     </option>
-                    {users.map(user => (
+                    {/* The lead's own assignee is always present, even while /users is still
+                        loading and even if it never arrives — otherwise the select renders blank
+                        on a lead that is assigned correctly. */}
+                    {userOptionsFor(watch("assignedUserId")).map(user => (
                       <option
                         key={user.publicId || user.id}
                         value={user.publicId || user.id}
