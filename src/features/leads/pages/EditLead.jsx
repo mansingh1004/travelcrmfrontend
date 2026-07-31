@@ -511,7 +511,9 @@ export default function EditLead() {
           ""
         );
 
-        setLeadCode(lead.publicId || lead.id || id);
+        // The human-readable reference now really is a code — it used to hold the raw publicId
+        // UUID, which is what the header rendered. Falls back for rows predating lead_code.
+        setLeadCode(lead.leadCode || lead.publicId || lead.id || id);
       })
       .catch((err) => {
         if (isAlreadyReported(err)) return;   // the interceptor's toast already said it
@@ -634,7 +636,7 @@ export default function EditLead() {
                   <h1 className="text-xl font-extrabold text-slate-800 tracking-tight">Edit Lead</h1>
                   {leadCode && (
                     <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-full border border-indigo-200">
-                      #{leadCode}
+                      {leadCode}
                     </span>
                   )}
                   {loadingLead && (
