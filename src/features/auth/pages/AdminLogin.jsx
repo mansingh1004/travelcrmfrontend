@@ -8,7 +8,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
-  Eye, EyeOff, Lock, Mail, MapPin, Check, AlertCircle,
+  Eye, EyeOff, Lock, Mail, MapPin, Check, AlertCircle, UserRound,
   ShieldCheck, ArrowRight, ChevronLeft, ChevronRight,
   Megaphone, Globe, ServerCog,
 } from 'lucide-react';
@@ -24,7 +24,11 @@ import { loadMyPermissions, loadMyEntitlements } from "@shared/lib/access";
 // first and falls back to the user login — and the backend returns the real role, which is
 // what gets persisted. Platform operators sign in at /superadmin/login.
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// Mirrors the backend UsernamePolicy: letters, digits, dot, underscore, hyphen; 3–80 chars.
+// Uppercase is accepted here and folded to lowercase server-side, so "Prasad" is not rejected.
+// This is deliberately NOT an email pattern any more — staff email lost its unique index (an agency
+// may share one office mailbox), so `username` is the only field that identifies an account.
+const USERNAME_RE = /^[A-Za-z0-9._-]{3,80}$/;
 const EASE = [0.16, 1, 0.3, 1];
 
 /* ------------------------------------------------------------------ *
@@ -372,7 +376,7 @@ const Showcase = () => (
  * MAIN — all auth state + handleSubmit are IDENTICAL to the original.
  * ================================================================== */
 const Login = ({ setIsAuthenticated }) => {
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -380,15 +384,15 @@ const Login = ({ setIsAuthenticated }) => {
   const [errorMessage, setErrorMessage] = useState('');
 
   // Validation UI states
-  const [emailInvalid, setEmailInvalid] = useState(false);
+  const [usernameInvalid, setUsernameInvalid] = useState(false);
   const [pwInvalid, setPwInvalid] = useState(false);
-  const [emailShake, setEmailShake] = useState(false);
+  const [usernameShake, setUsernameShake] = useState(false);
   const [pwShake, setPwShake] = useState(false);
   const [bannerShake, setBannerShake] = useState(false);
 
   const navigate = useNavigate();
 
-  const emailValid = EMAIL_RE.test(email);
+  const usernameValid = USERNAME_RE.test(username);
   const pwValid = password.length >= 6;
 
   const handleSubmit = async (e) => {
@@ -396,9 +400,9 @@ const Login = ({ setIsAuthenticated }) => {
 
     // Client-side validation with shake feedback
     let bad = false;
-    if (!emailValid) {
-      setEmailInvalid(true);
-      setEmailShake(true);
+    if (!usernameValid) {
+      setUsernameInvalid(true);
+      setUsernameShake(true);
       bad = true;
     }
     if (!password.trim()) {
@@ -413,7 +417,7 @@ const Login = ({ setIsAuthenticated }) => {
 
     try {
       // 1. API call (unchanged)
-      const response = await authService.login(email, password);
+      const response = await authService.login(username, password);
 
       // 2. Extract token (unchanged)
       const responseData = response.data;
@@ -426,7 +430,13 @@ const Login = ({ setIsAuthenticated }) => {
         // fallback is defensive only — default to the least-privileged value.
         const roleToSave = responseData?.role || 'user';
         localStorage.setItem('userRole', roleToSave);
-        localStorage.setItem('userEmail', email);
+        // The login response carries the account's real contact email; prefer it, because the
+        // typed credential is now a username, not an address.
+        localStorage.setItem('userEmail', responseData?.email || username);
+        // The person's FULL NAME ("Demo Admin") — what the Navbar displays. It cannot be derived
+        // from the email any more: colleagues may share one office mailbox, so the local-part would
+        // label the whole staff identically. Falls back to the username, never to the email.
+        localStorage.setItem('userName', responseData?.name || username);
 
         // Effective permissions + plan module entitlements (both cached for the UI to gate/hide).
         await Promise.all([loadMyPermissions(), loadMyEntitlements()]);
@@ -447,7 +457,7 @@ const Login = ({ setIsAuthenticated }) => {
       console.error("Login Error:", error);
       if (error.response) {
         if (error.response.status === 401 || error.response.status === 403) {
-          setErrorMessage("Invalid email or password! Please check your credentials.");
+          setErrorMessage("Invalid username or password! Please check your credentials.");
         } else {
           setErrorMessage(error.response.data?.message || "Server Error. Please try again later.");
         }
@@ -511,30 +521,32 @@ const Login = ({ setIsAuthenticated }) => {
               {/* Email — floating label + live validation */}
               <motion.div
                 initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.55, delay: 0.34, ease: EASE }}
-                className={`tlc-field mb-4 ${emailValid ? 'valid' : ''} ${emailInvalid ? 'invalid' : ''} ${emailShake ? 'shake' : ''}`}
-                onAnimationEnd={() => setEmailShake(false)}
+                className={`tlc-field mb-4 ${usernameValid ? 'valid' : ''} ${usernameInvalid ? 'invalid' : ''} ${usernameShake ? 'shake' : ''}`}
+                onAnimationEnd={() => setUsernameShake(false)}
               >
                 <div className="tlc-control">
-                  <Mail size={19} className="tlc-ico" />
+                  <UserRound size={19} className="tlc-ico" />
                   <input
-                    id="login-email"
-                    type="email"
-                    value={email}
-                    autoComplete="email"
+                    id="login-username"
+                    // NOT type="email" — the browser's native validation would reject a username
+                    // outright, so the field must be plain text now.
+                    type="text"
+                    value={username}
+                    autoComplete="username"
                     spellCheck="false"
                     placeholder=" "
-                    aria-invalid={emailInvalid}
+                    aria-invalid={usernameInvalid}
                     onChange={(e) => {
                       const v = e.target.value;
-                      setEmail(v);
-                      setEmailInvalid(v.length > 0 && !EMAIL_RE.test(v));
+                      setUsername(v);
+                      setUsernameInvalid(v.length > 0 && !USERNAME_RE.test(v));
                     }}
                     className="tlc-input"
                   />
-                  <label htmlFor="login-email">Email address</label>
+                  <label htmlFor="login-username">Username</label>
                   <Check size={19} className="tlc-vcheck" aria-hidden="true" />
                 </div>
-                <div className="tlc-err"><AlertCircle size={13} /> Enter a valid email address</div>
+                <div className="tlc-err"><AlertCircle size={13} /> Enter a valid username</div>
               </motion.div>
 
               {/* Password — floating label + visibility toggle */}

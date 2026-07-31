@@ -16,16 +16,25 @@
 
 import API from "@shared/api/http";
 
-function transformLoginData(email, password) {
+// The credential is a USERNAME now, not an email address. Staff email lost its unique index so an
+// agency can share one office mailbox, which left it unable to identify an account; `username` is
+// the unique login identity (uq_users_username_active).
+//
+// `username` is what the backend reads. `email` is still sent with the same value purely as a wire
+// compatibility shim — LoginRequestDTO.getLoginIdentifier() prefers `username` and falls back to
+// `email`, so this keeps working against a backend deployed either side of the change. Drop the
+// `email` key once the backend rollout is done everywhere.
+function transformLoginData(username, password) {
   return {
-    email: email,
+    username: username,
+    email: username,
     password: password,
   };
 }
 
 export const authService = {
-  login: async (email, password) => {
-    const response = await API.post("auth/user/login", transformLoginData(email, password));
+  login: async (username, password) => {
+    const response = await API.post("auth/user/login", transformLoginData(username, password));
 
     // Preserve the REAL tenant role from the backend (TENANT_ADMIN / MANAGER / TRAVEL_AGENT /
     // STAFF / ACCOUNTANT). This was once hard-coded to "user", which made every tenant user
