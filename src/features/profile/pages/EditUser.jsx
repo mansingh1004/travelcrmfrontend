@@ -4,6 +4,7 @@ import { User as FiUser, Mail as FiMail, Phone as FiPhone, Eye as FiEye, EyeOff 
 
 
 import editUserService from "../api/profileEditUserService";
+import { userPermissionsService } from "../api/profileUserPermissionsService";
 
 /* Roles a tenant admin can assign (mapped to backend Role enum in userMappers). */
 const ROLES = [
@@ -103,13 +104,33 @@ export default function EditUser() {
 
   const showToast = useCallback((msg, type="success")=>setToast({msg,type}),[]);
 
-  /* load user */
+  /* load user + permission counts.
+     mapUserFromApi hardcodes `permissions: { pages: 0, total: 0 }` because GET /users/{id} does
+     not carry them — the real numbers live on GET /users/{id}/permissions, which returns
+     { pages, total, permissions }. Fetched alongside so the counters show the same figures the
+     Manage Detailed Permissions page does. */
   useEffect(()=>{
     setLoading(true);
-    editUserService.getById(id)
-      .then((res)=>{
+    Promise.all([
+      editUserService.getById(id),
+      // Permission counts are supplementary: a failure here must not blank the whole form, so it
+      // resolves to null and the counters simply fall back to the mapper's zeros.
+      userPermissionsService.getPermissions(id).catch(()=> null),
+    ])
+      .then(([res, permRes])=>{
         const u = res.data;
-        setUser(u);
+        const p = permRes?.data;
+        // Prefer the endpoint's own counts; derive from the map if it only returns the map.
+        const granted = p?.permissions
+          ? Object.values(p.permissions).filter(v=>v?.access).length
+          : null;
+        setUser({
+          ...u,
+          permissions: {
+            pages: p?.pages ?? granted ?? u.permissions.pages,
+            total: p?.total ?? (p?.permissions ? Object.keys(p.permissions).length : u.permissions.total),
+          },
+        });
         setForm({
           email:u.email, fullName:u.fullName,
           phone:u.phone||"", role:u.role,
@@ -162,13 +183,29 @@ export default function EditUser() {
     }
     setSubmitting(true);
     try {
-      await editUserService.fullUpdate(id, {
+      const wanted = form.email.trim().toLowerCase();
+      const emailChanged = wanted !== (user?.email || "").trim().toLowerCase();
+
+      const res = await editUserService.fullUpdate(id, {
         fullName: form.fullName.trim(),
+        email:    form.email.trim(),
         phone:    form.phone.trim(),
         role:     form.role,
         isActive: form.isActive,
         ...(setNewPass && { newPassword, confirmPassword: confirmPass }),
       });
+
+      // The server is the authority on whether it accepts an email change. If it echoes back the
+      // OLD address, it silently dropped the field — say so instead of reporting a success that
+      // did not happen, and stay on the page so the value on screen is not mistaken for saved.
+      const saved = (res?.data?.email || "").trim().toLowerCase();
+      if (emailChanged && saved && saved !== wanted) {
+        showToast(`Profile saved, but the email was NOT changed — the server still has ${res.data.email}.`, "error");
+        setForm(p=>({ ...p, email: res.data.email }));
+        setUser(res.data);
+        return;
+      }
+
       showToast(`User "${form.fullName}" updated successfully! ✅`);
       setTimeout(()=>navigate("/Users"), 1500);
     } catch(err){
@@ -281,24 +318,32 @@ export default function EditUser() {
                           readOnly
                         />
                         <p className="mt-1.5 text-xs text-slate-400 flex items-center gap-1">
-                          <FiLock className="w-3 h-3"/> Username cannot be changed
+                          <FiLock className="w-3 h-3"/> Derived from the email — not stored separately
                         </p>
                       </div>
 
-                      {/* Email — read only (changing the login email has its own flow) */}
+                      {/* Email — editable. This is the user's LOGIN identifier: changing it
+                          changes the address they sign in with, and the username shown above is
+                          derived from its local-part, so it moves too. */}
                       <div>
-                        <Label>Email</Label>
+                        <Label required>Email</Label>
                         <input
                           type="email"
                           value={form.email}
-                          disabled
-                          readOnly
-                          className={inputCls(false, true)}
+                          onChange={e=>set("email",e.target.value)}
+                          className={inputCls(errs.email, false)}
                           placeholder="Email address"
                         />
-                        <p className="mt-1.5 text-xs text-slate-400 flex items-center gap-1">
-                          <FiLock className="w-3 h-3"/> Email cannot be changed here
-                        </p>
+                        {errs.email ? (
+                          <p className="mt-1.5 text-xs text-red-500 flex items-center gap-1">
+                            <FiAlertCircle className="w-3 h-3 flex-shrink-0"/>{errs.email}
+                          </p>
+                        ) : (
+                          <p className="mt-1.5 text-xs text-amber-600 flex items-center gap-1">
+                            <FiAlertCircle className="w-3 h-3 flex-shrink-0"/>
+                            This is the sign-in address — the user must use the new one to log in.
+                          </p>
+                        )}
                       </div>
 
                       {/* Full Name */}
