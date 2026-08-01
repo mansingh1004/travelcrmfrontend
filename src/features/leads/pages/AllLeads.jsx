@@ -840,6 +840,8 @@ function QuotationsModal({ lead, onClose, canDelete, canEdit }) {
   const [sharePickFor, setSharePickFor] = useState(null);   // quotation whose SHARE design is being picked
   const [emailingId, setEmailing] = useState(null);
   const [webViewQ, setWebViewQ] = useState(null);   // quotation shown in the web view overlay
+  const [previewPickFor, setPreviewPickFor] = useState(null);  // quotation whose weblink DESIGN is being picked
+  const [webViewStyle, setWebViewStyle] = useState(null);      // one-off design override for the open web view
   const [copied, setCopied] = useState(false);
   const [analyticsQ, setAnalyticsQ] = useState(null);   // quotation shown in the weblink-analytics modal
   const [deletingId, setDeletingId] = useState(null);   // quotation being deleted
@@ -914,7 +916,22 @@ function QuotationsModal({ lead, onClose, canDelete, canEdit }) {
   const webLink = (q) => `${window.location.origin}/q/${q.publicId}`;
 
   // Copy the web link so the agent can paste it anywhere to share with the client.
-  const copyLink = async (q) => {
+  // The design being previewed is SAVED first (same rule as the WhatsApp share flow): the
+  // customer's link renders the STORED style, so what the agent saw must be what the link
+  // opens. If the save fails, nothing is copied — a link to the wrong design must never
+  // leave the clipboard.
+  const copyLink = async (q, style) => {
+    try {
+      if (style && style !== (q.templateStyle || 'CLASSIC')) {
+        await quotationService.setTemplateStyle(q.publicId, style);
+        setList(prev => prev.map(x => x.publicId === q.publicId ? { ...x, templateStyle: style } : x));
+        setWebViewQ(prev => (prev && prev.publicId === q.publicId ? { ...prev, templateStyle: style } : prev));
+      }
+    } catch (e) {
+      if (isAlreadyReported(e)) return;
+      showToast(getErrorMessage(e, 'Could not set the design. Link not copied.'), 'error');
+      return;
+    }
     try {
       await navigator.clipboard.writeText(webLink(q));
       setCopied(true);
@@ -1024,7 +1041,9 @@ function QuotationsModal({ lead, onClose, canDelete, canEdit }) {
                     <p className="text-sm font-extrabold text-slate-800 whitespace-nowrap">{fmtMoney(q.grandTotal)}</p>
                   </div>
                   <div className="flex items-center gap-2 mt-3 flex-wrap">
-                    <button onClick={() => setWebViewQ(q)}
+                    {/* Weblink opens through the design picker: Classic / Modern / Premium.
+                        The pick is a one-off preview — the saved templateStyle is untouched. */}
+                    <button onClick={() => setPreviewPickFor(q)}
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all">
                       <Eye size={13} /> Weblink
                     </button>
@@ -1075,13 +1094,13 @@ function QuotationsModal({ lead, onClose, canDelete, canEdit }) {
       {webViewQ && (
         <div className="fixed inset-0 z-[60] bg-white overflow-y-auto">
           <div className="sticky top-0 z-10 bg-white/90 backdrop-blur border-b border-slate-200 px-4 py-3 flex items-center justify-between gap-3">
-            <button onClick={() => setWebViewQ(null)}
+            <button onClick={() => { setWebViewQ(null); setWebViewStyle(null); }}
               className="inline-flex items-center gap-1.5 text-sm font-bold text-slate-600 hover:text-blue-600 flex-shrink-0">
               <X size={16} /> Back
             </button>
             {/* Share this quotation with the client */}
             <div className="flex items-center gap-2 flex-wrap justify-end">
-              <button onClick={() => copyLink(webViewQ)}
+              <button onClick={() => copyLink(webViewQ, webViewStyle)}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 hover:border-blue-300 text-slate-600 hover:text-blue-600 text-xs font-bold transition-all">
                 <Copy size={13} /> {copied ? 'Copied!' : 'Copy link'}
               </button>
@@ -1095,8 +1114,22 @@ function QuotationsModal({ lead, onClose, canDelete, canEdit }) {
               </button>
             </div>
           </div>
-          <QuotationWebView publicId={webViewQ.publicId} />
+          <QuotationWebView publicId={webViewQ.publicId} styleOverride={webViewStyle} />
         </div>
+      )}
+
+      {/* Design picker for the weblink preview — Classic / Modern / Premium, nothing saved. */}
+      {previewPickFor && (
+        <QuotationStyleModal
+          mode="preview"
+          savedStyle={previewPickFor.templateStyle}
+          onSelect={(style) => {
+            setWebViewStyle(style);
+            setWebViewQ(previewPickFor);
+            setPreviewPickFor(null);
+          }}
+          onClose={() => setPreviewPickFor(null)}
+        />
       )}
 
       {analyticsQ && <WeblinkAnalyticsModal quotation={analyticsQ} onClose={() => setAnalyticsQ(null)} />}

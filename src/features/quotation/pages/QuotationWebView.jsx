@@ -734,6 +734,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { getErrorMessage } from "@shared/api/apiError";
 import ModernWebView from "../components/ModernWebView";
+import PremiumWebView from "../components/PremiumWebView";
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:8080/api";
 
@@ -813,8 +814,11 @@ function PolicyBlock({ title, items, accent, bg }) {
   );
 }
 
-/* ━━━ MAIN ━━━ */
-export default function QuotationWebView({ publicId }) {
+/* ━━━ MAIN ━━━
+   styleOverride (optional): one-off design for the agent's internal preview picker.
+   It never touches the quotation's saved templateStyle — the customer's /q/ link
+   keeps rendering the stored design. */
+export default function QuotationWebView({ publicId, styleOverride }) {
   const [q, setQ]           = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]   = useState(null);
@@ -843,7 +847,9 @@ export default function QuotationWebView({ publicId }) {
   if (error)   return <Centered><ErrBox msg={error} /></Centered>;
   if (!q)      return <Centered>Quotation not found.</Centered>;
 
-  if (q.templateStyle === "MODERN") return <ModernWebView data={q} pdfUrl={`${API}/public/quotations/${publicId}/pdf`} />;
+  const style = styleOverride || q.templateStyle;
+  if (style === "MODERN")  return <ModernWebView  data={q} pdfUrl={`${API}/public/quotations/${publicId}/pdf`} />;
+  if (style === "PREMIUM") return <PremiumWebView data={q} pdfUrl={`${API}/public/quotations/${publicId}/pdf`} />;
 
   const c = q.customer || {};
   const company = q.company || q.organization || {};
