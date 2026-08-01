@@ -160,6 +160,34 @@ const notificationService = {
     }
   },
 
+  // ── Delete one / clear all ──────────────────────────────────────────────
+  // The Notifications page previously faked both: it dropped the row from local state and
+  // reported success without calling anything, so everything came back on refresh. These assume
+  // the conventional REST shape (DELETE on the item and on the collection). If the backend names
+  // them differently the call 4xxs, the caller restores the rows and surfaces the error — a
+  // visible failure, which is what the silent local-only delete was hiding.
+  async remove(publicId) {
+    const res = await fetch(`${BASE}/${publicId}`, {
+      method: 'DELETE',
+      headers: authHeaders(),
+    });
+    if (!res.ok) {
+      console.warn(`DELETE ${BASE}/${publicId} failed with ${res.status}`);
+      throw new Error("Couldn't delete that notification.");
+    }
+  },
+
+  async clearAll() {
+    const res = await fetch(BASE, {
+      method: 'DELETE',
+      headers: authHeaders(),
+    });
+    if (!res.ok) {
+      console.warn(`DELETE ${BASE} failed with ${res.status}`);
+      throw new Error("Couldn't clear notifications.");
+    }
+  },
+
   // ── SSE: live push from server ───────────────────────────────────────────
   // EventSource can't set an Authorization header, so the JWT is passed as a query
   // param. The token is embedded in the URL, so the browser's built-in auto-reconnect

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import bookingService                from "../api/bookingService";
 import CancelBookingModal            from "../components/CancelBookingModal";
 import BookingExpenseModal           from "../components/BookingExpenseModal"
@@ -502,7 +502,11 @@ export default function BookingsPage({
   const [bookings,      setBookings]      = useState(propBookings);
   const [loading,       setLoading]       = useState(propLoading);
   // filters
-  const [search,        setSearch]        = useState("");
+  // ?code=BK10001 pre-seeds the search box, so a booking reminder can deep-link to its booking.
+  // The existing filter already matches on b.code, so this needs no new filtering logic. Read
+  // once as the initial value — typing afterwards must not be overwritten by the URL.
+  const [urlParams] = useSearchParams();
+  const [search,        setSearch]        = useState(urlParams.get("code") ?? "");
   const [filterStatus,  setFilterStatus]  = useState("All Status");
   const [filterPay,     setFilterPay]     = useState("All Payment Status");
   const [filterMonth,   setFilterMonth]   = useState("All Booking Months");
