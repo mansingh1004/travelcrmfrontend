@@ -36,6 +36,7 @@ const Testimonials = lazyPage(masters, "Testimonials");
 
 const bookings = () => import("@features/bookings");
 const Allbookings    = lazyPage(bookings, "Allbookings");
+const CreateBooking  = lazyPage(bookings, "CreateBooking");
 const EditBooking    = lazyPage(bookings, "EditBooking");
 const BookingDetails = lazyPage(bookings, "BookingDetails");
 const BookingPayments = lazyPage(bookings, "BookingPayments");
@@ -263,6 +264,8 @@ const AppRouter = () => {
            <Route path="masters/city" element={<City/>} />
            <Route path="masters/destinations" element={<Destinations/>}/>
            <Route path="Allbookings" element={<Allbookings/>}/>
+          <Route path="CreateBooking" element={<Guard allow={hasPermission(P.BOOKING_CREATE)}><CreateBooking/></Guard>}/>
+          <Route path="CreateBooking/:leadId" element={<Guard allow={hasPermission(P.BOOKING_CREATE)}><CreateBooking/></Guard>}/>
           <Route path="masters/destinations" element={<Destinations />} />
           <Route path="masters/hotels" element={<Hotel/>}/>
           <Route path="masters/airlines" element={<Airline/>}/>

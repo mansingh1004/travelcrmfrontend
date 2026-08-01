@@ -89,18 +89,22 @@ function StyleCard({ def, isSaved, actionLabel, onPick }) {
 }
 
 /**
- * @param mode "download" (one-off, nothing saved) or "share" (the pick is SAVED on the quotation,
- *             because the customer opens the weblink later and the server renders the stored design).
- *             The copy differs so the agent knows which of the two just happened — that difference is
- *             the whole point, not decoration.
+ * @param mode "download" (one-off, nothing saved), "share" (the pick is SAVED on the quotation,
+ *             because the customer opens the weblink later and the server renders the stored design),
+ *             or "preview" (one-off, nothing saved — just view the weblink in that design).
+ *             The copy differs so the agent knows which of the three just happened — that difference
+ *             is the whole point, not decoration.
  */
 export default function QuotationStyleModal({ savedStyle, mode = "download", onSelect, onClose }) {
   const isShare = mode === "share";
-  const heading = isShare ? "Share as" : "Download as";
+  const isPreview = mode === "preview";
+  const heading = isShare ? "Share as" : isPreview ? "Preview as" : "Download as";
   const subtitle = isShare
     ? "This becomes the design your customer sees when they open the link."
-    : "Pick a design for this download. The quotation itself stays as it is.";
-  const actionLabel = isShare ? "Share" : "Download";
+    : isPreview
+      ? "See the weblink in this design. Nothing is saved — the customer's link stays as it is."
+      : "Pick a design for this download. The quotation itself stays as it is.";
+  const actionLabel = isShare ? "Share" : isPreview ? "Preview" : "Download";
 
   return (
     <div

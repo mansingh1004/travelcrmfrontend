@@ -47,7 +47,6 @@ export default function LeadSummary({ watch, selectedServices, itinerary }) {
   const male = num(watch("male"));
   const female = num(watch("female"));
   const children = num(watch("children"));
-  const handicap = num(watch("handicap"));
   const infants = num(watch("infants"));
   const stage = watch("leadStage");
   const source = watch("leadSource");
@@ -61,14 +60,13 @@ export default function LeadSummary({ watch, selectedServices, itinerary }) {
     male > 0 && `${male} Male`,
     female > 0 && `${female} Female`,
     children > 0 && `${children} Child${children > 1 ? "ren" : ""}`,
-    handicap > 0 && `${handicap} Handicap`,
     infants > 0 && `${infants} Infant${infants > 1 ? "s" : ""}`,
   ].filter(Boolean).join(", ");
 
   const completedDestinations = itinerary.filter((r) => r.destination).length;
   const totalNights = itinerary.reduce((sum, r) => sum + (r.nights || 1), 0);
 
-  const totalTravellers = adults + children + handicap;
+  const totalTravellers = adults + children + infants;
 
   const completeness = [
     !!name,

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { User as FiUser, Phone as FiPhone, Mail as FiMail, Search as FiSearch, ChevronDown as FiChevronDown, Calendar as FiCalendar, Tag as FiTag, Layers as FiLayers, UserCheck as FiUserCheck, IndianRupee as FaRupeeSign, Sparkles as FiSparkles } from "lucide-react";
+import { User as FiUser, Phone as FiPhone, Mail as FiMail, Search as FiSearch, ChevronDown as FiChevronDown, Calendar as FiCalendar, Tag as FiTag, Layers as FiLayers, UserCheck as FiUserCheck, IndianRupee as FaRupeeSign, MessageCircle as FiMessageCircle, Package as FiPackage } from "lucide-react";
 
 import { leadService } from "../api/leadService";
 import { useLeadSources } from "../lib/useLeadSources";
@@ -11,6 +11,8 @@ import { useLeadSources } from "../lib/useLeadSources";
 // Do not reintroduce a local copy, including as a fetch-failure fallback.
 
 const LEAD_TYPES  = ["Fresh Lead", "Repeat Customer", "Corporate", "VIP"];
+const COMMUNICATION_PREFERENCES = ["WhatsApp", "Call", "Email", "SMS"];
+const PACKAGE_TYPES = ["Family", "Honeymoon", "Group", "Corporate", "Pilgrimage", "Adventure"];
 const LEAD_STAGES = [
   "New Lead", "Contacted", "Follow Up",
   "Qualified", "Proposal Sent", "Converted", "Lost",
@@ -132,8 +134,6 @@ export default function LeadInformation({
   // Intelligent-assignment state (create mode only)
   const [forcedSelf,      setForcedSelf]      = useState(false);
   const [selfUser,        setSelfUser]        = useState(null);   // {publicId, name}
-  const [recommendedId,   setRecommendedId]   = useState(null);   // publicId of the recommended assignee
-  const [strategyLabel,   setStrategyLabel]   = useState("");     // e.g. "Load-Based Assignment"
 
   // ── Load the Assign To control ──────────────────────────────────────────────
   useEffect(() => {
@@ -184,7 +184,6 @@ export default function LeadInformation({
           const self = rec.self || {};
           setForcedSelf(true);
           setSelfUser({ publicId: self.id, name: self.name });
-          setStrategyLabel(rec.strategyLabel || "Self Assignment");
           if (self.id) setValue("assignedUserId", self.id, { shouldValidate: true });
           setUsers([]);
           return;
@@ -197,8 +196,6 @@ export default function LeadInformation({
         setUsers(pool.map((u) => ({
           publicId: u.id, name: u.name, email: u.email, activeLeads: u.activeLeads,
         })));
-        setRecommendedId(rec.recommendedUserId || null);
-        setStrategyLabel(rec.strategyLabel || "Load-Based Assignment");
         if (!watch("assignedUserId") && rec.recommendedUserId) {
           setValue("assignedUserId", rec.recommendedUserId, { shouldValidate: true });
         }
@@ -409,8 +406,8 @@ export default function LeadInformation({
           <input type="hidden" {...register("leadStage")} />
         </FieldWrapper>
 
-        {/* Assign To + Birth Date */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Assign To + Birth Date + Anniversary Date — one row on md+ screens */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
 
           <FieldWrapper
             label="Assign To"
@@ -435,15 +432,6 @@ export default function LeadInformation({
               </>
             ) : (
               <>
-                {/* Load-Based Assignment badge — shown only while the current pick IS the
-                    recommendation; it disappears the moment an admin/manager overrides it. */}
-                {mode === "create" && recommendedId && watch("assignedUserId") === recommendedId && (
-                  <div className="mb-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold
-                    bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 w-fit">
-                    <FiSparkles className="w-3 h-3" />
-                    Recommended by {strategyLabel || "Load-Based Assignment"}
-                  </div>
-                )}
                 <div className="relative">
                   <FiUserCheck className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
                   <select
@@ -495,6 +483,59 @@ export default function LeadInformation({
               icon={FiCalendar}
               {...register("birthDate")}
             />
+          </FieldWrapper>
+
+          <FieldWrapper label="Anniversary Date" icon={FiCalendar}>
+            <InputField
+              type="date"
+              icon={FiCalendar}
+              {...register("anniversaryDate")}
+            />
+          </FieldWrapper>
+        </div>
+
+        {/* Optional customer preferences and follow-up details */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <FieldWrapper label="Preferred Communication" icon={FiMessageCircle}>
+            <div className="relative">
+              <FiMessageCircle className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+              <select
+                className="w-full pl-9 pr-8 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-700
+                  focus:border-blue-400 focus:ring-2 focus:ring-blue-50 outline-none appearance-none cursor-pointer transition-all"
+                {...register("preferredCommunication")}
+              >
+                <option value="">Select preferred channel</option>
+                {COMMUNICATION_PREFERENCES.map((option) => (
+                  <option key={option} value={option}>{option}</option>
+                ))}
+              </select>
+              <FiChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+            </div>
+          </FieldWrapper>
+
+          <FieldWrapper label="Follow-up Date" icon={FiCalendar}>
+            <InputField
+              type="date"
+              icon={FiCalendar}
+              {...register("followUpDate")}
+            />
+          </FieldWrapper>
+
+          <FieldWrapper label="Package Type" icon={FiPackage}>
+            <div className="relative">
+              <FiPackage className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+              <select
+                className="w-full pl-9 pr-8 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-700
+                  focus:border-blue-400 focus:ring-2 focus:ring-blue-50 outline-none appearance-none cursor-pointer transition-all"
+                {...register("packageType")}
+              >
+                <option value="">Select package type</option>
+                {PACKAGE_TYPES.map((option) => (
+                  <option key={option} value={option}>{option}</option>
+                ))}
+              </select>
+              <FiChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+            </div>
           </FieldWrapper>
         </div>
 
