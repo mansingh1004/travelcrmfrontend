@@ -10,6 +10,8 @@ import { useToast } from "@shared/ui/toast";
 import { getErrorMessage, isAlreadyReported } from "@shared/api/apiError";
 import AccessDenied from "../components/AccessDenied";
 import { formatToWhatsAppLink } from "../lib/whatsapp";
+import PdfDownloadLoader from '@/shared/ui/PdfDownloadLoader';
+import { usePdfDownload } from '@shared/hooks/usePdfDownload';
 import WhatsAppPanel from "./WhatsAppPanel";
 import {
   Users, Trophy, PieChart, TrendingUp, Search,
