@@ -10,6 +10,8 @@ import { useToast } from "@shared/ui/toast";
 import { getErrorMessage, isAlreadyReported } from "@shared/api/apiError";
 import AccessDenied from "../components/AccessDenied";
 import { formatToWhatsAppLink } from "../lib/whatsapp";
+import PdfDownloadLoader from '@/shared/ui/PdfDownloadLoader';
+import { usePdfDownload } from '@shared/hooks/usePdfDownload';
 import WhatsAppPanel from "./WhatsAppPanel";
 import {
   Users, Trophy, PieChart, TrendingUp, Search,
@@ -26,6 +28,7 @@ import { QuotationWebView } from "@features/quotation";
 import { WeblinkAnalyticsModal } from "@features/quotation";
 import { SuggestPackagesModal } from "@features/quotation";
 import { QuotationStyleModal } from "@features/quotation";
+import ConvertToBookingModal from "../components/ConvertToBookingModal";
 import {
   useReactTable, getCoreRowModel, getSortedRowModel,
   getPaginationRowModel,
@@ -888,6 +891,10 @@ function QuotationsModal({ lead, onClose, canDelete, canEdit }) {
     return () => { active = false; };
   }, [leadId]);
 
+  // Shared PDF pipeline: usePdfDownload streams the blob (real % only when the server sends a
+  // usable total) and <PdfDownloadLoader/> below shows the full-screen "preparing your PDF" card.
+  const { downloadPdf: runPdfDownload, isDownloading: pdfBusy, progress: pdfProgress, progressSupported: pdfProgressSupported } = usePdfDownload();
+
   // Style is chosen in the download dialog and passed straight through as a one-off override —
   // deliberately NOT saved on the quotation, so downloading a Premium copy does not change what the
   // customer sees on the share link.
@@ -895,17 +902,15 @@ function QuotationsModal({ lead, onClose, canDelete, canEdit }) {
     try {
       setStylePickFor(null);
       setDownloading(q.publicId);
-      const res = await quotationService.generatePdf(q.publicId, style);
-      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `quotation-${q.version || q.publicId}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
+      // Readable business code in the file name — never the raw UUID when a code exists.
+      const code = q.quoteNo || q.version || String(q.publicId).slice(0, 8).toUpperCase();
+      await runPdfDownload({
+        endpoint: `/quotations/${q.publicId}/pdf`,
+        params: style ? { style } : undefined,
+        fileName: `TravelCRM-Quotation-${code}.pdf`,
+      });
     } catch (e) {
-      // The response is a Blob here, so there is no envelope to read — the fallback carries it.
+      // The hook rehydrates the Blob error envelope, so getErrorMessage can read the real message.
       if (isAlreadyReported(e)) return;
       showToast(getErrorMessage(e, 'Could not download the PDF. Please try again.'), 'error');
     } finally {
@@ -1049,7 +1054,7 @@ function QuotationsModal({ lead, onClose, canDelete, canEdit }) {
                       <Eye size={13} /> Weblink
                     </button>
 
-                    <button onClick={() => setStylePickFor(q)} disabled={downloadingId === q.publicId}
+                    <button onClick={() => setStylePickFor(q)} disabled={downloadingId === q.publicId || pdfBusy}
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 hover:border-blue-300 text-slate-600 hover:text-blue-600 text-xs font-bold transition-all disabled:opacity-50">
                       <DownloadCloud size={13} /> {downloadingId === q.publicId ? 'Downloading…' : 'PDF'}
                     </button>
@@ -1149,6 +1154,14 @@ function QuotationsModal({ lead, onClose, canDelete, canEdit }) {
           onClose={() => setSharePickFor(null)}
         />
       )}
+
+      {/* Full-screen "preparing your PDF" overlay — z-above the web view (z-[60]) and pickers. */}
+      <PdfDownloadLoader
+        open={pdfBusy}
+        documentType="Quotation"
+        progress={pdfProgress}
+        progressSupported={pdfProgressSupported}
+      />
     </div>
   );
 }

@@ -24,6 +24,9 @@ import { Input, Label } from "../components/Ui";
 import QuotationStyleModal from "../components/QuotationStyleModal";
 import { quotationService } from "../api/quotationService";
 import { leadService } from "@features/leads";
+import { getErrorMessage, isAlreadyReported } from "@shared/api/apiError";
+import PdfDownloadLoader from "@shared/ui/PdfDownloadLoader";
+import { usePdfDownload } from "@shared/hooks/usePdfDownload";
 
 /* ─── TAB CONFIG ─────────────────────────────────────── */
 const TABS = [
@@ -133,6 +136,8 @@ export default function CreateQuotation() {
   const [saving, setSaving] = useState(false);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [stylePickOpen, setStylePickOpen] = useState(false);   // Export-PDF design dialog
+  // Shared PDF pipeline — same hook + full-screen loader the leads list uses.
+  const { downloadPdf: runPdfDownload, isDownloading: pdfBusy, progress: pdfProgress, progressSupported: pdfProgressSupported } = usePdfDownload();
   const [toast, setToast] = useState(null);
 
   const showToast = (msg, type = "success") => setToast({ msg, type });
@@ -400,16 +405,17 @@ export default function CreateQuotation() {
     setStylePickOpen(false);
     try {
       setPdfLoading(true);
-      const res = await quotationService.generatePdf(quotationId, style);
-      const url = URL.createObjectURL(new Blob([res.data], { type: "application/pdf" }));
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `quotation-${quotationId}.pdf`;
-      a.click();
-      URL.revokeObjectURL(url);
+      // Readable business code in the file name — never the raw UUID when a code exists.
+      const code = loadedData?.quoteNo || version || String(quotationId).slice(0, 8).toUpperCase();
+      await runPdfDownload({
+        endpoint: `/quotations/${quotationId}/pdf`,
+        params: style ? { style } : undefined,
+        fileName: `TravelCRM-Quotation-${code}.pdf`,
+      });
       showToast("PDF downloaded successfully!");
-    } catch {
-      showToast("Failed to generate PDF.", "error");
+    } catch (e) {
+      // The hook rehydrates the Blob error envelope, so the server's real message shows.
+      if (!isAlreadyReported(e)) showToast(getErrorMessage(e, "Failed to generate PDF."), "error");
     } finally {
       setPdfLoading(false);
     }
@@ -1202,6 +1208,14 @@ export default function CreateQuotation() {
           onClose={() => setStylePickOpen(false)}
         />
       )}
+
+      {/* Full-screen "preparing your PDF" overlay — shared with the leads list. */}
+      <PdfDownloadLoader
+        open={pdfBusy}
+        documentType="Quotation"
+        progress={pdfProgress}
+        progressSupported={pdfProgressSupported}
+      />
     </div>
   );
 }
