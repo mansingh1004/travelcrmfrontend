@@ -16,7 +16,7 @@ import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogBody, DialogFooter,
   PageShell, PageHeader, GlassCard, LoadingState, EmptyState, ConfirmDialog,
-  StatStrip, ChipBar, statusChips, CardGrid, ViewToggle, useViewMode, cn,
+  StatCard, StatCardRow, ChipBar, statusChips, CardGrid, ViewToggle, useViewMode, cn,
   useToast, errMsg, StatusBadge, DRIVER_STATUS, expiryInfo,
 } from "../components/fleetUi";
 
@@ -101,12 +101,17 @@ export default function FleetDrivers() {
 
   const dc = stats?.drivers ?? {};
   const inactive = dc.total != null && dc.active != null ? dc.total - dc.active : undefined;
+  // Gradient KPI cards, matching Bookings — same colour vocabulary across the app: blue = volume,
+  // green = healthy, indigo = in motion, slate = derived/idle.
   const kpi = [
-    { key: "total", label: "Total", value: dc.total, icon: IdCard, tone: "text-blue-600", accent: "bg-blue-50" },
-    { key: "active", label: "Active", value: dc.active, icon: CheckCircle2, tone: "text-green-600", accent: "bg-green-50" },
-    { key: "onTrip", label: "On Trip", value: dc.onTrip, icon: RouteIcon, tone: "text-indigo-600", accent: "bg-indigo-50" },
-    { key: "inactive", label: "Inactive", value: inactive, icon: UserX, tone: "text-slate-500", accent: "bg-slate-100" },
+    { key: "total", label: "Total", value: dc.total, icon: <IdCard />, tone: "blue" },
+    { key: "active", label: "Active", value: dc.active, icon: <CheckCircle2 />, tone: "green" },
+    { key: "onTrip", label: "On Trip", value: dc.onTrip, icon: <RouteIcon />, tone: "indigo" },
+    { key: "inactive", label: "Inactive", value: inactive, icon: <UserX />, tone: "slate" },
   ];
+
+  /** Clicking a driver opens their detail page — profile, licence, trips and cash position. */
+  const openDriver = (d) => navigate(`/fleet/drivers/${d.publicId}`);
 
   return (
     <PageShell>
@@ -118,7 +123,11 @@ export default function FleetDrivers() {
         )}
       </PageHeader>
 
-      {stats && <StatStrip items={kpi} />}
+      {stats && (
+        <StatCardRow className="lg:grid-cols-4 xl:grid-cols-4">
+          {kpi.map((k) => <StatCard key={k.key} {...k} />)}
+        </StatCardRow>
+      )}
 
       <GlassCard className="mb-5">
         <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
@@ -166,6 +175,7 @@ export default function FleetDrivers() {
                   d={d}
                   canUpdate={canUpdate}
                   canDelete={canDelete}
+                  onOpen={() => openDriver(d)}
                   onEdit={() => navigate(`/fleet/drivers/${d.publicId}/edit`)}
                   onStatus={() => setStatusTarget(d)}
                   onDelete={() => setDeleteTarget(d)}
@@ -188,7 +198,8 @@ export default function FleetDrivers() {
                   {items.map((d) => {
                     const lic = d.licenseExpiry ? expiryInfo(d.licenseExpiry) : null;
                     return (
-                      <TableRow key={d.publicId}>
+                      <TableRow key={d.publicId} className="cursor-pointer"
+                                onClick={() => openDriver(d)}>
                         <TableCell>
                           <div className="font-bold text-slate-800">{d.name}</div>
                           {d.licenseNumber && <div className="text-xs text-slate-400">{d.licenseNumber}</div>}
@@ -210,7 +221,10 @@ export default function FleetDrivers() {
                           </div>
                         </TableCell>
                         <TableCell>
-                          <div className="flex items-center justify-end gap-0.5">
+                          {/* Row navigates; the action cell must not, or Delete both opens the
+                              dialog and leaves the page under it. */}
+                          <div className="flex items-center justify-end gap-0.5"
+                               onClick={(e) => e.stopPropagation()}>
                             {canUpdate && (
                               <>
                                 <Button variant="ghost" size="icon" title="Change status" onClick={() => setStatusTarget(d)}><Settings2 /></Button>
@@ -265,12 +279,14 @@ export default function FleetDrivers() {
 }
 
 /* ── Driver card ── */
-function DriverCard({ d, canUpdate, canDelete, onEdit, onStatus, onDelete }) {
+function DriverCard({ d, canUpdate, canDelete, onOpen, onEdit, onStatus, onDelete }) {
   const lic = d.licenseExpiry ? expiryInfo(d.licenseExpiry) : null;
   const grad = DRIVER_GRADIENT[d.status] || "from-indigo-500 to-violet-600";
   const statusLabel = DRIVER_STATUS[d.status]?.label || d.status;
   return (
-    <div className="group flex flex-col overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-md transition-all hover:-translate-y-0.5 hover:shadow-lg">
+    <div
+      onClick={onOpen}
+      className="group flex cursor-pointer flex-col overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-md transition-all hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-lg">
       {/* colourful status header — mirrors the dashboard StatCard */}
       <div className={cn("relative flex items-center gap-3 bg-gradient-to-br p-5 text-white shadow-lg", grad)}>
         <div className="absolute -right-5 -top-5 h-24 w-24 rounded-full bg-white/10" />
@@ -299,7 +315,12 @@ function DriverCard({ d, canUpdate, canDelete, onEdit, onStatus, onDelete }) {
           </p>
         </div>
 
-        <div className="mt-auto flex items-center justify-end gap-0.5 border-t border-slate-100 pt-3">
+        {/* stopPropagation on the whole action row: the card itself opens the detail page, and
+            without this a Delete click would fire BOTH the dialog and the navigation. */}
+        <div
+          className="mt-auto flex items-center justify-end gap-0.5 border-t border-slate-100 pt-3"
+          onClick={(e) => e.stopPropagation()}
+        >
           {canUpdate && (
             <>
               <Button variant="ghost" size="icon" title="Change status" onClick={onStatus}><Settings2 /></Button>

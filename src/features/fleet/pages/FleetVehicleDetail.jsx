@@ -6,21 +6,22 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
-  Car, ArrowLeft, Pencil, Trash2, Settings2, Fuel, Wrench, Route as RouteIcon, Gauge, CalendarClock,
-  Users, ShieldCheck,
+  Car, ArrowLeft, Pencil, Trash2, Settings2, Fuel, Wrench, Route as RouteIcon,
+  Gauge, CalendarClock, Users, ShieldCheck, Receipt,
 } from "lucide-react";
 
 import fleetService from "../api/fleetService";
 import { hasPermission, P } from "@shared/lib/access";
 import CommonPagination from "../components/CommanPegination";
 import {
-  Button, Badge,
+  Button,
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
   PageShell, GlassCard, LoadingState, EmptyState, ConfirmDialog, useToast, errMsg,
-  StatusBadge, VEHICLE_STATUS, OWNER_TYPE, TRIP_STATUS, expiryInfo, fmtDate, fmtDateTime,
+  StatusBadge, VEHICLE_STATUS, OWNER_TYPE, TRIP_STATUS, fmtDate, fmtDateTime,
   fmtNumber, fmtMoney, StatStrip, FormSection,
 } from "../components/fleetUi";
 import { FuelLogsPanel, MaintenanceLogsPanel } from "../components/vehicleLogs";
+import RegisterDocuments from "../components/RegisterDocuments";
 import { VehicleStatusDialog } from "./FleetVehicles";
 
 function Info({ label, value, icon: Icon }) {
@@ -35,22 +36,10 @@ function Info({ label, value, icon: Icon }) {
   );
 }
 
-function DocChip({ label, date }) {
-  const info = expiryInfo(date);
-  return (
-    <div className="rounded-xl border border-slate-100 bg-white/60 p-3 flex flex-col justify-center min-w-0 w-full">
-      <p className="mb-1 text-[10px] sm:text-[11px] font-bold uppercase tracking-wide text-slate-400 truncate">{label}</p>
-      {date ? (
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm font-semibold text-slate-700 whitespace-nowrap">{fmtDate(date)}</span>
-          <Badge variant={info.variant} className="whitespace-nowrap">{info.text}</Badge>
-        </div>
-      ) : (
-        <span className="text-sm text-slate-300">Not set</span>
-      )}
-    </div>
-  );
-}
+// OLD — removed in the compliance cutover: DocChip rendered the vehicle's four legacy expiry
+// COLUMNS (insurance / RC / permit / PUC). Those columns stopped being the truth when the
+// documents register landed — nineteen categories, renewals that supersede instead of overwrite,
+// Nepal exit deadlines. RegisterDocuments reads the register itself.
 
 const TABS = [
   { key: "fuel", label: "Fuel", icon: Fuel },
@@ -73,6 +62,9 @@ export default function FleetVehicleDetail() {
   const canUpdate = hasPermission(P.FLEET_UPDATE);
   const canCreate = hasPermission(P.FLEET_CREATE);
   const canDelete = hasPermission(P.FLEET_DELETE);
+  // Money is a separate grant — the expense diary only appears for someone allowed to see it.
+  const canMoney = hasPermission(P.FLEET_MONEY_READ);
+  const tabs = canMoney ? [...TABS, { key: "expenses", label: "Expenses", icon: Receipt }] : TABS;
 
   const loadVehicle = useCallback(async () => {
     try {
@@ -190,19 +182,19 @@ export default function FleetVehicleDetail() {
         )}
       </FormSection>
 
-      {/* Documents */}
-      <FormSection title="Compliance Documents" subtitle="Expiry status across the four documents" icon={ShieldCheck} className="mb-5">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <DocChip label="Insurance" date={vehicle.insuranceExpiry} />
-          <DocChip label="Registration (RC)" date={vehicle.rcExpiry} />
-          <DocChip label="Permit" date={vehicle.permitExpiry} />
-          <DocChip label="PUC" date={vehicle.pucExpiry} />
-        </div>
+      {/* Documents — live from the register, not the legacy expiry columns. */}
+      <FormSection title="Compliance Documents" subtitle="Current papers from the documents register" icon={ShieldCheck} className="mb-5">
+        <RegisterDocuments
+          fetch={() => fleetService.documentsForVehicle(publicId)}
+          refreshKey={publicId}
+          navigate={navigate}
+          emptyHint="Record this vehicle's insurance, permit, fitness and PUC in the documents register — the pre-dispatch check and expiry alerts read from there."
+        />
       </FormSection>
 
       {/* Diary tabs - Horizontal scrollable container */}
       <div className="mb-4 flex overflow-x-auto scrollbar-hide rounded-2xl border border-slate-100 bg-white/70 p-1 backdrop-blur max-w-full">
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
@@ -232,6 +224,9 @@ export default function FleetVehicleDetail() {
         )}
         {tab === "trips" && (
           <VehicleTripsPanel vehiclePublicId={publicId} showToast={showToast} navigate={navigate} />
+        )}
+        {tab === "expenses" && canMoney && (
+          <VehicleExpensesPanel vehiclePublicId={publicId} showToast={showToast} />
         )}
       </div>
 
@@ -307,6 +302,95 @@ function VehicleTripsPanel({ vehiclePublicId, showToast, navigate }) {
                   <TableCell className="whitespace-nowrap">{fmtNumber(t.distanceKm, " km")}</TableCell>
                   <TableCell className="whitespace-nowrap">{fmtMoney(t.totalExpense)}</TableCell>
                   <TableCell><StatusBadge config={TRIP_STATUS} value={t.status} /></TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+      {!loading && items.length > 0 && (
+        <div className="mt-4 w-full overflow-x-auto pb-4">
+          <CommonPagination
+            pageIndex={pagination?.page ?? 0}
+            pageSize={pagination?.size ?? size}
+            totalElements={pagination?.totalElements ?? items.length}
+            totalPages={pagination?.totalPages ?? 1}
+            goToPage={setPage}
+            changePageSize={(s) => { setSize(s); setPage(0); }}
+          />
+        </div>
+      )}
+    </GlassCard>
+  );
+}
+
+/* ── Expense diary for this vehicle (read-only) ──────────────── */
+function VehicleExpensesPanel({ vehiclePublicId, showToast }) {
+  const [items, setItems] = useState([]);
+  const [pagination, setPagination] = useState(null);
+  const [page, setPage] = useState(0);
+  const [size, setSize] = useState(10);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    fleetService
+      .listExpenses({ vehicleId: vehiclePublicId, page, size })
+      .then((res) => { if (alive) { setItems(res.items); setPagination(res.pagination); } })
+      .catch((e) => alive && showToast(errMsg(e, "Failed to load expenses."), "error"))
+      .finally(() => alive && setLoading(false));
+    return () => { alive = false; };
+  }, [vehiclePublicId, page, size, showToast]);
+
+  return (
+    <GlassCard>
+      <div className="flex items-center gap-2 border-b border-slate-100 p-4 font-bold text-slate-700">
+        <Receipt className="h-4 w-4 text-rose-500" /> Expense History
+      </div>
+      {loading ? (
+        <LoadingState label="Loading expenses…" />
+      ) : items.length === 0 ? (
+        <EmptyState icon={Receipt} title="No expenses for this vehicle yet"
+                    hint="Record them on the Fleet expenses screen — they land here and on the trip." />
+      ) : (
+        <div className="w-full overflow-x-auto">
+          <Table className="fleet-table min-w-[760px]">
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead>Date</TableHead>
+                <TableHead>Category</TableHead>
+                <TableHead>Description</TableHead>
+                <TableHead>Trip</TableHead>
+                <TableHead>Paid by</TableHead>
+                <TableHead className="text-right">Amount</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {items.map((e) => (
+                <TableRow key={e.publicId} className={e.reversed ? "opacity-50" : ""}>
+                  <TableCell className="font-medium whitespace-nowrap">{fmtDate(e.documentDate)}</TableCell>
+                  <TableCell>
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-600">
+                      {e.expenseTypeLabel || e.expenseType}
+                    </span>
+                    {e.reversalOfPublicId && (
+                      <span className="ml-1.5 rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-bold text-rose-700">
+                        reversal
+                      </span>
+                    )}
+                  </TableCell>
+                  <TableCell className="max-w-[220px] truncate text-slate-500">
+                    {e.description || e.reversalReason || "—"}
+                  </TableCell>
+                  <TableCell className="text-slate-500 whitespace-nowrap">{e.tripRoute || "—"}</TableCell>
+                  <TableCell className="text-slate-500 whitespace-nowrap">
+                    {e.paidByLabel || e.paidBy}
+                  </TableCell>
+                  <TableCell className={`text-right font-extrabold whitespace-nowrap ${
+                    e.reversalOfPublicId ? "text-rose-600" : "text-slate-800"} ${e.reversed ? "line-through" : ""}`}>
+                    {fmtMoney(e.baseAmount)}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>

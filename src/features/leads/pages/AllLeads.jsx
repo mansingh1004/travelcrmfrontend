@@ -57,6 +57,7 @@ const STAGE_PILL = {
   'Qualified': 'bg-violet-100 text-violet-700 border-violet-200',
   'Proposal Sent': 'bg-indigo-100 text-indigo-700 border-indigo-200',
   'Converted': 'bg-green-100 text-green-700 border-green-200',
+  'Reopened': 'bg-cyan-100 text-cyan-700 border-cyan-200',
   'Lost': 'bg-red-100 text-red-700 border-red-200',
 };
 const stagePill = (stage) => STAGE_PILL[stage] || 'bg-orange-100 text-orange-700 border-orange-200';
@@ -66,19 +67,20 @@ const stagePill = (stage) => STAGE_PILL[stage] || 'bg-orange-100 text-orange-700
    stage outside this list, the row still shows its real value (the option is prepended). */
 const STAGES = ['New Lead', 'Contacted', 'Follow Up', 'Qualified', 'Proposal Sent', 'Lost'];
 
+/* Backend LeadType — the priority vocabulary, exactly four values. Colour runs cold-to-hot so the
+   pill reads at a glance. The old keys here ('Hot Lead', 'Warm Lead', 'Cold Lead', 'VIP',
+   'Corporate', 'Repeat Customer') were a mix of values the API never accepted and business
+   categories that now live on the CUSTOMER record, not the lead. */
 const TYPE_PILL = {
-  'Fresh Lead': 'bg-blue-100 text-blue-700 border-blue-200',
-  'Hot Lead': 'bg-red-100 text-red-700 border-red-200',
-  'Warm Lead': 'bg-amber-100 text-amber-700 border-amber-200',
-  'Cold Lead': 'bg-teal-100 text-teal-700 border-teal-200',
-  'VIP': 'bg-amber-100 text-amber-800 border-amber-300',
-  'Corporate': 'bg-indigo-100 text-indigo-700 border-indigo-200',
-  'Repeat Customer': 'bg-teal-100 text-teal-700 border-teal-200',
+  'Fresh': 'bg-blue-100 text-blue-700 border-blue-200',
+  'Hot':   'bg-red-100 text-red-700 border-red-200',
+  'Warm':  'bg-amber-100 text-amber-700 border-amber-200',
+  'Cold':  'bg-slate-100 text-slate-700 border-slate-300',
 };
 const typePill = (type) => TYPE_PILL[type] || 'bg-slate-100 text-slate-700 border-slate-200';
 
 /* Selectable lead types for the Type dropdown — keys match TYPE_PILL. */
-const LEAD_TYPES = ['Fresh Lead', 'Hot Lead', 'Warm Lead', 'Cold Lead', 'VIP', 'Corporate', 'Repeat Customer'];
+const LEAD_TYPES = ['Fresh', 'Hot', 'Warm', 'Cold'];
 
 /* A lead's services are stored as the lowercase ids the form emits — "hotel", "vehicle" —
    see leads/components/ServicesSection.jsx. Both maps below are keyed that way, and every
@@ -801,7 +803,7 @@ function LeadRow({
 
       {/* ── Type ── */}
       <td className={`${TD} text-center`}>
-        <select value={lead.leadType || 'Fresh Lead'} onChange={e => onTypeChange(lead, e.target.value)} disabled={!canEdit}
+        <select value={lead.leadType || 'Fresh'} onChange={e => onTypeChange(lead, e.target.value)} disabled={!canEdit}
           className={`text-[11px] font-bold px-2 py-1 rounded-full border outline-none appearance-none text-center transition-all max-w-full truncate ${canEdit ? 'cursor-pointer' : 'opacity-60 cursor-not-allowed'} ${typePill(lead.leadType)}`}>
           {typeOptions.map(t => <option key={t} value={t}>{t}</option>)}
         </select>
@@ -1650,7 +1652,7 @@ const Leads = () => {
 
       let matchesTab = true;
       if (activeTab === 'Fresh') {
-        matchesTab = lead.leadType === 'Fresh Lead';
+        matchesTab = lead.leadType === 'Fresh';
       } else if (activeTab !== 'All') {
         matchesTab = lead.leadStage === activeTab;
       }
@@ -1878,7 +1880,7 @@ const Leads = () => {
 
           <div className="px-5 py-4 border-b border-slate-100 overflow-x-auto">
             {(() => {
-              const freshCount = safeLeads.filter(l => l.leadType === 'Fresh Lead').length;
+              const freshCount = safeLeads.filter(l => l.leadType === 'Fresh').length;
               const newLeadCount = safeLeads.filter(l => l.leadStage === 'New Lead').length;
               const contactedCount = safeLeads.filter(l => l.leadStage === 'Contacted').length;
 

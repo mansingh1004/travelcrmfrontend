@@ -1470,7 +1470,7 @@
  * In production, move the Google Fonts import to your global stylesheet
  * instead of loading it per-mount.
  */
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   X,
   Plus,
@@ -1501,6 +1501,26 @@ const PAYMENT_STATUSES = [
   { value: "PARTIAL", label: "Partial" },
   { value: "PAID", label: "Paid" },
 ];
+
+// VENDOR = supplier cost (cash book only, already covered by the booking's typed vendorCost).
+// INTERNAL = the agency's own cost — the only kind the backend sums into totalInternalCosts,
+// so only INTERNAL rows reduce the booking's netProfit.
+const COST_TYPES = [
+  { value: "VENDOR", label: "Vendor" },
+  { value: "INTERNAL", label: "Company" },
+];
+
+// Categories that are agency overhead by nature — preselect Company for them. "Refund" stays
+// Vendor by default (ambiguous); the user can flip the toggle on any row.
+const INTERNAL_DEFAULT_CATEGORIES = new Set(["Commission", "Office Expense"]);
+const defaultCostType = (category) =>
+  INTERNAL_DEFAULT_CATEGORIES.has(category) ? "INTERNAL" : "VENDOR";
+
+// Backend caps a batch at @Size(max = 50) — one row over rejects the whole submission.
+const MAX_EXPENSE_ROWS = 50;
+
+// Mirrors backend @Digits(integer = 10, fraction = 2) on amount/paidAmount.
+const TWO_DECIMALS = /^\d{1,10}(\.\d{1,2})?$/;
 
 const PAYMENT_MODES = [
   "Cash",
@@ -1545,19 +1565,24 @@ const getDefaultExpenseCategory = (booking) => {
   return "Other";
 };
 
-const createEmptyExpense = (booking) => ({
-  category: getDefaultExpenseCategory(booking),
-  description: "",
-  vendorName: "",
-  amount: "",
-  paymentStatus: "CREDIT",
-  paymentMode: "",
-  expenseDate: today(),
-  dueDate: "",
-  paidAmount: "",
-  referenceNumber: "",
-  notes: "",
-});
+const createEmptyExpense = (booking) => {
+  const category = getDefaultExpenseCategory(booking);
+  return {
+    category,
+    costType: defaultCostType(category),
+    costTypeTouched: false, // once the user picks a cost type, category changes stop resetting it
+    description: "",
+    vendorName: "",
+    amount: "",
+    paymentStatus: "CREDIT",
+    paymentMode: "",
+    expenseDate: today(),
+    dueDate: "",
+    paidAmount: "",
+    referenceNumber: "",
+    notes: "",
+  };
+};
 
 const formatINR = (value) =>
   `₹${Number(value || 0).toLocaleString("en-IN", {
@@ -1612,6 +1637,12 @@ export default function BookingExpenseModal({
         if (field === "amount" && updated.paymentStatus === "PAID") {
           updated.paidAmount = value;
         }
+        if (field === "category" && !updated.costTypeTouched) {
+          updated.costType = defaultCostType(value);
+        }
+        if (field === "costType") {
+          updated.costTypeTouched = true;
+        }
         return updated;
       })
     );
@@ -1629,7 +1660,12 @@ export default function BookingExpenseModal({
   };
 
   const addExpense = () => {
-    setExpenses((previous) => [...previous, createEmptyExpense(booking)]);
+    if (expenses.length >= MAX_EXPENSE_ROWS) return;
+    setExpenses((previous) =>
+      previous.length >= MAX_EXPENSE_ROWS
+        ? previous
+        : [...previous, createEmptyExpense(booking)]
+    );
     setOpenIndex(expenses.length);
   };
 
@@ -1654,6 +1690,8 @@ export default function BookingExpenseModal({
       if (!expense.category) validationErrors[`${index}-category`] = "Required";
       if (!expense.description.trim()) validationErrors[`${index}-description`] = "Required";
       if (amount <= 0) validationErrors[`${index}-amount`] = "Enter a valid amount";
+      else if (!TWO_DECIMALS.test(String(expense.amount).trim()))
+        validationErrors[`${index}-amount`] = "Max 2 decimal places";
       if (!expense.expenseDate) validationErrors[`${index}-expenseDate`] = "Required";
 
       if (expense.paymentStatus !== "CREDIT" && !expense.paymentMode) {
@@ -1663,6 +1701,8 @@ export default function BookingExpenseModal({
       if (expense.paymentStatus === "PARTIAL") {
         if (paidAmount <= 0) validationErrors[`${index}-paidAmount`] = "Enter paid amount";
         else if (paidAmount >= amount) validationErrors[`${index}-paidAmount`] = "Must be less than total";
+        else if (!TWO_DECIMALS.test(String(expense.paidAmount).trim()))
+          validationErrors[`${index}-paidAmount`] = "Max 2 decimal places";
       }
 
       if (expense.dueDate && expense.expenseDate && expense.dueDate < expense.expenseDate) {
@@ -1689,6 +1729,7 @@ export default function BookingExpenseModal({
 
       return {
         category: expense.category,
+        costType: expense.costType || "VENDOR",
         description: expense.description.trim(),
         vendorName: expense.vendorName.trim() || null,
         amount,
@@ -1708,6 +1749,43 @@ export default function BookingExpenseModal({
 
   const handleBackdropClick = (event) => {
     if (event.target === event.currentTarget && !saving) onClose?.();
+  };
+
+  // ── Keyboard: Enter advances, Ctrl+Enter saves — the same contract the create pages
+  // (CreateBookingClean / CreateLead) teach, so batch entry never needs the mouse. The row
+  // headers keep their own Enter (expand/collapse): they are DIVs with role="button", which this
+  // handler deliberately ignores.
+  const panelRef = useRef(null);
+  const FOCUSABLE =
+    'input:not([disabled]),select:not([disabled]),textarea:not([disabled]),button:not([disabled])';
+
+  const focusNext = (from) => {
+    const root = panelRef.current;
+    if (!root) return;
+    const nodes = Array.from(root.querySelectorAll(FOCUSABLE)).filter(
+      (node) => node === from || node.offsetParent !== null
+    );
+    const next = nodes[nodes.indexOf(from) + 1];
+    if (!next) return;
+    next.focus();
+    if (typeof next.select === "function" && /^(text|number|tel|email|search)$/.test(next.type || "")) {
+      next.select();
+    }
+  };
+
+  const onPanelKeyDown = (event) => {
+    if (event.key !== "Enter") return;
+    if (event.ctrlKey || event.metaKey) {
+      event.preventDefault();
+      if (!saving) handleSave();
+      return;
+    }
+    const target = event.target;
+    if (target.tagName === "TEXTAREA" || target.tagName === "BUTTON") return;
+    if (target.tagName === "INPUT" || target.tagName === "SELECT") {
+      event.preventDefault();
+      focusNext(target);
+    }
   };
 
   if (!booking) return null;
@@ -1757,6 +1835,8 @@ export default function BookingExpenseModal({
         .eb-toggle-CREDIT.eb-active { background:#f59e0b; border-color:#f59e0b; color:#fff; }
         .eb-toggle-PARTIAL.eb-active { background:#7c3aed; border-color:#7c3aed; color:#fff; }
         .eb-toggle-PAID.eb-active { background:#16a34a; border-color:#16a34a; color:#fff; }
+        .eb-toggle-VENDOR.eb-active { background:#475569; border-color:#475569; color:#fff; }
+        .eb-toggle-INTERNAL.eb-active { background:#0f766e; border-color:#0f766e; color:#fff; }
 
         .eb-btn-primary { background:linear-gradient(90deg,#2563eb,#6366f1); color:#fff; transition:filter 120ms ease, transform 120ms ease; }
         .eb-btn-primary:hover:not(:disabled) { filter:brightness(.95); }
@@ -1783,8 +1863,10 @@ export default function BookingExpenseModal({
       `}</style>
 
       <div
+        ref={panelRef}
         className="eb-panel-enter flex max-h-[88vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl"
         onMouseDown={(e) => e.stopPropagation()}
+        onKeyDown={onPanelKeyDown}
       >
         {/* Header */}
         <div className="eb-header flex items-center justify-between gap-3 px-4 py-3.5">
@@ -1864,6 +1946,7 @@ export default function BookingExpenseModal({
                           ? new Date(expense.expenseDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })
                           : "—"}{" "}
                         · {expense.category}
+                        {expense.costType === "INTERNAL" && " · Company"}
                       </span>
                       <span className={`eb-stamp eb-stamp-${expense.paymentStatus} flex-shrink-0`}>
                         {statusMeta?.label}
@@ -1952,11 +2035,33 @@ export default function BookingExpenseModal({
                             ))}
                           </div>
                         </Field>
+
+                        <Field label="Cost Type">
+                          <div className="flex gap-1">
+                            {COST_TYPES.map((type) => (
+                              <button
+                                key={type.value}
+                                type="button"
+                                disabled={saving}
+                                onClick={() => updateExpense(index, "costType", type.value)}
+                                className={`eb-toggle eb-toggle-${type.value} ${expense.costType === type.value ? "eb-active" : ""} flex-1 rounded-md py-1.5 text-[10.5px] font-bold uppercase tracking-wide`}
+                              >
+                                {type.label}
+                              </button>
+                            ))}
+                          </div>
+                          <p className="mt-1 text-[9.5px] font-medium" style={{ color: "#64748b" }}>
+                            {expense.costType === "INTERNAL"
+                              ? "Company cost — reduces booking profit"
+                              : "Supplier cost — cash book only"}
+                          </p>
+                        </Field>
                       </div>
 
                       <Field label="Particulars" required error={errors[`${index}-description`]}>
                         <input
                           type="text"
+                          maxLength={300}
                           value={expense.description}
                           onChange={(e) => updateExpense(index, "description", e.target.value)}
                           placeholder="e.g. Hotel payment for 3 nights"
@@ -1969,6 +2074,7 @@ export default function BookingExpenseModal({
                         <Field label="Vendor / Payee">
                           <input
                             type="text"
+                            maxLength={200}
                             value={expense.vendorName}
                             onChange={(e) => updateExpense(index, "vendorName", e.target.value)}
                             placeholder="Vendor name"
@@ -2024,6 +2130,7 @@ export default function BookingExpenseModal({
                           <Field label="Ref. No.">
                             <input
                               type="text"
+                              maxLength={120}
                               value={expense.referenceNumber}
                               onChange={(e) => updateExpense(index, "referenceNumber", e.target.value)}
                               placeholder="UTR / cheque no."
@@ -2037,6 +2144,7 @@ export default function BookingExpenseModal({
                       <Field label="Notes">
                         <textarea
                           rows={2}
+                          maxLength={1000}
                           value={expense.notes}
                           onChange={(e) => updateExpense(index, "notes", e.target.value)}
                           placeholder="Optional notes for accounts team..."
@@ -2060,11 +2168,13 @@ export default function BookingExpenseModal({
           <button
             type="button"
             onClick={addExpense}
-            disabled={saving}
+            disabled={saving || expenses.length >= MAX_EXPENSE_ROWS}
             className="eb-add-row flex w-full items-center justify-center gap-1.5 px-4 py-2.5 text-[11.5px] font-bold uppercase tracking-wide disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Plus className="h-3.5 w-3.5" />
-            New Entry
+            {expenses.length >= MAX_EXPENSE_ROWS
+              ? `Limit reached (${MAX_EXPENSE_ROWS} entries)`
+              : "New Entry"}
           </button>
         </div>
 

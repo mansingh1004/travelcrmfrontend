@@ -21,4 +21,7 @@ export const planService = {
 export const ALL_MODULES = [
   "LEADS", "BOOKINGS", "QUOTATIONS", "CUSTOMERS", "MASTERS",
   "VENDORS", "REPORTS", "FLEET", "WHATSAPP", "DISHA_AI", "PORTAL",
+  // Optional paid add-on — the platform hotel catalog. Distinct from MASTERS on purpose: a tenant's
+  // own private hotel master must keep working on every plan even when the marketplace is off.
+  "HOTEL_MARKETPLACE",
 ];

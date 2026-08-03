@@ -2,6 +2,9 @@ import { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
 import {
   LayoutDashboard,
+  BedDouble,
+  ClipboardCheck,
+  Coins,
   Building2,
   CreditCard,
   ArrowUpCircle,
@@ -18,6 +21,7 @@ import {
 } from "lucide-react";
 import { upgradeRequestService } from "./api/upgradeRequestService";
 import { subAgentLicenseService } from "./api/subAgentLicenseService";
+import { marketplaceBookingService } from "./api/marketplaceBookingService";
 
 // Live items link; future items render disabled with a "soon" tag until their phase ships.
 // `badge: "upgrades"` shows a live pending-count pill (the SuperAdmin's new-request alert).
@@ -28,6 +32,12 @@ const NAV = [
   { to: "/console/plans", label: "Subscriptions", Icon: CreditCard },
   { to: "/console/upgrade-requests", label: "Subscription & Add-ons", Icon: ArrowUpCircle, badge: "upgrades" },
   { to: "/console/usage", label: "Usage & Quotas", Icon: Gauge },
+  { to: "/console/hotel-catalog", label: "Hotel Catalog", Icon: BedDouble },
+  // Its own badge, separate from "upgrades": a booking request is time-critical in a way a plan
+  // upgrade is not — a tenant is holding a customer while this sits unanswered.
+  { to: "/console/hotel-requests", label: "Hotel Requests", Icon: ClipboardCheck, badge: "hotelRequests" },
+  // No badge: the earning ledger is a report, not a queue — nothing on it waits on the operator.
+  { to: "/console/hotel-commissions", label: "Platform Earnings", Icon: Coins },
   { to: "/console/users", label: "Users", Icon: Users },
   { to: "/console/superadmins", label: "SuperAdmins", Icon: UserCog },
   { to: "/console/feature-flags", label: "Feature Flags", Icon: ToggleLeft },
@@ -39,6 +49,7 @@ const NAV = [
 
 export default function ConsoleSidebar({ collapsed }) {
   const [pendingUpgrades, setPendingUpgrades] = useState(0);
+  const [pendingHotelRequests, setPendingHotelRequests] = useState(0);
 
   // Live pending badge: plan upgrades + Travel Partner seat licenses, so the one queue's pill reflects
   // both. Best-effort on mount and whenever the tab regains focus (an operator returning to the console
@@ -49,15 +60,23 @@ export default function ConsoleSidebar({ collapsed }) {
       Promise.all([
         upgradeRequestService.pendingCount().catch(() => ({ count: 0 })),
         subAgentLicenseService.pendingCount().catch(() => ({ count: 0 })),
-      ]).then(([u, s]) => {
-        if (alive) setPendingUpgrades(Number(u?.count ?? 0) + Number(s?.count ?? 0));
+        // Note: this one resolves to a NUMBER, not a {count} object like its two siblings.
+        marketplaceBookingService.pendingCount().catch(() => 0),
+      ]).then(([u, s, h]) => {
+        if (!alive) return;
+        setPendingUpgrades(Number(u?.count ?? 0) + Number(s?.count ?? 0));
+        setPendingHotelRequests(Number(h ?? 0));
       });
     refresh();
     window.addEventListener("focus", refresh);
     return () => { alive = false; window.removeEventListener("focus", refresh); };
   }, []);
 
-  const badgeFor = (item) => (item.badge === "upgrades" ? pendingUpgrades : 0);
+  const badgeFor = (item) => {
+    if (item.badge === "upgrades") return pendingUpgrades;
+    if (item.badge === "hotelRequests") return pendingHotelRequests;
+    return 0;
+  };
 
   return (
     <aside

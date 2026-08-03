@@ -4,7 +4,7 @@ import ScrollToTop from './ScrollToTop';
 import Layout from "./Layout";
 import PageLoader from "./PageLoader";
 import RouteErrorBoundary from "./RouteErrorBoundary";
-import { hasPermission, isTenantAdmin, isSubAgent, P } from "@shared/lib/access";
+import { hasPermission, isTenantAdmin, isSubAgent, isFleetOnly, P } from "@shared/lib/access";
 
 /* ── Lazy route chunks (Phase 5b) ─────────────────────────────
    Each feature's pages load on first navigation, one chunk per feature.
@@ -116,6 +116,10 @@ const ConsoleAuditLog = lazyPage(consoleFeature, "ConsoleAuditLog");
 const ConsoleAnnouncements = lazyPage(consoleFeature, "ConsoleAnnouncements");
 const ConsoleOps = lazyPage(consoleFeature, "ConsoleOps");
 const ConsoleSuperAdmins = lazyPage(consoleFeature, "ConsoleSuperAdmins");
+const ConsolePlatformHotels      = lazyPage(consoleFeature, "ConsolePlatformHotels");
+const ConsolePlatformHotelDetail = lazyPage(consoleFeature, "ConsolePlatformHotelDetail");
+const ConsoleMarketplaceBookings = lazyPage(consoleFeature, "ConsoleMarketplaceBookings");
+const ConsoleMarketplaceCommissions = lazyPage(consoleFeature, "ConsoleMarketplaceCommissions");
 
 const portal = () => import("@features/portal");
 const PortalLogin         = lazyPage(portal, "PortalLogin");
@@ -139,9 +143,14 @@ const FleetVehicleForm   = lazyPage(fleet, "FleetVehicleForm");
 const FleetVehicleDetail = lazyPage(fleet, "FleetVehicleDetail");
 const FleetDrivers       = lazyPage(fleet, "FleetDrivers");
 const FleetDriverForm    = lazyPage(fleet, "FleetDriverForm");
+const FleetDriverDetail  = lazyPage(fleet, "FleetDriverDetail");
 const FleetTrips         = lazyPage(fleet, "FleetTrips");
 const FleetTripForm      = lazyPage(fleet, "FleetTripForm");
 const FleetTripDetail    = lazyPage(fleet, "FleetTripDetail");
+const FleetExpenses      = lazyPage(fleet, "FleetExpenses");
+const FleetSettlements   = lazyPage(fleet, "FleetSettlements");
+const FleetCompliance    = lazyPage(fleet, "FleetCompliance");
+const FleetPeriods       = lazyPage(fleet, "FleetPeriods");
 
 const accounting = () => import("@features/accounting");
 const AccountingDashboard = lazyPage(accounting, "AccountingDashboard");
@@ -157,18 +166,18 @@ const Campaigns     = lazyPage(marketing, "Campaigns");
 const DripSequences = lazyPage(marketing, "DripSequences");
 const Automations   = lazyPage(marketing, "Automations");
 
-// ── Hotel Management module (self-contained feature) ──
-const hotels = () => import("@features/hotels");
-const HotelDashboard    = lazyPage(hotels, "HotelDashboard");
-const HotelList         = lazyPage(hotels, "HotelList");
-const HotelDetails      = lazyPage(hotels, "HotelDetails");
-const HotelRoomTypes    = lazyPage(hotels, "RoomTypes");
-const HotelInventory    = lazyPage(hotels, "InventoryCalendar");
-const HotelBookings     = lazyPage(hotels, "HotelBookings");
-const HotelPricing      = lazyPage(hotels, "HotelPricing");
-const HotelAmenities    = lazyPage(hotels, "HotelAmenities");
-const HotelHousekeeping = lazyPage(hotels, "Housekeeping");
-const HotelReports      = lazyPage(hotels, "HotelReports");
+// ── Hotel Marketplace — the tenant's view of the platform hotel catalog ──
+// Replaces the former "Hotel Management" feature, which was a fully-mocked PMS (occupancy, ADR,
+// housekeeping, channel manager) with no backend at all. Its supply-side screens now live in the
+// SuperAdmin console, where the catalog is actually owned; what a TENANT needs is only this:
+// browse the catalog, import a hotel into its own Hotel Master, and request a booking through the
+// platform. Requesting is as far as a tenant goes — only a SuperAdmin approval confirms a hotel.
+const marketplace       = () => import("@features/marketplace");
+const MarketplaceSearch = lazyPage(marketplace, "MarketplaceSearch");
+const MarketplaceHotel  = lazyPage(marketplace, "MarketplaceHotel");
+const MarketplaceBookingRequest = lazyPage(marketplace, "MarketplaceBookingRequest");
+const MarketplaceBookings       = lazyPage(marketplace, "MarketplaceBookings");
+const MarketplaceBookingDetail  = lazyPage(marketplace, "MarketplaceBookingDetail");
 
 
 // Route-level guard (defense-in-depth; backend is the real gate, menus already hide these).
@@ -196,7 +205,7 @@ const AppRouter = () => {
           path="/login"
           element={
             isAuthenticated ? (
-              <Navigate to="/Dashboard" replace />
+              <Navigate to={isFleetOnly() ? "/fleet" : "/Dashboard"} replace />
             ) : (
               <AdminLogin setIsAuthenticated={setIsAuthenticated} />
             )
@@ -239,6 +248,13 @@ const AppRouter = () => {
           <Route path="announcements" element={<ConsoleAnnouncements />} />
           <Route path="ops" element={<ConsoleOps />} />
           <Route path="superadmins" element={<ConsoleSuperAdmins />} />
+          {/* Platform hotel catalog — the supply side. Owned here, not by any tenant. */}
+          <Route path="hotel-catalog" element={<ConsolePlatformHotels />} />
+          <Route path="hotel-catalog/:publicId" element={<ConsolePlatformHotelDetail />} />
+          {/* The approval queue. Only a decision taken here can confirm a tenant's hotel. */}
+          <Route path="hotel-requests" element={<ConsoleMarketplaceBookings />} />
+          {/* The platform earning ledger — append-only, and SuperAdmin-only by construction. */}
+          <Route path="hotel-commissions" element={<ConsoleMarketplaceCommissions />} />
           <Route path="palette" element={<ConsolePalette />} />
         </Route>
 
@@ -254,7 +270,11 @@ const AppRouter = () => {
           }
         >
 
-          <Route index element={<Dashboard/>}/>
+          {/* Landing. A fleet-only session goes straight to the Vehicle Diary: the CRM dashboard
+              aggregates leads, bookings and quotations, so for that tenant it is a screen whose
+              every call 403s. isFleetOnly() fails CLOSED, so a CRM user with a cold cache still
+              lands here. */}
+          <Route index element={isFleetOnly() ? <Navigate to="/fleet" replace /> : <Dashboard/>}/>
 
 
           <Route path="allleads" element={<AllLeads />} />
@@ -333,7 +353,19 @@ const AppRouter = () => {
           <Route path="fleet/drivers" element={<Guard allow={hasPermission(P.FLEET_READ)}><FleetDrivers/></Guard>}/>
           <Route path="fleet/drivers/new" element={<Guard allow={hasPermission(P.FLEET_CREATE)}><FleetDriverForm/></Guard>}/>
           <Route path="fleet/drivers/:publicId/edit" element={<Guard allow={hasPermission(P.FLEET_UPDATE)}><FleetDriverForm/></Guard>}/>
+          {/* Declared AFTER /edit so the literal segment is matched first — a bare :publicId route
+              placed above would swallow "…/edit" as an id. */}
+          <Route path="fleet/drivers/:publicId" element={<Guard allow={hasPermission(P.FLEET_READ)}><FleetDriverDetail/></Guard>}/>
           <Route path="fleet/trips" element={<Guard allow={hasPermission(P.FLEET_READ)}><FleetTrips/></Guard>}/>
+          {/* Money, so gated on FLEET_MONEY_READ rather than FLEET_READ — a dispatcher may run the
+              diary all day without seeing cost structure or driver cash positions. */}
+          <Route path="fleet/expenses" element={<Guard allow={hasPermission(P.FLEET_MONEY_READ)}><FleetExpenses/></Guard>}/>
+          <Route path="fleet/settlements" element={<Guard allow={hasPermission(P.FLEET_MONEY_READ)}><FleetSettlements/></Guard>}/>
+          {/* Viewing month locks is money structure; the close/reopen BUTTONS additionally need
+              FLEET_PERIOD_CLOSE, which the page checks itself. */}
+          <Route path="fleet/periods" element={<Guard allow={hasPermission(P.FLEET_MONEY_READ)}><FleetPeriods/></Guard>}/>
+          {/* Operational, not money — a dispatcher records a renewed insurance policy. */}
+          <Route path="fleet/compliance" element={<Guard allow={hasPermission(P.FLEET_READ)}><FleetCompliance/></Guard>}/>
           <Route path="fleet/trips/new" element={<Guard allow={hasPermission(P.FLEET_CREATE)}><FleetTripForm/></Guard>}/>
           <Route path="fleet/trips/:publicId" element={<Guard allow={hasPermission(P.FLEET_READ)}><FleetTripDetail/></Guard>}/>
           <Route path="fleet/trips/:publicId/edit" element={<Guard allow={hasPermission(P.FLEET_UPDATE)}><FleetTripForm/></Guard>}/>
@@ -353,17 +385,20 @@ const AppRouter = () => {
           <Route path="marketing/drips" element={<Guard allow={hasPermission(P.MARKETING_READ)}><DripSequences/></Guard>}/>
           <Route path="marketing/automations" element={<Guard allow={hasPermission(P.MARKETING_READ)}><Automations/></Guard>}/>
 
-          {/* ── Hotel Management module (self-contained; open to logged-in staff) ── */}
-          <Route path="hotels" element={<HotelList/>}/>
-          <Route path="hotels/dashboard" element={<HotelDashboard/>}/>
-          <Route path="hotels/room-types" element={<HotelRoomTypes/>}/>
-          <Route path="hotels/inventory" element={<HotelInventory/>}/>
-          <Route path="hotels/bookings" element={<HotelBookings/>}/>
-          <Route path="hotels/pricing" element={<HotelPricing/>}/>
-          <Route path="hotels/amenities" element={<HotelAmenities/>}/>
-          <Route path="hotels/housekeeping" element={<HotelHousekeeping/>}/>
-          <Route path="hotels/reports" element={<HotelReports/>}/>
-          <Route path="hotels/:id" element={<HotelDetails/>}/>
+          {/* ── Hotel Marketplace (tenant side of the platform catalog) ──
+              Guarded on HOTEL_MARKETPLACE_VIEW. The module entitlement is the real gate and it is
+              enforced server-side by ModuleAccessFilter — a tenant without the add-on gets
+              MODULE_NOT_ENABLED whatever the router lets them reach. */}
+          <Route path="marketplace" element={<Guard allow={hasPermission(P.HOTEL_MARKETPLACE_VIEW)}><MarketplaceSearch/></Guard>}/>
+          {/* Declared before ":publicId" for readability; route ranking would prefer the static
+              "bookings" segment over the dynamic one regardless of order. */}
+          <Route path="marketplace/bookings" element={<Guard allow={hasPermission(P.HOTEL_MARKETPLACE_VIEW)}><MarketplaceBookings/></Guard>}/>
+          <Route path="marketplace/bookings/:publicId" element={<Guard allow={hasPermission(P.HOTEL_MARKETPLACE_VIEW)}><MarketplaceBookingDetail/></Guard>}/>
+          <Route path="marketplace/:publicId" element={<Guard allow={hasPermission(P.HOTEL_MARKETPLACE_VIEW)}><MarketplaceHotel/></Guard>}/>
+          {/* Requesting is a stronger act than browsing — it puts a payable on the tenant's books —
+              so it gates on BOOK, not VIEW. More specific path, so route ranking picks it over
+              ":publicId" regardless of declaration order. */}
+          <Route path="marketplace/:publicId/request" element={<Guard allow={hasPermission(P.HOTEL_MARKETPLACE_BOOK)}><MarketplaceBookingRequest/></Guard>}/>
 
           {/* ── Sub-Agents (B2B franchise) — TENANT_ADMIN only ── */}
           <Route path="subagents" element={<Guard allow={isTenantAdmin()}><SubAgents/></Guard>}/>

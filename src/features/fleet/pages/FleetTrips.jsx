@@ -5,11 +5,12 @@ import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { useNavigate } from "react-router-dom";
 import {
-  Route as RouteIcon, Plus, Search, Play, Flag, Ban, Pencil, Trash2,
-  CheckCircle2, Gauge, CalendarClock,
+  Route as RouteIcon, Plus, Search, Play, Flag, Ban, Pencil, Trash2, Printer,
+  CheckCircle2, Gauge, CalendarClock, Receipt,
 } from "lucide-react";
 
 import fleetService from "../api/fleetService";
+import { openBlob, hydrateBlobError } from "@shared/lib/download";
 import { hasPermission, P } from "@shared/lib/access";
 import CommonPagination from "../components/CommanPegination";
 import {
@@ -71,6 +72,15 @@ export default function FleetTrips() {
   const [closeTarget, setCloseTarget] = useState(null);
   const [cancelTarget, setCancelTarget] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
+
+  /** Tomorrow's slips get printed in a batch from this list — that is the 9pm routine. */
+  const printDutySlip = async (t) => {
+    try {
+      openBlob(await fleetService.fetchDutySlip(t.publicId));
+    } catch (e) {
+      showToast(errMsg(await hydrateBlobError(e), "Couldn't generate the duty slip."), "error");
+    }
+  };
   const [busy, setBusy] = useState(false);
 
   const canCreate = hasPermission(P.FLEET_CREATE);
@@ -266,6 +276,13 @@ export default function FleetTrips() {
                           <Ban />
                         </Button>
                       )}
+                      {/* Ungated: printing the slip IS the dispatcher's job. The server decides
+                          what goes ON it — the office-use cost block is omitted for anyone without
+                          FLEET_MONEY_READ, so this button can safely be open to everyone. */}
+                      <Button variant="ghost" size="icon" title="Duty slip"
+                        onClick={() => printDutySlip(t)}>
+                        <Printer />
+                      </Button>
                       {canUpdate && t.status !== "CANCELLED" && (
                         <Button variant="ghost" size="icon" title="Edit"
                           onClick={() => navigate(`/fleet/trips/${t.publicId}/edit`)}>
@@ -320,6 +337,7 @@ export default function FleetTrips() {
                   {canUpdate && (t.status === "PLANNED" || t.status === "ONGOING") && (
                     <Button variant="ghost" size="icon" title="Cancel trip" className="text-amber-600 hover:bg-amber-50" onClick={() => setCancelTarget(t)}><Ban /></Button>
                   )}
+                  <Button variant="ghost" size="icon" title="Duty slip" onClick={() => printDutySlip(t)}><Printer /></Button>
                   {canUpdate && t.status !== "CANCELLED" && (
                     <Button variant="ghost" size="icon" title="Edit" onClick={() => navigate(`/fleet/trips/${t.publicId}/edit`)}><Pencil /></Button>
                   )}
@@ -423,11 +441,16 @@ export function StartTripDialog({ trip, onClose, onDone, showToast }) {
 
 /* ── Close trip ───────────────────────────────────────────────── */
 export function CloseTripDialog({ trip, onClose, onDone, showToast }) {
+  // OLD — removed in the ledger cutover:
+  //   fuelCost: trip?.fuelCost ?? "", tollCost: trip?.tollCost ?? "",
+  //   driverAllowance: trip?.driverAllowance ?? "",
+  // Closing a trip no longer records cost. The same three figures are collected by the expense
+  // ledger, and both paths were live — one tank of diesel entered here AND there is Rs 12,000 of
+  // fuel on one trip. The server ignores them now; the fields are gone so nobody types them twice.
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm({
     defaultValues: {
       endOdometer: trip?.endOdometer ?? "", endDatetime: nowDateTimeInput(),
-      fuelCost: trip?.fuelCost ?? "", tollCost: trip?.tollCost ?? "",
-      driverAllowance: trip?.driverAllowance ?? "", remarks: trip?.remarks ?? "",
+      remarks: trip?.remarks ?? "",
     },
   });
 
@@ -436,9 +459,6 @@ export function CloseTripDialog({ trip, onClose, onDone, showToast }) {
       await fleetService.closeTrip(trip.publicId, {
         endOdometer: toNum(data.endOdometer),
         endDatetime: data.endDatetime || null,
-        fuelCost: toNum(data.fuelCost),
-        tollCost: toNum(data.tollCost),
-        driverAllowance: toNum(data.driverAllowance),
         remarks: data.remarks?.trim() || null,
       });
       showToast("Trip closed.");
@@ -461,17 +481,17 @@ export function CloseTripDialog({ trip, onClose, onDone, showToast }) {
             <Field label="End Time">
               <Input type="datetime-local" {...register("endDatetime")} />
             </Field>
-            <Field label="Fuel Cost (₹)" error={errors.fuelCost}>
-              <Input type="number" step="0.01" {...register("fuelCost", { min: { value: 0, message: "Can't be negative" } })} />
-            </Field>
-            <Field label="Toll Cost (₹)" error={errors.tollCost}>
-              <Input type="number" step="0.01" {...register("tollCost", { min: { value: 0, message: "Can't be negative" } })} />
-            </Field>
-            <Field label="Driver Allowance (₹)" error={errors.driverAllowance}>
-              <Input type="number" step="0.01" {...register("driverAllowance", { min: { value: 0, message: "Can't be negative" } })} />
-            </Field>
             <div className="sm:col-span-2">
               <Field label="Remarks"><Textarea rows={2} {...register("remarks")} /></Field>
+            </div>
+            {/* Costs moved out of this dialog — see the note on defaultValues above. */}
+            <div className="sm:col-span-2 flex items-start gap-2.5 rounded-xl border border-blue-100 bg-blue-50/60 px-3.5 py-2.5 text-[12px] text-blue-800">
+              <Receipt className="mt-0.5 h-4 w-4 shrink-0" />
+              <p>
+                Fuel, tolls and the driver&apos;s allowance are recorded in
+                {" "}<strong>Fleet&nbsp;→&nbsp;Expenses</strong> against this trip — that is what the
+                driver&apos;s cash settlement and the vehicle&apos;s running cost read from.
+              </p>
             </div>
           </DialogBody>
           <DialogFooter>

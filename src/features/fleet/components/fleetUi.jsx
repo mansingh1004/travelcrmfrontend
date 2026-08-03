@@ -324,7 +324,7 @@ export function FleetStyles() {
 export function PageShell({ children, className }) {
   return (
     <div
-      className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/20 to-slate-100"
+      className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/40 to-slate-100"
       style={{ fontFamily: "'Plus Jakarta Sans',system-ui,sans-serif" }}
     >
       <FleetStyles />
@@ -886,4 +886,190 @@ export function expiryInfo(dateStr) {
   if (days <= 7) return { days, text: `${days}d left`, variant: "red" };
   if (days <= 30) return { days, text: `${days}d left`, variant: "amber" };
   return { days, text: fmtDate(dateStr), variant: "green" };
+}
+
+/* ═════════════════════════════════════════════════════════════
+   BOOKINGS-MATCHED SURFACE  (Aug 2026)
+   ─────────────────────────────────────────────────────────────
+   Fleet used to render flat white stat tiles and bare glass cards while Bookings — the module
+   users spend most of their day in — used gradient KPI cards, a coloured top strip on every
+   entity card, and the Panel/Field pair from the rebuilt Create forms. Two products in one app.
+
+   These primitives are lifted from `bookings/pages/Allbookings.jsx` and
+   `bookings/pages/CreateBookingClean.jsx` so the two modules read as one. The older exports
+   (StatStrip, GlassCard) are left in place — the existing Fleet pages still use them, and
+   migrating a page is a deliberate act, not a side effect of importing this file.
+═════════════════════════════════════════════════════════════ */
+
+/**
+ * Gradient KPI card with a count-up, matching `Allbookings.jsx:135`.
+ *
+ * <p>The animation is not decoration: these numbers change while you watch (a trip closes, a
+ * receipt is entered), and a value that slides makes the change visible instead of it silently
+ * swapping. `money` runs the value through the INR formatter.
+ *
+ * Gradients are the Bookings palette, so the same colour means the same kind of thing in both
+ * modules: blue = volume, green = good/settled, amber = money in, rose = money out/problem,
+ * slate = derived totals.
+ */
+export const KPI_GRADIENTS = {
+  blue: "from-blue-600 to-indigo-500",
+  green: "from-green-500 to-emerald-600",
+  amber: "from-amber-500 to-orange-500",
+  indigo: "from-blue-700 to-indigo-600",
+  rose: "from-rose-500 to-red-600",
+  slate: "from-slate-600 to-slate-700",
+};
+
+export function StatCard({ label, value, icon, tone = "blue", money = false }) {
+  const [disp, setDisp] = React.useState(0);
+  const raf = React.useRef();
+
+  React.useEffect(() => {
+    cancelAnimationFrame(raf.current);
+    const target = Number(value) || 0;
+    if (!target) { setDisp(0); return; }
+    const start = performance.now();
+    const step = (ts) => {
+      const p = Math.min((ts - start) / 1000, 1);
+      const ease = 1 - Math.pow(1 - p, 3);
+      setDisp(Math.round(ease * target));
+      if (p < 1) raf.current = requestAnimationFrame(step);
+    };
+    raf.current = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf.current);
+  }, [value]);
+
+  return (
+    <div
+      className={cn(
+        "relative overflow-hidden rounded-2xl bg-gradient-to-br p-5 text-white shadow-lg",
+        "group transition-all duration-300 hover:-translate-y-1 hover:shadow-xl",
+        KPI_GRADIENTS[tone] || KPI_GRADIENTS.blue
+      )}
+    >
+      <div className="absolute -right-5 -top-5 h-24 w-24 rounded-full bg-white/10 transition-transform duration-500 group-hover:scale-110" />
+      <div className="absolute -right-2 -bottom-7 h-20 w-20 rounded-full bg-white/10" />
+      <div className="relative z-10 flex items-start justify-between">
+        <div className="min-w-0">
+          <p className="mb-1 text-[10px] font-extrabold uppercase tracking-widest opacity-80">{label}</p>
+          <p className="text-2xl font-extrabold leading-none sm:text-3xl">
+            {money ? fmtMoney(disp) : disp}
+          </p>
+        </div>
+        {icon && (
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/20 text-xl">
+            {icon}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Responsive KPI row. Same breakpoints as the Bookings dashboard strip. */
+export function StatCardRow({ children, className }) {
+  return (
+    <div className={cn("mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6", className)}>
+      {children}
+    </div>
+  );
+}
+
+/**
+ * Bordered section with an icon header — `CreateBookingClean.jsx:145`.
+ *
+ * This is the unit of a fast-entry form: one Panel per decision the user is making, so the eye
+ * lands on a heading rather than a wall of inputs. `action` is the right-aligned slot (an "add
+ * row" button, a toggle).
+ */
+export function Panel({ icon: Icon, title, description, action, children, className }) {
+  return (
+    <section className={cn("rounded-xl border border-slate-200 bg-white shadow-sm", className)}>
+      <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+        <div className="flex min-w-0 items-center gap-3">
+          {Icon && (
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
+              <Icon className="h-4 w-4" />
+            </span>
+          )}
+          <div className="min-w-0">
+            <h2 className="text-sm font-bold text-slate-800">{title}</h2>
+            {description && <p className="mt-0.5 text-xs text-slate-500">{description}</p>}
+          </div>
+        </div>
+        {action}
+      </div>
+      <div className="p-4 sm:p-5">{children}</div>
+    </section>
+  );
+}
+
+/**
+ * Labelled form field — `CreateBookingClean.jsx:165`.
+ *
+ * Marks BOTH required and optional explicitly. That asymmetry is deliberate in the create forms:
+ * an unmarked field is ambiguous, and a user who cannot tell what is mandatory fills everything or
+ * abandons the form.
+ */
+export function FieldRow({ label, required, optional, error, hint, children, className }) {
+  return (
+    <div className={cn("min-w-0 space-y-1.5", className)}>
+      {label && (
+        <label className="block text-xs font-semibold text-slate-600">
+          {label}
+          {required && <span className="ml-1 text-red-500">*</span>}
+          {optional && <span className="ml-1 font-normal text-slate-400">(optional)</span>}
+        </label>
+      )}
+      {children}
+      {hint && !error && <p className="text-[11px] text-slate-400">{hint}</p>}
+      {error && <p className="text-xs text-red-500">{error}</p>}
+    </div>
+  );
+}
+
+/**
+ * Entity card with the Bookings top strip — `Allbookings.jsx:349`.
+ *
+ * The 1px gradient bar is what makes a list of these read as a stack of records rather than a
+ * stack of boxes. `tone` colours the strip so status is legible before any text is read.
+ */
+export function EntityCard({ tone = "blue", children, className, onClick }) {
+  return (
+    <div
+      onClick={onClick}
+      className={cn(
+        "space-y-3 rounded-2xl border border-slate-200/60 bg-white p-4 shadow-sm transition-all duration-200",
+        "hover:border-blue-200 hover:shadow-md",
+        onClick && "cursor-pointer",
+        className
+      )}
+    >
+      <div className={cn("-mx-4 -mt-4 mb-3 h-1 rounded-t-2xl bg-gradient-to-r",
+        KPI_GRADIENTS[tone] || KPI_GRADIENTS.blue)} />
+      {children}
+    </div>
+  );
+}
+
+/** Code chip — the `BKG-25-0042` treatment, reused for vehicle numbers and receipt references. */
+export function CodeChip({ children, className }) {
+  return (
+    <span className={cn(
+      "rounded-lg border border-blue-100 bg-blue-50 px-2 py-0.5 text-xs font-extrabold text-blue-600",
+      className)}>
+      {children}
+    </span>
+  );
+}
+
+/** Small key/value tile used inside cards and modals — `Allbookings.jsx:403`. */
+export function MiniStat({ label, value, className }) {
+  return (
+    <div className={cn("rounded-xl border border-slate-100 bg-slate-50 px-3 py-2", className)}>
+      <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">{label}</p>
+      <p className="truncate text-sm font-bold text-slate-700">{value ?? "—"}</p>
+    </div>
+  );
 }

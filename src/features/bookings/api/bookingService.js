@@ -24,6 +24,9 @@ const bookingService = {
 
   getByCode: (code) => API.get(`/bookings/code/${code}`),
 
+  // Chronological operational audit for the booking detail Activity tab.
+  getTimeline: (publicId) => API.get(`/bookings/${publicId}/timeline`),
+
   create: (bookingData) => API.post("/bookings", bookingData),
 
   convertFromLead: (leadPublicId, payload) =>
@@ -32,6 +35,12 @@ const bookingService = {
   // Staff selectable in the "Assigned To" dropdown on the create + convert forms. Requires
   // BOOKING_CREATE; a user without it never sees the control, so a 403 here is not expected.
   getEligibleAssignees: () => API.get("/bookings/assignment/eligible-users"),
+
+  // POST /bookings/preview — dry-run of the money the server would stamp on create:
+  // { customerAmount, vendorCost?, paidAmount?, overseasTourPackage? } →
+  // { gst, tcs, totalPayable, netProfit, pendingAmount, paymentStatus }.
+  // The create form renders these verbatim — the UI never computes tax itself.
+  previewFinancials: (body) => API.post("/bookings/preview", body),
 
   update: (publicId, bookingData) => API.put(`/bookings/${publicId}`, bookingData),
 
@@ -118,6 +127,35 @@ const bookingService = {
   // DELETE /bookings/{id}/payments/{paymentId}
   deletePayment: (bookingId, paymentId) =>
     API.delete(`/bookings/${bookingId}/payments/${paymentId}`),
+
+  // ── Expense ledger (money OUT to vendors — mirror of the payment ledger) ────
+  // POST /bookings/{id}/expenses — BULK create; body is { expenses: [row, ...] } (max 50).
+  // Row: { category?, costType? ("VENDOR"|"INTERNAL"), description, vendorName?, amount,
+  //        paymentStatus? ("CREDIT"|"PARTIAL"|"PAID" — read as intent), paymentMode?,
+  //        expenseDate, dueDate?, paidAmount?, referenceNumber?, notes? }
+  // The server settles the money itself (paidAmount/status/outstanding are re-derived) and
+  // recalculates the booking's netProfit from INTERNAL rows — render what it returns.
+  addExpenses: (bookingId, body) => API.post(`/bookings/${bookingId}/expenses`, body),
+
+  // GET /bookings/{id}/expenses — ledger rows, most recent cost first. Each row carries the
+  // server-derived outstandingAmount, paymentStatus and overdue flag — never recompute them.
+  getExpenses: (bookingId) => API.get(`/bookings/${bookingId}/expenses`),
+
+  // GET /bookings/{id}/expenses/summary — totals + vendor-payable/overdue rollup
+  // (totalExpense/totalVendorExpense/totalInternalCosts/totalPaid/totalOutstanding/
+  //  overdueOutstanding/expenseCount/unsettledCount/overdueCount).
+  getExpenseSummary: (bookingId) => API.get(`/bookings/${bookingId}/expenses/summary`),
+
+  // PUT /bookings/{id}/expenses/{expenseId} — patch semantics, null/absent = leave unchanged.
+  // paidAmount is CUMULATIVE ("disbursed so far", NOT a delta) and alone is honoured as PARTIAL
+  // intent; { paymentStatus: "PAID" } settles the line in full. The stored status is always
+  // re-derived server-side from the money.
+  updateExpense: (bookingId, expenseId, body) =>
+    API.put(`/bookings/${bookingId}/expenses/${expenseId}`, body),
+
+  // DELETE /bookings/{id}/expenses/{expenseId} — soft delete; profit recalcs if it was INTERNAL.
+  deleteExpense: (bookingId, expenseId) =>
+    API.delete(`/bookings/${bookingId}/expenses/${expenseId}`),
 
   // ── Service line items + vendor assignment ──────────────────────────────────
   // GET  /bookings/{id}/services
