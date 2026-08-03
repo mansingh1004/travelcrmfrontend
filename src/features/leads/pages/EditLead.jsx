@@ -118,7 +118,12 @@ export default function EditLead() {
       budget: "",
       leadSource: "", leadType: "", leadStage: "New Lead",
       assignedUserId: "", birthDate: "", anniversaryDate: "",
+      preferredCommunication: "", followUpDate: "", packageType: "",
       travelDate: "", departCountry: "India", departCity: "",
+      departureMode: "",
+      departureAirport: "", airportCode: "", preferredFlightTime: "",
+      railwayStation: "", trainClass: "", preferredTrainTime: "",
+      pickupAddress: "", pickupDateTime: "", vehiclePreference: "",
       // totalAdults derived hai (male + female) — TravelDetails ise auto set karta hai
       rooms: 1, male: 1, female: 1, totalAdults: 2, children: 0, infants: 0, extraBeds: 0,
       specialAssistanceRequired: false,
@@ -283,6 +288,23 @@ export default function EditLead() {
             lead.anniversary
           ),
 
+          preferredCommunication:
+            lead.preferredCommunication ??
+            lead.communicationPreference ??
+            lead.commPref ??
+            "",
+
+          followUpDate: toDateInput(
+            lead.followUpDate ??
+            lead.followupDate ??
+            lead.nextFollowUpDate
+          ),
+
+          packageType:
+            lead.packageType ??
+            lead.tripType ??
+            "",
+
           travelDate: toDateInput(
             lead.travelDate ??
             lead.departureDate ??
@@ -299,6 +321,59 @@ export default function EditLead() {
             lead.departCity ??
             lead.departingCity ??
             lead.departureCity ??
+            "",
+
+          departureMode:
+            lead.departureMode ??
+            lead.transportMode ??
+            "",
+
+          departureAirport:
+            lead.departureAirport ??
+            lead.airportName ??
+            "",
+
+          airportCode:
+            lead.airportCode ??
+            lead.departureAirportCode ??
+            "",
+
+          preferredFlightTime: String(
+            lead.preferredFlightTime ??
+            lead.flightTime ??
+            ""
+          ).slice(0, 5),
+
+          railwayStation:
+            lead.railwayStation ??
+            lead.departureStation ??
+            "",
+
+          trainClass:
+            lead.trainClass ??
+            lead.railClass ??
+            "",
+
+          preferredTrainTime: String(
+            lead.preferredTrainTime ??
+            lead.trainTime ??
+            ""
+          ).slice(0, 5),
+
+          pickupAddress:
+            lead.pickupAddress ??
+            lead.roadPickupAddress ??
+            "",
+
+          pickupDateTime: String(
+            lead.pickupDateTime ??
+            lead.pickupAt ??
+            ""
+          ).slice(0, 16),
+
+          vehiclePreference:
+            lead.vehiclePreference ??
+            lead.preferredVehicle ??
             "",
 
           rooms: Number(

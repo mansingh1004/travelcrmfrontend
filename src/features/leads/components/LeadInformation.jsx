@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { User as FiUser, Phone as FiPhone, Mail as FiMail, Search as FiSearch, ChevronDown as FiChevronDown, Calendar as FiCalendar, Tag as FiTag, Layers as FiLayers, UserCheck as FiUserCheck, IndianRupee as FaRupeeSign } from "lucide-react";
+import { User as FiUser, Phone as FiPhone, Mail as FiMail, Search as FiSearch, ChevronDown as FiChevronDown, Calendar as FiCalendar, Tag as FiTag, Layers as FiLayers, UserCheck as FiUserCheck, IndianRupee as FaRupeeSign, MessageCircle as FiMessageCircle, Package as FiPackage } from "lucide-react";
 
 import { leadService } from "../api/leadService";
 import { useLeadSources } from "../lib/useLeadSources";
@@ -11,6 +11,8 @@ import { useLeadSources } from "../lib/useLeadSources";
 // Do not reintroduce a local copy, including as a fetch-failure fallback.
 
 const LEAD_TYPES  = ["Fresh Lead", "Repeat Customer", "Corporate", "VIP"];
+const COMMUNICATION_PREFERENCES = ["WhatsApp", "Call", "Email", "SMS"];
+const PACKAGE_TYPES = ["Family", "Honeymoon", "Group", "Corporate", "Pilgrimage", "Adventure"];
 const LEAD_STAGES = [
   "New Lead", "Contacted", "Follow Up",
   "Qualified", "Proposal Sent", "Converted", "Lost",
@@ -489,6 +491,51 @@ export default function LeadInformation({
               icon={FiCalendar}
               {...register("anniversaryDate")}
             />
+          </FieldWrapper>
+        </div>
+
+        {/* Optional customer preferences and follow-up details */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <FieldWrapper label="Preferred Communication" icon={FiMessageCircle}>
+            <div className="relative">
+              <FiMessageCircle className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+              <select
+                className="w-full pl-9 pr-8 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-700
+                  focus:border-blue-400 focus:ring-2 focus:ring-blue-50 outline-none appearance-none cursor-pointer transition-all"
+                {...register("preferredCommunication")}
+              >
+                <option value="">Select preferred channel</option>
+                {COMMUNICATION_PREFERENCES.map((option) => (
+                  <option key={option} value={option}>{option}</option>
+                ))}
+              </select>
+              <FiChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+            </div>
+          </FieldWrapper>
+
+          <FieldWrapper label="Follow-up Date" icon={FiCalendar}>
+            <InputField
+              type="date"
+              icon={FiCalendar}
+              {...register("followUpDate")}
+            />
+          </FieldWrapper>
+
+          <FieldWrapper label="Package Type" icon={FiPackage}>
+            <div className="relative">
+              <FiPackage className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+              <select
+                className="w-full pl-9 pr-8 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-700
+                  focus:border-blue-400 focus:ring-2 focus:ring-blue-50 outline-none appearance-none cursor-pointer transition-all"
+                {...register("packageType")}
+              >
+                <option value="">Select package type</option>
+                {PACKAGE_TYPES.map((option) => (
+                  <option key={option} value={option}>{option}</option>
+                ))}
+              </select>
+              <FiChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+            </div>
           </FieldWrapper>
         </div>
 

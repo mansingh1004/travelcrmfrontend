@@ -399,7 +399,12 @@ import {
   UserRound, 
   UtensilsCrossed, 
   Plane, 
-  FileText 
+  FileText,
+  ChevronDown,
+  Train,
+  Car,
+  Bus,
+  Clock
 } from "lucide-react";
 
 import { geographyService } from "@shared/api/geographyService";
@@ -407,6 +412,14 @@ import { getErrorMessage } from "@shared/api/apiError";
 import SearchableSelect from "./SearchableSelect";
 
 const MAX_WHOLE_NUMBER = 999;
+
+const DEPARTURE_MODES = [
+  "Flight / Airport",
+  "Train / Rail",
+  "Car / Road",
+  "Bus",
+  "Other",
+];
 
 const ASSISTANCE_TYPES = [
   "Wheelchair Assistance",
@@ -738,6 +751,7 @@ function TravelDetails({
   const infantsRaw = watch("infants") ?? 0;
   const roomsRaw = watch("rooms") ?? 1;
   const extraBedsRaw = watch("extraBeds") ?? 0;
+  const departureMode = watch("departureMode") || "";
   
   const specialAssistanceRequired = watch("specialAssistanceRequired") === true;
   const watchedAssistanceTypes = watch("specialAssistanceTypes");
@@ -770,6 +784,21 @@ function TravelDetails({
       },
     });
   }, [getValues, register]);
+
+  useEffect(() => {
+    const fieldsByMode = {
+      "Flight / Airport": ["departureAirport", "airportCode", "preferredFlightTime"],
+      "Train / Rail": ["railwayStation", "trainClass", "preferredTrainTime"],
+      "Car / Road": ["pickupAddress", "pickupDateTime", "vehiclePreference"],
+    };
+    const activeFields = new Set(fieldsByMode[departureMode] || []);
+
+    Object.values(fieldsByMode).flat().forEach((field) => {
+      if (!activeFields.has(field) && getValues(field)) {
+        setValue(field, "", { shouldDirty: true, shouldTouch: false, shouldValidate: false });
+      }
+    });
+  }, [departureMode, getValues, setValue]);
 
   useEffect(() => {
     const currentTotalAdults = toWholeNumber(getValues("totalAdults"));
@@ -902,7 +931,7 @@ function TravelDetails({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
           <div className="flex flex-col gap-1.5 min-w-0">
             <label className="flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-slate-600">
               <FiGlobe className="w-3.5 h-3.5 shrink-0 text-teal-500" />
@@ -938,7 +967,136 @@ function TravelDetails({
               />
             </div>
           </div>
+
+          <div className="flex flex-col gap-1.5 min-w-0">
+            <label className="flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-slate-600">
+              <Bus className="w-3.5 h-3.5 shrink-0 text-teal-500" />
+              Departure Mode
+            </label>
+            <div className="relative">
+              <Bus className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+              <select
+                className="w-full pl-9 pr-8 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-700
+                  focus:border-teal-400 focus:ring-2 focus:ring-teal-50 outline-none appearance-none cursor-pointer transition-all"
+                {...register("departureMode")}
+              >
+                <option value="">Select departure mode</option>
+                {DEPARTURE_MODES.map((mode) => (
+                  <option key={mode} value={mode}>{mode}</option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+            </div>
+          </div>
         </div>
+
+        {departureMode === "Flight / Airport" && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 rounded-xl border border-sky-100 bg-sky-50/60 p-4">
+            <div className="flex flex-col gap-1.5">
+              <label className="flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-slate-600">
+                <Plane className="w-3.5 h-3.5 text-sky-500" /> Departure Airport
+              </label>
+              <input
+                type="text"
+                placeholder="Enter departure airport"
+                className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-700 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-50"
+                {...register("departureAirport")}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs sm:text-sm font-semibold text-slate-600">Airport Code <span className="font-normal text-slate-400">(optional)</span></label>
+              <input
+                type="text"
+                maxLength={8}
+                placeholder="e.g. DEL"
+                className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm uppercase text-slate-700 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-50"
+                {...register("airportCode")}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-slate-600">
+                <Clock className="w-3.5 h-3.5 text-sky-500" /> Preferred Flight Time
+              </label>
+              <input
+                type="time"
+                className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-700 outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-50"
+                {...register("preferredFlightTime")}
+              />
+            </div>
+          </div>
+        )}
+
+        {departureMode === "Train / Rail" && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 rounded-xl border border-violet-100 bg-violet-50/60 p-4">
+            <div className="flex flex-col gap-1.5">
+              <label className="flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-slate-600">
+                <Train className="w-3.5 h-3.5 text-violet-500" /> Railway Station
+              </label>
+              <input
+                type="text"
+                placeholder="Enter railway station"
+                className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-700 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-50"
+                {...register("railwayStation")}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs sm:text-sm font-semibold text-slate-600">Train Class <span className="font-normal text-slate-400">(optional)</span></label>
+              <input
+                type="text"
+                placeholder="e.g. 2A, 3A, Sleeper"
+                className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-700 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-50"
+                {...register("trainClass")}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-slate-600">
+                <Clock className="w-3.5 h-3.5 text-violet-500" /> Preferred Train Time
+              </label>
+              <input
+                type="time"
+                className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-700 outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-50"
+                {...register("preferredTrainTime")}
+              />
+            </div>
+          </div>
+        )}
+
+        {departureMode === "Car / Road" && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 rounded-xl border border-amber-100 bg-amber-50/60 p-4">
+            <div className="flex flex-col gap-1.5">
+              <label className="flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-slate-600">
+                <FiMapPin className="w-3.5 h-3.5 text-amber-500" /> Pickup Address
+              </label>
+              <input
+                type="text"
+                placeholder="Enter pickup address"
+                className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-700 outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-50"
+                {...register("pickupAddress")}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-slate-600">
+                <FiCalendar className="w-3.5 h-3.5 text-amber-500" /> Pickup Date &amp; Time
+              </label>
+              <input
+                type="datetime-local"
+                className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-700 outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-50"
+                {...register("pickupDateTime")}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-slate-600">
+                <Car className="w-3.5 h-3.5 text-amber-500" /> Vehicle Preference
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. Sedan, SUV, Tempo Traveller"
+                className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-700 outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-50"
+                {...register("vehiclePreference")}
+              />
+            </div>
+          </div>
+        )}
 
         <div className="space-y-3">
           <h3 className="text-sm font-bold text-slate-700">Passenger Details</h3>

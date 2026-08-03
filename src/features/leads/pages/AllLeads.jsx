@@ -27,8 +27,6 @@ import { WeblinkAnalyticsModal } from "@features/quotation";
 import { SuggestPackagesModal } from "@features/quotation";
 import { QuotationStyleModal } from "@features/quotation";
 import ConvertToBookingModal from "../components/ConvertToBookingModal";
-import PdfDownloadLoader from "@shared/ui/PdfDownloadLoader";
-import { usePdfDownload } from "@shared/hooks/usePdfDownload";
 import {
   useReactTable, getCoreRowModel, getSortedRowModel,
   getPaginationRowModel,
@@ -1418,7 +1416,6 @@ const Leads = () => {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [quotationsLead, setQuotationsLead] = useState(null);
   const [suggestLead, setSuggestLead] = useState(null);   // "Suggest packages" modal target
-  const [convertLead, setConvertLead] = useState(null);
   const [logLead, setLogLead] = useState(null);
   const [logsViewLead, setLogsViewLead] = useState(null);
   const [weblinkLead, setWeblinkLead] = useState(null);   // lead whose weblink analytics are open
@@ -1533,10 +1530,8 @@ const Leads = () => {
 
   // Reflect a successful conversion in the list: flip the lead to Converted and link the booking,
   // so the row's action relabels to "Booked ↗" and a second conversion can't be started.
-  const handleConverted = (convertedLead, booking) => {
-    setLeads(prev => prev.map(l => l.id === convertedLead.id
-      ? { ...l, leadStage: 'Converted', convertedBookingPublicId: booking?.publicId }
-      : l));
+  const handleConvertNavigate = (lead) => {
+    navigate(`/CreateBooking/${lead.publicId || lead.id}`);
   };
 
   const handleLogAdded = (leadId) => {
@@ -1680,7 +1675,6 @@ const Leads = () => {
       {/* No onToast prop: every modal reaches the shared toast store directly. */}
       {quotationsLead && <QuotationsModal lead={quotationsLead} onClose={() => setQuotationsLead(null)} canEdit={hasPermission(P.QUOTATION_UPDATE)} canDelete={hasPermission(P.QUOTATION_DELETE)} />}
       {suggestLead && <SuggestPackagesModal lead={suggestLead} onClose={() => setSuggestLead(null)} />}
-      {convertLead && <ConvertToBookingModal lead={convertLead} onClose={() => setConvertLead(null)} onConverted={handleConverted} />}
       {logLead && <AddLogModal lead={logLead} onClose={() => setLogLead(null)} onLogAdded={handleLogAdded} />}
       {logsViewLead && <LogsModal lead={logsViewLead} onClose={() => setLogsViewLead(null)} canDelete={hasPermission(P.LEAD_UPDATE)} />}
       {weblinkLead?.latestQuotation && <WeblinkAnalyticsModal quotation={weblinkLead.latestQuotation} onClose={() => setWeblinkLead(null)} />}
@@ -1912,7 +1906,7 @@ const Leads = () => {
                         onTypeChange={handleTypeChange}
                         onViewQuotations={setQuotationsLead}
                         onSuggestPackages={setSuggestLead}
-                        onConvert={setConvertLead}
+                        onConvert={handleConvertNavigate}
                         onAddLog={setLogLead}
                         onViewLogs={setLogsViewLead}
                         onWeblinkStats={setWeblinkLead}
