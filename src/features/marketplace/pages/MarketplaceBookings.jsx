@@ -2,25 +2,36 @@
 //
 // The tenant's own hotel booking requests, newest first.
 //
-// NOTE — there is deliberately NO status filter. `GET /api/hotel-marketplace/bookings` takes only
-// `page` and `size` (MarketplaceBookingController.java:45-54), so any filter here could narrow only
-// the rows already loaded. That is the trap CLAUDE.md records against AllLeads: a control that looks
-// like it filters the dataset but silently filters one page of it. When the endpoint grows a
-// `status` param, add tabs backed by it — not before.
+// FILTERING — `GET /api/hotel-marketplace/bookings` takes ONE `status`, and treats an unknown or
+// blank one as "all". So every tab here is exactly one status (or none), and every tab is a real
+// server query over the whole dataset. There is deliberately no "In progress"/"Closed" grouping: a
+// tab covering several statuses cannot be one call, and filtering the loaded page client-side to fake
+// it is the AllLeads trap CLAUDE.md records — a control that looks like it filters the dataset while
+// it filters one page of it. Ten honest tabs beat five lying ones.
 //
-// What IS surfaced is the one state that needs the tenant to act: TENANT_APPROVAL_REQUIRED. A
-// revised price sits there doing nothing until somebody answers it.
+// What matters most is TENANT_APPROVAL_REQUIRED: a revised price sits there doing nothing until
+// somebody answers it. It leads the tabs and carries a count — and that count is its own server call,
+// not `rows.filter(...)`, because a request waiting on page 3 is exactly the one that gets forgotten.
 
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Building2, Search } from "lucide-react";
 import { marketplaceService } from "../api/marketplaceService";
 import {
-  Button, Card, Empty, Notice, Page, PageHeader, Pager, SkeletonRows, StatusDot,
-  errMsg, fmtDate, fmtMoney, useToast,
+  BOOKING_STATUS, Button, Card, Empty, Notice, Page, PageHeader, Pager, SkeletonRows, StatusDot,
+  Tabs, errMsg, fmtDate, fmtMoney, useToast,
 } from "../components/marketplaceUi";
 
 const PAGE_SIZE = 20;
+
+const AWAITING = "TENANT_APPROVAL_REQUIRED";
+
+// Lifecycle order, with the one that needs an answer first. Labels come from the kit's status map so
+// a tab and the row it selects can never read as two different things.
+const TAB_STATUSES = [
+  AWAITING, "REQUESTED", "UNDER_REVIEW", "TENANT_ACCEPTED", "CONFIRMED",
+  "CANCEL_REQUESTED", "REJECTED", "CANCELLED", "EXPIRED",
+];
 
 export function MarketplaceBookings() {
   const navigate = useNavigate();
@@ -29,25 +40,50 @@ export function MarketplaceBookings() {
   const [rows, setRows] = useState([]);
   const [pagination, setPagination] = useState(null);
   const [page, setPage] = useState(0);
+  const [status, setStatus] = useState("");
+  const [awaitingCount, setAwaitingCount] = useState(null);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const { items, pagination: meta } = await marketplaceService.listMyBookings({ page, size: PAGE_SIZE });
-      setRows(items);
-      setPagination(meta);
+      const [list, awaiting] = await Promise.all([
+        marketplaceService.listMyBookings({ page, size: PAGE_SIZE, status }),
+        // size=1 — only `totalElements` is read. Failing this must not cost the user their list, so
+        // it swallows its own error and the badge simply disappears.
+        marketplaceService
+          .listMyBookings({ page: 0, size: 1, status: AWAITING })
+          .then((r) => r.pagination?.totalElements ?? null)
+          .catch(() => null),
+      ]);
+      setRows(list.items);
+      setPagination(list.pagination);
+      setAwaitingCount(awaiting);
     } catch (e) {
       showToast(errMsg(e, "Could not load your booking requests."), "error");
       setRows([]);
+      setPagination(null);
     } finally {
       setLoading(false);
     }
-  }, [page, showToast]);
+  }, [page, status, showToast]);
 
   useEffect(() => { load(); }, [load]);
 
-  const awaiting = rows.filter((r) => r.status === "TENANT_APPROVAL_REQUIRED");
+  // Page numbers belong to a filter — carrying page 3 across a tab change lands on an empty page.
+  const changeStatus = (next) => {
+    setStatus(next);
+    setPage(0);
+  };
+
+  const tabs = [
+    { value: "", label: "All" },
+    ...TAB_STATUSES.map((s) => ({
+      value: s,
+      label: BOOKING_STATUS[s]?.label ?? s,
+      count: s === AWAITING && awaitingCount ? awaitingCount : undefined,
+    })),
+  ];
 
   return (
     <Page>
@@ -61,25 +97,42 @@ export function MarketplaceBookings() {
         }
       />
 
-      {awaiting.length > 0 && (
+      {/* Already looking at them? Then the list is the message — a banner above it is noise. */}
+      {awaitingCount > 0 && status !== AWAITING && (
         <Notice tone="warn" className="mb-5">
-          {awaiting.length === 1
-            ? "One request has a revised price waiting for your answer."
-            : `${awaiting.length} requests have a revised price waiting for your answer.`}{" "}
-          Nothing moves until you accept or decline.
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <span>
+              {awaitingCount === 1
+                ? "One request has a revised price waiting for your answer."
+                : `${awaitingCount} requests have a revised price waiting for your answer.`}{" "}
+              Nothing moves until you accept or decline.
+            </span>
+            <Button size="sm" onClick={() => changeStatus(AWAITING)}>Show them</Button>
+          </div>
         </Notice>
       )}
+
+      <Tabs options={tabs} value={status} onChange={changeStatus} className="mb-4" />
 
       <Card flush>
         {loading ? (
           <div className="px-4 py-2"><SkeletonRows count={6} /></div>
         ) : rows.length === 0 ? (
-          <Empty
-            icon={Building2}
-            title="No booking requests yet"
-            hint="Find a hotel in the platform catalog and send a request. The platform confirms it with the supplier."
-            action={<Button variant="primary" onClick={() => navigate("/marketplace")}>Browse catalog</Button>}
-          />
+          status ? (
+            <Empty
+              icon={Building2}
+              title={`No ${(BOOKING_STATUS[status]?.label ?? status).toLowerCase()} requests`}
+              hint="Nothing of yours is in this state right now."
+              action={<Button onClick={() => changeStatus("")}>Show all requests</Button>}
+            />
+          ) : (
+            <Empty
+              icon={Building2}
+              title="No booking requests yet"
+              hint="Find a hotel in the platform catalog and send a request. The platform confirms it with the supplier."
+              action={<Button variant="primary" onClick={() => navigate("/marketplace")}>Browse catalog</Button>}
+            />
+          )
         ) : (
           <ul className="divide-y divide-slate-100">
             {rows.map((r) => (

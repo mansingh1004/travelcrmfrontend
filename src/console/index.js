@@ -21,3 +21,4 @@ export { default as ConsoleOps } from "./pages/Ops";
 export { default as ConsolePlatformHotels } from "./pages/PlatformHotels";
 export { default as ConsolePlatformHotelDetail } from "./pages/PlatformHotelDetail";
 export { default as ConsoleMarketplaceBookings } from "./pages/MarketplaceBookings";
+export { default as ConsoleMarketplaceCommissions } from "./pages/MarketplaceCommissions";

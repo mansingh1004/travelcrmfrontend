@@ -119,6 +119,7 @@ const ConsoleSuperAdmins = lazyPage(consoleFeature, "ConsoleSuperAdmins");
 const ConsolePlatformHotels      = lazyPage(consoleFeature, "ConsolePlatformHotels");
 const ConsolePlatformHotelDetail = lazyPage(consoleFeature, "ConsolePlatformHotelDetail");
 const ConsoleMarketplaceBookings = lazyPage(consoleFeature, "ConsoleMarketplaceBookings");
+const ConsoleMarketplaceCommissions = lazyPage(consoleFeature, "ConsoleMarketplaceCommissions");
 
 const portal = () => import("@features/portal");
 const PortalLogin         = lazyPage(portal, "PortalLogin");
@@ -252,6 +253,8 @@ const AppRouter = () => {
           <Route path="hotel-catalog/:publicId" element={<ConsolePlatformHotelDetail />} />
           {/* The approval queue. Only a decision taken here can confirm a tenant's hotel. */}
           <Route path="hotel-requests" element={<ConsoleMarketplaceBookings />} />
+          {/* The platform earning ledger — append-only, and SuperAdmin-only by construction. */}
+          <Route path="hotel-commissions" element={<ConsoleMarketplaceCommissions />} />
           <Route path="palette" element={<ConsolePalette />} />
         </Route>
 

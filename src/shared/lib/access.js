@@ -47,6 +47,11 @@ export const P = {
   HOTEL_MARKETPLACE_VIEW: "HOTEL_MARKETPLACE_VIEW",
   HOTEL_MARKETPLACE_SYNC_MASTER: "HOTEL_MARKETPLACE_SYNC_MASTER",
   HOTEL_MARKETPLACE_BOOK: "HOTEL_MARKETPLACE_BOOK",
+  // Withdraw a pending request, or ask the platform to cancel a confirmed one — one backend endpoint
+  // for both, because the tenant's intention is the same and only the server knows whether a room is
+  // being held. Separate from BOOK: placing an order and unwinding one confirmed with a hotel (which
+  // can carry a cancellation charge) are different authorities.
+  HOTEL_MARKETPLACE_CANCEL: "HOTEL_MARKETPLACE_CANCEL",
   // Sight of what the tenant owes the PLATFORM. Separate from BOOKING_PROFIT_READ because a payable
   // is a price, not a margin — gating it behind profit would hide it from TRAVEL_AGENT, the role that
   // actually places the orders and needs the number to quote a customer.
@@ -94,7 +99,7 @@ const ROLE_PERMISSIONS = {
     // Importing a platform hotel writes into the hotel master, so it tracks MASTER_MANAGE.
     // Mirrors Permission.defaultsFor(MANAGER) — Permission.java:217-218.
     P.HOTEL_MARKETPLACE_VIEW, P.HOTEL_MARKETPLACE_SYNC_MASTER,
-    P.HOTEL_MARKETPLACE_BOOK, P.MARKETPLACE_PAYABLE_READ,
+    P.HOTEL_MARKETPLACE_BOOK, P.HOTEL_MARKETPLACE_CANCEL, P.MARKETPLACE_PAYABLE_READ,
     // Mirrors Permission.defaultsFor(MANAGER) exactly — sees fleet money, does NOT settle it.
     P.FLEET_READ, P.FLEET_CREATE, P.FLEET_UPDATE, P.FLEET_DELETE, P.FLEET_MONEY_READ,
     P.ACCOUNTING_INVOICE_READ, P.ACCOUNTING_TDS_READ,
@@ -116,7 +121,10 @@ const ROLE_PERMISSIONS = {
     // BOOK and MARKETPLACE_PAYABLE_READ *are* granted (Permission.java:241): this is the role that
     // actually places marketplace orders, and the payable is a price it must know to quote the
     // customer — not a margin. Margin stays behind BOOKING_PROFIT_READ, which this role lacks.
-    P.HOTEL_MARKETPLACE_VIEW, P.HOTEL_MARKETPLACE_BOOK, P.MARKETPLACE_PAYABLE_READ,
+    // CANCEL is granted too (Permission.java:252): the role that places the order is the one that
+    // has to unwind it when the customer drops out, and withdrawing an unconfirmed request is free.
+    P.HOTEL_MARKETPLACE_VIEW, P.HOTEL_MARKETPLACE_BOOK, P.HOTEL_MARKETPLACE_CANCEL,
+    P.MARKETPLACE_PAYABLE_READ,
     // Deliberately NO FLEET_MONEY_*: a sales role plans and runs trips, but tenant-wide driver cash
     // positions, vendor rates and cost structure are not its business. Mirrors the backend.
     P.FLEET_READ, P.FLEET_CREATE, P.FLEET_UPDATE,

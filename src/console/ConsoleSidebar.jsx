@@ -4,6 +4,7 @@ import {
   LayoutDashboard,
   BedDouble,
   ClipboardCheck,
+  Coins,
   Building2,
   CreditCard,
   ArrowUpCircle,
@@ -35,6 +36,8 @@ const NAV = [
   // Its own badge, separate from "upgrades": a booking request is time-critical in a way a plan
   // upgrade is not — a tenant is holding a customer while this sits unanswered.
   { to: "/console/hotel-requests", label: "Hotel Requests", Icon: ClipboardCheck, badge: "hotelRequests" },
+  // No badge: the earning ledger is a report, not a queue — nothing on it waits on the operator.
+  { to: "/console/hotel-commissions", label: "Platform Earnings", Icon: Coins },
   { to: "/console/users", label: "Users", Icon: Users },
   { to: "/console/superadmins", label: "SuperAdmins", Icon: UserCog },
   { to: "/console/feature-flags", label: "Feature Flags", Icon: ToggleLeft },

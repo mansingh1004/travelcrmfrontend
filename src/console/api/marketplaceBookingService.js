@@ -3,9 +3,10 @@
 // The SuperAdmin queue for tenant hotel booking requests. Platform realm: ConsoleAPI carries
 // `sa_token`, so a 401 bounces to the CONSOLE login and never the tenant one.
 //
-// Approve and reject both require a step-up MFA code. They are not merely administrative: approving
-// commits the platform to a supplier and puts a payable on a tenant's books, and rejecting kills a
-// request a tenant may have already quoted to their customer.
+// Step-up MFA is required by exactly the three calls that move money: approve commits the platform
+// to a supplier and puts a payable on a tenant's books, reject kills a request a tenant may have
+// already quoted to their customer, and cancel decides what that tenant is refunded. Requesting a
+// revision and the voucher calls carry no code — see the notes on each.
 
 import ConsoleAPI, { unwrap } from "./consoleHttp";
 import { SUPERADMIN_MFA_HEADER } from "./userService";
@@ -45,7 +46,11 @@ export const marketplaceBookingService = {
     };
   },
 
-  /** Badge count for the sidebar: REQUESTED + TENANT_ACCEPTED — the two states waiting on us. */
+  /**
+   * Badge count for the sidebar: REQUESTED + TENANT_ACCEPTED + CANCEL_REQUESTED — every state
+   * waiting on the platform. TENANT_APPROVAL_REQUIRED is excluded because that one is waiting on
+   * the tenant, and a badge that counts somebody else's work is one operators learn to ignore.
+   */
   pendingCount: async () => {
     const data = unwrap(await ConsoleAPI.get(`${BASE}/pending-count`));
     return data?.count ?? 0;
@@ -70,6 +75,52 @@ export const marketplaceBookingService = {
       ...stepUpHeaders(mfaCode),
       params: clean({ reason }),
     })),
+
+  /**
+   * Put a revised price to the tenant instead of approving a number they never agreed to.
+   *
+   * No MFA, deliberately: this commits nobody to anything, and friction here would push operators
+   * towards approving the moved price outright — the dangerous action — rather than away from it.
+   *
+   * @param {object} payload ReviseMarketplaceBookingRequest — both amounts and `reason` are
+   *        required, and the server rejects `revisedTenantPayable < revisedSupplierTotal`.
+   *        `validForHours` omitted falls back to the platform default.
+   */
+  requestRevision: async (publicId, payload) =>
+    unwrap(await ConsoleAPI.post(`${BASE}/${publicId}/request-revision`, payload)),
+
+  /**
+   * Settle a cancellation. MFA — this is the call that decides the tenant's refund.
+   *
+   * @param {object} payload CancelMarketplaceBookingRequest. The refund is derived server-side from
+   *        `tenantPayable - cancellationCharge` and is never posted by a client.
+   */
+  cancel: async (publicId, payload, mfaCode) =>
+    unwrap(await ConsoleAPI.post(`${BASE}/${publicId}/cancel`, payload, stepUpHeaders(mfaCode))),
+
+  // ── Voucher: a second axis, not a booking state (MarketplaceVoucherAdminController) ──────
+  // No MFA on either: issuing or withdrawing a document moves no money and no booking state.
+
+  issueVoucher: async (publicId) =>
+    unwrap(await ConsoleAPI.post(`${BASE}/${publicId}/voucher/issue`)),
+
+  /** `reason` is a QUERY param here too. */
+  revokeVoucher: async (publicId, reason) =>
+    unwrap(await ConsoleAPI.post(`${BASE}/${publicId}/voucher/revoke`, null, {
+      params: clean({ reason }),
+    })),
+
+  /**
+   * The operator's copy. Unlike the tenant route this does not require an ISSUED voucher — the PDF
+   * carries a "Preview" stamp until then, because an operator has to read a document before
+   * committing to it.
+   *
+   * @returns {Promise<Blob>}
+   */
+  voucherPdf: async (publicId) => {
+    const res = await ConsoleAPI.get(`${BASE}/${publicId}/voucher.pdf`, { responseType: "blob" });
+    return res.data;
+  },
 };
 
 export default marketplaceBookingService;
