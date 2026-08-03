@@ -141,6 +141,9 @@ import API from "@shared/api/http";
 
 // ── Transformer: React form → Backend DTO ────────────────
 function transformFormData(formData, services = [], itinerary = []) {
+  // male + female, already derived in the form. Sent under BOTH names on purpose — see below.
+  const adultTotal = Number(formData.totalAdults) || Number(formData.adults) || 1;
+
   return {
     customerName:   formData.customerName?.trim()   || "",
     phone:          formData.phone?.trim()          || "",
@@ -150,20 +153,42 @@ function transformFormData(formData, services = [], itinerary = []) {
     leadStage:      formData.leadStage              || "",
     assignedUserId: formData.assignedUserId         || null,
     birthDate:      formData.birthDate              || null,
+    anniversaryDate: formData.anniversaryDate       || null,
+    preferredCommunication: formData.preferredCommunication || null,
+    followUpDate:   formData.followUpDate            || null,
+    packageType:    formData.packageType             || null,
     travelDate:     formData.travelDate             || null,
     departCountry:  formData.departCountry          || "Not Specified",
     departCity:     formData.departCity             || "Not Specified",
+    departureMode:  formData.departureMode          || null,
+    departureAirport: formData.departureAirport?.trim() || null,
+    airportCode:    formData.airportCode?.trim().toUpperCase() || null,
+    preferredFlightTime: formData.preferredFlightTime || null,
+    railwayStation: formData.railwayStation?.trim()  || null,
+    trainClass:     formData.trainClass?.trim()      || null,
+    preferredTrainTime: formData.preferredTrainTime || null,
+    pickupAddress:  formData.pickupAddress?.trim()   || null,
+    pickupDateTime: formData.pickupDateTime          || null,
+    vehiclePreference: formData.vehiclePreference?.trim() || null,
     
     // --- Room & Extra Bed ---
     rooms:          Number(formData.rooms)          || 1,
     extraBeds:      Number(formData.extraBeds)      || 0,
 
     // --- Exact Passenger Breakdown (Male, Female, etc.) ---
-    adultMale:      Number(formData.adultMale)      || 0,
-    adultFemale:    Number(formData.adultFemale)    || 0,
-    // totalAdults hum frontend se calculate karke bhej rahe hain, 
-    // fallback ke liye purana 'adults' bhi rakh diya hai just in case
-    totalAdults:    Number(formData.totalAdults) || Number(formData.adults) || 1, 
+    // Create and Edit both drive one TravelDetails component now, so there is a single set of
+    // names to read. They used to differ (adultMale/adultFemale here, male/female there) and the
+    // mismatch meant every lead update silently wrote 0 over the gender split.
+    male:           Number(formData.male)           || 0,
+    female:         Number(formData.female)         || 0,
+    /* The adult total goes out under both keys, and both are load-bearing:
+         adults      — what the rest of the app reads back off a lead. AllLeads' Travelers column,
+                       the View Lead modal, CreateQuotation's pax info and FollowupReports all do
+                       `lead.adults`. Dropping this key is what made adults disappear from those.
+         totalAdults — the newer name the lead form itself uses.
+       Keep both until every reader has moved over. */
+    adults:         adultTotal,
+    totalAdults:    adultTotal,
     children:       Number(formData.children)       || 0,
     infants:        Number(formData.infants)        || 0,
 

@@ -10,6 +10,8 @@ import { useToast } from "@shared/ui/toast";
 import { getErrorMessage, isAlreadyReported } from "@shared/api/apiError";
 import AccessDenied from "../components/AccessDenied";
 import { formatToWhatsAppLink } from "../lib/whatsapp";
+import PdfDownloadLoader from '@/shared/ui/PdfDownloadLoader';
+import { usePdfDownload } from '@shared/hooks/usePdfDownload';
 import WhatsAppPanel from "./WhatsAppPanel";
 import {
   Users, Trophy, PieChart, TrendingUp, Search,
@@ -844,6 +846,8 @@ function QuotationsModal({ lead, onClose, canDelete, canEdit }) {
   const [weblinkPickFor, setWeblinkPickFor] = useState(null);   // quotation whose WEBLINK design is being picked
   const [emailingId, setEmailing] = useState(null);
   const [webViewQ, setWebViewQ] = useState(null);   // quotation shown in the web view overlay
+  const [previewPickFor, setPreviewPickFor] = useState(null);  // quotation whose weblink DESIGN is being picked
+  const [webViewStyle, setWebViewStyle] = useState(null);      // one-off design override for the open web view
   const [copied, setCopied] = useState(false);
   const [analyticsQ, setAnalyticsQ] = useState(null);   // quotation shown in the weblink-analytics modal
   const [deletingId, setDeletingId] = useState(null);   // quotation being deleted
@@ -889,6 +893,10 @@ function QuotationsModal({ lead, onClose, canDelete, canEdit }) {
     return () => { active = false; };
   }, [leadId]);
 
+  // Shared PDF pipeline: usePdfDownload streams the blob (real % only when the server sends a
+  // usable total) and <PdfDownloadLoader/> below shows the full-screen "preparing your PDF" card.
+  const { downloadPdf: runPdfDownload, isDownloading: pdfBusy, progress: pdfProgress, progressSupported: pdfProgressSupported } = usePdfDownload();
+
   // Style is chosen in the download dialog and passed straight through as a one-off override —
   // deliberately NOT saved on the quotation, so downloading a Premium copy does not change what the
   // customer sees on the share link.
@@ -896,17 +904,15 @@ function QuotationsModal({ lead, onClose, canDelete, canEdit }) {
     try {
       setStylePickFor(null);
       setDownloading(q.publicId);
-      const res = await quotationService.generatePdf(q.publicId, style);
-      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `quotation-${q.version || q.publicId}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
+      // Readable business code in the file name — never the raw UUID when a code exists.
+      const code = q.quoteNo || q.version || String(q.publicId).slice(0, 8).toUpperCase();
+      await runPdfDownload({
+        endpoint: `/quotations/${q.publicId}/pdf`,
+        params: style ? { style } : undefined,
+        fileName: `TravelCRM-Quotation-${code}.pdf`,
+      });
     } catch (e) {
-      // The response is a Blob here, so there is no envelope to read — the fallback carries it.
+      // The hook rehydrates the Blob error envelope, so getErrorMessage can read the real message.
       if (isAlreadyReported(e)) return;
       showToast(getErrorMessage(e, 'Could not download the PDF. Please try again.'), 'error');
     } finally {
@@ -918,7 +924,22 @@ function QuotationsModal({ lead, onClose, canDelete, canEdit }) {
   const webLink = (q) => `${window.location.origin}/q/${q.publicId}`;
 
   // Copy the web link so the agent can paste it anywhere to share with the client.
-  const copyLink = async (q) => {
+  // The design being previewed is SAVED first (same rule as the WhatsApp share flow): the
+  // customer's link renders the STORED style, so what the agent saw must be what the link
+  // opens. If the save fails, nothing is copied — a link to the wrong design must never
+  // leave the clipboard.
+  const copyLink = async (q, style) => {
+    try {
+      if (style && style !== (q.templateStyle || 'CLASSIC')) {
+        await quotationService.setTemplateStyle(q.publicId, style);
+        setList(prev => prev.map(x => x.publicId === q.publicId ? { ...x, templateStyle: style } : x));
+        setWebViewQ(prev => (prev && prev.publicId === q.publicId ? { ...prev, templateStyle: style } : prev));
+      }
+    } catch (e) {
+      if (isAlreadyReported(e)) return;
+      showToast(getErrorMessage(e, 'Could not set the design. Link not copied.'), 'error');
+      return;
+    }
     try {
       await navigator.clipboard.writeText(webLink(q));
       setCopied(true);
@@ -1054,7 +1075,7 @@ function QuotationsModal({ lead, onClose, canDelete, canEdit }) {
                       <Eye size={13} /> Weblink
                     </button>
 
-                    <button onClick={() => setStylePickFor(q)} disabled={downloadingId === q.publicId}
+                    <button onClick={() => setStylePickFor(q)} disabled={downloadingId === q.publicId || pdfBusy}
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 hover:border-blue-300 text-slate-600 hover:text-blue-600 text-xs font-bold transition-all disabled:opacity-50">
                       <DownloadCloud size={13} /> {downloadingId === q.publicId ? 'Downloading…' : 'PDF'}
                     </button>
@@ -1100,13 +1121,13 @@ function QuotationsModal({ lead, onClose, canDelete, canEdit }) {
       {webViewQ && (
         <div className="fixed inset-0 z-[60] bg-white overflow-y-auto">
           <div className="sticky top-0 z-10 bg-white/90 backdrop-blur border-b border-slate-200 px-4 py-3 flex items-center justify-between gap-3">
-            <button onClick={() => setWebViewQ(null)}
+            <button onClick={() => { setWebViewQ(null); setWebViewStyle(null); }}
               className="inline-flex items-center gap-1.5 text-sm font-bold text-slate-600 hover:text-blue-600 flex-shrink-0">
               <X size={16} /> Back
             </button>
             {/* Share this quotation with the client */}
             <div className="flex items-center gap-2 flex-wrap justify-end">
-              <button onClick={() => copyLink(webViewQ)}
+              <button onClick={() => copyLink(webViewQ, webViewStyle)}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 hover:border-blue-300 text-slate-600 hover:text-blue-600 text-xs font-bold transition-all">
                 <Copy size={13} /> {copied ? 'Copied!' : 'Copy link'}
               </button>
@@ -1120,8 +1141,22 @@ function QuotationsModal({ lead, onClose, canDelete, canEdit }) {
               </button>
             </div>
           </div>
-          <QuotationWebView publicId={webViewQ.publicId} />
+          <QuotationWebView publicId={webViewQ.publicId} styleOverride={webViewStyle} />
         </div>
+      )}
+
+      {/* Design picker for the weblink preview — Classic / Modern / Premium, nothing saved. */}
+      {previewPickFor && (
+        <QuotationStyleModal
+          mode="preview"
+          savedStyle={previewPickFor.templateStyle}
+          onSelect={(style) => {
+            setWebViewStyle(style);
+            setWebViewQ(previewPickFor);
+            setPreviewPickFor(null);
+          }}
+          onClose={() => setPreviewPickFor(null)}
+        />
       )}
 
       {analyticsQ && <WeblinkAnalyticsModal quotation={analyticsQ} onClose={() => setAnalyticsQ(null)} />}
@@ -1150,6 +1185,14 @@ function QuotationsModal({ lead, onClose, canDelete, canEdit }) {
           onClose={() => setWeblinkPickFor(null)}
         />
       )}
+
+      {/* Full-screen "preparing your PDF" overlay — z-above the web view (z-[60]) and pickers. */}
+      <PdfDownloadLoader
+        open={pdfBusy}
+        documentType="Quotation"
+        progress={pdfProgress}
+        progressSupported={pdfProgressSupported}
+      />
     </div>
   );
 }
@@ -1408,7 +1451,6 @@ const Leads = () => {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [quotationsLead, setQuotationsLead] = useState(null);
   const [suggestLead, setSuggestLead] = useState(null);   // "Suggest packages" modal target
-  const [convertLead, setConvertLead] = useState(null);
   const [logLead, setLogLead] = useState(null);
   const [logsViewLead, setLogsViewLead] = useState(null);
   const [weblinkLead, setWeblinkLead] = useState(null);   // lead whose weblink analytics are open
@@ -1546,10 +1588,8 @@ const Leads = () => {
 
   // Reflect a successful conversion in the list: flip the lead to Converted and link the booking,
   // so the row's action relabels to "Booked ↗" and a second conversion can't be started.
-  const handleConverted = (convertedLead, booking) => {
-    setLeads(prev => prev.map(l => l.id === convertedLead.id
-      ? { ...l, leadStage: 'Converted', convertedBookingPublicId: booking?.publicId }
-      : l));
+  const handleConvertNavigate = (lead) => {
+    navigate(`/CreateBooking/${lead.publicId || lead.id}`);
   };
 
   const handleLogAdded = (leadId) => {
@@ -1693,7 +1733,6 @@ const Leads = () => {
       {/* No onToast prop: every modal reaches the shared toast store directly. */}
       {quotationsLead && <QuotationsModal lead={quotationsLead} onClose={() => setQuotationsLead(null)} canEdit={hasPermission(P.QUOTATION_UPDATE)} canDelete={hasPermission(P.QUOTATION_DELETE)} />}
       {suggestLead && <SuggestPackagesModal lead={suggestLead} onClose={() => setSuggestLead(null)} />}
-      {convertLead && <ConvertToBookingModal lead={convertLead} onClose={() => setConvertLead(null)} onConverted={handleConverted} />}
       {logLead && <AddLogModal lead={logLead} onClose={() => setLogLead(null)} onLogAdded={handleLogAdded} />}
       {logsViewLead && <LogsModal lead={logsViewLead} onClose={() => setLogsViewLead(null)} canDelete={hasPermission(P.LEAD_UPDATE)} />}
       {weblinkLead?.latestQuotation && <WeblinkAnalyticsModal quotation={weblinkLead.latestQuotation} onClose={() => setWeblinkLead(null)} />}
@@ -1935,7 +1974,7 @@ const Leads = () => {
                         onTypeChange={handleTypeChange}
                         onViewQuotations={setQuotationsLead}
                         onSuggestPackages={setSuggestLead}
-                        onConvert={setConvertLead}
+                        onConvert={handleConvertNavigate}
                         onAddLog={setLogLead}
                         onViewLogs={setLogsViewLead}
                         onWeblinkStats={setWeblinkLead}

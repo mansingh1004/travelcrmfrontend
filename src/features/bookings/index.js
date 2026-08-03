@@ -8,4 +8,5 @@ export { default as BookingDetails } from "./pages/BookingDetails";
 export { default as bookingService } from "./api/bookingService";
 export { default as BookingPayments } from "./pages/BookingPayments";
 export { default as BookingServices } from "./pages/BookingServices"
+export { default as CreateBooking } from "./pages/CreateBooking";
 

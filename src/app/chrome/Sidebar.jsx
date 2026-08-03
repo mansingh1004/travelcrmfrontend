@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 
-import { LayoutDashboard, Users, Database, ChevronDown, Circle, Plane, FileText, CalendarDays, UserCheck, Store, UserCog, BarChart3, Settings, CircleUser, User, CreditCard, LogOut, Bell, BellRing, CalendarClock, CalendarCheck, Trash2, Truck, Network, HandCoins, Landmark, Receipt, Megaphone, Plug, Building2 } from 'lucide-react';
+import { LayoutDashboard, Users, Database, ChevronDown, Circle, Plane, FileText, CalendarDays, CalendarPlus, UserCheck, Store, UserCog, BarChart3, Settings, CircleUser, User, CreditCard, LogOut, Bell, BellRing, CalendarClock, CalendarCheck, Trash2, Truck, Network, HandCoins, Landmark, Receipt, Megaphone, Plug, Building2 } from 'lucide-react';
 import { isSuperAdmin, isTenantAdmin, isSubAgent, hasPermission, hasAnyPermission, hasModule, loadMyEntitlements, clearMyPermissions, clearMyEntitlements, P } from "@shared/lib/access";
 import { companyService } from "@features/settings";
 
@@ -336,7 +336,7 @@ const Sidebar = ({ isExpanded, setExpanded }) => {
               {showSidebar && openDropdown === 'Bookings' && (
                 <ul className="mt-1 space-y-1 mb-2">
                   <li><Link to="/Allbookings" onClick={() => handleLinkClick('Bookings')} className="flex items-center gap-3 px-4 py-2.5 pl-11 text-[13.5px] font-medium text-slate-400 hover:text-white hover:bg-white/5 rounded-lg whitespace-nowrap transition-colors"><Circle size={6} className="fill-current text-orange-400/50" /><span>All Bookings</span></Link></li>
-                  <li><Link to="/allleads" onClick={() => handleLinkClick('Bookings')} className="flex items-center gap-3 px-4 py-2.5 pl-11 text-[13.5px] font-medium text-slate-400 hover:text-white hover:bg-white/5 rounded-lg whitespace-nowrap transition-colors"><Circle size={6} className="fill-current text-orange-400/50" /><span>Add New Booking</span></Link></li>
+                  <li><Link to="/CreateBooking" onClick={() => handleLinkClick('Bookings')} className="flex items-center gap-3 px-4 py-2.5 pl-11 text-[13.5px] font-medium text-slate-400 hover:text-white hover:bg-white/5 rounded-lg whitespace-nowrap transition-colors"><CalendarPlus size={15} className="text-orange-400" /><span>Add New Booking</span></Link></li>
                 </ul>
               )}
             </li>

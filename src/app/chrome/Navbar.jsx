@@ -2,7 +2,7 @@
 import { memo, useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom"; 
 import {
-  Menu, Plane, Bell, User, ChevronDown, ChevronRight,
+  Menu, Plane, Bell, User, ChevronDown, ChevronRight, CalendarPlus,
   Search, Settings, LogOut, HelpCircle, CheckCheck,
 } from "lucide-react";
 import { notificationService } from "@features/reminders";
@@ -356,10 +356,12 @@ const Navbar = memo(function Navbar({
 
         {/* New Booking CTA (Hidden on tiny phones, visible everywhere else) */}
         <button
-          onClick={onNewBooking}
+          onClick={() => onNewBooking ? onNewBooking() : navigate("/CreateBooking")}
+          aria-label="Create booking"
+          title="Create booking"
           className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 active:scale-95 transition-all text-xs font-semibold border border-blue-100"
         >
-          <Plane size={14} className="-rotate-45" />
+          <CalendarPlus size={15} />
           <span className="hidden lg:block">New Booking</span>
         </button>
 
