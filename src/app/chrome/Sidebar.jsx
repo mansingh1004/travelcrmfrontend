@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 
-import { LayoutDashboard, Users, Database, ChevronDown, Circle, Plane, FileText, CalendarDays, CalendarPlus, UserCheck, Store, UserCog, BarChart3, Settings, CircleUser, User, CreditCard, LogOut, Bell, BellRing, CalendarClock, CalendarCheck, Trash2, Truck, Network, HandCoins, Landmark, Receipt, Megaphone, Plug, Building2 } from 'lucide-react';
+import { LayoutDashboard, Users, Database, ChevronDown, Circle, Plane, FileText, CalendarDays, CalendarPlus, UserCheck, Store, UserCog, BarChart3, Settings, CircleUser, User, CreditCard, LogOut, Bell, BellRing, CalendarClock, CalendarCheck, Trash2, Truck, Network, HandCoins, Landmark, Receipt, Megaphone, Plug, Building2, ClipboardList } from 'lucide-react';
 import { isSuperAdmin, isTenantAdmin, isSubAgent, hasPermission, hasAnyPermission, hasModule, loadMyEntitlements, clearMyPermissions, clearMyEntitlements, P } from "@shared/lib/access";
 import { companyService } from "@features/settings";
 
@@ -126,7 +126,9 @@ const Sidebar = ({ isExpanded, setExpanded }) => {
       <nav className="flex-1 overflow-y-auto py-5 custom-scrollbar overflow-x-hidden">
         <ul className="space-y-1.5 px-3">
 
-          {!isSubAgent() && (
+          {/* Module-gated to match the backend: ModuleAccessFilter maps /api/dashboard → DASHBOARD.
+              Ungated, this menu showed for a Fleet-only tenant and every click 403'd. */}
+          {!isSubAgent() && hasModule("DASHBOARD") && (
             <li>
               <Link
                 to="/Dashboard"
@@ -141,7 +143,9 @@ const Sidebar = ({ isExpanded, setExpanded }) => {
           )}
 
           {/* --- Calendar (Task & Team Calendar) --- */}
-          {hasPermission(P.TASK_READ) && (
+          {/* TASKS, not a key of its own — the calendar is an aggregation over tasks, and that is
+              exactly how ModuleAccessFilter maps both /api/tasks and /api/calendar. */}
+          {hasPermission(P.TASK_READ) && hasModule("TASKS") && (
             <li>
               <Link
                 to="/calendar"
@@ -366,7 +370,7 @@ const Sidebar = ({ isExpanded, setExpanded }) => {
           )}
 
           {/* --- Marketing & Campaigns Dropdown --- */}
-          {hasPermission(P.MARKETING_READ) && (
+          {hasPermission(P.MARKETING_READ) && hasModule("MARKETING") && (
             <li>
               <button
                 onClick={() => handleMenuClick('Marketing')}
@@ -434,41 +438,70 @@ const Sidebar = ({ isExpanded, setExpanded }) => {
                   <li><Link to="/fleet/vehicles" onClick={() => handleLinkClick('Fleet')} className="flex items-center gap-3 px-4 py-2.5 pl-11 text-[13.5px] font-medium text-slate-400 hover:text-white hover:bg-white/5 rounded-lg whitespace-nowrap transition-colors"><Circle size={6} className="fill-current text-sky-400/50" /><span>Vehicles</span></Link></li>
                   <li><Link to="/fleet/drivers" onClick={() => handleLinkClick('Fleet')} className="flex items-center gap-3 px-4 py-2.5 pl-11 text-[13.5px] font-medium text-slate-400 hover:text-white hover:bg-white/5 rounded-lg whitespace-nowrap transition-colors"><Circle size={6} className="fill-current text-sky-400/50" /><span>Drivers</span></Link></li>
                   <li><Link to="/fleet/trips" onClick={() => handleLinkClick('Fleet')} className="flex items-center gap-3 px-4 py-2.5 pl-11 text-[13.5px] font-medium text-slate-400 hover:text-white hover:bg-white/5 rounded-lg whitespace-nowrap transition-colors"><Circle size={6} className="fill-current text-sky-400/50" /><span>Trips</span></Link></li>
+                  {/* Gated on FLEET_MONEY_READ, not FLEET_READ: a dispatcher runs the diary without
+                      seeing cost structure or who is holding the company's cash. */}
+                  {hasPermission(P.FLEET_MONEY_READ) && (
+                    <li><Link to="/fleet/expenses" onClick={() => handleLinkClick('Fleet')} className="flex items-center gap-3 px-4 py-2.5 pl-11 text-[13.5px] font-medium text-slate-400 hover:text-white hover:bg-white/5 rounded-lg whitespace-nowrap transition-colors"><Circle size={6} className="fill-current text-sky-400/50" /><span>Expenses</span></Link></li>
+                  )}
+                  {hasPermission(P.FLEET_MONEY_READ) && (
+                    <li><Link to="/fleet/settlements" onClick={() => handleLinkClick('Fleet')} className="flex items-center gap-3 px-4 py-2.5 pl-11 text-[13.5px] font-medium text-slate-400 hover:text-white hover:bg-white/5 rounded-lg whitespace-nowrap transition-colors"><Circle size={6} className="fill-current text-sky-400/50" /><span>Driver Cash</span></Link></li>
+                  )}
+                  {hasPermission(P.FLEET_MONEY_READ) && (
+                    <li><Link to="/fleet/periods" onClick={() => handleLinkClick('Fleet')} className="flex items-center gap-3 px-4 py-2.5 pl-11 text-[13.5px] font-medium text-slate-400 hover:text-white hover:bg-white/5 rounded-lg whitespace-nowrap transition-colors"><Circle size={6} className="fill-current text-sky-400/50" /><span>Month Close</span></Link></li>
+                  )}
+                  {/* Operational, not money — gated on FLEET_READ like the rest of the diary. */}
+                  <li><Link to="/fleet/compliance" onClick={() => handleLinkClick('Fleet')} className="flex items-center gap-3 px-4 py-2.5 pl-11 text-[13.5px] font-medium text-slate-400 hover:text-white hover:bg-white/5 rounded-lg whitespace-nowrap transition-colors"><Circle size={6} className="fill-current text-sky-400/50" /><span>Compliance</span></Link></li>
                 </ul>
               )}
             </li>
           )}
 
-          {/* --- Hotel Management Dropdown (self-contained module; visible to all staff) --- */}
-          <li>
-            <button
-              onClick={() => handleMenuClick('Hotels')}
-              className={`w-full flex items-center py-3 rounded-xl transition-all duration-200 ${showSidebar ? 'justify-between px-4' : 'justify-center px-0'} ${activeTab === 'Hotels' ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20 font-semibold' : 'hover:bg-white/5 hover:text-white font-medium'
-                }`}
-            >
-              <div className={`flex items-center ${showSidebar ? 'gap-3.5' : ''}`}>
-                <Building2 size={20} strokeWidth={activeTab === 'Hotels' ? 2.5 : 2} className={`shrink-0 ${activeTab === 'Hotels' ? 'text-white' : 'text-blue-400'}`} />
-                {showSidebar && <span className="text-[14px] whitespace-nowrap tracking-wide">Hotel Management</span>}
-              </div>
-              {showSidebar && <ChevronDown size={16} className={`transition-transform duration-200 opacity-70 ${openDropdown === 'Hotels' ? 'rotate-180' : ''}`} />}
-            </button>
-            {showSidebar && openDropdown === 'Hotels' && (
-              <ul className="mt-1 space-y-1 mb-2">
-                <li><Link to="/hotels/dashboard" onClick={() => handleLinkClick('Hotels')} className="flex items-center gap-3 px-4 py-2.5 pl-11 text-[13.5px] font-medium text-slate-400 hover:text-white hover:bg-white/5 rounded-lg whitespace-nowrap transition-colors"><Circle size={6} className="fill-current text-blue-400/50" /><span>Dashboard</span></Link></li>
-                <li><Link to="/hotels" onClick={() => handleLinkClick('Hotels')} className="flex items-center gap-3 px-4 py-2.5 pl-11 text-[13.5px] font-medium text-slate-400 hover:text-white hover:bg-white/5 rounded-lg whitespace-nowrap transition-colors"><Circle size={6} className="fill-current text-blue-400/50" /><span>Hotels</span></Link></li>
-                <li><Link to="/hotels/room-types" onClick={() => handleLinkClick('Hotels')} className="flex items-center gap-3 px-4 py-2.5 pl-11 text-[13.5px] font-medium text-slate-400 hover:text-white hover:bg-white/5 rounded-lg whitespace-nowrap transition-colors"><Circle size={6} className="fill-current text-blue-400/50" /><span>Room Types</span></Link></li>
-                <li><Link to="/hotels/inventory" onClick={() => handleLinkClick('Hotels')} className="flex items-center gap-3 px-4 py-2.5 pl-11 text-[13.5px] font-medium text-slate-400 hover:text-white hover:bg-white/5 rounded-lg whitespace-nowrap transition-colors"><Circle size={6} className="fill-current text-blue-400/50" /><span>Inventory Calendar</span></Link></li>
-                <li><Link to="/hotels/bookings" onClick={() => handleLinkClick('Hotels')} className="flex items-center gap-3 px-4 py-2.5 pl-11 text-[13.5px] font-medium text-slate-400 hover:text-white hover:bg-white/5 rounded-lg whitespace-nowrap transition-colors"><Circle size={6} className="fill-current text-blue-400/50" /><span>Bookings</span></Link></li>
-                <li><Link to="/hotels/pricing" onClick={() => handleLinkClick('Hotels')} className="flex items-center gap-3 px-4 py-2.5 pl-11 text-[13.5px] font-medium text-slate-400 hover:text-white hover:bg-white/5 rounded-lg whitespace-nowrap transition-colors"><Circle size={6} className="fill-current text-blue-400/50" /><span>Pricing</span></Link></li>
-                <li><Link to="/hotels/amenities" onClick={() => handleLinkClick('Hotels')} className="flex items-center gap-3 px-4 py-2.5 pl-11 text-[13.5px] font-medium text-slate-400 hover:text-white hover:bg-white/5 rounded-lg whitespace-nowrap transition-colors"><Circle size={6} className="fill-current text-blue-400/50" /><span>Amenities</span></Link></li>
-                <li><Link to="/hotels/housekeeping" onClick={() => handleLinkClick('Hotels')} className="flex items-center gap-3 px-4 py-2.5 pl-11 text-[13.5px] font-medium text-slate-400 hover:text-white hover:bg-white/5 rounded-lg whitespace-nowrap transition-colors"><Circle size={6} className="fill-current text-blue-400/50" /><span>Housekeeping</span></Link></li>
-                <li><Link to="/hotels/reports" onClick={() => handleLinkClick('Hotels')} className="flex items-center gap-3 px-4 py-2.5 pl-11 text-[13.5px] font-medium text-slate-400 hover:text-white hover:bg-white/5 rounded-lg whitespace-nowrap transition-colors"><Circle size={6} className="fill-current text-blue-400/50" /><span>Reports</span></Link></li>
-              </ul>
-            )}
-          </li>
+          {/* --- Hotel Marketplace --- */}
+          {/* Replaces the old "Hotel Management" dropdown, which was a fully-mocked PMS (occupancy,
+              ADR, housekeeping, channel manager) with no backend — every screen showed fabricated
+              data to real users. Its supply-side pages now live in the SuperAdmin console, where the
+              catalog is actually owned. What a TENANT gets is a single entry: browse the platform
+              catalog and import a hotel into its own master.
+              Gated on the HOTEL_MARKETPLACE add-on, NOT on MASTERS: the tenant's own private hotel
+              master must keep working on every plan even when the marketplace is off. */}
+          {hasPermission(P.HOTEL_MARKETPLACE_VIEW) && hasModule("HOTEL_MARKETPLACE") && (
+            <li>
+              <Link
+                to="/marketplace"
+                onClick={() => handleLinkClick('Marketplace')}
+                className={`w-full flex items-center py-3 rounded-xl transition-all duration-200 ${showSidebar ? 'px-4' : 'justify-center px-0'} ${activeTab === 'Marketplace' ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20 font-semibold' : 'hover:bg-white/5 hover:text-white font-medium'
+                  }`}
+              >
+                <div className={`flex items-center ${showSidebar ? 'gap-3.5' : ''}`}>
+                  <Building2 size={20} strokeWidth={activeTab === 'Marketplace' ? 2.5 : 2} className={`shrink-0 ${activeTab === 'Marketplace' ? 'text-white' : 'text-blue-400'}`} />
+                  {showSidebar && <span className="text-[14px] whitespace-nowrap tracking-wide">Hotel Marketplace</span>}
+                </div>
+              </Link>
+            </li>
+          )}
+
+          {/* --- Hotel booking requests (tenant side of the approval queue) ---
+              Same gate as the catalog: VIEW + the add-on. Sending a request needs
+              HOTEL_MARKETPLACE_BOOK, but *reading your own* requests does not — a manager who
+              cannot place orders still needs to see where the ones already placed have got to. */}
+          {hasPermission(P.HOTEL_MARKETPLACE_VIEW) && hasModule("HOTEL_MARKETPLACE") && (
+            <li>
+              <Link
+                to="/marketplace/bookings"
+                onClick={() => handleLinkClick('HotelRequests')}
+                className={`w-full flex items-center py-3 rounded-xl transition-all duration-200 ${showSidebar ? 'px-4' : 'justify-center px-0'} ${activeTab === 'HotelRequests' ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20 font-semibold' : 'hover:bg-white/5 hover:text-white font-medium'
+                  }`}
+              >
+                <div className={`flex items-center ${showSidebar ? 'gap-3.5' : ''}`}>
+                  <ClipboardList size={20} strokeWidth={activeTab === 'HotelRequests' ? 2.5 : 2} className={`shrink-0 ${activeTab === 'HotelRequests' ? 'text-white' : 'text-blue-400'}`} />
+                  {showSidebar && <span className="text-[14px] whitespace-nowrap tracking-wide">Hotel Requests</span>}
+                </div>
+              </Link>
+            </li>
+          )}
 
           {/* --- Accounting / GST Dropdown (ACCOUNTANT/MANAGER + TENANT_ADMIN) --- */}
-          {hasAnyPermission(P.ACCOUNTING_INVOICE_READ, P.ACCOUNTING_TDS_READ) && (
+          {hasAnyPermission(P.ACCOUNTING_INVOICE_READ, P.ACCOUNTING_TDS_READ) && hasModule("ACCOUNTING") && (
             <li>
               <button
                 onClick={() => handleMenuClick('Accounting')}

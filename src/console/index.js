@@ -18,3 +18,6 @@ export { default as ConsoleGlobalConfig } from "./pages/GlobalConfig";
 export { default as ConsoleAuditLog } from "./pages/AuditLog";
 export { default as ConsoleAnnouncements } from "./pages/Announcements";
 export { default as ConsoleOps } from "./pages/Ops";
+export { default as ConsolePlatformHotels } from "./pages/PlatformHotels";
+export { default as ConsolePlatformHotelDetail } from "./pages/PlatformHotelDetail";
+export { default as ConsoleMarketplaceBookings } from "./pages/MarketplaceBookings";

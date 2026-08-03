@@ -86,6 +86,11 @@ export default function QuickCityModal({
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState({});
 
+  // Mirrors `saving` for the Escape listener, which is registered once per open and would
+  // otherwise close over a permanently-false value. See handleEscape below.
+  const savingRef = useRef(false);
+  savingRef.current = saving;
+
   const destinationId = destinationIdOf(resolvedDestination || destination);
   const destinationName =
     resolvedDestination?.name ||
@@ -123,8 +128,19 @@ export default function QuickCityModal({
     setSaving(false);
     setErrors({});
 
+    // OLD — replaced in create-form redesign
+    // const handleEscape = (event) => {
+    //   if (event.key === "Escape" && !saving) {
+    //     onClose?.();
+    //   }
+    // };
+    //
+    // This effect's deps are [open, destination], so `saving` was captured at open time and stayed
+    // false for the life of the dialog. Esc therefore closed the modal mid-save — something the X
+    // button already refuses to do (closeSafely). Reading through a ref keeps the guard honest
+    // without re-registering the listener on every keystroke.
     const handleEscape = (event) => {
-      if (event.key === "Escape" && !saving) {
+      if (event.key === "Escape" && !savingRef.current) {
         onClose?.();
       }
     };
@@ -334,7 +350,17 @@ export default function QuickCityModal({
   };
 
   const handleSubmit = async (event) => {
+    // OLD — replaced in create-form redesign
+    // event.preventDefault();
+    //
+    // preventDefault alone was not enough. This modal is createPortal'd to document.body, but it is
+    // still a React CHILD of ItinerarySection, which renders inside CreateLead's <form>. React
+    // replays events through the React tree, not the DOM tree, so submitting this dialog also ran
+    // the lead form's handleSubmit — i.e. adding a missing city could POST a half-finished lead.
+    // preventDefault only stops the browser's native submit; stopPropagation is what keeps the
+    // event out of the parent form's React handler.
     event.preventDefault();
+    event.stopPropagation();
 
     if (!validate()) return;
 

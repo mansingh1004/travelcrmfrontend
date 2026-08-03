@@ -1,4 +1,8 @@
-// src/features/hotels/components/hotelUi.jsx
+// src/console/components/hotelUi.jsx
+// Moved here from the retired `features/hotels` module (a fully-mocked hotel PMS) when the platform
+// hotel catalog became a SuperAdmin surface. Its blue-600/slate idiom is kept deliberately: a re-skin
+// onto the console's violet semantic tokens (bg-page / text-heading / bg-accent) is a separate pass,
+// so DO NOT mix those utilities in here piecemeal — half-converted is worse than either.
 // ─────────────────────────────────────────────────────────────
 // Self-contained UI kit for the Hotel Management module.
 // Mirrors the app's design system 1:1 (same tokens as fleetUi.jsx):

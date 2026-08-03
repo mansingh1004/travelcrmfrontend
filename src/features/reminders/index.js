@@ -8,3 +8,6 @@ export { default as BookingReminders } from "./pages/BookingReminders";
 export { default as Notifications } from "./pages/Notifications";
 export { default as NotificationSettings } from "./pages/NotificationSettings";
 export { default as notificationService } from "./api/notificationService";
+// Consumed by the bookings feature's details screen, which lists a booking's reminders by
+// bookingCode and can trigger send-now.
+export { default as bookingReminderService } from "./api/bookingReminderService";

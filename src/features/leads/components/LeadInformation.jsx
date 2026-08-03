@@ -10,12 +10,18 @@ import { useLeadSources } from "../lib/useLeadSources";
 // GET /api/leads/meta/sources, derived from LeadSource.values(); see useLeadSources.
 // Do not reintroduce a local copy, including as a fetch-failure fallback.
 
-const LEAD_TYPES  = ["Fresh Lead", "Repeat Customer", "Corporate", "VIP"];
+// Backend LeadType — the priority vocabulary, exactly four values. Was
+// ["Fresh Lead", "Repeat Customer", "Corporate", "VIP"], which mixed lead temperature with client
+// category; the category half now belongs on the customer record (Customer.type).
+const LEAD_TYPES  = ["Fresh", "Hot", "Warm", "Cold"];
 const COMMUNICATION_PREFERENCES = ["WhatsApp", "Call", "Email", "SMS"];
 const PACKAGE_TYPES = ["Family", "Honeymoon", "Group", "Corporate", "Pilgrimage", "Adventure"];
+// Mirrors the backend LeadStage enum (8 constants) in declaration order. "Reopened" was missing
+// here while LeadStage.REOPENED existed server-side, so a reopened lead rendered with no matching
+// pill and could not be set from this form.
 const LEAD_STAGES = [
   "New Lead", "Contacted", "Follow Up",
-  "Qualified", "Proposal Sent", "Converted", "Lost",
+  "Qualified", "Proposal Sent", "Converted", "Reopened", "Lost",
 ];
 
 const stageColors = {
@@ -25,6 +31,7 @@ const stageColors = {
   "Qualified":     "bg-purple-100 text-purple-700",
   "Proposal Sent": "bg-indigo-100 text-indigo-700",
   "Converted":     "bg-green-100  text-green-700",
+  "Reopened":      "bg-cyan-100   text-cyan-700",
   "Lost":          "bg-red-100    text-red-700",
 };
 

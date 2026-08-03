@@ -1,4 +1,4 @@
-// src/features/hotels/components/hotelWidgets.jsx
+// src/console/components/hotelWidgets.jsx  (moved from the retired `features/hotels` module)
 // Composite, presentational widgets specific to the Hotel module.
 // All are data-driven (props only) — no hardcoded content.
 

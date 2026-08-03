@@ -56,6 +56,38 @@ const customerService = {
       params: { phone },
     }),
 
+  /* ── "DO WE ALREADY KNOW THIS PERSON?" ──────────────────────
+     GET /api/customers/lookup?phone=&email=
+     Response: CustomerMatchResponse
+       { matched, matchedOn: PHONE|EMAIL|BOTH, message, customerId, customerCode,
+         name, phone, email, city, state, birthday, anniversary, type, tier,
+         totalBookings, totalSpent, lastBookingDate }
+
+     NOT the same contract as searchByPhone above, and the difference is the whole point:
+       • searchByPhone is a strict phone-only fetch that 404s on no match.
+       • this one accepts EITHER identifier and answers 200 with { matched:false } when nobody
+         matches, because "this is a new customer" is the ordinary outcome on a lead form, not a
+         failed request. A 404 here would make the shared interceptor shout at the clerk on every
+         genuinely new enquiry.
+
+     Both params are optional but at least one must be sent; when both are present the backend
+     prefers phone (the per-tenant natural key). Matching runs through the same CustomerMatcher that
+     links the lead at creation, so this probe can never promise a link the save does not make.
+
+     Returns the match object directly (envelope already unwrapped), or a no-match object if the
+     probe itself fails — an advisory lookup must never block data entry.
+  ──────────────────────────────────────────────────────────── */
+  lookup: async ({ phone, email } = {}) => {
+    const params = {};
+    if (phone && String(phone).trim()) params.phone = String(phone).trim();
+    if (email && String(email).trim()) params.email = String(email).trim();
+    if (!params.phone && !params.email) return { matched: false };
+
+    const response = await API.get("/customers/lookup", { params });
+    const body = response?.data;
+    return body?.data ?? body ?? { matched: false };
+  },
+
   /* ── SEARCH CUSTOMERS BY NAME ───────────────────────────────
      GET /api/customers/search-name?name=Arjun
      Response: CustomerResponseDTO[]

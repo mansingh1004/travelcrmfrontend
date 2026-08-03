@@ -128,6 +128,13 @@ export default function QuickDestinationModal({
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState({});
 
+  // Mirror `saving` / `uploading` for the Escape listener, which is registered once per open and
+  // would otherwise close over permanently-false values. See handleEscape below.
+  const savingRef = useRef(false);
+  const uploadingRef = useRef(false);
+  savingRef.current = saving;
+  uploadingRef.current = uploading;
+
   const selectedCountry = useMemo(
     () =>
       countries.find(
@@ -168,8 +175,18 @@ export default function QuickDestinationModal({
     setSaving(false);
     setErrors({});
 
+    // OLD — replaced in create-form redesign
+    // const handleEscape = (event) => {
+    //   if (event.key === "Escape" && !saving && !uploading) {
+    //     onClose?.();
+    //   }
+    // };
+    //
+    // Deps here are [open, defaultCountryName], so `saving` and `uploading` were frozen false for
+    // the life of the dialog and Esc closed it mid-save or mid-upload — the exact action closeSafely
+    // refuses from the X button. Refs keep the guard live.
     const handleEscape = (event) => {
-      if (event.key === "Escape" && !saving && !uploading) {
+      if (event.key === "Escape" && !savingRef.current && !uploadingRef.current) {
         onClose?.();
       }
     };
@@ -377,7 +394,15 @@ export default function QuickDestinationModal({
   };
 
   const handleSubmit = async (event) => {
+    // OLD — replaced in create-form redesign
+    // event.preventDefault();
+    //
+    // Same portal-bubbling trap as QuickCityModal: this dialog is createPortal'd to document.body
+    // but remains a React child of ItinerarySection inside CreateLead's <form>, and React replays
+    // events through the React tree. Without stopPropagation, creating a destination mid-entry also
+    // fired the lead form's submit handler.
     event.preventDefault();
+    event.stopPropagation();
 
     if (!validate()) return;
 

@@ -1,669 +1,734 @@
-// src/features/customers/pages/CustomerDetails.jsx
-// ─────────────────────────────────────────────────────────────
-// Customer Details (View) Page — Travel CRM
-// Route: /CustomerDetails/:id
-//
-// Data:
-//   customerService.getById(id)           → profile
-//   customerService.getBookingHistory(id) → booking history table
-//
-// Layout (same as reference screenshot, TravelCRM design system):
-//   LEFT  : Profile card + Contact Info + Documents + Notes
-//   RIGHT : 4 stat cards + Booking History table
-//
-// Actions: Edit → /EditCustomer/:id | WhatsApp | Call | Create Lead
-// ─────────────────────────────────────────────────────────────
-
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
-  User as FiUser, ArrowLeft as FiArrowLeft, SquarePen as FaEdit,
-  Phone as FaMobileAlt, Mail as FaEnvelope, MapPin as FaMapMarkerAlt,
-  Building as MdLocationCity, Calendar as FaCalendarAlt,
-  Plane as FaPlane, IndianRupee as FaRupeeSign, Wallet as FaWallet,
-  TrendingUp as FiTrendingUp, History as FaHistory,
-  StickyNote as FaStickyNote, Crown as FaCrown,
-  MessageCircleMore as FaCommentDots, Plus as FaPlus, Eye as FaEye,
-  Contact as MdOutlineContactPhone, Clock as FiClock,
-  PhoneCall as FiPhoneCall,
+  AlertTriangle,
+  ArrowLeft,
+  BriefcaseBusiness,
+  CakeSlice,
+  CalendarDays,
+  ChevronDown,
+  ChevronRight,
+  CircleUserRound,
+  Clock3,
+  Crown,
+  FileText,
+  History,
+  IdCard,
+  IndianRupee,
+  LoaderCircle,
+  Mail,
+  MapPin,
+  MessageCircle,
+  Pencil,
+  Phone,
+  Plane,
+  Plus,
+  ShieldCheck,
+  StickyNote,
+  Trash2,
+  UserRound,
 } from "lucide-react";
-import { WhatsAppIcon as FaWhatsapp } from "@shared/ui/WhatsAppIcon";
 
+import { WhatsAppIcon } from "@shared/ui/WhatsAppIcon";
+import { useToast } from "@shared/ui/toast";
+import { getErrorMessage, isAlreadyReported } from "@shared/api/apiError";
+import { hasPermission, P } from "@shared/lib/access";
 import customerService from "../api/customerService";
 
-const FONT = "'Plus Jakarta Sans', system-ui, sans-serif";
+const unwrap = (response) => response?.data?.data ?? response?.data;
 
-/* ─── HELPERS ────────────────────────────────────────────────── */
-const fmtINR   = (n) => "₹" + Number(n || 0).toLocaleString("en-IN");
-const fmtDate  = (d) => d ? new Date(d).toLocaleDateString("en-IN", { day:"2-digit", month:"short", year:"numeric" }) : "—";
-const initials = (name) => (name || "").split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase() || "?";
+const formatCurrency = (value) =>
+  `₹${Number(value || 0).toLocaleString("en-IN", {
+    maximumFractionDigits: 2,
+  })}`;
 
-const AVATAR_COLORS = [
-  "from-blue-500 to-blue-600","from-purple-500 to-purple-600","from-teal-500 to-teal-600",
-  "from-rose-500 to-rose-600","from-amber-500 to-amber-600","from-indigo-500 to-indigo-600",
-  "from-green-500 to-green-600","from-cyan-500 to-cyan-600","from-pink-500 to-pink-600",
-  "from-orange-500 to-orange-600",
-];
-const avatarGrad = (id) => {
-  const n = parseInt(String(id).replace(/\D/g, ""), 10) || 0;
-  return AVATAR_COLORS[n % AVATAR_COLORS.length];
-};
-
-/* ─── BADGE CONFIGS (same as AllCustomers) ───────────────────── */
-const TIER_CONFIG = {
-  Platinum:{ bg:"bg-slate-800",  text:"text-slate-100",  border:"border-slate-400",  icon:"💎" },
-  Gold:    { bg:"bg-yellow-100", text:"text-yellow-800", border:"border-yellow-400", icon:"🥇" },
-  Silver:  { bg:"bg-slate-100",  text:"text-slate-700",  border:"border-slate-300",  icon:"🥈" },
-  Bronze:  { bg:"bg-orange-100", text:"text-orange-700", border:"border-orange-300", icon:"🥉" },
-};
-const TYPE_CONFIG = {
-  Individual:{ bg:"bg-blue-100",   text:"text-blue-700",   border:"border-blue-200"   },
-  Corporate: { bg:"bg-indigo-100", text:"text-indigo-700", border:"border-indigo-200" },
-  VIP:       { bg:"bg-purple-100", text:"text-purple-700", border:"border-purple-200" },
-  Group:     { bg:"bg-teal-100",   text:"text-teal-700",   border:"border-teal-200"   },
-  Agent:     { bg:"bg-amber-100",  text:"text-amber-700",  border:"border-amber-200"  },
-  Regular:   { bg:"bg-green-100",  text:"text-green-700",  border:"border-green-200"  },
-};
-const STATUS_CONFIG = {
-  Active:  { bg:"bg-emerald-100", text:"text-emerald-700", dot:"bg-emerald-500" },
-  Inactive:{ bg:"bg-slate-100",   text:"text-slate-500",   dot:"bg-slate-400"   },
-  Blocked: { bg:"bg-red-100",     text:"text-red-600",     dot:"bg-red-500"     },
-};
-const BOOKING_STATUS = {
-  Completed: { bg:"bg-green-100", text:"text-green-700" },
-  Confirmed: { bg:"bg-blue-100",  text:"text-blue-700"  },
-  Pending:   { bg:"bg-amber-100", text:"text-amber-700" },
-  Cancelled: { bg:"bg-red-100",   text:"text-red-600"   },
+const formatDate = (value, fallback = "Not available") => {
+  if (!value) return fallback;
+  const text = String(value);
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(text)
+    ? new Date(`${text}T00:00:00`)
+    : new Date(value);
+  if (Number.isNaN(date.getTime())) return fallback;
+  return date.toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
 };
 
-/* ─── TOAST ──────────────────────────────────────────────────── */
-function Toast({ msg, type, onClose }) {
-  useEffect(() => { const t = setTimeout(onClose, 3500); return () => clearTimeout(t); }, [onClose]);
+const titleCase = (value) =>
+  value
+    ? String(value)
+        .replace(/_/g, " ")
+        .toLowerCase()
+        .replace(/\b\w/g, (letter) => letter.toUpperCase())
+    : "Not set";
+
+const initials = (name) =>
+  String(name || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase() || "CU";
+
+const maskIdentifier = (value, visible = 4) => {
+  const clean = String(value || "").trim();
+  if (!clean) return "Not provided";
+  if (clean.length <= visible) return "••••";
+  return `${"•".repeat(Math.min(8, clean.length - visible))}${clean.slice(-visible)}`;
+};
+
+const STATUS_STYLE = {
+  ACTIVE: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  INACTIVE: "border-slate-200 bg-slate-100 text-slate-600",
+  BLOCKED: "border-rose-200 bg-rose-50 text-rose-700",
+};
+
+const STATUS_DOT = {
+  ACTIVE: "bg-emerald-500",
+  INACTIVE: "bg-slate-400",
+  BLOCKED: "bg-rose-500",
+};
+
+const TYPE_STYLE = {
+  INDIVIDUAL: "border-blue-200 bg-blue-50 text-blue-700",
+  REGULAR: "border-teal-200 bg-teal-50 text-teal-700",
+  CORPORATE: "border-indigo-200 bg-indigo-50 text-indigo-700",
+  VIP: "border-violet-200 bg-violet-50 text-violet-700",
+  GROUP: "border-cyan-200 bg-cyan-50 text-cyan-700",
+  AGENT: "border-amber-200 bg-amber-50 text-amber-700",
+};
+
+const TIER_STYLE = {
+  BRONZE: "border-orange-200 bg-orange-50 text-orange-700",
+  SILVER: "border-slate-300 bg-slate-100 text-slate-700",
+  GOLD: "border-amber-200 bg-amber-50 text-amber-700",
+  PLATINUM: "border-slate-700 bg-slate-800 text-white",
+};
+
+const BOOKING_STATUS_STYLE = {
+  CONFIRMED: "bg-blue-50 text-blue-700 ring-blue-600/20",
+  PENDING: "bg-amber-50 text-amber-700 ring-amber-600/20",
+  CANCELLED: "bg-rose-50 text-rose-700 ring-rose-600/20",
+  COMPLETED: "bg-emerald-50 text-emerald-700 ring-emerald-600/20",
+  REFUNDED: "bg-violet-50 text-violet-700 ring-violet-600/20",
+};
+
+const keyOf = (value) => String(value || "").trim().toUpperCase().replace(/\s+/g, "_");
+
+function Badge({ children, className, dotClass }) {
   return (
-    <div className={`fixed top-5 right-5 z-[999] flex items-center gap-3 px-4 py-3 rounded-xl border shadow-2xl max-w-xs
-      ${type === "success" ? "bg-green-50 border-green-200 text-green-800" : "bg-red-50 border-red-200 text-red-800"}`}
-      style={{ animation:"slideIn .3s ease both" }}>
-      <span className="text-lg">{type === "success" ? "✅" : "❌"}</span>
-      <p className="text-sm font-semibold flex-1">{msg}</p>
-      <button onClick={onClose} className="opacity-50 hover:opacity-100 text-lg ml-1 leading-none">×</button>
-    </div>
+    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-bold ${className}`}>
+      {dotClass && <span className={`h-1.5 w-1.5 rounded-full ${dotClass}`} />}
+      {children}
+    </span>
   );
 }
 
-/* ─── SKELETON ───────────────────────────────────────────────── */
-function SkeletonBlock({ h = "h-64" }) {
-  return <div className={`bg-white rounded-2xl border border-slate-100 shadow-sm ${h} animate-pulse`}/>;
-}
-
-/* ─── ANIMATED STAT CARD ─────────────────────────────────────── */
-function StatCard({ icon: Icon, label, value, gradient, currency, sub, delay = 0 }) {
-  const [displayed, setDisplayed] = useState(0);
-
-  useEffect(() => {
-    let start = 0;
-    const target = Number(value) || 0;
-    if (target === 0) { setDisplayed(0); return; }
-    const step = Math.max(1, Math.ceil(target / 60));
-    const interval = setInterval(() => {
-      start = Math.min(start + step, target);
-      setDisplayed(start);
-      if (start >= target) clearInterval(interval);
-    }, 16);
-    return () => clearInterval(interval);
-  }, [value]);
-
-  const display = currency ? fmtINR(displayed) : displayed.toLocaleString("en-IN");
+function KpiCard({ icon: Icon, label, value, helper, tone }) {
+  const tones = {
+    blue: "bg-blue-50 text-blue-600 ring-blue-100",
+    emerald: "bg-emerald-50 text-emerald-600 ring-emerald-100",
+    violet: "bg-violet-50 text-violet-600 ring-violet-100",
+    amber: "bg-amber-50 text-amber-600 ring-amber-100",
+  };
 
   return (
-    <div className={`bg-gradient-to-br ${gradient} rounded-2xl p-5 text-white shadow-lg relative overflow-hidden group
-      hover:-translate-y-1 hover:shadow-xl transition-all duration-300 fade-up`}
-      style={{ animationDelay:`${delay}ms` }}>
-      <div className="absolute -right-5 -top-5 w-24 h-24 rounded-full bg-white/10 group-hover:scale-110 transition-transform duration-300"/>
-      <div className="absolute -right-3 -bottom-8 w-32 h-32 rounded-full bg-white/10 group-hover:scale-110 transition-transform duration-300"/>
-      <div className="relative z-10">
-        <div className="flex items-start justify-between mb-3">
-          <div className="w-10 h-10 rounded-xl bg-white/20 group-hover:bg-white/30 flex items-center justify-center transition-all">
-            <Icon className="w-5 h-5"/>
-          </div>
-          {sub && <span className="text-xs font-bold bg-white/20 px-2 py-0.5 rounded-full">{sub}</span>}
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-400">{label}</p>
+          <p className="mt-2 truncate text-xl font-extrabold text-slate-900 sm:text-2xl">{value}</p>
+          <p className="mt-1 text-xs text-slate-500">{helper}</p>
         </div>
-        <p className="text-2xl font-extrabold leading-none mb-1">{display}</p>
-        <p className="text-xs font-bold uppercase tracking-widest opacity-80">{label}</p>
+        <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ring-1 ${tones[tone]}`}>
+          <Icon className="h-5 w-5" />
+        </span>
       </div>
     </div>
   );
 }
 
-/* ─── INFO ROW (contact card) ────────────────────────────────── */
-function InfoRow({ icon: Icon, label, value, iconClass }) {
+function SectionCard({ icon: Icon, title, description, children, className = "" }) {
   return (
-    <div className="flex items-start gap-3 px-5 py-3 border-b border-slate-50 last:border-0">
-      <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${iconClass}`}>
-        <Icon className="w-3.5 h-3.5"/>
+    <section className={`overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm ${className}`}>
+      <div className="flex items-center gap-3 border-b border-slate-100 px-5 py-4">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+          <Icon className="h-4 w-4" />
+        </span>
+        <div className="min-w-0">
+          <h2 className="text-sm font-extrabold text-slate-900">{title}</h2>
+          {description && <p className="mt-0.5 text-xs text-slate-500">{description}</p>}
+        </div>
       </div>
-      <div className="min-w-0 flex-1">
-        <p className="text-xs text-slate-400 font-medium">{label}</p>
-        <p className="text-sm font-bold text-slate-700 break-words">{value || "—"}</p>
+      {children}
+    </section>
+  );
+}
+
+function DetailItem({ icon: Icon, label, value, href, wide = false }) {
+  const content = value || "Not provided";
+  return (
+    <div className={`flex min-w-0 items-start gap-3 rounded-xl bg-slate-50/80 px-3.5 py-3 ${wide ? "sm:col-span-2" : ""}`}>
+      <Icon className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+      <div className="min-w-0">
+        <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">{label}</p>
+        {href && value ? (
+          <a href={href} className="mt-1 block break-words text-sm font-semibold text-blue-700 hover:underline">
+            {content}
+          </a>
+        ) : (
+          <p className={`mt-1 break-words text-sm font-semibold ${value ? "text-slate-700" : "text-slate-400"}`}>
+            {content}
+          </p>
+        )}
       </div>
     </div>
   );
 }
 
-/* ═════════════════════════════════════════════════════════════
-   MAIN COMPONENT
-═════════════════════════════════════════════════════════════ */
+function BookingStatus({ status }) {
+  const statusKey = keyOf(status) || "PENDING";
+  return (
+    <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ring-1 ring-inset ${BOOKING_STATUS_STYLE[statusKey] || "bg-slate-100 text-slate-600 ring-slate-500/20"}`}>
+      {titleCase(statusKey)}
+    </span>
+  );
+}
+
+function LoadingPage() {
+  return (
+    <div className="mx-auto max-w-[1440px] animate-pulse px-4 py-6 sm:px-6">
+      <div className="h-7 w-48 rounded bg-slate-200" />
+      <div className="mt-5 h-48 rounded-3xl bg-white" />
+      <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {[0, 1, 2, 3].map((item) => <div key={item} className="h-28 rounded-2xl bg-white" />)}
+      </div>
+      <div className="mt-5 grid gap-5 lg:grid-cols-3">
+        <div className="h-80 rounded-2xl bg-white lg:col-span-2" />
+        <div className="h-80 rounded-2xl bg-white" />
+      </div>
+    </div>
+  );
+}
+
 export default function CustomerDetails() {
+  const { id } = useParams();
   const navigate = useNavigate();
-  const { id }   = useParams();
+  const { showToast } = useToast();
+  const actionMenuRef = useRef(null);
 
-  const [customer, setCustomer]       = useState(null);
-  const [bookings, setBookings]       = useState([]);
-  const [loading, setLoading]         = useState(true);
-  const [loadingBk, setLoadingBk]     = useState(true);
-  const [notFound, setNotFound]       = useState(false);
-  const [toast, setToast]             = useState(null);
+  const [customer, setCustomer] = useState(null);
+  const [bookings, setBookings] = useState([]);
+  const [loading, setLoading] = useState(Boolean(id));
+  const [loadingBookings, setLoadingBookings] = useState(Boolean(id));
+  const [profileError, setProfileError] = useState(id ? "" : "Customer link is invalid.");
+  const [bookingError, setBookingError] = useState("");
+  const [activeTab, setActiveTab] = useState("overview");
+  const [actionMenuOpen, setActionMenuOpen] = useState(false);
+  const [updating, setUpdating] = useState("");
 
-  const showToast = useCallback((msg, type = "success") => setToast({ msg, type }), []);
+  const canEdit = hasPermission(P.CUSTOMER_UPDATE);
+  const canDelete = hasPermission(P.CUSTOMER_DELETE);
+  const canCreateLead = hasPermission(P.LEAD_CREATE);
+  const canCreateBooking = hasPermission(P.BOOKING_CREATE);
+  const canReadBooking = hasPermission(P.BOOKING_READ);
 
-  /* ── Load customer + booking history ────────────────────── */
+  const loadBookings = useCallback(async () => {
+    if (!id) return;
+    setLoadingBookings(true);
+    setBookingError("");
+    try {
+      const data = unwrap(await customerService.getBookingHistory(id));
+      setBookings(Array.isArray(data) ? data : []);
+    } catch (error) {
+      setBookings([]);
+      setBookingError(getErrorMessage(error, "Booking history could not be loaded."));
+    } finally {
+      setLoadingBookings(false);
+    }
+  }, [id]);
+
   useEffect(() => {
-    if (!id) { setNotFound(true); setLoading(false); setLoadingBk(false); return; }
+    let active = true;
+    if (!id) return () => { active = false; };
 
-    setLoading(true);
-    customerService
-      .getById(id)
-      .then((res) => {
-        const c = res.data?.data ?? res.data;
-        if (c && (c.name || c.id || c.customerId)) setCustomer(c);
-        else setNotFound(true);
+    customerService.getById(id)
+      .then((response) => {
+        if (!active) return;
+        const data = unwrap(response);
+        if (!data) throw new Error("Customer response was empty");
+        setCustomer(data);
       })
-      .catch(() => {
-        setNotFound(true);
-        showToast("Failed to load customer details.", "error");
+      .catch((error) => {
+        if (!active) return;
+        setProfileError(getErrorMessage(error, "Customer details could not be loaded."));
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (active) setLoading(false);
+      });
 
-    setLoadingBk(true);
-    customerService
-      .getBookingHistory(id)
-      .then((res) => {
-        const raw = res.data?.data ?? res.data ?? [];
-        setBookings(Array.isArray(raw) ? raw : []);
-      })
-      .catch(() => setBookings([]))   // booking API optional — fail silently
-      .finally(() => setLoadingBk(false));
-  }, [id, showToast]);
+    queueMicrotask(() => {
+      if (active) loadBookings();
+    });
+    return () => { active = false; };
+  }, [id, loadBookings]);
 
-  /* ── Normalize booking fields (backend DTO safe) ────────── */
-  const normBookings = useMemo(() => bookings.map((b) => ({
-    id:     b.publicId || b.bookingId || b.id || null,   // UUID → BookingDetails navigation
-    code:   b.bookingCode || b.code || "—",              // display code (e.g. BKG-26-0002)
-    title:  b.title || b.packageName || b.destination || b.dest || "—",
-    date:   b.travelDate || b.date || b.startDate || null,
-    amount: Number(b.amount ?? b.totalAmount ?? b.amt ?? 0),
-    paid:   Number(b.paidAmount ?? b.paid ?? b.amountPaid ?? 0),
-    status: b.status || "Pending",
+  useEffect(() => {
+    if (!actionMenuOpen) return undefined;
+    const close = (event) => {
+      if (!actionMenuRef.current?.contains(event.target)) setActionMenuOpen(false);
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [actionMenuOpen]);
+
+  const normalizedBookings = useMemo(() => bookings.map((booking) => ({
+    id: booking.id || booking.publicId || null,
+    code: booking.code || booking.bookingCode || "Booking",
+    destination: booking.dest || booking.destination || booking.destinationSnapshot || "Not set",
+    date: booking.date || booking.bookingDate || null,
+    amount: Number(booking.amt ?? booking.customerAmount ?? booking.amount ?? 0),
+    status: booking.status || "PENDING",
   })), [bookings]);
 
-  /* ── Stats (bookings se compute, customer fields fallback) ─ */
-  const stats = useMemo(() => {
-    const totalBookings = normBookings.length || Number(customer?.bookings || 0);
-    const totalSpent = normBookings.length
-      ? normBookings.reduce((s, b) => s + b.amount, 0)
-      : Number(customer?.spent || 0);
-    const totalPaid = normBookings.reduce((s, b) => s + b.paid, 0);
-    const avg = totalBookings ? Math.round(totalSpent / totalBookings) : 0;
-    return { totalBookings, totalSpent, totalPaid, avg };
-  }, [normBookings, customer]);
+  const publicId = customer?.id || id;
+  const customerCode = customer?.customerId || "Customer";
+  const statusKey = keyOf(customer?.status) || "INACTIVE";
+  const typeKey = keyOf(customer?.type) || "INDIVIDUAL";
+  const tierKey = keyOf(customer?.tier) || "BRONZE";
+  const phoneDigits = String(customer?.phone || "").replace(/\D/g, "");
+  const location = [customer?.city, customer?.state].filter(Boolean).join(", ");
 
-  const sortedDates = useMemo(
-    () => normBookings.map(b => b.date).filter(Boolean).sort(),
-    [normBookings]
-  );
-  const firstBooking = customer?.firstBooking || sortedDates[0] || null;
-  const lastBooking  = customer?.lastBooking  || sortedDates[sortedDates.length - 1] || null;
+  const updateStatus = async (nextStatus) => {
+    if (!canEdit || nextStatus === customer?.status || keyOf(nextStatus) === statusKey) return;
+    setUpdating("status");
+    try {
+      const updated = unwrap(await customerService.updateStatus(publicId, nextStatus));
+      setCustomer((current) => ({ ...current, ...(updated || {}), status: updated?.status || nextStatus }));
+      showToast("Customer status updated.", "success");
+    } catch (error) {
+      if (!isAlreadyReported(error)) showToast(getErrorMessage(error, "Could not update customer status."), "error");
+    } finally {
+      setUpdating("");
+    }
+  };
 
-  const code = customer?.id || customer?.customerId || id;
-  const tc   = TIER_CONFIG[customer?.tier]     || TIER_CONFIG.Bronze;
-  const tyc  = TYPE_CONFIG[customer?.type]     || TYPE_CONFIG.Individual;
-  const sc   = STATUS_CONFIG[customer?.status] || STATUS_CONFIG.Inactive;
-  const grad = avatarGrad(code);
-  const waLink = `https://wa.me/${(customer?.phone || "").replace(/\D/g, "")}`;
+  const updateTier = async (nextTier) => {
+    if (!canEdit || nextTier === customer?.tier || keyOf(nextTier) === tierKey) return;
+    setUpdating("tier");
+    try {
+      const updated = unwrap(await customerService.updateTier(publicId, nextTier));
+      setCustomer((current) => ({ ...current, ...(updated || {}), tier: updated?.tier || nextTier }));
+      showToast("Loyalty tier updated.", "success");
+    } catch (error) {
+      if (!isAlreadyReported(error)) showToast(getErrorMessage(error, "Could not update loyalty tier."), "error");
+    } finally {
+      setUpdating("");
+    }
+  };
 
-  /* ── RENDER ──────────────────────────────────────────────── */
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-100"
-      style={{ fontFamily: FONT }}>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap');
-        @keyframes slideIn { from{transform:translateX(110%);opacity:0} to{transform:translateX(0);opacity:1} }
-        @keyframes fadeUp  { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
-        .fade-up { animation: fadeUp .4s ease both; }
-        ::-webkit-scrollbar{width:5px;height:5px}
-        ::-webkit-scrollbar-track{background:#f1f5f9;border-radius:99px}
-        ::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:99px}
-      `}</style>
+  const moveToTrash = async () => {
+    setActionMenuOpen(false);
+    if (!window.confirm(`Move ${customer?.name || "this customer"} to Trash?`)) return;
+    setUpdating("delete");
+    try {
+      await customerService.delete(publicId);
+      showToast("Customer moved to Trash.", "success");
+      navigate("/AllCustomers", { replace: true });
+    } catch (error) {
+      if (!isAlreadyReported(error)) showToast(getErrorMessage(error, "Could not move customer to Trash."), "error");
+      setUpdating("");
+    }
+  };
 
-      {toast && <Toast msg={toast.msg} type={toast.type} onClose={() => setToast(null)}/>}
+  if (loading) return <LoadingPage />;
 
-      {/* ── PAGE HEADER ── */}
-      <div className="bg-white/70 backdrop-blur-md border-b border-slate-100">
-        <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 py-4">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-blue-600 to-blue-400
-                flex items-center justify-center text-white shadow-lg shadow-blue-200 flex-shrink-0">
-                <FiUser className="w-5 h-5"/>
-              </div>
-              <div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h1 className="text-lg font-extrabold text-slate-800 tracking-tight">Customer Details</h1>
-                  {customer && (
-                    <span className="text-xs font-extrabold text-blue-600 bg-blue-50 px-2.5 py-1
-                      rounded-full border border-blue-200">
-                      {code}
-                    </span>
-                  )}
-                  {loading && <span className="text-xs text-slate-400 font-medium animate-pulse">Loading…</span>}
-                </div>
-                <p className="text-xs text-slate-400 hidden sm:block mt-0.5">
-                  <span className="hover:text-blue-600 cursor-pointer" onClick={() => navigate("/")}>Home</span>
-                  <span className="mx-1 text-slate-300">/</span>
-                  <span className="hover:text-blue-600 cursor-pointer" onClick={() => navigate("/AllCustomers")}>Customers</span>
-                  <span className="mx-1 text-slate-300">/</span>
-                  <span className="text-blue-600 font-bold">View</span>
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 self-start sm:self-auto">
-              <button type="button" onClick={() => navigate("/AllCustomers")}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200
-                  hover:border-blue-300 bg-white hover:bg-blue-50 text-slate-600 hover:text-blue-700
-                  text-sm font-bold transition-all shadow-sm">
-                <FiArrowLeft className="w-4 h-4"/> Back
-              </button>
-              {customer && (
-                <button type="button" onClick={() => navigate(`/EditCustomer/${code}`)}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-500
-                    hover:from-indigo-700 hover:to-indigo-600 text-white text-sm font-bold
-                    shadow-md shadow-indigo-200 hover:shadow-lg transition-all">
-                  <FaEdit className="w-4 h-4"/> Edit Customer
-                </button>
-              )}
-            </div>
-          </div>
+  if (profileError || !customer) {
+    return (
+      <div className="mx-auto flex min-h-[65vh] max-w-xl items-center justify-center px-4">
+        <div className="w-full rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+          <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-rose-50 text-rose-600">
+            <AlertTriangle className="h-6 w-6" />
+          </span>
+          <h1 className="mt-4 text-xl font-extrabold text-slate-900">Customer unavailable</h1>
+          <p className="mt-2 text-sm leading-6 text-slate-500">{profileError || "The customer could not be found."}</p>
+          <button
+            type="button"
+            onClick={() => navigate("/AllCustomers")}
+            className="mt-6 inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-700"
+          >
+            <ArrowLeft className="h-4 w-4" /> Back to customers
+          </button>
         </div>
       </div>
+    );
+  }
 
-      {/* ── MAIN CONTENT ── */}
-      <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 py-6">
-
-        {/* ── LOADING SKELETON ── */}
-        {loading ? (
-          <div className="flex flex-col lg:flex-row gap-6">
-            <div className="w-full lg:w-80 xl:w-96 flex-shrink-0 space-y-5">
-              <SkeletonBlock h="h-80"/>
-              <SkeletonBlock h="h-72"/>
-            </div>
-            <div className="flex-1 space-y-5">
-              <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
-                {[...Array(4)].map((_, i) => <SkeletonBlock key={i} h="h-32"/>)}
-              </div>
-              <SkeletonBlock h="h-96"/>
-            </div>
-          </div>
-
-        /* ── NOT FOUND ── */
-        ) : notFound || !customer ? (
-          <div className="bg-white rounded-3xl border border-slate-100 shadow-sm text-center py-24 px-6 fade-up">
-            <div className="text-6xl mb-4">😕</div>
-            <p className="text-lg font-extrabold text-slate-600 mb-1">Customer Not Found</p>
-            <p className="text-sm text-slate-400 mb-6">
-              This customer may have been deleted or the link is invalid.
-            </p>
-            <button onClick={() => navigate("/AllCustomers")}
-              className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm
-                shadow-md shadow-blue-200 transition-all inline-flex items-center gap-2">
-              <FiArrowLeft className="w-4 h-4"/> Back to Customers
+  return (
+    <div className="min-h-screen bg-slate-50">
+      <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur">
+        <div className="mx-auto flex max-w-[1440px] items-center justify-between gap-3 px-4 py-3 sm:px-6">
+          <div className="flex min-w-0 items-center gap-3">
+            <button
+              type="button"
+              onClick={() => navigate("/AllCustomers")}
+              aria-label="Back to customers"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 text-slate-600 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700"
+            >
+              <ArrowLeft className="h-4 w-4" />
             </button>
+            <div className="min-w-0">
+              <p className="truncate text-xs font-semibold text-slate-400">Customers / {customerCode}</p>
+              <h1 className="truncate text-base font-extrabold text-slate-900 sm:text-lg">Customer details</h1>
+            </div>
           </div>
 
-        /* ── DETAILS ── */
-        ) : (
-          <div className="flex flex-col lg:flex-row gap-6">
-
-            {/* ══ LEFT COLUMN — Profile + Contact ══ */}
-            <div className="w-full lg:w-80 xl:w-96 flex-shrink-0 space-y-5">
-
-              {/* ── PROFILE CARD ── */}
-              <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden fade-up">
-                {/* Avatar + name */}
-                <div className="relative pt-8 pb-6 px-6 text-center">
-                  <div className="absolute inset-x-0 top-0 h-20 bg-gradient-to-r from-blue-600 to-blue-400"/>
-                  <div className={`relative w-20 h-20 rounded-3xl bg-gradient-to-br ${grad} flex items-center
-                    justify-center text-white text-2xl font-extrabold shadow-lg mx-auto border-4 border-white`}>
-                    {initials(customer.name)}
-                  </div>
-                  <div className="mt-3 flex items-center justify-center gap-1.5">
-                    <h2 className="text-lg font-extrabold text-slate-800">{customer.name}</h2>
-                    {customer.type === "VIP" && <FaCrown className="w-4 h-4 text-amber-500"/>}
-                  </div>
-                  <p className="text-xs font-extrabold text-blue-600 mt-0.5">{code}</p>
-
-                  {/* Badges */}
-                  <div className="flex items-center justify-center gap-1.5 mt-3 flex-wrap">
-                    <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${tyc.border} ${tyc.bg} ${tyc.text}`}>
-                      {customer.type || "—"}
-                    </span>
-                    <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${tc.border} ${tc.bg} ${tc.text}`}>
-                      {tc.icon} {customer.tier || "—"}
-                    </span>
-                    <span className={`inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full ${sc.bg} ${sc.text}`}>
-                      <span className={`w-1.5 h-1.5 rounded-full ${sc.dot}`}/>
-                      {customer.status || "—"}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Key/value rows */}
-                <div className="border-t border-slate-50">
-                  {[
-                    ["Customer Type", customer.type],
-                    ["Loyalty Tier",  customer.tier ? `${tc.icon} ${customer.tier}` : null],
-                    ["Total Bookings", String(stats.totalBookings)],
-                    ["Total Spent",   fmtINR(stats.totalSpent)],
-                    ["Member Since",  fmtDate(customer.createdAt || customer.memberSince)],
-                  ].map(([label, val]) => (
-                    <div key={label} className="flex items-center justify-between px-6 py-3 border-b border-slate-50 last:border-0">
-                      <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">{label}</span>
-                      <span className="text-sm font-extrabold text-slate-700">{val || "—"}</span>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Action buttons */}
-                <div className="p-5 space-y-2.5 bg-slate-50/60 border-t border-slate-100">
-                  <button onClick={() => navigate(`/EditCustomer/${code}`)}
-                    className="w-full py-3 rounded-2xl bg-gradient-to-r from-indigo-600 to-indigo-500
-                      hover:from-indigo-700 hover:to-indigo-600 text-white text-sm font-bold flex items-center
-                      justify-center gap-2 shadow-md shadow-indigo-200 transition-all">
-                    <FaEdit className="w-4 h-4"/> Edit Customer
-                  </button>
-                  <div className="flex gap-2.5">
-                    <a href={waLink} target="_blank" rel="noreferrer"
-                      className="flex-1 py-3 rounded-2xl bg-green-500 hover:bg-green-600 text-white
-                        text-sm font-bold flex items-center justify-center gap-2 transition-all">
-                      <FaWhatsapp className="w-4 h-4"/> WhatsApp
-                    </a>
-                    <a href={`tel:${customer.phone || ""}`}
-                      className="flex-1 py-3 rounded-2xl bg-white hover:bg-slate-100 text-slate-600
-                        text-sm font-bold flex items-center justify-center gap-2 transition-all
-                        border border-slate-200">
-                      <FiPhoneCall className="w-4 h-4"/> Call
-                    </a>
-                  </div>
-                </div>
-              </div>
-
-              {/* ── CONTACT INFORMATION ── */}
-              <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden fade-up"
-                style={{ animationDelay:"60ms" }}>
-                <div className="bg-gradient-to-r from-blue-600 to-blue-500 px-6 py-4 flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center text-xl">📞</div>
-                  <div>
-                    <h2 className="text-white font-extrabold text-base">Contact Information</h2>
-                    <p className="text-blue-100 text-xs">Phone, email, address & activity</p>
-                  </div>
-                </div>
-                <div className="py-2">
-                  <InfoRow icon={FaMobileAlt} label="Phone" value={customer.phone}
-                    iconClass="bg-green-50 text-green-600"/>
-                  {customer.alternatePhone && (
-                    <InfoRow icon={MdOutlineContactPhone} label="Alternate Phone" value={customer.alternatePhone}
-                      iconClass="bg-teal-50 text-teal-600"/>
-                  )}
-                  <InfoRow icon={FaEnvelope} label="Email" value={customer.email}
-                    iconClass="bg-blue-50 text-blue-600"/>
-                  <InfoRow icon={FaCommentDots} label="Communication Preference" value={customer.commPref}
-                    iconClass="bg-purple-50 text-purple-600"/>
-                  <InfoRow icon={MdLocationCity} label="City / State"
-                    value={[customer.city, customer.state].filter(Boolean).join(", ")}
-                    iconClass="bg-orange-50 text-orange-600"/>
-                  {(customer.address || customer.pincode) && (
-                    <InfoRow icon={FaMapMarkerAlt} label="Full Address"
-                      value={[customer.address, customer.pincode].filter(Boolean).join(" — ")}
-                      iconClass="bg-rose-50 text-rose-600"/>
-                  )}
-                  <InfoRow icon={FaCalendarAlt} label="First Booking" value={fmtDate(firstBooking)}
-                    iconClass="bg-indigo-50 text-indigo-600"/>
-                  <InfoRow icon={FiClock} label="Last Booking" value={fmtDate(lastBooking)}
-                    iconClass="bg-cyan-50 text-cyan-600"/>
-                </div>
-              </div>
-
-              {/* ── DOCUMENTS (agar available) ── */}
-              {(customer.passportNo || customer.panNo || customer.aadharNo || customer.documents) && (
-                <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden fade-up"
-                  style={{ animationDelay:"100ms" }}>
-                  <div className="bg-gradient-to-r from-indigo-600 to-indigo-500 px-6 py-4 flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center text-xl">🗂️</div>
-                    <div>
-                      <h2 className="text-white font-extrabold text-base">Documents</h2>
-                      <p className="text-indigo-100 text-xs">Passport, PAN & Aadhar details</p>
-                    </div>
-                  </div>
-                  <div className="p-5 space-y-3">
-                    <div className="grid grid-cols-1 gap-2">
-                      {[["Passport No.", customer.passportNo],
-                        ["PAN Number",   customer.panNo],
-                        ["Aadhar Number",customer.aadharNo]]
-                        .filter(([, v]) => v)
-                        .map(([l, v]) => (
-                          <div key={l} className="flex items-center justify-between bg-indigo-50/60 rounded-xl px-4 py-2.5 border border-indigo-100">
-                            <span className="text-xs font-bold text-indigo-400 uppercase tracking-wider">{l}</span>
-                            <span className="text-sm font-extrabold text-indigo-800">{v}</span>
-                          </div>
-                        ))}
-                    </div>
-                    {customer.documents && (
-                      <p className="text-xs text-slate-500 leading-relaxed bg-slate-50 rounded-xl px-4 py-3 border border-slate-100">
-                        {customer.documents}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* ── NOTES (agar available) ── */}
-              {customer.notes && (
-                <div className="bg-amber-50 rounded-2xl p-5 border border-amber-100 fade-up"
-                  style={{ animationDelay:"140ms" }}>
-                  <p className="text-xs font-extrabold text-amber-700 mb-2 flex items-center gap-1.5">
-                    <FaStickyNote className="w-3.5 h-3.5"/> Preferences & Notes
-                  </p>
-                  <p className="text-sm text-amber-800 leading-relaxed">{customer.notes}</p>
-                </div>
-              )}
-            </div>
-
-            {/* ══ RIGHT COLUMN — Stats + Booking History ══ */}
-            <div className="flex-1 min-w-0 space-y-6">
-
-              {/* ── STAT CARDS ── */}
-              <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
-                <StatCard icon={FaPlane}     label="Total Bookings" value={stats.totalBookings}
-                  gradient="from-cyan-500 to-cyan-600" delay={0}/>
-                <StatCard icon={FaRupeeSign} label="Total Spent" value={stats.totalSpent} currency
-                  gradient="from-blue-600 to-blue-700" delay={60}/>
-                <StatCard icon={FiTrendingUp} label="Avg. Booking" value={stats.avg} currency
-                  gradient="from-indigo-500 to-indigo-600" delay={120}/>
-                <StatCard icon={FaWallet}    label="Total Paid" value={stats.totalPaid} currency
-                  gradient="from-emerald-500 to-green-600" delay={180}/>
-              </div>
-
-              {/* ── BOOKING HISTORY CARD ── */}
-              <div className="bg-white/80 backdrop-blur-md rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden fade-up"
-                style={{ animationDelay:"120ms" }}>
-
-                {/* Card header */}
-                <div className="px-5 py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                  <div className="flex items-center gap-3 flex-wrap">
-                    <h2 className="text-base font-extrabold text-slate-700 flex items-center gap-2">
-                      <FaHistory className="w-4 h-4 text-blue-500"/> Booking History
-                    </h2>
-                    <span className="text-xs bg-blue-100 text-blue-700 font-bold px-2.5 py-1 rounded-full">
-                      {normBookings.length} bookings
-                    </span>
-                  </div>
-                  {/* TODO: apna Create Lead route yaha adjust karo */}
-                  <button onClick={() => navigate("/Createlead")}
-                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700
-                      text-white text-xs font-bold shadow-md shadow-blue-200 transition-all self-start sm:self-auto">
-                    <FaPlus className="w-3.5 h-3.5"/> Create Lead
-                  </button>
-                </div>
-
-                {/* ── Loading rows ── */}
-                {loadingBk ? (
-                  <div className="p-5 space-y-3">
-                    {[...Array(3)].map((_, i) => (
-                      <div key={i} className="h-12 rounded-xl bg-slate-100 animate-pulse"/>
-                    ))}
-                  </div>
-
-                /* ── Empty state ── */
-                ) : normBookings.length === 0 ? (
-                  <div className="text-center py-20 px-6">
-                    <div className="text-5xl mb-3">✈️</div>
-                    <p className="text-base font-extrabold text-slate-600 mb-1">No Bookings Yet</p>
-                    <p className="text-sm text-slate-400 mb-5">
-                      This customer hasn't made any bookings. Create a lead to get started.
-                    </p>
-                    <button onClick={() => navigate("/Createlead")}
-                      className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm
-                        shadow-md shadow-blue-200 transition-all inline-flex items-center gap-2">
-                      <FaPlus className="w-3.5 h-3.5"/> Create Lead
+          <div className="flex shrink-0 items-center gap-2">
+            {canCreateLead && (
+              <button
+                type="button"
+                onClick={() => navigate("/createlead")}
+                className="hidden items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-3.5 py-2.5 text-sm font-bold text-blue-700 hover:bg-blue-100 md:inline-flex"
+              >
+                <Plus className="h-4 w-4" /> New enquiry
+              </button>
+            )}
+            {canCreateBooking && (
+              <button
+                type="button"
+                onClick={() => navigate("/CreateBooking")}
+                className="hidden items-center gap-2 rounded-xl bg-blue-600 px-3.5 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-blue-700 sm:inline-flex"
+              >
+                <Plane className="h-4 w-4" /> New booking
+              </button>
+            )}
+            {canEdit && (
+              <button
+                type="button"
+                onClick={() => navigate(`/EditCustomer/${publicId}`)}
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50"
+              >
+                <Pencil className="h-4 w-4" /> <span className="hidden sm:inline">Edit</span>
+              </button>
+            )}
+            {canDelete && (
+              <div className="relative" ref={actionMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => setActionMenuOpen((open) => !open)}
+                  aria-expanded={actionMenuOpen}
+                  aria-label="More customer actions"
+                  className="flex h-10 items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 text-slate-600 hover:bg-slate-50"
+                >
+                  <span className="hidden text-sm font-bold sm:inline">More</span>
+                  <ChevronDown className="h-4 w-4" />
+                </button>
+                {actionMenuOpen && (
+                  <div className="absolute right-0 mt-2 w-52 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl">
+                    <button
+                      type="button"
+                      onClick={moveToTrash}
+                      disabled={updating === "delete"}
+                      className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-50"
+                    >
+                      {updating === "delete" ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                      Move to Trash
                     </button>
                   </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </header>
 
-                ) : (
-                  <>
-                    {/* ── DESKTOP TABLE ── */}
-                    <div className="hidden md:block overflow-x-auto">
-                      <table className="w-full min-w-[760px]">
-                        <thead className="bg-slate-50/80 border-b border-slate-100">
-                          <tr>
-                            {["Booking Code","Title","Travel Date","Amount","Payment","Status","Actions"].map(h => (
-                              <th key={h} className="px-4 py-3.5 text-left text-xs font-extrabold text-slate-500
-                                uppercase tracking-wider whitespace-nowrap">
-                                {h}
-                              </th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-50">
-                          {normBookings.map((b, idx) => {
-                            const bsc = BOOKING_STATUS[b.status] || { bg:"bg-slate-100", text:"text-slate-600" };
-                            const paidPct = b.amount ? Math.min(100, Math.round((b.paid / b.amount) * 100)) : 0;
-                            return (
-                              <tr key={`${b.code}-${idx}`}
-                                className="group transition-all duration-150 hover:bg-blue-50/40 hover:shadow-[inset_3px_0_0_#2563eb]"
-                                style={{ animation:"fadeUp .35s ease both", animationDelay:`${idx * 30}ms` }}>
-                                <td className="px-4 py-3.5">
-                                  <span className="text-xs font-extrabold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-lg">
-                                    {b.code}
-                                  </span>
-                                </td>
-                                <td className="px-4 py-3.5">
-                                  <p className="text-sm font-bold text-slate-700 max-w-[240px] truncate">{b.title}</p>
-                                </td>
-                                <td className="px-4 py-3.5">
-                                  <p className="text-sm font-semibold text-slate-600 whitespace-nowrap">{fmtDate(b.date)}</p>
-                                </td>
-                                <td className="px-4 py-3.5">
-                                  <p className="text-sm font-extrabold text-slate-800 whitespace-nowrap">{fmtINR(b.amount)}</p>
-                                </td>
-                                <td className="px-4 py-3.5">
-                                  <p className={`text-sm font-bold whitespace-nowrap ${b.paid > 0 ? "text-slate-700" : "text-slate-400"}`}>
-                                    {b.paid > 0 ? fmtINR(b.paid) : "—"}
-                                  </p>
-                                  {b.amount > 0 && (
-                                    <div className="w-16 h-1 bg-slate-100 rounded-full mt-1.5 overflow-hidden">
-                                      <div className={`h-full rounded-full transition-all
-                                        ${paidPct >= 100 ? "bg-green-500" : paidPct > 0 ? "bg-amber-400" : "bg-slate-200"}`}
-                                        style={{ width:`${paidPct}%` }}/>
-                                    </div>
-                                  )}
-                                </td>
-                                <td className="px-4 py-3.5">
-                                  <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${bsc.bg} ${bsc.text}`}>
-                                    {b.status}
-                                  </span>
-                                </td>
-                                <td className="px-4 py-3.5">
-                                  <button onClick={() => navigate(`/BookingDetails/${b.id || b.code}`)} title="View Booking"
-                                    className="w-8 h-8 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600
-                                      flex items-center justify-center transition-all">
-                                    <FaEye className="w-4 h-4"/>
-                                  </button>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
+      <main className="mx-auto max-w-[1440px] space-y-5 px-4 py-5 sm:px-6 sm:py-6">
+        <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+          <div className="relative bg-gradient-to-r from-slate-900 via-blue-950 to-indigo-950 px-5 py-6 sm:px-7">
+            <div className="absolute right-0 top-0 h-40 w-40 rounded-full bg-blue-500/10 blur-3xl" />
+            <div className="relative flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex min-w-0 items-center gap-4">
+                <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-white/10 text-xl font-black text-white ring-1 ring-white/20 sm:h-20 sm:w-20 sm:text-2xl">
+                  {initials(customer.name)}
+                </div>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="truncate text-xl font-black text-white sm:text-2xl">{customer.name}</h2>
+                    {typeKey === "VIP" && <Crown className="h-5 w-5 fill-amber-300 text-amber-300" />}
+                  </div>
+                  <p className="mt-1 text-sm font-bold text-blue-200">{customerCode}</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Badge className={TYPE_STYLE[typeKey] || TYPE_STYLE.INDIVIDUAL}>{titleCase(typeKey)}</Badge>
+                    <Badge className={TIER_STYLE[tierKey] || TIER_STYLE.BRONZE}>{titleCase(tierKey)}</Badge>
+                    <Badge className={STATUS_STYLE[statusKey] || STATUS_STYLE.INACTIVE} dotClass={STATUS_DOT[statusKey]}>
+                      {titleCase(statusKey)}
+                    </Badge>
+                  </div>
+                </div>
+              </div>
 
-                    {/* ── MOBILE CARDS ── */}
-                    <div className="md:hidden p-4 space-y-3">
-                      {normBookings.map((b, idx) => {
-                        const bsc = BOOKING_STATUS[b.status] || { bg:"bg-slate-100", text:"text-slate-600" };
-                        return (
-                          <div key={`${b.code}-m-${idx}`}
-                            className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 space-y-3 fade-up"
-                            style={{ animationDelay:`${idx * 40}ms` }}>
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="min-w-0">
-                                <span className="text-xs font-extrabold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-lg">
-                                  {b.code}
-                                </span>
-                                <p className="text-sm font-bold text-slate-800 mt-1.5 truncate">{b.title}</p>
-                              </div>
-                              <span className={`text-xs font-bold px-2 py-1 rounded-full flex-shrink-0 ${bsc.bg} ${bsc.text}`}>
-                                {b.status}
-                              </span>
-                            </div>
-                            <div className="grid grid-cols-3 gap-2 text-xs">
-                              <div className="bg-slate-50 rounded-lg px-3 py-2">
-                                <p className="text-slate-400">Travel</p>
-                                <p className="font-bold text-slate-700">{fmtDate(b.date)}</p>
-                              </div>
-                              <div className="bg-slate-50 rounded-lg px-3 py-2">
-                                <p className="text-slate-400">Amount</p>
-                                <p className="font-extrabold text-slate-800">{fmtINR(b.amount)}</p>
-                              </div>
-                              <div className="bg-slate-50 rounded-lg px-3 py-2">
-                                <p className="text-slate-400">Paid</p>
-                                <p className="font-bold text-slate-700">{b.paid > 0 ? fmtINR(b.paid) : "—"}</p>
-                              </div>
-                            </div>
-                            <button onClick={() => navigate(`/BookingDetails/${b.id || b.code}`)}
-                              className="w-full py-2 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-600
-                                border border-blue-200 text-xs font-bold flex items-center justify-center gap-1.5 transition-all">
-                              <FaEye className="w-3.5 h-3.5"/> View Booking
-                            </button>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </>
+              <div className="flex flex-wrap gap-2 lg:justify-end">
+                {customer.phone && (
+                  <a href={`tel:${customer.phone}`} className="inline-flex items-center gap-2 rounded-xl bg-white/10 px-3.5 py-2.5 text-sm font-bold text-white ring-1 ring-white/20 hover:bg-white/20">
+                    <Phone className="h-4 w-4" /> Call
+                  </a>
+                )}
+                {phoneDigits && (
+                  <a href={`https://wa.me/${phoneDigits}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl bg-emerald-500 px-3.5 py-2.5 text-sm font-bold text-white hover:bg-emerald-600">
+                    <WhatsAppIcon className="h-4 w-4" /> WhatsApp
+                  </a>
+                )}
+                {customer.email && (
+                  <a href={`mailto:${customer.email}`} className="inline-flex items-center gap-2 rounded-xl bg-white/10 px-3.5 py-2.5 text-sm font-bold text-white ring-1 ring-white/20 hover:bg-white/20">
+                    <Mail className="h-4 w-4" /> Email
+                  </a>
                 )}
               </div>
             </div>
+
+            <div className="relative mt-5 flex flex-wrap gap-x-5 gap-y-2 border-t border-white/10 pt-4 text-sm text-slate-300">
+              <span className="inline-flex items-center gap-2"><Phone className="h-4 w-4 text-blue-300" /> {customer.phone || "Phone not added"}</span>
+              <span className="inline-flex items-center gap-2"><MapPin className="h-4 w-4 text-blue-300" /> {location || "Location not added"}</span>
+              <span className="inline-flex items-center gap-2"><MessageCircle className="h-4 w-4 text-blue-300" /> {customer.commPref || "Communication preference not set"}</span>
+            </div>
           </div>
+        </section>
+
+        <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <KpiCard icon={Plane} label="Total bookings" value={Number(customer.bookings || 0).toLocaleString("en-IN")} helper="Active lifetime bookings" tone="blue" />
+          <KpiCard icon={IndianRupee} label="Lifetime spend" value={formatCurrency(customer.spent)} helper="Across active bookings" tone="emerald" />
+          <KpiCard icon={History} label="Last booking" value={formatDate(customer.lastBooking, "Never")} helper="Most recent booking date" tone="violet" />
+          <KpiCard icon={Clock3} label="Customer since" value={formatDate(customer.createdAt)} helper="Profile creation date" tone="amber" />
+        </section>
+
+        <div className="flex items-center gap-1 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm">
+          {[
+            { id: "overview", label: "Overview", icon: CircleUserRound },
+            { id: "bookings", label: `Bookings (${Number(customer.bookings || normalizedBookings.length)})`, icon: Plane },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={`inline-flex items-center gap-2 whitespace-nowrap rounded-xl px-4 py-2.5 text-sm font-bold transition ${activeTab === tab.id ? "bg-blue-600 text-white shadow-sm" : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"}`}
+            >
+              <tab.icon className="h-4 w-4" /> {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {activeTab === "overview" ? (
+          <div className="grid items-start gap-5 lg:grid-cols-3">
+            <div className="space-y-5 lg:col-span-2">
+              <SectionCard icon={UserRound} title="Contact details" description="Primary contact and preferred communication channel">
+                <div className="grid gap-3 p-5 sm:grid-cols-2">
+                  <DetailItem icon={Phone} label="Phone" value={customer.phone} href={customer.phone ? `tel:${customer.phone}` : null} />
+                  <DetailItem icon={Phone} label="Alternate phone" value={customer.alternatePhone} href={customer.alternatePhone ? `tel:${customer.alternatePhone}` : null} />
+                  <DetailItem icon={Mail} label="Email" value={customer.email} href={customer.email ? `mailto:${customer.email}` : null} />
+                  <DetailItem icon={MessageCircle} label="Preferred communication" value={customer.commPref} />
+                </div>
+              </SectionCard>
+
+              <SectionCard icon={MapPin} title="Address" description="Customer's durable address information">
+                <div className="grid gap-3 p-5 sm:grid-cols-2">
+                  <DetailItem icon={MapPin} label="Full address" value={customer.address} wide />
+                  <DetailItem icon={BriefcaseBusiness} label="City" value={customer.city} />
+                  <DetailItem icon={MapPin} label="State" value={customer.state} />
+                  <DetailItem icon={IdCard} label="Pincode" value={customer.pincode} />
+                </div>
+              </SectionCard>
+
+              <div className="grid gap-5 xl:grid-cols-2">
+                <SectionCard icon={CalendarDays} title="Important dates" description="Useful for relationship and marketing reminders">
+                  <div className="space-y-3 p-5">
+                    <DetailItem icon={CakeSlice} label="Birthday" value={customer.birthday ? formatDate(customer.birthday) : null} />
+                    <DetailItem icon={CalendarDays} label="Anniversary" value={customer.anniversary ? formatDate(customer.anniversary) : null} />
+                  </div>
+                </SectionCard>
+
+                <SectionCard icon={ShieldCheck} title="Identity details" description="Masked by default on the customer profile">
+                  <div className="space-y-3 p-5">
+                    <DetailItem icon={IdCard} label="Passport" value={customer.passportNo ? maskIdentifier(customer.passportNo) : null} />
+                    <DetailItem icon={IdCard} label="PAN" value={customer.panNo ? maskIdentifier(customer.panNo, 3) : null} />
+                    <DetailItem icon={IdCard} label="Aadhar" value={customer.aadharNo ? maskIdentifier(customer.aadharNo) : null} />
+                  </div>
+                </SectionCard>
+              </div>
+
+              <SectionCard icon={StickyNote} title="Notes & document references" description="Permanent preferences and document notes, not trip-specific details">
+                <div className="grid gap-4 p-5 md:grid-cols-2">
+                  <div className="rounded-xl border border-amber-100 bg-amber-50/70 p-4">
+                    <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-amber-700"><StickyNote className="h-4 w-4" /> Customer notes</p>
+                    <p className={`mt-2 whitespace-pre-wrap text-sm leading-6 ${customer.notes ? "text-amber-950" : "text-amber-700/60"}`}>
+                      {customer.notes || "No customer preferences or notes added."}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-600"><FileText className="h-4 w-4" /> Document notes</p>
+                    <p className={`mt-2 whitespace-pre-wrap text-sm leading-6 ${customer.documents ? "text-slate-700" : "text-slate-400"}`}>
+                      {customer.documents || "No document references added."}
+                    </p>
+                  </div>
+                </div>
+              </SectionCard>
+            </div>
+
+            <aside className="space-y-5 lg:sticky lg:top-20">
+              <SectionCard icon={Crown} title="Customer profile" description="Classification and relationship status">
+                <div className="space-y-4 p-5">
+                  <div>
+                    <label htmlFor="customer-status" className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Status</label>
+                    <div className="relative mt-1.5">
+                      <select
+                        id="customer-status"
+                        value={customer.status || "Active"}
+                        onChange={(event) => updateStatus(event.target.value)}
+                        disabled={!canEdit || Boolean(updating)}
+                        className="w-full appearance-none rounded-xl border border-slate-200 bg-white px-3 py-2.5 pr-9 text-sm font-bold text-slate-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 disabled:bg-slate-50 disabled:text-slate-500"
+                      >
+                        <option value="Active">Active</option>
+                        <option value="Inactive">Inactive</option>
+                        <option value="Blocked">Blocked</option>
+                      </select>
+                      {updating === "status" ? <LoaderCircle className="pointer-events-none absolute right-3 top-3 h-4 w-4 animate-spin text-blue-600" /> : <ChevronDown className="pointer-events-none absolute right-3 top-3 h-4 w-4 text-slate-400" />}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label htmlFor="customer-tier" className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Loyalty tier</label>
+                    <div className="relative mt-1.5">
+                      <select
+                        id="customer-tier"
+                        value={customer.tier || "Bronze"}
+                        onChange={(event) => updateTier(event.target.value)}
+                        disabled={!canEdit || Boolean(updating)}
+                        className="w-full appearance-none rounded-xl border border-slate-200 bg-white px-3 py-2.5 pr-9 text-sm font-bold text-slate-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 disabled:bg-slate-50 disabled:text-slate-500"
+                      >
+                        <option value="Bronze">Bronze</option>
+                        <option value="Silver">Silver</option>
+                        <option value="Gold">Gold</option>
+                        <option value="Platinum">Platinum</option>
+                      </select>
+                      {updating === "tier" ? <LoaderCircle className="pointer-events-none absolute right-3 top-3 h-4 w-4 animate-spin text-blue-600" /> : <ChevronDown className="pointer-events-none absolute right-3 top-3 h-4 w-4 text-slate-400" />}
+                    </div>
+                  </div>
+
+                  {[
+                    ["Customer type", titleCase(typeKey)],
+                    ["Communication", customer.commPref || "Not set"],
+                    ["Customer code", customerCode],
+                  ].map(([label, value]) => (
+                    <div key={label} className="flex items-center justify-between gap-3 border-t border-slate-100 pt-3">
+                      <span className="text-xs font-semibold text-slate-500">{label}</span>
+                      <span className="text-right text-sm font-bold text-slate-800">{value}</span>
+                    </div>
+                  ))}
+                  {!canEdit && <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">You have read-only access to this customer.</p>}
+                </div>
+              </SectionCard>
+
+              <SectionCard icon={Clock3} title="Record information" description="Profile audit timestamps">
+                <div className="space-y-3 p-5">
+                  <div className="flex items-center justify-between gap-3"><span className="text-xs text-slate-500">Created</span><span className="text-sm font-bold text-slate-700">{formatDate(customer.createdAt)}</span></div>
+                  <div className="flex items-center justify-between gap-3 border-t border-slate-100 pt-3"><span className="text-xs text-slate-500">Last updated</span><span className="text-sm font-bold text-slate-700">{formatDate(customer.updatedAt)}</span></div>
+                </div>
+              </SectionCard>
+
+              {(canCreateLead || canCreateBooking) && (
+                <SectionCard icon={Plus} title="Quick actions" description="Start the customer's next travel workflow">
+                  <div className="space-y-2.5 p-5">
+                    {canCreateLead && <button type="button" onClick={() => navigate("/createlead")} className="flex w-full items-center justify-between rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-bold text-blue-700 hover:bg-blue-100"><span className="flex items-center gap-2"><Plus className="h-4 w-4" /> New enquiry</span><ChevronRight className="h-4 w-4" /></button>}
+                    {canCreateBooking && <button type="button" onClick={() => navigate("/CreateBooking")} className="flex w-full items-center justify-between rounded-xl bg-blue-600 px-4 py-3 text-sm font-bold text-white hover:bg-blue-700"><span className="flex items-center gap-2"><Plane className="h-4 w-4" /> New booking</span><ChevronRight className="h-4 w-4" /></button>}
+                  </div>
+                </SectionCard>
+              )}
+            </aside>
+          </div>
+        ) : (
+          <SectionCard icon={Plane} title="Booking history" description="All active bookings linked to this customer">
+            <div className="flex flex-col gap-3 border-b border-slate-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm text-slate-500">{normalizedBookings.length} booking{normalizedBookings.length === 1 ? "" : "s"} returned</p>
+              {canCreateBooking && <button type="button" onClick={() => navigate("/CreateBooking")} className="inline-flex w-fit items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-700"><Plus className="h-4 w-4" /> New booking</button>}
+            </div>
+
+            {loadingBookings ? (
+              <div className="space-y-3 p-5">
+                {[0, 1, 2].map((row) => <div key={row} className="h-14 animate-pulse rounded-xl bg-slate-100" />)}
+              </div>
+            ) : bookingError ? (
+              <div className="px-5 py-16 text-center">
+                <AlertTriangle className="mx-auto h-8 w-8 text-amber-500" />
+                <p className="mt-3 text-sm font-bold text-slate-700">Booking history unavailable</p>
+                <p className="mt-1 text-sm text-slate-500">{bookingError}</p>
+                <button type="button" onClick={loadBookings} className="mt-4 rounded-xl border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50">Try again</button>
+              </div>
+            ) : normalizedBookings.length === 0 ? (
+              <div className="px-5 py-16 text-center">
+                <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-blue-600"><Plane className="h-6 w-6" /></span>
+                <h3 className="mt-4 text-base font-extrabold text-slate-900">No bookings yet</h3>
+                <p className="mx-auto mt-1 max-w-md text-sm leading-6 text-slate-500">Start a new enquiry for this customer's next trip, or create a direct booking.</p>
+                <div className="mt-5 flex flex-wrap justify-center gap-2">
+                  {canCreateLead && <button type="button" onClick={() => navigate("/createlead")} className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm font-bold text-blue-700 hover:bg-blue-100">New enquiry</button>}
+                  {canCreateBooking && <button type="button" onClick={() => navigate("/CreateBooking")} className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-700">New booking</button>}
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="hidden overflow-x-auto md:block">
+                  <table className="w-full min-w-[760px]">
+                    <thead className="bg-slate-50">
+                      <tr className="text-left text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                        <th className="px-5 py-3.5">Booking</th>
+                        <th className="px-5 py-3.5">Destination</th>
+                        <th className="px-5 py-3.5">Booking date</th>
+                        <th className="px-5 py-3.5">Amount</th>
+                        <th className="px-5 py-3.5">Status</th>
+                        <th className="px-5 py-3.5 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {normalizedBookings.map((booking, index) => (
+                        <tr key={booking.id || `${booking.code}-${index}`} className="hover:bg-blue-50/40">
+                          <td className="px-5 py-4"><span className="font-extrabold text-blue-700">{booking.code}</span></td>
+                          <td className="px-5 py-4 text-sm font-semibold text-slate-700">{booking.destination}</td>
+                          <td className="px-5 py-4 text-sm text-slate-600">{formatDate(booking.date)}</td>
+                          <td className="px-5 py-4 text-sm font-extrabold tabular-nums text-slate-900">{formatCurrency(booking.amount)}</td>
+                          <td className="px-5 py-4"><BookingStatus status={booking.status} /></td>
+                          <td className="px-5 py-4 text-right">
+                            {canReadBooking && booking.id ? (
+                              <button type="button" onClick={() => navigate(`/BookingDetails/${booking.id}`)} className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100">View <ChevronRight className="h-4 w-4" /></button>
+                            ) : <span className="text-xs text-slate-400">—</span>}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="space-y-3 p-4 md:hidden">
+                  {normalizedBookings.map((booking, index) => (
+                    <article key={booking.id || `${booking.code}-mobile-${index}`} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0"><p className="text-xs font-extrabold text-blue-700">{booking.code}</p><h3 className="mt-1 truncate text-sm font-bold text-slate-900">{booking.destination}</h3></div>
+                        <BookingStatus status={booking.status} />
+                      </div>
+                      <div className="mt-4 grid grid-cols-2 gap-3 rounded-xl bg-slate-50 p-3">
+                        <div><p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Booking date</p><p className="mt-1 text-xs font-semibold text-slate-700">{formatDate(booking.date)}</p></div>
+                        <div><p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Amount</p><p className="mt-1 text-xs font-extrabold text-slate-900">{formatCurrency(booking.amount)}</p></div>
+                      </div>
+                      {canReadBooking && booking.id && <button type="button" onClick={() => navigate(`/BookingDetails/${booking.id}`)} className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-50 py-2.5 text-xs font-bold text-blue-700 hover:bg-blue-100">View booking <ChevronRight className="h-4 w-4" /></button>}
+                    </article>
+                  ))}
+                </div>
+              </>
+            )}
+          </SectionCard>
         )}
-      </div>
+      </main>
     </div>
   );
 }

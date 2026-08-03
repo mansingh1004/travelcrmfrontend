@@ -1,4 +1,4 @@
-// src/features/hotels/components/hotelCharts.jsx
+// src/console/components/hotelCharts.jsx  (moved from the retired `features/hotels` module)
 // Recharts wrappers themed to the app (blue-600 family, soft grid, rounded tips).
 // Kept dependency-light: only the chart types the module actually uses.
 

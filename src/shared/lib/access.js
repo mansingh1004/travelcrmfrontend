@@ -31,6 +31,7 @@ export const P = {
   LEAD_READ: "LEAD_READ", LEAD_CREATE: "LEAD_CREATE", LEAD_UPDATE: "LEAD_UPDATE", LEAD_DELETE: "LEAD_DELETE",
   LEAD_PERMANENT_DELETE: "LEAD_PERMANENT_DELETE",
   BOOKING_READ: "BOOKING_READ", BOOKING_CREATE: "BOOKING_CREATE", BOOKING_UPDATE: "BOOKING_UPDATE", BOOKING_CANCEL: "BOOKING_CANCEL", BOOKING_DELETE: "BOOKING_DELETE",
+  BOOKING_PROFIT_READ: "BOOKING_PROFIT_READ",
   // High-privilege: override/waive a cancellation charge and disburse refunds. TENANT_ADMIN-only
   // until explicitly granted (mirrors LEAD_PERMANENT_DELETE — not in any non-admin role default).
   BOOKING_REFUND: "BOOKING_REFUND", CANCELLATION_POLICY_MANAGE: "CANCELLATION_POLICY_MANAGE",
@@ -40,11 +41,27 @@ export const P = {
   REMINDER_READ: "REMINDER_READ", REMINDER_CREATE: "REMINDER_CREATE", REMINDER_UPDATE: "REMINDER_UPDATE", REMINDER_DELETE: "REMINDER_DELETE",
   TASK_READ: "TASK_READ", TASK_CREATE: "TASK_CREATE", TASK_UPDATE: "TASK_UPDATE", TASK_DELETE: "TASK_DELETE",
   MASTER_READ: "MASTER_READ", MASTER_MANAGE: "MASTER_MANAGE",
+  // Hotel marketplace — the tenant side of the SuperAdmin-owned platform catalog. Separate from
+  // MASTER_*: browsing a curated catalog is a different act from maintaining your own master data,
+  // and importing (which writes into the hotel master) tracks MASTER_MANAGE-level trust.
+  HOTEL_MARKETPLACE_VIEW: "HOTEL_MARKETPLACE_VIEW",
+  HOTEL_MARKETPLACE_SYNC_MASTER: "HOTEL_MARKETPLACE_SYNC_MASTER",
+  HOTEL_MARKETPLACE_BOOK: "HOTEL_MARKETPLACE_BOOK",
+  // Sight of what the tenant owes the PLATFORM. Separate from BOOKING_PROFIT_READ because a payable
+  // is a price, not a margin — gating it behind profit would hide it from TRAVEL_AGENT, the role that
+  // actually places the orders and needs the number to quote a customer.
+  MARKETPLACE_PAYABLE_READ: "MARKETPLACE_PAYABLE_READ",
   USER_READ: "USER_READ", USER_CREATE: "USER_CREATE", USER_UPDATE: "USER_UPDATE", USER_DELETE: "USER_DELETE",
   REPORT_VIEW: "REPORT_VIEW",
   SETTINGS_MANAGE: "SETTINGS_MANAGE",
   TRASH_VIEW: "TRASH_VIEW", TRASH_RESTORE: "TRASH_RESTORE", TRASH_DELETE: "TRASH_DELETE",
   FLEET_READ: "FLEET_READ", FLEET_CREATE: "FLEET_CREATE", FLEET_UPDATE: "FLEET_UPDATE", FLEET_DELETE: "FLEET_DELETE",
+  // Fleet MONEY is a separate authority from fleet operations: a dispatcher records forty cost rows
+  // a day off a bundle of receipts without ever being able to settle a driver's cash or close a
+  // period. FLEET_MONEY_SETTLE is granted deliberately per user — it is NOT inherited from managing
+  // the fleet, because settling freezes a sheet and freezing is irreversible.
+  FLEET_MONEY_READ: "FLEET_MONEY_READ", FLEET_MONEY_SETTLE: "FLEET_MONEY_SETTLE",
+  FLEET_PERIOD_CLOSE: "FLEET_PERIOD_CLOSE",
   // Accounting / GST — invoices + tax masters, vendor bills + TDS/TCS, GST settings.
   ACCOUNTING_INVOICE_READ: "ACCOUNTING_INVOICE_READ", ACCOUNTING_INVOICE_MANAGE: "ACCOUNTING_INVOICE_MANAGE",
   ACCOUNTING_TDS_READ: "ACCOUNTING_TDS_READ", ACCOUNTING_TDS_MANAGE: "ACCOUNTING_TDS_MANAGE",
@@ -67,14 +84,19 @@ const ROLE_PERMISSIONS = {
 
   [ROLES.MANAGER]: [
     P.LEAD_READ, P.LEAD_CREATE, P.LEAD_UPDATE, P.LEAD_DELETE,
-    P.BOOKING_READ, P.BOOKING_CREATE, P.BOOKING_UPDATE, P.BOOKING_CANCEL, P.BOOKING_DELETE,
+    P.BOOKING_READ, P.BOOKING_CREATE, P.BOOKING_UPDATE, P.BOOKING_CANCEL, P.BOOKING_DELETE, P.BOOKING_PROFIT_READ,
     P.CUSTOMER_READ, P.CUSTOMER_CREATE, P.CUSTOMER_UPDATE, P.CUSTOMER_DELETE,
     P.QUOTATION_READ, P.QUOTATION_CREATE, P.QUOTATION_UPDATE, P.QUOTATION_DELETE,
     P.VENDOR_READ, P.VENDOR_CREATE, P.VENDOR_UPDATE,
     P.REMINDER_READ, P.REMINDER_CREATE, P.REMINDER_UPDATE, P.REMINDER_DELETE,
     P.TASK_READ, P.TASK_CREATE, P.TASK_UPDATE, P.TASK_DELETE,
     P.MASTER_READ, P.MASTER_MANAGE, P.REPORT_VIEW, P.USER_READ,
-    P.FLEET_READ, P.FLEET_CREATE, P.FLEET_UPDATE, P.FLEET_DELETE,
+    // Importing a platform hotel writes into the hotel master, so it tracks MASTER_MANAGE.
+    // Mirrors Permission.defaultsFor(MANAGER) — Permission.java:217-218.
+    P.HOTEL_MARKETPLACE_VIEW, P.HOTEL_MARKETPLACE_SYNC_MASTER,
+    P.HOTEL_MARKETPLACE_BOOK, P.MARKETPLACE_PAYABLE_READ,
+    // Mirrors Permission.defaultsFor(MANAGER) exactly — sees fleet money, does NOT settle it.
+    P.FLEET_READ, P.FLEET_CREATE, P.FLEET_UPDATE, P.FLEET_DELETE, P.FLEET_MONEY_READ,
     P.ACCOUNTING_INVOICE_READ, P.ACCOUNTING_TDS_READ,
     P.MARKETING_READ, P.MARKETING_CREATE, P.MARKETING_UPDATE, P.MARKETING_DELETE, P.MARKETING_SEND,
   ],
@@ -89,18 +111,27 @@ const ROLE_PERMISSIONS = {
     P.REMINDER_READ, P.REMINDER_CREATE, P.REMINDER_UPDATE,
     P.TASK_READ, P.TASK_CREATE, P.TASK_UPDATE,
     P.MASTER_READ, P.REPORT_VIEW,
+    // Browse the catalog, but no SYNC_MASTER: importing writes master data and this role holds only
+    // MASTER_READ. Grant it per-user where an agent needs to import. Mirrors the backend.
+    // BOOK and MARKETPLACE_PAYABLE_READ *are* granted (Permission.java:241): this is the role that
+    // actually places marketplace orders, and the payable is a price it must know to quote the
+    // customer — not a margin. Margin stays behind BOOKING_PROFIT_READ, which this role lacks.
+    P.HOTEL_MARKETPLACE_VIEW, P.HOTEL_MARKETPLACE_BOOK, P.MARKETPLACE_PAYABLE_READ,
+    // Deliberately NO FLEET_MONEY_*: a sales role plans and runs trips, but tenant-wide driver cash
+    // positions, vendor rates and cost structure are not its business. Mirrors the backend.
     P.FLEET_READ, P.FLEET_CREATE, P.FLEET_UPDATE,
     P.MARKETING_READ,
   ],
 
   [ROLES.ACCOUNTANT]: [
-    P.BOOKING_READ, P.BOOKING_UPDATE,
+    P.BOOKING_READ, P.BOOKING_UPDATE, P.BOOKING_PROFIT_READ,
     P.CUSTOMER_READ,
     P.QUOTATION_READ,
     P.VENDOR_READ, P.VENDOR_UPDATE,
     P.TASK_READ, P.TASK_CREATE, P.TASK_UPDATE,
     P.REPORT_VIEW, P.MASTER_READ,
-    P.FLEET_READ,
+    // The settlement + period-close authority for fleet money — the role whose job it literally is.
+    P.FLEET_READ, P.FLEET_MONEY_READ, P.FLEET_MONEY_SETTLE, P.FLEET_PERIOD_CLOSE,
     // Accounting is the accountant's core surface: full invoice + TDS/TCS + tax config.
     P.ACCOUNTING_INVOICE_READ, P.ACCOUNTING_INVOICE_MANAGE,
     P.ACCOUNTING_TDS_READ, P.ACCOUNTING_TDS_MANAGE, P.ACCOUNTING_SETTINGS_MANAGE,
@@ -151,6 +182,9 @@ export function isSubAgent()    { return getRole() === ROLES.SUB_AGENT; }
 
 const PERMS_KEY = "userPermissions";
 const MODULES_KEY = "tenantModules";
+// Deployment product mode from /me/entitlements — cached alongside modules and cleared with them,
+// so the two can never disagree about which product the user is looking at.
+const MODE_KEY = "productMode";
 
 // Base URL for the bare-fetch prime call (see primeSessionCaches) that must NOT go through the
 // staff-realm axios interceptor. Mirrors http.js / ImpersonationBanner.
@@ -190,15 +224,48 @@ export async function loadMyEntitlements() {
     const body = res?.data?.data ?? res?.data ?? {};
     const modules = Array.isArray(body.modules) ? body.modules : [];
     localStorage.setItem(MODULES_KEY, JSON.stringify(modules));
+    if (body.productMode) localStorage.setItem(MODE_KEY, body.productMode);
+    else localStorage.removeItem(MODE_KEY);
     return modules;
   } catch {
     localStorage.removeItem(MODULES_KEY);   // unknown → fail-open (show everything)
+    localStorage.removeItem(MODE_KEY);
     return null;
   }
 }
 
 export function clearMyEntitlements() {
   localStorage.removeItem(MODULES_KEY);
+  localStorage.removeItem(MODE_KEY);
+}
+
+// ── Product mode (deployment-level) ───────────────────────────────────────────
+// Which PRODUCT this deployment is: "CRM_SUITE" or "FLEET_STANDALONE". Distinct from modules,
+// and both matter — modules say what this TENANT bought, this says whether a CRM exists here at
+// all. A fleet-only tenant on a CRM deployment still has an upgrade path to show them.
+
+/** True when this deployment ships Vehicle Diary on its own, with no CRM behind it. */
+export function isFleetStandalone() {
+  return localStorage.getItem(MODE_KEY) === "FLEET_STANDALONE";
+}
+
+/**
+ * True when this session should render the fleet-only shell — either the deployment IS the fleet
+ * product, or this tenant's plan unlocks nothing but FLEET.
+ *
+ * FAILS CLOSED, unlike `hasModule`: an unknown or unloaded cache returns false, so a CRM customer
+ * whose entitlement fetch hiccuped sees the full app rather than losing every menu they own. The
+ * cost of being wrong is asymmetric here — hiding a fleet menu is a nuisance, hiding a whole CRM
+ * looks like data loss.
+ */
+export function isFleetOnly() {
+  if (isFleetStandalone()) return true;
+  try {
+    const stored = JSON.parse(localStorage.getItem(MODULES_KEY) || "null");
+    return Array.isArray(stored) && stored.length === 1 && stored[0] === "FLEET";
+  } catch {
+    return false;
+  }
 }
 
 // ── Impersonation session priming (role-agnostic) ─────────────────────────────
@@ -236,6 +303,8 @@ export async function primeSessionCaches(token) {
       const data = body?.data ?? body ?? {};
       const modules = Array.isArray(data.modules) ? data.modules : [];
       localStorage.setItem(MODULES_KEY, JSON.stringify(modules));
+      if (data.productMode) localStorage.setItem(MODE_KEY, data.productMode);
+      else localStorage.removeItem(MODE_KEY);
     } catch {
       clearMyEntitlements();  // unknown → fail-open (hasModule shows all), same as login path
     }
