@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 
-import { LayoutDashboard, Users, Database, ChevronDown, Circle, Plane, FileText, CalendarDays, CalendarPlus, UserCheck, Store, UserCog, BarChart3, Settings, CircleUser, User, CreditCard, LogOut, Bell, BellRing, CalendarClock, CalendarCheck, Trash2, Truck, Network, HandCoins, Landmark, Receipt, Megaphone, Plug, Building2, ClipboardList } from 'lucide-react';
+import { LayoutDashboard, Users, Database, ChevronDown, Circle, Plane, FileText, CalendarDays, CalendarPlus, UserCheck, Store, UserCog, BarChart3, Settings, CircleUser, User, CreditCard, LogOut, Bell, BellRing, CalendarClock, CalendarCheck, Trash2, Truck, Network, HandCoins, Landmark, Receipt, Megaphone, Plug, Building2, ClipboardList, ListChecks } from 'lucide-react';
 import { isSuperAdmin, isTenantAdmin, isSubAgent, hasPermission, hasAnyPermission, hasModule, loadMyEntitlements, clearMyPermissions, clearMyEntitlements, P } from "@shared/lib/access";
 import { companyService } from "@features/settings";
 
@@ -155,6 +155,23 @@ const Sidebar = ({ isExpanded, setExpanded }) => {
               >
                 <CalendarCheck size={20} strokeWidth={activeTab === 'Calendar' ? 2.5 : 2} className={`shrink-0 ${activeTab === 'Calendar' ? 'text-white' : 'text-fuchsia-400'}`} />
                 {showSidebar && <span className="text-[14px] whitespace-nowrap tracking-wide">Calendar</span>}
+              </Link>
+            </li>
+          )}
+
+          {/* --- All Tasks --- */}
+          {/* Same gate as the Calendar above: TASK_READ + the TASKS module, because the list and
+              the calendar are two views of the same /api/tasks data. */}
+          {hasPermission(P.TASK_READ) && hasModule("TASKS") && (
+            <li>
+              <Link
+                to="/tasks"
+                onClick={() => handleLinkClick('AllTasks')}
+                className={`flex items-center py-3 rounded-xl transition-all duration-200 ${showSidebar ? 'px-4 gap-3.5' : 'justify-center px-0'} ${activeTab === 'AllTasks' ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20 font-semibold' : 'hover:bg-white/5 hover:text-white font-medium'
+                  }`}
+              >
+                <ListChecks size={20} strokeWidth={activeTab === 'AllTasks' ? 2.5 : 2} className={`shrink-0 ${activeTab === 'AllTasks' ? 'text-white' : 'text-fuchsia-400'}`} />
+                {showSidebar && <span className="text-[14px] whitespace-nowrap tracking-wide">All Tasks</span>}
               </Link>
             </li>
           )}
@@ -478,7 +495,7 @@ const Sidebar = ({ isExpanded, setExpanded }) => {
               >
                 <div className={`flex items-center ${showSidebar ? 'gap-3.5' : ''}`}>
                   <Building2 size={20} strokeWidth={activeTab === 'Marketplace' ? 2.5 : 2} className={`shrink-0 ${activeTab === 'Marketplace' ? 'text-white' : 'text-blue-400'}`} />
-                  {showSidebar && <span className="text-[14px] whitespace-nowrap tracking-wide">Hotel Marketplace</span>}
+                  {showSidebar && <span className="text-[14px] whitespace-nowrap tracking-wide">Platform Hotel</span>}
                 </div>
               </Link>
             </li>

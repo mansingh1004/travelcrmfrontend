@@ -300,7 +300,7 @@ export function MarketplaceBookingDetail() {
             </div>
           ) : (
             <Notice className="mt-4">
-              Answering a revised price needs the marketplace booking permission. Ask an admin or a
+              Answering a revised price needs the Platform Hotel booking permission. Ask an admin or a
               manager in your organization to accept or decline this.
             </Notice>
           )}

@@ -4,6 +4,7 @@ import { useState, useEffect, memo, useMemo, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { leadService } from "../api/leadService";
+import { leadAlertService } from "../api/leadAlertService";
 import { quotationService } from "@features/quotation";
 import { hasPermission, P } from "@shared/lib/access";
 import { useToast } from "@shared/ui/toast";
@@ -14,7 +15,7 @@ import PdfDownloadLoader from '@/shared/ui/PdfDownloadLoader';
 import { usePdfDownload } from '@shared/hooks/usePdfDownload';
 import WhatsAppPanel from "./WhatsAppPanel";
 import {
-  Users, Trophy, PieChart, TrendingUp, Search,
+  Users, Trophy, TrendingUp, Search,
   DownloadCloud, FileText, Plus, Upload,
   Inbox, User, Calendar, ChevronDown,
   Eye, Pencil, Trash2, X, Mail, Phone, MapPin, Briefcase, CheckCircle, Copy,
@@ -67,6 +68,12 @@ const stagePill = (stage) => STAGE_PILL[stage] || 'bg-orange-100 text-orange-700
    runs through the Convert-to-booking flow, not a manual pick — but if a lead is already in a
    stage outside this list, the row still shows its real value (the option is prepended). */
 const STAGES = ['New Lead', 'Contacted', 'Follow Up', 'Qualified', 'Proposal Sent', 'Lost'];
+
+/* The two closed stages, by DISPLAY NAME — LeadStage serialises through @JsonValue, so the wire
+   format is "Converted"/"Lost", never the constant name. Mirrors LeadStageGroups.TERMINAL_STAGES
+   on the backend: active = everything that is not one of these, so a stage added to the enum later
+   counts as active on both sides without a change here. */
+const TERMINAL_STAGE_NAMES = ['Converted', 'Lost'];
 
 /* Backend LeadType — the priority vocabulary, exactly four values. Colour runs cold-to-hot so the
    pill reads at a glance. The old keys here ('Hot Lead', 'Warm Lead', 'Cold Lead', 'VIP',
@@ -135,6 +142,49 @@ const fmtMoneyINR = (v) => v == null ? null
 /* Amount / Margin columns show paise, matching the old CRM's "₹310,000.00". */
 const fmtAmountINR = (v) => v == null ? null
   : new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
+
+/* Lakh/crore short form for the money CARDS only — a pipeline sum is eight digits and the full
+   "₹1,24,50,000" wraps and stops being readable at a glance. Table cells keep the exact figures
+   above; this is deliberately the summary form, and the card says so. */
+const fmtMoneyCompactINR = (v) => {
+  if (v == null) return null;
+  const n = Number(v);
+  if (!Number.isFinite(n)) return null;
+  const abs = Math.abs(n);
+  if (abs >= 1e7) return `₹${(n / 1e7).toFixed(2)} Cr`;
+  if (abs >= 1e5) return `₹${(n / 1e5).toFixed(2)} L`;
+  return fmtMoneyINR(n);
+};
+
+/* Seconds → the shortest honest unit. null stays "—": the backend sends null for "nobody has been
+   contacted yet", and rendering that as 0s would read as an instant response — the opposite fact.
+   Same rule the Incoming Leads page applies to the identical field. */
+const fmtDurationShort = (seconds) => {
+  if (seconds == null) return '—';
+  const s = Number(seconds);
+  if (!Number.isFinite(s)) return '—';
+  if (s < 60) return `${Math.round(s)}s`;
+  if (s < 3600) return `${Math.round(s / 60)}m`;
+  return `${(s / 3600).toFixed(1)}h`;
+};
+
+/* Stage / type counts off the summary payload. Both arrive zero-filled from the server, so a
+   missing key means the summary itself has not loaded — hence null, never 0, so callers can fall
+   back to the loaded page instead of flashing a confident wrong zero. */
+const stageCount = (summary, stage) =>
+  summary?.byStage?.find(s => s.stage === stage)?.count ?? null;
+const typeCount = (summary, type) =>
+  summary?.byType?.find(t => t.type === type)?.count ?? null;
+
+/* "1 Aug" — for the reporting-window caption on the conversion card. Parsed at local midnight
+   rather than as a bare "YYYY-MM-DD" (which Date treats as UTC and renders a day early west of
+   Greenwich). */
+const fmtDayMon = (iso) => {
+  if (!iso) return '';
+  const d = new Date(`${iso}T00:00:00`);
+  return Number.isNaN(d.getTime())
+    ? '' : d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+};
 
 /* ─── TABLE LAYOUT ────────────────────────────────────── */
 /* One source of truth for the columns — header, every row and the loading skeleton read
@@ -245,39 +295,77 @@ function CommonPagination({ pageIndex, pageSize, totalElements, totalPages, goTo
 }
 
 /* ─── STAT CARD ──────────────────────────────────────── */
-function StatCard({ icon: Icon, label, value, suffix = '', gradient, delay = 0 }) {
-  const [displayed, setDisplayed] = useState(0);
+/* Same card as the Bookings dashboard (Allbookings.jsx:117) — label above the figure, icon in a
+   rounded tile top-right, two decorative circles, requestAnimationFrame count-up. Kept visually
+   identical on purpose: two list screens in the same product showing two different card languages
+   reads as two different products.
+
+   Two additions this page needs and Bookings does not:
+
+   `value` may be a pre-formatted STRING — "₹4.20 L", "12m", "—". Money and durations must not go
+   through the counter (it steps in integers), so a non-number is rendered as-is.
+
+   `caption` is not decoration. These nine cards are measured over three different populations —
+   the caller's own row scope, the tenant as a whole (the two claim-window figures), and the
+   reporting period — so without a line saying which, the numbers look like they should add up,
+   don't, and get reported as a bug. */
+function StatCard({ card, value, caption, loading = false, onClick }) {
+  const numeric = typeof value === 'number' && Number.isFinite(value);
+  const [disp, setDisp] = useState(0);
+  const raf = useRef(null);
+
   useEffect(() => {
-    let start = 0;
-    const target = typeof value === 'number' ? value : 0;
-    if (target === 0) { setDisplayed(0); return; }
-    const step = Math.ceil(target / 60);
-    const interval = setInterval(() => {
-      start = Math.min(start + step, target);
-      setDisplayed(start);
-      if (start >= target) clearInterval(interval);
-    }, 16);
-    return () => clearInterval(interval);
-  }, [value]);
+    cancelAnimationFrame(raf.current);
+    if (!numeric) return;
+    const target = value;
+    if (!target) { setDisp(0); return; }
+    const start = performance.now();
+    const step = (ts) => {
+      const p = Math.min((ts - start) / 900, 1);
+      const ease = 1 - Math.pow(1 - p, 3);
+      setDisp(Math.round(ease * target));
+      if (p < 1) raf.current = requestAnimationFrame(step);
+    };
+    raf.current = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf.current);
+  }, [value, numeric]);
+
+  const Icon = card.icon;
+  const clickable = typeof onClick === 'function';
 
   return (
     <div
-      className={`relative overflow-hidden rounded-2xl bg-gradient-to-br ${gradient} p-5 sm:p-6 text-white
-        shadow-lg hover:-translate-y-1 hover:shadow-2xl transition-all duration-300 cursor-pointer group fade-up`}
-      style={{ animationDelay: `${delay}ms` }}
+      role={clickable ? 'button' : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      onClick={onClick}
+      onKeyDown={clickable ? (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); }
+      } : undefined}
+      className={`bg-gradient-to-br ${card.gradient} rounded-2xl p-5 text-white shadow-lg relative
+        overflow-hidden group transition-all duration-300 outline-none h-full
+        focus-visible:ring-4 focus-visible:ring-white/40
+        ${clickable ? 'cursor-pointer hover:-translate-y-1 hover:shadow-xl' : ''}`}
     >
-      <span className="pointer-events-none absolute -right-6 -bottom-12 w-40 h-40 rounded-full bg-white/10 group-hover:bg-white/20 transition-colors" />
-      <span className="pointer-events-none absolute right-6 bottom-2 w-20 h-20 rounded-full bg-white/10" />
-      <span className="pointer-events-none absolute -right-8 -top-8 w-28 h-28 rounded-full bg-white/5" />
+      <div className="absolute -right-5 -top-5 w-24 h-24 rounded-full bg-white/10 group-hover:scale-110 transition-transform duration-500" />
+      <div className="absolute -right-2 -bottom-7 w-20 h-20 rounded-full bg-white/10" />
 
-      <div className="relative z-10">
-        <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-white/20 group-hover:bg-white/30 backdrop-blur-sm flex items-center justify-center transition-all mb-4 sm:mb-5">
-          <Icon size={22} strokeWidth={2.2} />
+      <div className="relative z-10 flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-[10px] font-extrabold uppercase tracking-widest opacity-80 mb-1">{card.label}</p>
+          {loading ? (
+            <div className="h-7 w-20 rounded-lg bg-white/25 animate-pulse" />
+          ) : (
+            <p className="text-2xl sm:text-3xl font-extrabold leading-none truncate">
+              {numeric ? disp.toLocaleString('en-IN') : (value ?? '—')}
+            </p>
+          )}
+          {caption ? (
+            <p className="text-[10px] font-medium opacity-75 mt-1.5 leading-snug">{caption}</p>
+          ) : null}
         </div>
-        <p className="text-3xl sm:text-4xl font-extrabold leading-none tracking-tight mb-1.5">
-          {displayed.toLocaleString('en-IN')}{suffix}
-        </p>
-        <p className="text-xs font-bold uppercase tracking-widest text-white/80">{label}</p>
+        <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
+          <Icon size={18} strokeWidth={2.4} />
+        </div>
       </div>
     </div>
   );
@@ -533,9 +621,14 @@ function LeadRow({
   const q = lead.latestQuotation;
   const isConverted = lead.leadStage === 'Converted' || !!lead.convertedBookingPublicId;
 
-  // Human-readable code when the backend sends one (tenant_sequences), else a short publicId.
-  const displayCode = lead.displayCode || lead.leadCode
-    || (lead.publicId ? String(lead.publicId).slice(0, 8).toUpperCase() : `LD-${lead.id}`);
+  // Human-readable code when the backend sends one (lead_sequences), else an em-dash.
+  //
+  // NO UUID FALLBACK. The old chain ended in `LD-${lead.id}`, and LeadResponseDto exposes the UUID
+  // as `id` (there is no `publicId` key on the wire), so the moment leadCode was missing this
+  // printed the full raw UUID — "LD-296ebd28-af1f-40db-9e1f-f8d84f5ffb58" — in the Lead ID column.
+  // A UUID is not a lead reference anyone can read out on a call; showing nothing is strictly better
+  // than showing something wrong, and it surfaces a missing code instead of disguising it.
+  const displayCode = lead.displayCode || lead.leadCode || '—';
 
   const destinations = Array.isArray(lead.itinerary) ? lead.itinerary.filter(d => d && d.destination) : [];
   const totalNights = destinations.reduce((s, d) => s + (Number(d.nights) || 0), 0);
@@ -1476,7 +1569,29 @@ const Leads = () => {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
 
-  const [analyticsOpen, setAnalyticsOpen] = useState(false);
+  // Open by default: this block IS the business overview. Collapsed-by-default meant the first
+  // thing the page told anyone about their pipeline was nothing.
+  const [analyticsOpen, setAnalyticsOpen] = useState(true);
+
+  /* ── Dashboard numbers ─────────────────────────────────────────────────────
+     TWO sources, deliberately not merged, because they answer at two different scopes:
+
+       summary     GET /leads/stats/summary  — the caller's OWN row scope (admin ⇒ tenant,
+                   manager ⇒ team, agent ⇒ own), aggregated in the database.
+       alertStats  GET /leads/alerts/stats   — tenant-WIDE by design: an open lead is visible to
+                   everyone precisely so anyone can claim it, so this figure is the same number for
+                   the whole team. The two cards built on it say "tenant-wide" for that reason.
+
+     Both stay null until they land. Consumers fall back to the loaded page and label it — they
+     never render a confident zero for a number that simply has not arrived. */
+  const [summary, setSummary] = useState(null);
+  const [alertStats, setAlertStats] = useState(null);
+  const [statsLoading, setStatsLoading] = useState(true);
+
+  /* The caller's true lead count, read off the paged envelope's `pagination.totalElements`.
+     `leads.length` is the PAGE size (the list fetches page 0 / size 100), which is what every
+     card and badge used to be computed from. */
+  const [totalCount, setTotalCount] = useState(null);
 
   const [viewLead, setViewLead] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -1554,7 +1669,43 @@ const Leads = () => {
     }
   }, [pagination.pageIndex, pagination.pageSize, sortOrder, debouncedSearch, serverParamsKey]);
 
-  useEffect(() => { fetchLeads(); }, [fetchLeads]);
+  /**
+   * The cards' data. Ambient by nature: a failed roll-up leaves the cards showing "—" and this
+   * function adds NO toast of its own — the list is what the user asked for, and a broken badge
+   * must not put a second error in front of them.
+   *
+   * (The shared interceptor may still speak for 401/403/429/5xx — see shared/api/authRealm.js. That
+   * is its contract for things the user cannot act on, and it is one toast, not two: nothing here
+   * re-reports it the way fetchLeads has to.)
+   *
+   * allSettled, not all: the two calls have different scopes and different failure modes, and one
+   * being down must not blank the other.
+   */
+  const fetchStats = useCallback(async () => {
+    setStatsLoading(true);
+    const [summaryRes, alertRes] = await Promise.allSettled([
+      leadService.getStatsSummary(),
+      leadAlertService.getStats(),
+    ]);
+    // leadService returns the raw axios response (ApiResponse envelope); leadAlertService unwraps.
+    setSummary(summaryRes.status === 'fulfilled' ? (summaryRes.value?.data?.data ?? null) : null);
+    setAlertStats(alertRes.status === 'fulfilled' ? (alertRes.value ?? null) : null);
+    setStatsLoading(false);
+  }, []);
+
+  /* Both effects are guarded on the SAME key the page gates on. Hooks run before the `denied`
+     early-return below (:AccessDenied), so without this a user who reaches /allleads by URL
+     without LEAD_READ fires requests that all 403 — and the shared interceptor toasts each one on
+     top of the access-denied screen. */
+  useEffect(() => {
+    if (!hasPermission(P.LEAD_READ)) return;
+    fetchLeads();
+  }, [fetchLeads]);
+
+  useEffect(() => {
+    if (!hasPermission(P.LEAD_READ)) return;
+    fetchStats();
+  }, [fetchStats]);
 
   // Separate lightweight fetch that feeds ONLY the stat cards + tab badges (the aggregate overview).
   // Pass an EXPLICIT size so the badges never depend on the getAllLeads default (which other callers
@@ -1624,6 +1775,9 @@ const Leads = () => {
       );
 
       setLeads(prev => prev.map(l => l.id === leadToUpdate.id ? { ...l, leadStage: newStage } : l));
+      // A stage move changes Active / Proposal Sent / Converted and the pipeline value with it.
+      // The row is patched locally, but the cards are server-side — they have to be re-asked.
+      fetchStats();
       showToast(`Lead ${leadToUpdate.leadCode || leadToUpdate.customerName || ''} marked as ${newStage}!`);
     } catch (err) {
       if (isAlreadyReported(err)) return;   // <ToastHost/> already showed it
@@ -1648,6 +1802,7 @@ const Leads = () => {
       );
 
       setLeads(prev => prev.map(l => l.id === leadToUpdate.id ? { ...l, leadType: newType } : l));
+      fetchStats();   // the Fresh badge is a server count now
       showToast(`Lead #${leadToUpdate.id} set to ${newType}!`);
     } catch (err) {
       if (isAlreadyReported(err)) return;   // <ToastHost/> already showed it
@@ -1662,6 +1817,8 @@ const Leads = () => {
       }
       setLeads(prev => prev.filter(l => l.id !== deleteTarget.id));
       setSelectedIds(prev => prev.filter(id => id !== deleteTarget.id));
+      setTotalCount(prev => (prev == null ? prev : Math.max(0, prev - 1)));
+      fetchStats();
       showToast(`Lead ${deleteTarget.leadCode || deleteTarget.customerName || ''} has been deleted.`);
       setDeleteTarget(null);
     } catch (err) {
@@ -1688,29 +1845,228 @@ const Leads = () => {
   // current server page now, so counting them would report "12 of 25" instead of the tenant total.
   const safeLeads = useMemo(() => (Array.isArray(overviewLeads) ? overviewLeads : []), [overviewLeads]);
 
-  // Lead-funnel stats for the cards, derived from the loaded set. A lead counts as a
-  // "booking" once it's Converted or linked to a booking (same rule the row uses).
-  // Conversion = won / all leads; Win rate = won / closed (won + lost) only.
-  const stats = useMemo(() => {
-    const total = safeLeads.length;
-    const bookings = safeLeads.filter(l => l.leadStage === 'Converted' || l.convertedBookingPublicId).length;
-    const lost = safeLeads.filter(l => l.leadStage === 'Lost').length;
-    const closed = bookings + lost;
-    return {
-      bookings,
-      conversion: total ? Math.round((bookings / total) * 100) : 0,
-      winRate: closed ? Math.round((bookings / closed) * 100) : 0,
-    };
-  }, [safeLeads]);
+  /* The day every "today" figure is measured against. The server computes its counts in the
+     TENANT's timezone and echoes the date back, so the client filter agrees with the card instead
+     of drifting by a day for anyone whose browser sits in another zone. `en-CA` is the shortest
+     way to a YYYY-MM-DD the API's date strings compare against lexicographically. */
+  const todayKey = summary?.today ?? new Date().toLocaleDateString('en-CA');
 
-  // ── Server-driven derivations — the table renders the server page directly (no client filter,
-  //   no client pagination). Search / stage / type / date all run in the DB via listLeads(),
-  //   so a match on lead #2000 is found even though only ~10 rows are ever in memory. ──
-  const pageRows      = leads;
-  const totalElements = meta?.totalElements ?? 0;
-  const totalPages    = Math.max(1, meta?.totalPages ?? 1);
-  const safePageIndex = meta?.page ?? pagination.pageIndex;
-  const pageSize      = meta?.size ?? pagination.pageSize;
+  /* Fallbacks for every card figure, computed from the leads actually loaded.
+     These are NOT equivalent to the server numbers and are never presented as if they were: the
+     list fetches page 0 / size 100, so past a hundred leads this describes the newest page. It
+     exists only so the page still says something while the roll-up is in flight or has failed —
+     `summaryMissing` drives the caption that admits which one is on screen. */
+  const pageStats = useMemo(() => {
+    const isActive = (l) => !TERMINAL_STAGE_NAMES.includes(l.leadStage);
+    return {
+      active: safeLeads.filter(isActive).length,
+      converted: safeLeads.filter(l => l.leadStage === 'Converted').length,
+      lost: safeLeads.filter(l => l.leadStage === 'Lost').length,
+      hot: safeLeads.filter(l => l.leadType === 'Hot').length,
+      followUpsDue: safeLeads.filter(l =>
+        isActive(l) && !!l.followUpDate && l.followUpDate <= todayKey).length,
+    };
+  }, [safeLeads, todayKey]);
+
+  const summaryMissing = !statsLoading && !summary;
+
+  /* The table is holding fewer leads than the caller actually owns. Everything above the table is
+     the full picture; everything in it is the newest page. Saying so is the whole point — the old
+     cards quietly showed page figures dressed as tenant totals. */
+  const listTruncated = totalCount != null && totalCount > safeLeads.length;
+
+  /* ── The nine cards ────────────────────────────────────────────────────────────────────────
+     Four on the first row, five on the second, in the order the owner specified. Shape and styling
+     are the Bookings dashboard's (Allbookings.jsx:76) so the two list screens read as one product.
+
+     Every figure is a SERVER aggregate. Two different scopes are represented and that is why every
+     card carries a caption:
+       · seven of them follow the caller's own LEAD_READ row scope (admin ⇒ tenant, manager ⇒ team,
+         agent ⇒ own) — GET /leads/stats/summary;
+       · "Needs 1st Contact" and "Avg 1st Response" are TENANT-WIDE by design — an open lead is
+         broadcast to everyone precisely so anyone can claim it, so those two will not add up
+         against the rest and say so.
+
+     `value: null` is what a card shows as "—". It is never coerced to 0: for the response-time card
+     null means "nobody has been contacted yet", and 0 would read as an instant reply. */
+  const periodLabel = summary
+    ? `${fmtDayMon(summary.periodFrom)}–${fmtDayMon(summary.periodTo)}`
+    : 'this month';
+  const pageOnly = summaryMissing ? 'this page only — roll-up unavailable' : null;
+
+  const statCards = [
+    // ── Row 1: what the pipeline IS, right now ──
+    {
+      key: 'total', label: 'Total Leads', icon: Users, gradient: 'from-blue-600 to-indigo-500',
+      value: summary?.totalLeads ?? totalCount ?? safeLeads.length,
+      caption: pageOnly ?? 'all leads in your scope',
+      loading: statsLoading && !summary && totalCount == null,
+      onClick: () => setActiveTab('All'),
+    },
+    {
+      key: 'hot', label: 'Hot Leads', icon: Sparkles, gradient: 'from-rose-500 to-red-600',
+      value: typeCount(summary, 'Hot') ?? pageStats.hot,
+      caption: pageOnly ?? 'highest-priority enquiries',
+      loading: statsLoading && !summary,
+      onClick: () => setActiveTab('Hot'),
+    },
+    {
+      key: 'active', label: 'Active', icon: Inbox, gradient: 'from-cyan-500 to-teal-600',
+      value: summary?.activeLeads ?? pageStats.active,
+      caption: pageOnly ?? 'open — not Converted or Lost',
+      loading: statsLoading && !summary,
+      onClick: () => setActiveTab('Active'),
+    },
+    {
+      key: 'lost', label: 'Lost', icon: X, gradient: 'from-slate-600 to-slate-700',
+      value: summary?.lostLeads ?? pageStats.lost,
+      caption: pageOnly ?? 'closed without a booking',
+      loading: statsLoading && !summary,
+      onClick: () => setActiveTab('Lost'),
+    },
+
+    // ── Row 2: what the team DID, and what is owed ──
+    {
+      // All-time converted, so it sits in the same family as Total/Active/Lost. The period figure
+      // and the COHORT rate (of the leads created in that window, how many closed) ride in the
+      // caption — pairing a period's wins with all-time creations would divide two populations.
+      key: 'converted', label: 'Converted', icon: Trophy, gradient: 'from-green-500 to-emerald-600',
+      value: summary?.convertedLeads ?? pageStats.converted,
+      caption: summary
+        ? (summary.conversionRate == null
+            ? `${summary.convertedInPeriod} in ${periodLabel}`
+            : `${summary.convertedInPeriod} in ${periodLabel} · ${summary.conversionRate}% of ${summary.createdInPeriod} new`)
+        : (pageOnly ?? 'won leads'),
+      loading: statsLoading && !summary,
+      onClick: () => setActiveTab('Converted'),
+    },
+    {
+      key: 'followups', label: 'Follow-ups Due', icon: Bell, gradient: 'from-amber-500 to-orange-500',
+      value: summary
+        ? summary.followUpsOverdue + summary.followUpsDueToday
+        : pageStats.followUpsDue,
+      caption: summary
+        ? `${summary.followUpsOverdue} overdue · ${summary.followUpsDueToday} today`
+        : (pageOnly ?? 'overdue + due today'),
+      loading: statsLoading && !summary,
+      onClick: () => setActiveTab('Follow-ups'),
+    },
+    {
+      key: 'unclaimed', label: 'Needs 1st Contact', icon: AlertCircle, gradient: 'from-orange-600 to-red-600',
+      value: alertStats?.openToClaim ?? null,
+      caption: alertStats
+        ? `${alertStats.slaBreaches ?? 0} past target · tenant-wide`
+        : 'tenant-wide',
+      loading: statsLoading && !alertStats,
+      onClick: () => navigate('/leads/incoming'),
+    },
+    {
+      key: 'response', label: 'Avg 1st Response', icon: TrendingUp, gradient: 'from-violet-500 to-purple-600',
+      value: alertStats ? fmtDurationShort(alertStats.avgFirstResponseSeconds) : null,
+      caption: alertStats
+        ? `target ${Math.max(1, Math.round((alertStats.slaTargetSeconds ?? 300) / 60))}m · today · tenant-wide`
+        : 'contacted today · tenant-wide',
+      loading: statsLoading && !alertStats,
+      onClick: () => navigate('/leads/incoming'),
+    },
+    {
+      // Σ budget over ACTIVE leads. The coverage line is not optional: budget is nullable and often
+      // empty on a fresh enquiry, so the sum alone reads as "the pipeline is worth this" when it may
+      // be describing four leads out of eighty.
+      key: 'pipeline', label: 'Pipeline Value', icon: DollarSign, gradient: 'from-sky-600 to-blue-700',
+      value: summary ? (fmtMoneyCompactINR(summary.activePipelineValue) ?? '₹0') : null,
+      caption: summary
+        ? `${summary.activeWithBudget} of ${summary.activeLeads} active have a budget`
+        : 'customer-stated budget',
+      loading: statsLoading && !summary,
+      onClick: () => setActiveTab('Active'),
+    },
+  ];
+
+  // Bespoke search / date / tab filtering stays here; the result is the table's data source.
+  const filteredLeads = useMemo(() => {
+    return safeLeads.filter(lead => {
+      const q = searchTerm.trim().toLowerCase();
+      const matchesSearch = q === '' ||
+        lead.customerName?.toLowerCase().includes(q) ||
+        lead.email?.toLowerCase().includes(q) ||
+        lead.phone?.includes(q) ||
+        // The reference a customer quotes back ("LD-26-0001"). Kept alongside the UUID matches so a
+        // pasted publicId still finds its lead — but this is the one a human will actually type.
+        lead.leadCode?.toLowerCase().includes(q) ||
+        lead.id?.toString().includes(q) ||
+        lead.publicId?.toLowerCase().includes(q);
+
+      let matchesDate = true;
+      if (dateFilter !== 'all' && lead.createdAt) {
+        const ld = new Date(lead.createdAt); ld.setHours(0, 0, 0, 0);
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        const yest = new Date(today); yest.setDate(today.getDate() - 1);
+        const week = new Date(today); week.setDate(today.getDate() - 7);
+
+        if (dateFilter === 'today') matchesDate = ld.getTime() === today.getTime();
+        else if (dateFilter === 'yesterday') matchesDate = ld.getTime() === yest.getTime();
+        else if (dateFilter === 'last_7_days') matchesDate = ld >= week && ld <= today;
+        else if (dateFilter === 'custom' && startDate && endDate) {
+          const s = new Date(startDate);
+          const e = new Date(endDate); e.setHours(23, 59, 59, 999);
+          matchesDate = ld >= s && ld <= e;
+        }
+      }
+
+      /* Three kinds of tab share one state, in precedence order. 'Active' and 'Follow-ups' are
+         the two the cards click into, and each mirrors EXACTLY what its card counts server-side —
+         if these predicates and the SQL ever disagree, the card and the list it opens will show
+         two different pipelines. */
+      let matchesTab = true;
+      if (LEAD_TYPES.includes(activeTab)) {
+        // Priority vocabulary (Fresh/Hot/Warm/Cold) — a TYPE tab, not a stage. Generalised from the
+        // old hard-coded 'Fresh' branch when the Hot card landed; the two vocabularies share no
+        // values, so one state can safely carry either.
+        matchesTab = lead.leadType === activeTab;
+      } else if (activeTab === 'Active') {
+        matchesTab = !TERMINAL_STAGE_NAMES.includes(lead.leadStage);
+      } else if (activeTab === 'Follow-ups') {
+        // Overdue OR due today, still open — LeadRepository.countFollowUpsBefore +
+        // countFollowUpsInRange, in the tenant's day (todayKey comes from the server).
+        matchesTab = !TERMINAL_STAGE_NAMES.includes(lead.leadStage)
+          && !!lead.followUpDate && lead.followUpDate <= todayKey;
+      } else if (activeTab !== 'All') {
+        matchesTab = lead.leadStage === activeTab;
+      }
+
+      return matchesSearch && matchesDate && matchesTab;
+    });
+  }, [safeLeads, searchTerm, dateFilter, startDate, endDate, activeTab, todayKey]);
+
+  // ── TanStack Table: drives sorting and pagination (headless — the markup below
+  //   renders row.original). Sort is controlled by sortOrder on createdAt. ──
+  const sorting = useMemo(() => [{ id: 'createdAt', desc: sortOrder !== 'asc' }], [sortOrder]);
+
+  const columns = useMemo(() => [
+    {
+      id: 'createdAt',
+      accessorFn: (row) => (row.createdAt ? new Date(row.createdAt) : new Date(0)),
+      sortingFn: 'datetime',
+    },
+  ], []);
+
+  const table = useReactTable({
+    data: filteredLeads,
+    columns,
+    state: { sorting, pagination },
+    onPaginationChange: setPagination,
+    getRowId: (row) => String(row.id),
+    autoResetPageIndex: false,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
+  });
+
+  const pageRows = table.getRowModel().rows;
+  const totalElements = filteredLeads.length;
+  const totalPages = Math.max(1, table.getPageCount());
+  const { pageIndex: safePageIndex, pageSize } = table.getState().pagination;
 
   // Header checkbox works on the current page, like the old CRM.
   const pageIds = pageRows.map(l => l.id);
@@ -1741,7 +2097,11 @@ const Leads = () => {
 
       {/* Refetches only when leads actually landed, so a cancelled or all-duplicate
           import does not churn the list. */}
-      <ImportLeadsModal open={importOpen} onClose={() => setImportOpen(false)} onImported={fetchLeads} />
+      <ImportLeadsModal
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        onImported={() => { fetchLeads(); fetchStats(); }}
+      />
 
       {waLead && <WhatsAppPanel lead={waLead} onClose={() => setWaLead(null)} />}
       {viewLead && <ViewLeadModal lead={viewLead} onClose={() => setViewLead(null)} onEdit={l => { setViewLead(null); handleEditNavigate(l); }} canEdit={hasPermission(P.LEAD_UPDATE)} />}
@@ -1773,7 +2133,11 @@ const Leads = () => {
               <div>
                 <h1 className="text-xl font-extrabold text-slate-800 tracking-tight flex items-center gap-2">
                   Leads Management
-                  <span className="hidden sm:inline text-xs bg-gradient-to-r from-violet-500 to-purple-600 text-white font-bold px-2.5 py-0.5 rounded-full">{safeLeads.length} total</span>
+                  {/* The caller's real total, off `pagination.totalElements` — not the page size,
+                      which is what this badge used to show. */}
+                  <span className="hidden sm:inline text-xs bg-gradient-to-r from-violet-500 to-purple-600 text-white font-bold px-2.5 py-0.5 rounded-full">
+                    {(totalCount ?? safeLeads.length).toLocaleString('en-IN')} total
+                  </span>
                 </h1>
                 <div className="text-xs text-slate-400 mt-0.5 flex items-center gap-1 font-medium">
                   <span className="hover:text-blue-600 cursor-pointer transition-colors">Home</span>
@@ -1821,13 +2185,28 @@ const Leads = () => {
             </div>
             <span className="text-sm font-extrabold text-slate-700 flex-shrink-0">Analytics</span>
 
-            {/* Summary pills — only shown when collapsed */}
+            {/* Compact values when the cards are collapsed — the same four the team watches most,
+                read off the same server roll-up so collapsing changes the layout, not the truth. */}
             {!analyticsOpen && (
               <div className="flex items-center gap-2 flex-wrap ml-1">
-                <span className="text-xs font-bold px-3 py-1 rounded-full bg-teal-100 text-teal-700 border border-teal-200">{safeLeads.length} Leads</span>
-                <span className="text-xs font-bold px-3 py-1 rounded-full bg-green-100 text-green-700 border border-green-200">{stats.bookings} Booked</span>
-                <span className="text-xs font-bold px-3 py-1 rounded-full bg-amber-100 text-amber-700 border border-amber-200">{stats.conversion}% Conv.</span>
-                <span className="text-xs font-bold px-3 py-1 rounded-full bg-red-100 text-red-700 border border-red-200">{stats.winRate}% Win</span>
+                <span className="text-xs font-bold px-3 py-1 rounded-full bg-teal-100 text-teal-700 border border-teal-200">
+                  {(summary?.activeLeads ?? pageStats.active).toLocaleString('en-IN')} Active
+                </span>
+                <span className="text-xs font-bold px-3 py-1 rounded-full bg-amber-100 text-amber-700 border border-amber-200">
+                  {(summary ? summary.followUpsOverdue + summary.followUpsDueToday : pageStats.followUpsDue).toLocaleString('en-IN')} Follow-ups
+                </span>
+                <span className="text-xs font-bold px-3 py-1 rounded-full bg-red-100 text-red-700 border border-red-200">
+                  {/* "—", not 0, when the tiles have not landed — the same rule the card follows.
+                      A fabricated 0 here is the worst one on the page: it is the figure that tells
+                      someone to go and claim a lead nobody has answered. */}
+                  {alertStats ? alertStats.openToClaim.toLocaleString('en-IN') : '—'} Unclaimed
+                </span>
+                <span className="text-xs font-bold px-3 py-1 rounded-full bg-green-100 text-green-700 border border-green-200">
+                  {(summary?.convertedLeads ?? pageStats.converted).toLocaleString('en-IN')} Converted
+                </span>
+                <span className="text-xs font-bold px-3 py-1 rounded-full bg-blue-100 text-blue-700 border border-blue-200">
+                  {summary ? (fmtMoneyCompactINR(summary.activePipelineValue) ?? '₹0') : '—'} Pipeline
+                </span>
               </div>
             )}
 
@@ -1838,26 +2217,62 @@ const Leads = () => {
             />
           </button>
 
-          {/* Full gradient cards — only rendered when open */}
+          {/* ── The nine cards: 4 on the first row, 5 on the second ───────────────────────────
+              Two separate grids, not one 9-item grid — a single grid would wrap 5+4 or 3+3+3
+              depending on the breakpoint, and the split is specified. Both collapse to 2 columns
+              on phones, where "row 1 / row 2" stops meaning anything anyway.
+
+              Definitions (and the reason each caption exists) are on `statCards` above. */}
           {analyticsOpen && (
-            <div
-              className="grid grid-cols-2 md:grid-cols-4 gap-4 px-5 pb-5"
-              style={{ animation: 'fadeIn .25s ease both' }}
-            >
-              <StatCard icon={Users} label="Total Leads" value={safeLeads.length} gradient="from-cyan-400 via-teal-500 to-teal-600" delay={0} />
-              <StatCard icon={Trophy} label="Bookings" value={stats.bookings} gradient="from-emerald-400 via-green-500 to-green-600" delay={60} />
-              <StatCard icon={PieChart} label="Conversion" value={stats.conversion} suffix="%" gradient="from-amber-400 via-orange-500 to-orange-600" delay={120} />
-              <StatCard icon={TrendingUp} label="Win Rate" value={stats.winRate} suffix="%" gradient="from-rose-400 via-red-500 to-red-600" delay={180} />
+            <div className="px-5 pb-5 space-y-4" style={{ animation: 'fadeIn .25s ease both' }}>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                {statCards.slice(0, 4).map((card, i) => (
+                  <div key={card.key} className="fade-up" style={{ animationDelay: `${i * 40}ms` }}>
+                    <StatCard
+                      card={card}
+                      value={card.value}
+                      caption={card.caption}
+                      loading={card.loading}
+                      onClick={card.onClick}
+                    />
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-4">
+                {statCards.slice(4).map((card, i) => (
+                  <div key={card.key} className="fade-up" style={{ animationDelay: `${(i + 4) * 40}ms` }}>
+                    <StatCard
+                      card={card}
+                      value={card.value}
+                      caption={card.caption}
+                      loading={card.loading}
+                      onClick={card.onClick}
+                    />
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
 
         <div className="bg-white/80 backdrop-blur-md rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden">
 
-          <div className="px-5 py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <div className="flex items-center gap-3 flex-wrap">
-              <h2 className="text-base font-extrabold text-slate-700">Leads Directory</h2>
-              <span className="text-xs bg-gradient-to-r from-violet-500 to-purple-600 text-white font-bold px-3 py-1 rounded-full">{totalElements} results</span>
+          <div className="px-5 py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center gap-3 flex-wrap">
+                <h2 className="text-base font-extrabold text-slate-700">Leads Directory</h2>
+                <span className="text-xs bg-gradient-to-r from-violet-500 to-purple-600 text-white font-bold px-3 py-1 rounded-full">{totalElements} results</span>
+              </div>
+              {/* The cards and the table are measured over different sets, and the difference is
+                  real: the list fetches the newest 100. Saying it out loud is the fix; the old
+                  cards silently presented page figures as tenant totals. */}
+              {listTruncated && (
+                <p className="text-[11px] text-slate-400 font-medium leading-snug">
+                  Cards above cover all <strong className="text-slate-500">{totalCount.toLocaleString('en-IN')}</strong> leads in your scope.
+                  This table holds the newest <strong className="text-slate-500">{safeLeads.length}</strong> &mdash; search and filters apply to those.
+                </p>
+              )}
             </div>
             {(searchTerm || dateFilter !== 'all' || activeTab !== 'All') && (
               <button onClick={() => { setDateFilter('all'); setSearchTerm(''); setActiveTab('All'); }} className="text-xs text-slate-400 hover:text-red-500 font-bold flex items-center gap-1.5 transition-colors">
@@ -1900,9 +2315,30 @@ const Leads = () => {
 
           <div className="px-5 py-4 border-b border-slate-100 overflow-x-auto">
             {(() => {
-              const freshCount = safeLeads.filter(l => l.leadType === 'Fresh').length;
-              const newLeadCount = safeLeads.filter(l => l.leadStage === 'New Lead').length;
-              const contactedCount = safeLeads.filter(l => l.leadStage === 'Contacted').length;
+              /* Badges read the SERVER roll-up and fall back to the loaded page only while it is
+                 in flight (or if it failed) — they used to be page counts unconditionally, so
+                 "Contacted 41" meant "41 of the newest 100", not 41 in the pipeline.
+
+                 Every tab a card can click into has a button here, so the selected filter is
+                 always visible: Active and Follow-ups exist for exactly that reason. */
+              const tabs = [
+                { name: 'All',        count: totalCount ?? safeLeads.length },
+                { name: 'Active',     count: summary?.activeLeads ?? pageStats.active },
+                { name: 'Follow-ups', count: summary
+                                               ? summary.followUpsOverdue + summary.followUpsDueToday
+                                               : pageStats.followUpsDue },
+                { name: 'Hot',        count: typeCount(summary, 'Hot') ?? pageStats.hot,
+                                      dot: 'bg-red-500 shadow-red-500/50' },
+                { name: 'Fresh',      count: typeCount(summary, 'Fresh')
+                                               ?? safeLeads.filter(l => l.leadType === 'Fresh').length,
+                                      dot: 'bg-emerald-500 shadow-emerald-500/50' },
+                { name: 'New Lead',   count: stageCount(summary, 'New Lead')
+                                               ?? safeLeads.filter(l => l.leadStage === 'New Lead').length },
+                { name: 'Contacted',  count: stageCount(summary, 'Contacted')
+                                               ?? safeLeads.filter(l => l.leadStage === 'Contacted').length },
+                { name: 'Converted',  count: stageCount(summary, 'Converted') ?? pageStats.converted },
+                { name: 'Lost',       count: stageCount(summary, 'Lost') ?? pageStats.lost },
+              ];
 
               const btnClass = (tabName) => `px-4 py-2 rounded-full text-sm font-bold flex items-center gap-2 shadow-sm transition-all border ${activeTab === tabName
                 ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white border-transparent shadow-blue-200'
@@ -1914,19 +2350,13 @@ const Leads = () => {
 
               return (
                 <div className="flex gap-2 min-w-max">
-                  <button onClick={() => setActiveTab('All')} className={btnClass('All')}>
-                    All <span className={badgeClass('All')}>{safeLeads.length}</span>
-                  </button>
-                  <button onClick={() => setActiveTab('Fresh')} className={btnClass('Fresh')}>
-                    <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-sm shadow-emerald-500/50" /> Fresh
-                    <span className={badgeClass('Fresh')}>{freshCount}</span>
-                  </button>
-                  <button onClick={() => setActiveTab('New Lead')} className={btnClass('New Lead')}>
-                    New Lead <span className={badgeClass('New Lead')}>{newLeadCount}</span>
-                  </button>
-                  <button onClick={() => setActiveTab('Contacted')} className={btnClass('Contacted')}>
-                    Contacted <span className={badgeClass('Contacted')}>{contactedCount}</span>
-                  </button>
+                  {tabs.map(tab => (
+                    <button key={tab.name} onClick={() => setActiveTab(tab.name)} className={btnClass(tab.name)}>
+                      {tab.dot && <div className={`w-2.5 h-2.5 rounded-full shadow-sm ${tab.dot}`} />}
+                      {tab.name}
+                      <span className={badgeClass(tab.name)}>{Number(tab.count).toLocaleString('en-IN')}</span>
+                    </button>
+                  ))}
                 </div>
               );
             })()}
@@ -1980,13 +2410,20 @@ const Leads = () => {
                     </td>
                   </tr>
                 ) : (
-                  pageRows.map((lead, idx) => {
+                  pageRows.map((row, idx) => {
+                    // row is a TanStack Row WRAPPER, not the lead. The data is row.original —
+                    // passing the wrapper made every field read (lead.customerName, lead.leadCode,
+                    // lead.itinerary…) resolve to undefined, so a fully-populated API response
+                    // rendered as "N/A" / "—" / "Not set" in every column.
+                    //
+                    // row.id is safe to key and select on: getRowId above maps it to the lead's
+                    // publicId, so it is the same string row.original.id carries.
                     return (
                       <LeadRow
-                        key={lead.id}
-                        lead={lead}
+                        key={row.id}
+                        lead={row.original}
                         index={idx}
-                        selected={selectedIds.includes(lead.id)}
+                        selected={selectedIds.includes(row.id)}
                         onToggleSelect={toggleSelect}
                         onView={setViewLead}
                         onEditNavigate={handleEditNavigate}

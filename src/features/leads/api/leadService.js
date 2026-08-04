@@ -379,6 +379,25 @@ export const leadService = {
     API.get("/leads/assignment/recommendation"),
 
   // ── STATISTICS ───────────────────────────────────────────
+  /**
+   * The All-Leads dashboard roll-up — pipeline shape, money in play, today's follow-ups and the
+   * period conversion cohort, aggregated server-side over the caller's whole LEAD_READ scope.
+   *
+   * Use this for every card and tab badge. Do NOT reduce over the array `getAllLeads` returns:
+   * that call is `page=0&size=100`, so past a hundred leads a client-side total silently describes
+   * the newest page while reading like a tenant figure — which is exactly the bug this replaced.
+   *
+   * `from`/`to` are inclusive `YYYY-MM-DD` strings; omit both for the tenant's current calendar
+   * month (computed in the TENANT's timezone, not the browser's).
+   */
+  getStatsSummary: ({ from, to } = {}) =>
+    API.get("/leads/stats/summary", {
+      params: {
+        ...(from ? { from } : {}),
+        ...(to ? { to } : {}),
+      },
+    }),
+
   getUserWorkload: () =>
     API.get("/leads/stats/workload"),
 
