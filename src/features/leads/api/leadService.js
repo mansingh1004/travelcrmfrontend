@@ -257,15 +257,33 @@ function transformFormData(formData, services = [], itinerary = []) {
   };
 }
 
+// Drop null/undefined/empty params so the query string stays clean and the backend
+// reads an absent filter as "no filter" (never search=&stage=&fromDate=).
+const cleanParams = (obj) =>
+  Object.fromEntries(
+    Object.entries(obj).filter(([, v]) => v !== undefined && v !== null && v !== "")
+  );
+
 export const leadService = {
 
   // ── CREATE ────────────────────────────────────────────────
   createLead: (formData, services, itinerary) =>
     API.post("/leads", transformFormData(formData, services, itinerary)),
 
-  // ── GET ALL ───────────────────────────────────────────────
+  // ── GET ALL (legacy positional; used by booking/dashboard/report dropdowns) ──
+  // Left untouched on purpose — four other pages call it as getAllLeads(0, 200).
   getAllLeads: (page = 0, size = 100) =>
     API.get(`/leads?page=${page}&size=${size}`),
+
+  // ── SERVER-SIDE PAGINATED LIST (search + stage + date filters) ──────────────
+  // Powers AllLeads via usePagedList. Shape matches the hook's fetcher:
+  // { page, size, sortBy, sortDir, q, ...filters }. `q` maps to the backend `search`
+  // param; null/blank args are stripped, so an absent filter widens to all leads.
+  listLeads: ({ page = 0, size = 25, sortBy = "createdAt", sortDir = "desc",
+                q, stage, leadType, fromDate, toDate } = {}) =>
+    API.get("/leads", {
+      params: cleanParams({ page, size, sortBy, sortDir, search: q, stage, leadType, fromDate, toDate }),
+    }),
 
   // ── GET BY PUBLIC ID ──────────────────────────────────────
   getLeadById: (publicId) =>

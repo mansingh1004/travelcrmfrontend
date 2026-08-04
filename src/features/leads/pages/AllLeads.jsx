@@ -1,6 +1,6 @@
 
 
-import { useState, useEffect, memo, useMemo } from 'react';
+import { useState, useEffect, memo, useMemo, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { leadService } from "../api/leadService";
@@ -1204,16 +1204,44 @@ function QuotationsModal({ lead, onClose, canDelete, canEdit }) {
 }
 
 
+// Local yyyy-mm-dd (never toISOString, which is UTC and can shift the day across a timezone).
+function isoDate(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+// Maps the quick date filter to the inclusive [fromDate,toDate] the backend expects (ISO date).
+// Returns {} for 'all' (no date restriction). Mirrors the old client-side date logic 1:1.
+function dateRangeFor(dateFilter, startDate, endDate) {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  if (dateFilter === 'today') return { fromDate: isoDate(today), toDate: isoDate(today) };
+  if (dateFilter === 'yesterday') {
+    const y = new Date(today); y.setDate(today.getDate() - 1);
+    return { fromDate: isoDate(y), toDate: isoDate(y) };
+  }
+  if (dateFilter === 'last_7_days') {
+    const w = new Date(today); w.setDate(today.getDate() - 7);
+    return { fromDate: isoDate(w), toDate: isoDate(today) };
+  }
+  if (dateFilter === 'custom' && startDate && endDate) return { fromDate: startDate, toDate: endDate };
+  return {};
+}
+
 /* ─── MAIN COMPONENT ─────────────────────────────────── */
 const Leads = () => {
   const navigate = useNavigate();
-  const [leads, setLeads] = useState([]);
+  const [leads, setLeads] = useState([]);            // current SERVER page — the table's rows
+  const [overviewLeads, setOverviewLeads] = useState([]);  // stat cards + tab badges only (capped)
+  const [meta, setMeta] = useState(null);            // server pagination block
   const [loading, setLoading] = useState(true);
 
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 10 });
   const [activeTab, setActiveTab] = useState('All');
 
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');   // settled value that actually hits the server
   const [sortOrder] = useState('desc');
   const [dateFilter, setDateFilter] = useState('all');
   const [startDate, setStartDate] = useState('');
@@ -1238,33 +1266,85 @@ const Leads = () => {
   // Argument order is (message, type) everywhere — see shared/ui/toast.jsx.
   const { showToast } = useToast();
 
-  useEffect(() => { fetchLeads(); }, []);
+  // Debounce the search box so a keystroke isn't a request — only the settled value hits the server.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchTerm.trim()), 300);
+    return () => clearTimeout(t);
+  }, [searchTerm]);
 
-  const fetchLeads = async () => {
+  // Any change to WHAT is listed resets to page 0 (else you land on page 5 of a 1-page result).
+  useEffect(() => {
+    setPagination(p => (p.pageIndex === 0 ? p : { ...p, pageIndex: 0 }));
+  }, [debouncedSearch, activeTab, dateFilter, startDate, endDate, pagination.pageSize]);
+
+  // Tabs + date filter → the server params the backend understands. 'Fresh' is a leadType,
+  // every other non-'All' tab is a stage; the date filter becomes an ISO from/to range.
+  const serverParams = useMemo(() => {
+    const p = {};
+    if (activeTab === 'Fresh') p.leadType = 'Fresh';
+    else if (activeTab !== 'All') p.stage = activeTab;
+    const { fromDate, toDate } = dateRangeFor(dateFilter, startDate, endDate);
+    if (fromDate) p.fromDate = fromDate;
+    if (toDate) p.toDate = toDate;
+    return p;
+  }, [activeTab, dateFilter, startDate, endDate]);
+  const serverParamsKey = JSON.stringify(serverParams);
+
+  // Guards against out-of-order responses: only the newest request in flight may render.
+  const reqId = useRef(0);
+
+  // The TABLE's data source — one server page (search + filters applied in the DB, so this finds
+  // matches across the whole tenant, not just a client-side slice).
+  const fetchLeads = useCallback(async () => {
+    const id = ++reqId.current;
     try {
       setLoading(true);
-      const response = await leadService.getAllLeads();
-      let data = [];
-      if (response.data) {
-        if (Array.isArray(response.data.data)) data = response.data.data;
-        else if (response.data.data && Array.isArray(response.data.data.content)) data = response.data.data.content;
-        else if (Array.isArray(response.data.content)) data = response.data.content;
-        else if (Array.isArray(response.data)) data = response.data;
-      }
-      setLeads(data);
+      const response = await leadService.listLeads({
+        page: pagination.pageIndex,
+        size: pagination.pageSize,
+        sortBy: 'createdAt',
+        sortDir: sortOrder,
+        q: debouncedSearch || undefined,
+        ...JSON.parse(serverParamsKey),
+      });
+      if (id !== reqId.current) return;              // a newer request already won
+      const body = response?.data ?? {};
+      setLeads(Array.isArray(body.data) ? body.data : []);
+      setMeta(body.pagination ?? null);
+      setDenied(false);
     } catch (err) {
-      // A 403 here means the page was opened without LEAD_READ (e.g. by URL) —
-      // show the friendly access-denied page instead of a blank list.
+      if (id !== reqId.current) return;
+      // A 403 here means the page was opened without LEAD_READ (e.g. by URL).
       if (err.response?.status === 403) setDenied(true);
-      setLeads([]);
-
+      setLeads([]); setMeta(null);
       // 403 lands in isAlreadyReported too, so the interceptor's toast is the only one.
       if (isAlreadyReported(err)) return;
       showToast(getErrorMessage(err, 'Failed to load leads. Please try again.'), 'error');
     } finally {
-      setLoading(false);
+      if (id === reqId.current) setLoading(false);
     }
-  };
+  }, [pagination.pageIndex, pagination.pageSize, sortOrder, debouncedSearch, serverParamsKey]);
+
+  useEffect(() => { fetchLeads(); }, [fetchLeads]);
+
+  // Separate lightweight fetch that feeds ONLY the stat cards + tab badges (the aggregate overview).
+  // Pass an EXPLICIT size so the badges never depend on the getAllLeads default (which other callers
+  // may set low) — this is why the count showed 5. Accurate up to 200 leads; for a truly unbounded
+  // roll-up a dedicated COUNT endpoint would be needed, but the searchable TABLE is already
+  // server-paged and uncapped, so search/pagination are unaffected either way.
+  useEffect(() => {
+    leadService.getAllLeads(0, 200)
+      .then(res => {
+        const d = res?.data;
+        let data = [];
+        if (Array.isArray(d?.data)) data = d.data;
+        else if (d?.data && Array.isArray(d.data.content)) data = d.data.content;
+        else if (Array.isArray(d?.content)) data = d.content;
+        else if (Array.isArray(d)) data = d;
+        setOverviewLeads(data);
+      })
+      .catch(() => setOverviewLeads([]));
+  }, []);
 
   // ── Navigate to standalone /EditLead/:id page ──
   const handleEditNavigate = (lead) => {
@@ -1375,7 +1455,9 @@ const Leads = () => {
     ));
   };
 
-  const safeLeads = useMemo(() => (Array.isArray(leads) ? leads : []), [leads]);
+  // Overview set (stat cards + tab badges). Deliberately NOT the table's `leads` — those are just the
+  // current server page now, so counting them would report "12 of 25" instead of the tenant total.
+  const safeLeads = useMemo(() => (Array.isArray(overviewLeads) ? overviewLeads : []), [overviewLeads]);
 
   // Lead-funnel stats for the cards, derived from the loaded set. A lead counts as a
   // "booking" once it's Converted or linked to a booking (same rule the row uses).
@@ -1392,98 +1474,24 @@ const Leads = () => {
     };
   }, [safeLeads]);
 
-  // Bespoke search / date / tab filtering stays here; the result is the table's data source.
-  const filteredLeads = useMemo(() => {
-    return safeLeads.filter(lead => {
-      const q = searchTerm.trim().toLowerCase();
-      const matchesSearch = q === '' ||
-        lead.customerName?.toLowerCase().includes(q) ||
-        lead.email?.toLowerCase().includes(q) ||
-        lead.phone?.includes(q) ||
-        // The reference a customer quotes back ("LD-26-0001"). Kept alongside the UUID matches so a
-        // pasted publicId still finds its lead — but this is the one a human will actually type.
-        lead.leadCode?.toLowerCase().includes(q) ||
-        lead.id?.toString().includes(q) ||
-        lead.publicId?.toLowerCase().includes(q);
-
-      let matchesDate = true;
-      if (dateFilter !== 'all' && lead.createdAt) {
-        const ld = new Date(lead.createdAt); ld.setHours(0, 0, 0, 0);
-        const today = new Date(); today.setHours(0, 0, 0, 0);
-        const yest = new Date(today); yest.setDate(today.getDate() - 1);
-        const week = new Date(today); week.setDate(today.getDate() - 7);
-
-        if (dateFilter === 'today') matchesDate = ld.getTime() === today.getTime();
-        else if (dateFilter === 'yesterday') matchesDate = ld.getTime() === yest.getTime();
-        else if (dateFilter === 'last_7_days') matchesDate = ld >= week && ld <= today;
-        else if (dateFilter === 'custom' && startDate && endDate) {
-          const s = new Date(startDate);
-          const e = new Date(endDate); e.setHours(23, 59, 59, 999);
-          matchesDate = ld >= s && ld <= e;
-        }
-      }
-
-      let matchesTab = true;
-      if (activeTab === 'Fresh') {
-        matchesTab = lead.leadType === 'Fresh';
-      } else if (activeTab !== 'All') {
-        matchesTab = lead.leadStage === activeTab;
-      }
-
-      return matchesSearch && matchesDate && matchesTab;
-    });
-  }, [safeLeads, searchTerm, dateFilter, startDate, endDate, activeTab]);
-
-  // ── TanStack Table: drives sorting and pagination (headless — the markup below
-  //   renders row.original). Sort is controlled by sortOrder on createdAt. ──
-  const sorting = useMemo(() => [{ id: 'createdAt', desc: sortOrder !== 'asc' }], [sortOrder]);
-
-  const columns = useMemo(() => [
-    {
-      id: 'createdAt',
-      accessorFn: (row) => (row.createdAt ? new Date(row.createdAt) : new Date(0)),
-      sortingFn: 'datetime',
-    },
-  ], []);
-
-  const table = useReactTable({
-    data: filteredLeads,
-    columns,
-    state: { sorting, pagination },
-    onPaginationChange: setPagination,
-    getRowId: (row) => String(row.id),
-    autoResetPageIndex: false,
-    getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
-  });
-
-  const pageRows = table.getRowModel().rows;
-  const totalElements = filteredLeads.length;
-  const totalPages = Math.max(1, table.getPageCount());
-  const { pageIndex: safePageIndex, pageSize } = table.getState().pagination;
+  // ── Server-driven derivations — the table renders the server page directly (no client filter,
+  //   no client pagination). Search / stage / type / date all run in the DB via listLeads(),
+  //   so a match on lead #2000 is found even though only ~10 rows are ever in memory. ──
+  const pageRows      = leads;
+  const totalElements = meta?.totalElements ?? 0;
+  const totalPages    = Math.max(1, meta?.totalPages ?? 1);
+  const safePageIndex = meta?.page ?? pagination.pageIndex;
+  const pageSize      = meta?.size ?? pagination.pageSize;
 
   // Header checkbox works on the current page, like the old CRM.
-  const pageIds = pageRows.map(r => r.original.id);
+  const pageIds = pageRows.map(l => l.id);
   const allPageSelected = pageIds.length > 0 && pageIds.every(id => selectedIds.includes(id));
   const toggleSelect = (id) => setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   const toggleSelectAll = () => setSelectedIds(prev => allPageSelected
     ? prev.filter(id => !pageIds.includes(id))
     : [...new Set([...prev, ...pageIds])]);
 
-  // Reset to first page when a filter changes (row edits don't reset).
-  useEffect(() => {
-    setPagination(p => ({ ...p, pageIndex: 0 }));
-  }, [searchTerm, dateFilter, startDate, endDate, activeTab]);
-
-  // Keep the page index in range if the row count shrinks (e.g. after a delete).
-  useEffect(() => {
-    if (safePageIndex > totalPages - 1) {
-      setPagination(p => ({ ...p, pageIndex: Math.max(0, totalPages - 1) }));
-    }
-  }, [totalPages, safePageIndex]);
-
-  const goToPage = (page) => table.setPageIndex(Math.max(0, Math.min(page, totalPages - 1)));
+  const goToPage = (page) => setPagination(p => ({ ...p, pageIndex: Math.max(0, Math.min(page, totalPages - 1)) }));
   const changePageSize = (size) => setPagination({ pageIndex: 0, pageSize: size });
 
   // Blocked page (no LEAD_READ, or the list load was forbidden) → friendly full-page block.
@@ -1743,8 +1751,7 @@ const Leads = () => {
                     </td>
                   </tr>
                 ) : (
-                  pageRows.map((row, idx) => {
-                    const lead = row.original;
+                  pageRows.map((lead, idx) => {
                     return (
                       <LeadRow
                         key={lead.id}
