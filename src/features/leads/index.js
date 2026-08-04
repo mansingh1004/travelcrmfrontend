@@ -1,6 +1,4 @@
-// src/features/leads/index.js
-// Public API of the leads feature.
-// leadService is consumed by dashboard, reminders, reports and quotation.
+
 
 export { default as AllLeads } from "./pages/AllLeads";
 export { default as CreateLead } from "./pages/CreateLead";

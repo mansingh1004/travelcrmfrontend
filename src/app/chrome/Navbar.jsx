@@ -6,7 +6,9 @@ import {
   Search, Settings, LogOut, HelpCircle, CheckCheck,
 } from "lucide-react";
 import { notificationService } from "@features/reminders";
-import { companyService } from "@features/settings"; 
+import BookingReminderBell from "./BookingReminderBell";
+import ReminderBell from "./ReminderBell";
+import { companyService } from "@features/settings";
 import { getErrorMessage } from "@shared/api/apiError";
 import { toast } from "@shared/ui/toast";
 
@@ -36,35 +38,15 @@ const bellAuthHeaders = () => ({
   Authorization: `Bearer ${localStorage.getItem("token")}`,
 });
 
-async function fetchReminderAlerts() {
-  try {
-    const [ovRes, dtRes] = await Promise.all([
-      fetch(`${API_BASE}/reminders/overdue`, { headers: bellAuthHeaders() }),
-      fetch(`${API_BASE}/reminders/due-today`, { headers: bellAuthHeaders() }),
-    ]);
-    const overdue = ovRes.ok ? await ovRes.json() : [];
-    const dueToday = dtRes.ok ? await dtRes.json() : [];
-    const seen = new Set();
-    return [...overdue, ...dueToday]
-      .filter((r) => {
-        if (seen.has(r.id)) return false;
-        seen.add(r.id);
-        return true;
-      })
-      .map((r) => ({
-        id: `rem-${r.id}`,
-        kind: "reminder",
-        type: "REMIND",
-        title: r.title,
-        message: r.description || r.notes || "Reminder due",
-        createdAt: r.dueDate,
-        status: "UNREAD",
-        link: "/Reminders",
-      }));
-  } catch {
-    return [];
-  }
-}
+// The backend writes a notification row when a reminder falls due — same taxonomy the
+// Notifications page uses to bucket them as "Reminder_alert" (type containing REMIND / LEAD).
+// Those belong to the reminder icon, not the bell, so the bell filters them out. LEAD is NOT
+// matched here: a lead notification is a real notification, it is only the reminder-generated
+// ones we are moving.
+const isReminderNotif = (n) => (n?.type || "").toUpperCase().includes("REMIND");
+
+const unreadOf = (list = []) =>
+  list.filter((n) => !isReminderNotif(n) && n.status === "UNREAD").length;
 
 async function markNotificationReadById(id) {
   const res = await fetch(`${API_BASE}/notifications/${id}/read`, {
@@ -123,13 +105,17 @@ const Navbar = memo(function Navbar({
 
   const [dropdownOpen,  setDropdownOpen]  = useState(false);
   const [notifOpen,     setNotifOpen]     = useState(false);
+  // The booking-reminder and reminder icons navigate straight to their pages — they hold no
+  // open-state, so only the notification bell and the profile menu take part in the dropdown
+  // exclusion below.
   const [notifications, setNotifications] = useState([]);
   const [unreadCount,   setUnreadCount]   = useState(0);
-  const [reminderCount, setReminderCount] = useState(0);
   const [loading,       setLoading]       = useState(false);
   const sseRef = useRef(null);
 
-  const badgeCount = unreadCount + reminderCount;
+  // The bell is notifications-only: the badge is the server's unread-notification count and
+  // nothing else. Reminders have their own surface and must never be added back in here.
+  const badgeCount = unreadCount;
   const [company, setCompany] = useState(null);
   const menuItems = [
   { icon: User, label: "My Profile", path: "/CompanyProfile" },
@@ -208,10 +194,18 @@ const Navbar = memo(function Navbar({
   }, []);
 
   useEffect(() => {
-    notificationService.getUnreadCount().then(setUnreadCount).catch(() => setUnreadCount(0));
-    fetchReminderAlerts().then((alerts) => setReminderCount(alerts.length)).catch(() => setReminderCount(0));
+    // NOT getUnreadCount(): the server counts every unread row, including the notifications it
+    // mints when a reminder falls due (type contains REMIND). Those belong to the reminder icon,
+    // so the badge is derived from the same filtered list the dropdown renders — otherwise the
+    // count and the rows disagree.
+    notificationService
+      .getNotifications({ size: 50 })
+      .then((data) => setUnreadCount(unreadOf(data.content)))
+      .catch(() => setUnreadCount(0));
+
     sseRef.current = notificationService.subscribeToSSE((incoming) => {
-      setNotifications((prev) => [{ ...incoming, kind: "notification" }, ...prev].slice(0, 20));
+      if (isReminderNotif(incoming)) return;   // reminder pushes belong to the reminder icon
+      setNotifications((prev) => [incoming, ...prev].slice(0, 20));
       setUnreadCount((c) => c + 1);
     });
     return () => sseRef.current?.close();
@@ -224,16 +218,12 @@ const Navbar = memo(function Navbar({
     if (opening) {
       setLoading(true);
       try {
-        const [data, reminderAlerts] = await Promise.all([
-          notificationService.getNotifications({ size: 10 }),
-          fetchReminderAlerts(),
-        ]);
-        const notifs = (data.content ?? []).map((n) => ({ ...n, kind: "notification" }));
-        setReminderCount(reminderAlerts.length);
-        const merged = [...notifs, ...reminderAlerts].sort(
-          (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
-        );
-        setNotifications(merged);
+        // 50, not 10: reminder-type rows are filtered out below, so a small page could come
+        // back almost empty once they are dropped.
+        const data = await notificationService.getNotifications({ size: 50 });
+        const visible = (data.content ?? []).filter((n) => !isReminderNotif(n));
+        setNotifications(visible.slice(0, 20));
+        setUnreadCount(unreadOf(visible));
       } catch (err) {
         setNotifications([]);
         toast.error(getErrorMessage(err, "Couldn't load notifications."));
@@ -250,9 +240,7 @@ const Navbar = memo(function Navbar({
       toast.error(getErrorMessage(err, "Couldn't mark notifications as read."));
       return;
     }
-    setNotifications((prev) =>
-      prev.map((n) => (n.kind === "reminder" ? n : { ...n, status: "READ" }))
-    );
+    setNotifications((prev) => prev.map((n) => ({ ...n, status: "READ" })));
     setUnreadCount(0);
   };
 
@@ -265,14 +253,13 @@ const Navbar = memo(function Navbar({
   };
 
   const handleClickNotif = async (notif) => {
-    if (notif.kind === "reminder") {
-      setNotifOpen(false);
-      navigate(notif.link || "/Reminders");
-      return;
-    }
     if (notif.status === "UNREAD") {
       try {
-        await markNotificationReadById(notif.id);
+        // publicId first: the service is documented as markRead(publicId) and the Notifications
+        // page passes one. The bell was sending the numeric `id`, so a read never registered
+        // server-side and the count returned on refresh. `?? id` keeps it working if a payload
+        // ever arrives without a publicId.
+        await markNotificationReadById(notif.publicId ?? notif.id);
         setNotifications((prev) =>
           prev.map((n) => (n.id === notif.id ? { ...n, status: "READ" } : n))
         );
@@ -377,6 +364,14 @@ const Navbar = memo(function Navbar({
           <CalendarPlus size={15} />
           <span className="hidden lg:block">New Booking</span>
         </button>
+
+        {/* Booking reminders — deliberately NOT `hidden sm:flex` like the button above it, which
+            disappears below 640px. This has to stay reachable on phones. */}
+        <BookingReminderBell />
+
+        {/* General (lead / follow-up) reminders — separate from booking reminders above and
+            from the notification bell below. Also not `hidden sm:flex`: stays usable on phones. */}
+        <ReminderBell />
 
         {/* Bell */}
         <div className="relative">

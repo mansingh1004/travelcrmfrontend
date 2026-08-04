@@ -68,7 +68,7 @@
 
 
 import { useState, Suspense } from 'react';
-import { Outlet } from 'react-router-dom'; // 1. Ye naya import add karna hai
+import { Outlet, useNavigate } from 'react-router-dom'; // 1. Ye naya import add karna hai
 import Sidebar from '@app/chrome/Sidebar';
 import Navbar from '@app/chrome/Navbar';
 import AppFooter from '@app/chrome/AppFooter';
@@ -89,6 +89,7 @@ import LeadAlertHost from "@app/chrome/LeadAlertHost";
 const Layout = () => { // 2. Yahan se { children } hata diya gaya hai
   // Default state ko ab false rakha hai taaki mobile par pehle se open na mile
   const [isSidebarExpanded, setIsSidebarExpanded] = useState(false);
+  const navigate = useNavigate();
 
   const toggleSidebar = () => {
     setIsSidebarExpanded(!isSidebarExpanded);
@@ -118,8 +119,9 @@ const Layout = () => { // 2. Yahan se { children } hata diya gaya hai
       />
       
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
-        <Navbar toggleSidebar={toggleSidebar} />
-        
+        {/* onNewBooking was never passed, so the Navbar's New Booking button did nothing. */}
+        <Navbar toggleSidebar={toggleSidebar} onNewBooking={() => navigate('/Allbookings')} />
+
         <main className="flex-1 overflow-y-auto bg-[#f4f6f9] p-4">
           
           {/* Page chunks load inside the chrome — navbar/sidebar stay visible

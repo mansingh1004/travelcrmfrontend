@@ -515,7 +515,7 @@ function LeadRow({
   lead, index, selected, onToggleSelect,
   onView, onEditNavigate, onDelete, onStageChange, onTypeChange,
   onViewQuotations, onSuggestPackages, onConvert, onAddLog, onViewLogs,
-  onWeblinkStats, onWhatsApp,
+  onWeblinkStats, onWeblinkView, onWhatsApp,
   canEdit, canDelete, canConvert, canCreateQuotation,
 }) {
   const { avatar, accent } = colorForIndex(index);
@@ -744,10 +744,13 @@ function LeadRow({
       <td className={`${TD} text-center`}>
         {webLink ? (
           <div className="inline-flex items-center rounded-lg overflow-hidden shadow-sm">
-            <a href={webLink} target="_blank" rel="noopener noreferrer"
+            {/* Design picker first, then the link opens — same contract as the quotation list's
+                Weblink button. Was a plain <a href>; it is a <button> now because the click has to
+                await the style PATCH before the tab opens. */}
+            <button onClick={() => onWeblinkView(lead)} title="Open weblink"
               className="inline-flex items-center gap-1 px-2 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold transition-all">
               <ExternalLink size={11} /> VIEW
-            </a>
+            </button>
             <button onClick={() => onWeblinkStats(lead)} title="Weblink views"
               className="inline-flex items-center gap-1 px-2 py-1.5 bg-[#eeda92] hover:bg-[#e6ce78] text-[#3d2a00] text-[10px] font-extrabold transition-all">
               <Eye size={11} /> {weblinkViews}
@@ -843,6 +846,7 @@ function QuotationsModal({ lead, onClose, canDelete, canEdit }) {
   const [downloadingId, setDownloading] = useState(null);
   const [stylePickFor, setStylePickFor] = useState(null);   // quotation whose PDF design is being picked
   const [sharePickFor, setSharePickFor] = useState(null);   // quotation whose SHARE design is being picked
+  const [weblinkPickFor, setWeblinkPickFor] = useState(null);   // quotation whose WEBLINK design is being picked
   const [emailingId, setEmailing] = useState(null);
   const [webViewQ, setWebViewQ] = useState(null);   // quotation shown in the web view overlay
   const [previewPickFor, setPreviewPickFor] = useState(null);  // quotation whose weblink DESIGN is being picked
@@ -969,6 +973,27 @@ function QuotationsModal({ lead, onClose, canDelete, canEdit }) {
     }
   };
 
+  // Open the weblink in a chosen design. Same contract as shareWhatsAppWithStyle: the style is
+  // SAVED first, because the web view renders from the STORED design — opening the overlay before
+  // the PATCH lands would show the old design, and the customer's link would disagree with it.
+  const openWebViewWithStyle = async (q, style) => {
+    try {
+      setWeblinkPickFor(null);
+      if (style && style !== (q.templateStyle || 'CLASSIC')) {
+        await quotationService.setTemplateStyle(q.publicId, style);
+        setList(prev => prev.map(x => x.publicId === q.publicId ? { ...x, templateStyle: style } : x));
+        setWebViewQ({ ...q, templateStyle: style });
+        return;
+      }
+      setWebViewQ(q);
+    } catch (e) {
+      // The overlay was NOT opened — showing a design we failed to save would misrepresent what
+      // the customer will actually see on their link.
+      if (isAlreadyReported(e)) return;
+      showToast(getErrorMessage(e, 'Could not set the design. The weblink was not opened.'), 'error');
+    }
+  };
+
   // Share on WhatsApp — opens wa.me with a prefilled message + the web-view link.
   const shareWhatsApp = (q) => {
     const url = webLink(q);
@@ -1048,9 +1073,7 @@ function QuotationsModal({ lead, onClose, canDelete, canEdit }) {
                     <p className="text-sm font-extrabold text-slate-800 whitespace-nowrap">{fmtMoney(q.grandTotal)}</p>
                   </div>
                   <div className="flex items-center gap-2 mt-3 flex-wrap">
-                    {/* Weblink opens through the design picker: Classic / Modern / Premium.
-                        The pick is a one-off preview — the saved templateStyle is untouched. */}
-                    <button onClick={() => setPreviewPickFor(q)}
+                    <button onClick={() => setWeblinkPickFor(q)}
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all">
                       <Eye size={13} /> Weblink
                     </button>
@@ -1153,6 +1176,16 @@ function QuotationsModal({ lead, onClose, canDelete, canEdit }) {
           savedStyle={sharePickFor.templateStyle}
           onSelect={(style) => shareWhatsAppWithStyle(sharePickFor, style)}
           onClose={() => setSharePickFor(null)}
+        />
+      )}
+      {/* Weblink → pick a design first. mode="share" because the pick is PERSISTED and is exactly
+          what the customer sees on their link — same contract as the WhatsApp share dialog. */}
+      {weblinkPickFor && (
+        <QuotationStyleModal
+          mode="share"
+          savedStyle={weblinkPickFor.templateStyle}
+          onSelect={(style) => openWebViewWithStyle(weblinkPickFor, style)}
+          onClose={() => setWeblinkPickFor(null)}
         />
       )}
 
@@ -1424,6 +1457,7 @@ const Leads = () => {
   const [logLead, setLogLead] = useState(null);
   const [logsViewLead, setLogsViewLead] = useState(null);
   const [weblinkLead, setWeblinkLead] = useState(null);   // lead whose weblink analytics are open
+  const [weblinkStyleLead, setWeblinkStyleLead] = useState(null);   // lead whose weblink design is being picked
   const [waLead, setWaLead] = useState(null);             // WhatsApp panel
   const [selectedIds, setSelectedIds] = useState([]);     // row checkbox selection
   const [denied, setDenied] = useState(false);
@@ -1464,6 +1498,28 @@ const Leads = () => {
   // ── Navigate to standalone /EditLead/:id page ──
   const handleEditNavigate = (lead) => {
     navigate(`/EditLead/${lead.publicId || lead.id}`);
+  };
+
+  // ── Weblink row button: pick a design, SAVE it, then open /q/{publicId} ──
+  // The style is persisted before the tab opens because the public page renders from the STORED
+  // design — opening first would show the old one, and the customer's link would disagree with it.
+  const openLeadWeblinkWithStyle = async (lead, style) => {
+    const q = lead?.latestQuotation;
+    setWeblinkStyleLead(null);
+    if (!q?.publicId) return;
+    try {
+      if (style && style !== (q.templateStyle || 'CLASSIC')) {
+        await quotationService.setTemplateStyle(q.publicId, style);
+        setLeads(prev => prev.map(l => l.id === lead.id
+          ? { ...l, latestQuotation: { ...l.latestQuotation, templateStyle: style } }
+          : l));
+      }
+      window.open(`${window.location.origin}/q/${q.publicId}`, '_blank', 'noopener,noreferrer');
+    } catch (e) {
+      // The tab was NOT opened — a design we failed to save would misrepresent what the customer sees.
+      if (isAlreadyReported(e)) return;
+      showToast(getErrorMessage(e, 'Could not set the design. The weblink was not opened.'), 'error');
+    }
   };
 
   const handleStageChange = async (leadToUpdate, newStage) => {
@@ -1688,6 +1744,16 @@ const Leads = () => {
       {logLead && <AddLogModal lead={logLead} onClose={() => setLogLead(null)} onLogAdded={handleLogAdded} />}
       {logsViewLead && <LogsModal lead={logsViewLead} onClose={() => setLogsViewLead(null)} canDelete={hasPermission(P.LEAD_UPDATE)} />}
       {weblinkLead?.latestQuotation && <WeblinkAnalyticsModal quotation={weblinkLead.latestQuotation} onClose={() => setWeblinkLead(null)} />}
+      {/* Weblink row button → pick a design first. mode="share" because the pick is PERSISTED and
+          is exactly what the customer sees when they open the link. */}
+      {weblinkStyleLead?.latestQuotation && (
+        <QuotationStyleModal
+          mode="share"
+          savedStyle={weblinkStyleLead.latestQuotation.templateStyle}
+          onSelect={(style) => openLeadWeblinkWithStyle(weblinkStyleLead, style)}
+          onClose={() => setWeblinkStyleLead(null)}
+        />
+      )}
 
       <div className="bg-white/70 backdrop-blur-md border-b border-slate-100">
         <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 py-5">
@@ -1926,6 +1992,7 @@ const Leads = () => {
                         onAddLog={setLogLead}
                         onViewLogs={setLogsViewLead}
                         onWeblinkStats={setWeblinkLead}
+                        onWeblinkView={setWeblinkStyleLead}
                         onWhatsApp={setWaLead}
                         canEdit={hasPermission(P.LEAD_UPDATE)}
                         canDelete={hasPermission(P.LEAD_DELETE)}

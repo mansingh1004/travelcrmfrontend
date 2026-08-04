@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { Shield as FiShield, ArrowLeft as FiArrowLeft, Save as FiSave, ChevronDown as FiChevronDown, Eye as FiEye, Layers as FiLayers, ShieldUser as FaUserShield, Star as FaStar, Settings as FaCog } from "lucide-react";
 
@@ -108,6 +109,14 @@ function buildInitialState(groups) {
   return state;
 }
 
+/* Detached copy of a permissions map — every entry object is fresh, so later in-place edits to
+   the live state cannot reach the baseline the diff compares against. */
+function snapshotOf(perms) {
+  return Object.fromEntries(Object.entries(perms || {}).map(([k, v]) => [k, { ...v }]));
+}
+
+const scopeLabel = (v) => SCOPE_OPTIONS.find(o => o.value === v)?.label || v;
+
 /* Build the grid groups from the backend catalog (GET /api/permissions/catalog).
    Same shape as PERMISSION_GROUPS so rendering is unchanged; icons are added here
    (the backend sends data only). User Management + Settings → Administration group. */
@@ -131,14 +140,126 @@ function buildGroupsFromCatalog(modules) {
 /* ─── TOAST ──────────────────────────────────────────────────── */
 function Toast({ msg, type, onClose }) {
   useEffect(()=>{ const t=setTimeout(onClose,3800); return()=>clearTimeout(t); },[onClose]);
-  return (
-    <div className={`fixed top-5 right-5 z-[999] flex items-center gap-3 px-4 py-3 rounded-xl border shadow-2xl max-w-xs
+  // Portaled for the same reason as the preview modal, and above it (z 10001 > 10000): a failed
+  // save keeps the modal open, and a toast rendered inside the page would be hidden behind it.
+  return createPortal(
+    <div className={`fixed top-5 right-5 z-[10001] flex items-center gap-3 px-4 py-3 rounded-xl border shadow-2xl max-w-xs
       ${type==="success"?"bg-green-50 border-green-200 text-green-800":"bg-red-50 border-red-200 text-red-800"}`}
       style={{animation:"slideIn .3s ease both"}}>
       <span className="text-lg">{type==="success"?"✅":"❌"}</span>
       <p className="text-sm font-semibold flex-1">{msg}</p>
       <button onClick={onClose} className="opacity-50 hover:opacity-100 text-lg ml-1">×</button>
+    </div>,
+    document.body
+  );
+}
+
+/* ─── PREVIEW CHANGES MODAL ──────────────────────────────────── */
+const DIFF_TONE = {
+  granted:  { pill:"bg-emerald-50 border-emerald-200 text-emerald-700", label:"Granted"       },
+  revoked:  { pill:"bg-red-50 border-red-200 text-red-600",             label:"Revoked"       },
+  rescoped: { pill:"bg-amber-50 border-amber-200 text-amber-700",       label:"Scope changed" },
+};
+
+function DiffGroup({ kind, items, children }) {
+  if (!items.length) return null;
+  const tone = DIFF_TONE[kind];
+  return (
+    <div className="space-y-1.5">
+      <span className={`inline-block text-[11px] font-extrabold uppercase tracking-wide px-2.5 py-0.5 rounded-full border ${tone.pill}`}>
+        {tone.label} · {items.length}
+      </span>
+      <div className="space-y-1">{children}</div>
     </div>
+  );
+}
+
+function DiffRow({ label, section, right, rightClass }) {
+  return (
+    <div className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-white border border-slate-200/70">
+      <div className="min-w-0">
+        <p className="text-sm font-bold text-slate-700 truncate">{label}</p>
+        <p className="text-[11px] text-slate-400 font-medium truncate">{section}</p>
+      </div>
+      <span className={`text-[11px] font-bold whitespace-nowrap ${rightClass}`}>{right}</span>
+    </div>
+  );
+}
+
+function PreviewChangesModal({ diff, isTemplate, subjectName, saving, onSave, onClose }) {
+  const subject = subjectName || (isTemplate ? "this template" : "this user");
+  // Portaled to <body>: this page's cards are `bg-white/80 backdrop-blur-md`, and backdrop-filter
+  // creates a stacking context that a fixed overlay rendered *inside* the page paints beneath —
+  // the modal showed through the content instead of over it. Same fix as QuickCityModal /
+  // QuickDestinationModal / hotelUi / fleetUi, which all portal for this reason.
+  return createPortal(
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4"
+      role="dialog" aria-modal="true"
+      style={{ background:"rgba(15,23,42,0.45)", backdropFilter:"blur(3px)" }}
+      onClick={(e)=> e.target===e.currentTarget && onClose()}>
+      <div className="w-full max-w-2xl rounded-2xl bg-white border border-slate-200 shadow-2xl flex flex-col max-h-[85vh]">
+
+        <div className="flex items-start justify-between gap-3 p-5 border-b border-slate-100">
+          <div>
+            <h3 className="text-base font-extrabold text-slate-800 flex items-center gap-2">
+              <FiEye className="w-4 h-4 text-blue-600"/> Preview Changes
+            </h3>
+            <p className="text-xs text-slate-500 font-medium mt-0.5">
+              {diff.total === 0
+                ? "Nothing has changed since these permissions were loaded."
+                : `${diff.total} pending change${diff.total===1?"":"s"} for ${subject}. Nothing is saved yet.`}
+            </p>
+          </div>
+          <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
+        </div>
+
+        <div className="p-5 space-y-4 overflow-y-auto bg-slate-50/60">
+          {diff.total === 0 ? (
+            <p className="text-sm text-slate-400 font-semibold text-center py-10">No pending changes.</p>
+          ) : (
+            <>
+              <DiffGroup kind="granted" items={diff.granted}>
+                {diff.granted.map(i=>(
+                  <DiffRow key={i.key} label={i.label} section={i.section}
+                    right={`+ ${scopeLabel(i.scope)}`} rightClass="text-emerald-600"/>
+                ))}
+              </DiffGroup>
+              <DiffGroup kind="revoked" items={diff.revoked}>
+                {diff.revoked.map(i=>(
+                  <DiffRow key={i.key} label={i.label} section={i.section}
+                    right="removed" rightClass="text-red-500"/>
+                ))}
+              </DiffGroup>
+              <DiffGroup kind="rescoped" items={diff.rescoped}>
+                {diff.rescoped.map(i=>(
+                  <DiffRow key={i.key} label={i.label} section={i.section}
+                    right={`${scopeLabel(i.from)} → ${scopeLabel(i.to)}`} rightClass="text-amber-600"/>
+                ))}
+              </DiffGroup>
+            </>
+          )}
+        </div>
+
+        <div className="flex items-center justify-end gap-3 p-4 border-t border-slate-100">
+          <button type="button" onClick={onClose} disabled={saving}
+            className="px-5 py-2.5 rounded-xl border-2 border-slate-200 hover:border-slate-300 text-slate-600
+              font-bold text-sm bg-white hover:bg-slate-50 transition-all disabled:opacity-50">
+            Keep Editing
+          </button>
+          <button type="button" onClick={onSave} disabled={saving || diff.total === 0}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700
+              text-white font-extrabold text-sm shadow-md shadow-emerald-200 transition-all
+              disabled:opacity-60 disabled:cursor-not-allowed">
+            {saving
+              ? <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin"/>
+              : <FiSave className="w-4 h-4"/>}
+            {saving ? "Saving…" : "Save Permissions"}
+          </button>
+        </div>
+
+      </div>
+    </div>,
+    document.body
   );
 }
 
@@ -247,6 +368,11 @@ export default function UserPermissions() {
   // Permission catalog fetched from the backend — single source of truth.
   // Falls back to the static PERMISSION_GROUPS until the fetch resolves.
   const [permissionGroups, setPermissionGroups] = useState(PERMISSION_GROUPS);
+  // Baseline copy of what the SERVER currently holds — captured on load, refreshed after every
+  // successful save. "Preview Changes" diffs the live editor against this. Without it there is no
+  // "before" to compare against, because every handler rewrites `permissions` in place.
+  const [savedSnapshot, setSavedSnapshot] = useState(null);
+  const [previewOpen,   setPreviewOpen]   = useState(false);
 
   const showToast = useCallback((msg, type="success")=>setToast({msg,type}),[]);
 
@@ -266,6 +392,10 @@ export default function UserPermissions() {
         if (base[k]) base[k] = { access: !!v.access, scope: v.scope || "own" };
       });
       setPermissions(base);
+      // Deep copy, NOT a reference to `base`: handleApplyTemplate mutates entry objects in place
+      // (`next[k].access = true` after a shallow spread), which would silently rewrite the
+      // baseline too and make the diff read as "no changes".
+      setSavedSnapshot(snapshotOf(base));
     };
 
     // 1) Load the catalog (single source of truth), then 2) the saved permissions.
@@ -300,6 +430,36 @@ export default function UserPermissions() {
     const enabled = allPages.filter(pg=>permissions[pg.id]?.access).length;
     return { total: allPages.length, enabled };
   },[permissions, permissionGroups]);
+
+  /* Live editor vs. last-saved baseline — powers "Preview Changes".
+     Three buckets, because "changed" means three different things here: a permission turned on,
+     one turned off, and one left on but re-scoped (which the grid makes easy to do en masse via
+     "apply scope to all" and is otherwise invisible). */
+  const diff = useMemo(()=>{
+    const granted = [], revoked = [], rescoped = [];
+    if (!savedSnapshot) return { granted, revoked, rescoped, total: 0 };
+
+    const meta = {};
+    permissionGroups.forEach(g=>g.sections.forEach(s=>s.pages.forEach(pg=>{
+      meta[pg.id] = { label: pg.label, section: s.label };
+    })));
+
+    Object.keys(permissions).forEach(k=>{
+      const after = permissions[k];
+      if (!after) return;
+      // A key absent from the baseline is one the server never stored — treat it as "off/own",
+      // which is exactly what buildInitialState seeds it to.
+      const before = savedSnapshot[k] || { access:false, scope:"own" };
+      const m = meta[k] || { label:k, section:"—" };
+
+      if (!before.access && after.access)       granted.push({ key:k, ...m, scope:after.scope });
+      else if (before.access && !after.access)  revoked.push({ key:k, ...m, scope:before.scope });
+      else if (after.access && before.scope !== after.scope)
+        rescoped.push({ key:k, ...m, from:before.scope, to:after.scope });
+    });
+
+    return { granted, revoked, rescoped, total: granted.length + revoked.length + rescoped.length };
+  },[permissions, savedSnapshot, permissionGroups]);
 
   /* handlers */
   const handleChange = useCallback((pageId, field, value) => {
@@ -384,6 +544,9 @@ export default function UserPermissions() {
         await userPermissionsService.updatePermissions(id, permissions);
         showToast("Permissions saved successfully! ✅");
       }
+      // What was pending is now the server's state — rebaseline so the diff reads empty.
+      setSavedSnapshot(snapshotOf(permissions));
+      setPreviewOpen(false);
     } catch (err) {
       showToast(err?.response?.data?.message || "Failed to save permissions.","error");
     } finally { setSaving(false); }
@@ -426,6 +589,17 @@ export default function UserPermissions() {
       `}</style>
 
       {toast && <Toast msg={toast.msg} type={toast.type} onClose={()=>setToast(null)}/>}
+
+      {previewOpen && (
+        <PreviewChangesModal
+          diff={diff}
+          isTemplate={isTemplate}
+          subjectName={user?.fullName || user?.username}
+          saving={saving}
+          onSave={handleSave}
+          onClose={()=>setPreviewOpen(false)}
+        />
+      )}
 
       {/* ── PAGE HEADER ── */}
       <div className="bg-white/70 backdrop-blur-md border-b border-slate-100">
@@ -582,11 +756,16 @@ export default function UserPermissions() {
             {/* Right: Preview + Save as Template */}
             <div className="flex flex-col sm:flex-row gap-3">
               <button type="button"
-                onClick={()=>showToast("Preview mode — changes not yet saved.","error")}
+                onClick={()=>setPreviewOpen(true)}
                 className="flex items-center justify-center gap-2 px-5 py-3 rounded-xl
                   bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm
                   shadow-md shadow-blue-200 transition-all">
                 <FiEye className="w-4 h-4"/> Preview Changes
+                {diff.total > 0 && (
+                  <span className="ml-0.5 px-1.5 py-0.5 rounded-full bg-white/25 text-[11px] font-extrabold">
+                    {diff.total}
+                  </span>
+                )}
               </button>
               <button type="button"
                 onClick={handleSaveAsTemplate}

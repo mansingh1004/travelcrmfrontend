@@ -294,17 +294,31 @@ export default function Notifications() {
     notificationService.markAllRead().catch(() => {});
   };
 
+  // Both of these used to drop rows locally and report success without calling the server, so
+  // everything reappeared on the next load. They now hit the API and PUT THE ROWS BACK if it
+  // fails — a delete that did not happen must not look like one that did.
   const handleDelete = () => {
-    setNotifications(p => p.filter(n => n.id !== delItem.id));
-    showToast("Notification deleted.");
+    const target = delItem;
+    const prev = notifications;
+    setNotifications(p => p.filter(n => n.id !== target.id));
     setDelItem(null);
-    // BACKEND: notificationService.delete(delItem.id).catch(() => showToast("Failed to delete.", "error"));
+    notificationService.remove(target.id)
+      .then(() => showToast("Notification deleted."))
+      .catch(err => {
+        setNotifications(prev);
+        showToast(err?.message || "Failed to delete.", "error");
+      });
   };
 
   const handleClearAll = () => {
+    const prev = notifications;
     setNotifications([]);
-    showToast("All notifications cleared.");
-    // BACKEND: notificationService.clearAll().catch(() => showToast("Failed to clear.", "error"));
+    notificationService.clearAll()
+      .then(() => showToast("All notifications cleared."))
+      .catch(err => {
+        setNotifications(prev);
+        showToast(err?.message || "Failed to clear.", "error");
+      });
   };
 
   const handleNavigate = (item) => {
