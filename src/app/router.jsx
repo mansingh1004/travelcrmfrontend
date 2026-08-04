@@ -16,8 +16,6 @@ const leads = () => import("@features/leads");
 const AllLeads      = lazyPage(leads, "AllLeads");
 const CreateLead    = lazyPage(leads, "CreateLead");
 const EditLead      = lazyPage(leads, "EditLead");
-const LeadLogs      = lazyPage(leads, "LeadLogs");
-const AddLeadLog    = lazyPage(leads, "AddLeadLog");
 const AllLeadLogs   = lazyPage(leads, "AllLeadLogs");
 const WhatsAppPanel = lazyPage(leads, "WhatsAppPanel");
 const LeadAlerts    = lazyPage(leads, "LeadAlerts");
@@ -340,8 +338,9 @@ const AppRouter = () => {
           <Route path="BookingRevenueAnalysis" element={<BookingRevenueAnalysis/>}/>
           <Route path="TravelDateAnalysis" element={<TravelDateAnalysis/>}/>
           <Route path="InternationalDomestic" element={<InternationalDomestic/>}/>
-          <Route path="LeadLogs" element={<LeadLogs/>}/>
-          <Route path="AddLeadLog" element={<AddLeadLog/>}/>
+          {/* /LeadLogs and /AddLeadLog are gone: they duplicated the AddLogModal / LogsModal
+              popups and had drifted out of sync (the add page never persisted a log). Both the
+              leads grid and the lead-logs summary now open those modals in place. */}
           <Route path="AllLeadLogs" element={<AllLeadLogs/>}/>
           <Route path="CompanySettings" element={<Guard allow={hasPermission(P.SETTINGS_MANAGE)}><CompanySettings/></Guard>}/>
           <Route path="EmailConfiguration" element={<Guard allow={hasPermission(P.SETTINGS_MANAGE)}><EmailConfiguration/></Guard>}/>
