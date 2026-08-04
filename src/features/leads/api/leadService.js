@@ -369,4 +369,25 @@ export const leadService = {
 
   getLeadCountForUser: (userPublicId) =>
     API.get(`/leads/stats/users/${userPublicId}/count`),
+
+  // ── BULK IMPORT (CSV / Excel) ────────────────────────────
+  /* Two steps by design: `previewImport` writes nothing and returns the same report shape as
+     `importLeads`, so the user sees exactly what will happen before any lead exists. Both send
+     multipart — do NOT set Content-Type by hand, the browser has to add the multipart boundary. */
+
+  previewImport: (file) => {
+    const body = new FormData();
+    body.append("file", file);
+    return API.post("/leads/import/preview", body);
+  },
+
+  importLeads: (file) => {
+    const body = new FormData();
+    body.append("file", file);
+    return API.post("/leads/import", body);
+  },
+
+  /* Blob, not a plain <a href> — the endpoint needs the Authorization header the interceptor adds. */
+  downloadImportTemplate: () =>
+    API.get("/leads/import/template", { responseType: "blob" }),
 };

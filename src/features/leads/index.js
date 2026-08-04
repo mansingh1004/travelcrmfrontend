@@ -19,3 +19,10 @@ export { default as TravelDetails } from "./components/TravelDetails";
 // stays put until something else forces that change.
 export { default as SearchableSelect } from "./components/SearchableSelect";
 export { leadService } from "./api/leadService";
+
+// Incoming Leads — the claim window. The provider and the alert service are exported too because
+// app chrome (LeadAlertHost, mounted in Layout) needs them; that is the ONLY route past this
+// barrel, and it goes through the barrel exactly like Navbar's reminder/settings imports do.
+export { default as LeadAlerts } from "./pages/LeadAlerts";
+export { LeadAlertProvider, useLeadAlerts } from "./hooks/useLeadAlerts";
+export { leadAlertService, claimLostInfo, claimFailure } from "./api/leadAlertService";

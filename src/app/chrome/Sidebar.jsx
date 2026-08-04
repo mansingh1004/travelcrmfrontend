@@ -176,6 +176,10 @@ const Sidebar = ({ isExpanded, setExpanded }) => {
 
               {showSidebar && openDropdown === 'Leads' && (
                 <ul className="mt-1 space-y-1 mb-2">
+                  {/* Incoming Leads — the claim window. First in the submenu deliberately: it is the
+                      time-critical one (an SLA countdown is running on every row), unlike the two
+                      below it. Amber dot rather than the cyan the rest use, for the same reason. */}
+                  <li><Link to="/leads/incoming" onClick={() => handleLinkClick('Leads')} className="flex items-center gap-3 px-4 py-2.5 pl-11 text-[13.5px] font-medium text-slate-400 hover:text-white hover:bg-white/5 rounded-lg whitespace-nowrap transition-colors"><Circle size={6} className="fill-current text-amber-400/70" /><span>Incoming leads</span></Link></li>
                   <li><Link to="allleads" onClick={() => handleLinkClick('Leads')} className="flex items-center gap-3 px-4 py-2.5 pl-11 text-[13.5px] font-medium text-slate-400 hover:text-white hover:bg-white/5 rounded-lg whitespace-nowrap transition-colors"><Circle size={6} className="fill-current text-cyan-400/50" /><span>All leads</span></Link></li>
                   <li><Link to="/CreateLead" onClick={() => handleLinkClick('Leads')} className="flex items-center gap-3 px-4 py-2.5 pl-11 text-[13.5px] font-medium text-slate-400 hover:text-white hover:bg-white/5 rounded-lg whitespace-nowrap transition-colors"><Circle size={6} className="fill-current text-cyan-400/50" /><span>Add new lead</span></Link></li>
                 </ul>
