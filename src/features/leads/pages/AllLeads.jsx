@@ -29,6 +29,7 @@ import { WeblinkAnalyticsModal } from "@features/quotation";
 import { SuggestPackagesModal } from "@features/quotation";
 import { QuotationStyleModal } from "@features/quotation";
 import ConvertToBookingModal from "../components/ConvertToBookingModal";
+import ImportLeadsModal from "../components/ImportLeadsModal";
 import {
   useReactTable, getCoreRowModel, getSortedRowModel,
   getPaginationRowModel,
@@ -1488,6 +1489,7 @@ const Leads = () => {
   const [waLead, setWaLead] = useState(null);             // WhatsApp panel
   const [selectedIds, setSelectedIds] = useState([]);     // row checkbox selection
   const [denied, setDenied] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);    // bulk CSV/Excel import modal
 
   // Centralized toaster: <ToastHost/> (mounted beside the router in App.jsx) renders it.
   // Argument order is (message, type) everywhere — see shared/ui/toast.jsx.
@@ -1737,6 +1739,10 @@ const Leads = () => {
         .fade-up { animation: fadeUp .4s ease both; }
       `}</style>
 
+      {/* Refetches only when leads actually landed, so a cancelled or all-duplicate
+          import does not churn the list. */}
+      <ImportLeadsModal open={importOpen} onClose={() => setImportOpen(false)} onImported={fetchLeads} />
+
       {waLead && <WhatsAppPanel lead={waLead} onClose={() => setWaLead(null)} />}
       {viewLead && <ViewLeadModal lead={viewLead} onClose={() => setViewLead(null)} onEdit={l => { setViewLead(null); handleEditNavigate(l); }} canEdit={hasPermission(P.LEAD_UPDATE)} />}
       {deleteTarget && <DeleteConfirm lead={deleteTarget} onClose={() => setDeleteTarget(null)} onConfirm={handleDelete} />}
@@ -1782,10 +1788,16 @@ const Leads = () => {
               </Link>
               {hasPermission(P.LEAD_CREATE) && (
                 <>
-                  <label className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 hover:border-blue-300 bg-white hover:bg-blue-50 text-slate-600 hover:text-blue-600 text-sm font-bold transition-all shadow-sm cursor-pointer">
+                  {/* Opens the preview-then-confirm importer. The file input lives inside the modal
+                      so the picker is never the whole interaction — a bare <input> here used to
+                      swallow the chosen file with no request and no feedback. */}
+                  <button
+                    type="button"
+                    onClick={() => setImportOpen(true)}
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 hover:border-blue-300 bg-white hover:bg-blue-50 text-slate-600 hover:text-blue-600 text-sm font-bold transition-all shadow-sm cursor-pointer"
+                  >
                     <Upload size={15} /> Import
-                    <input type="file" accept=".csv,.xls,.xlsx,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="hidden" />
-                  </label>
+                  </button>
                   <Link to="/CreateLead" className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold shadow-md shadow-blue-200 hover:shadow-lg transition-all">
                     <Plus size={16} strokeWidth={2.5} /> Create Lead
                   </Link>

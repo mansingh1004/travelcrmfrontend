@@ -195,7 +195,45 @@ const notificationService = {
   // self-manage reconnection: on a permanently-closed connection we rebuild the
   // EventSource with a FRESH token read from storage, and back off between attempts.
   // Returns a handle with the same { close() } contract the caller already relies on.
+  //
+  // TWO CALLING SHAPES, one connection:
+  //   subscribeToSSE(fn, onError)                       — the original: fn gets "notification"
+  //   subscribeToSSE({ notification, leadAlert, ... })  — one handler per named server event
+  //
+  // The map form exists because the lead claim window pushes three more named events on this SAME
+  // stream. A second EventSource for them would double every tab's open connection AND duplicate
+  // the stale-token reconnect logic below — the one genuinely subtle piece of this file, and the
+  // one that must not exist in two copies drifting apart.
+  //
+  // The function form keeps working because Navbar.jsx calls it that way; changing that signature
+  // would be a silent runtime break, not a compile error.
   subscribeToSSE(onNotification, onError) {
+    // Normalise both shapes into one handler map. Unknown keys are simply never subscribed, so a
+    // caller asking for an event this server version doesn't send degrades to silence, not a crash.
+    const handlers =
+      typeof onNotification === 'function' || onNotification == null
+        ? { notification: onNotification }
+        : onNotification;
+    let onOpen = null;
+    if (typeof onNotification !== 'function' && onNotification != null) {
+      // Map form: the 2nd arg is still the error callback, but allow it on the map too.
+      onError = onNotification.onError ?? onError;
+      // onOpen exists because onError alone cannot describe the connection. A subscriber that only
+      // hears about failures can flip itself to "offline" and has no signal to flip back, so one
+      // transient blip pins it there for the rest of the session — and it also has no moment at
+      // which to backfill the events the gap swallowed (this stream has no Last-Event-ID replay).
+      onOpen = onNotification.onOpen ?? null;
+    }
+
+    // Server event name → handler key. The server names are the contract (LeadAlertEvent.java);
+    // the camelCase keys are what reads well at the call site.
+    const EVENT_MAP = {
+      notification: 'notification',
+      'lead-alert': 'leadAlert',
+      'lead-claimed': 'leadClaimed',
+      'lead-locked': 'leadLocked',
+    };
+
     let es = null;
     let stopped = false;
     let retryTimer = null;
@@ -225,15 +263,27 @@ const notificationService = {
 
       // Backend sends named events: SseEmitter.event().name("notification").data(...)
       // Named SSE events do NOT fire onmessage — must use addEventListener.
-      es.addEventListener('notification', (e) => {
-        try {
-          onNotification(JSON.parse(e.data));
-        } catch (err) {
-          console.error('[SSE] Parse error:', err);
-        }
-      });
+      for (const [serverEvent, key] of Object.entries(EVENT_MAP)) {
+        const handler = handlers?.[key];
+        if (typeof handler !== 'function') continue;   // not subscribed — don't attach a listener
+        es.addEventListener(serverEvent, (e) => {
+          let payload;
+          try {
+            payload = JSON.parse(e.data);
+          } catch (err) {
+            console.error(`[SSE] Parse error on '${serverEvent}':`, err);
+            return;
+          }
+          // The handler runs OUTSIDE the parse try/catch on purpose: a render error thrown by a
+          // subscriber must not be swallowed and mislabelled as a malformed server payload.
+          handler(payload);
+        });
+      }
 
-      es.onopen = () => { backoff = 3000; };  // reset backoff once connected
+      es.onopen = () => {
+        backoff = 3000;                       // reset backoff once connected
+        try { onOpen?.(); } catch (err) { console.error('[SSE] onOpen handler threw:', err); }
+      };
 
       es.onerror = (err) => {
         onError?.(err);

@@ -20,6 +20,7 @@ const LeadLogs      = lazyPage(leads, "LeadLogs");
 const AddLeadLog    = lazyPage(leads, "AddLeadLog");
 const AllLeadLogs   = lazyPage(leads, "AllLeadLogs");
 const WhatsAppPanel = lazyPage(leads, "WhatsAppPanel");
+const LeadAlerts    = lazyPage(leads, "LeadAlerts");
 
 const AdminLogin = lazyPage(() => import("@features/auth"), "AdminLogin");
 
@@ -278,6 +279,17 @@ const AppRouter = () => {
 
 
           <Route path="allleads" element={<AllLeads />} />
+
+          {/* Incoming Leads — the claim window. Guarded on LEAD_READ; the page itself also renders
+              <AccessDenied/> on the same key, so a direct URL never shows a bare screen. */}
+          <Route
+            path="leads/incoming"
+            element={
+              <Guard allow={hasPermission(P.LEAD_READ)}>
+                <LeadAlerts />
+              </Guard>
+            }
+          />
 
           {/* Create Lead Route */}
           <Route path="createlead" element={<CreateLead />} />

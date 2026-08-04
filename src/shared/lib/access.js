@@ -30,6 +30,9 @@ const ALL = "*";
 export const P = {
   LEAD_READ: "LEAD_READ", LEAD_CREATE: "LEAD_CREATE", LEAD_UPDATE: "LEAD_UPDATE", LEAD_DELETE: "LEAD_DELETE",
   LEAD_PERMANENT_DELETE: "LEAD_PERMANENT_DELETE",
+  // Claim window: take a new lead off whoever the auto-assignment gave it to (open leads only),
+  // and — separately, manager-only — move or reopen one AFTER first contact locked it.
+  LEAD_CLAIM: "LEAD_CLAIM", LEAD_REASSIGN_LOCKED: "LEAD_REASSIGN_LOCKED",
   BOOKING_READ: "BOOKING_READ", BOOKING_CREATE: "BOOKING_CREATE", BOOKING_UPDATE: "BOOKING_UPDATE", BOOKING_CANCEL: "BOOKING_CANCEL", BOOKING_DELETE: "BOOKING_DELETE",
   BOOKING_PROFIT_READ: "BOOKING_PROFIT_READ",
   // High-privilege: override/waive a cancellation charge and disburse refunds. TENANT_ADMIN-only
@@ -89,6 +92,9 @@ const ROLE_PERMISSIONS = {
 
   [ROLES.MANAGER]: [
     P.LEAD_READ, P.LEAD_CREATE, P.LEAD_UPDATE, P.LEAD_DELETE,
+    // Works the pipeline AND supervises it. Mirrors Permission.defaultsFor(MANAGER) and the
+    // V2 PART 18 backfill's MANAGER branch.
+    P.LEAD_CLAIM, P.LEAD_REASSIGN_LOCKED,
     P.BOOKING_READ, P.BOOKING_CREATE, P.BOOKING_UPDATE, P.BOOKING_CANCEL, P.BOOKING_DELETE, P.BOOKING_PROFIT_READ,
     P.CUSTOMER_READ, P.CUSTOMER_CREATE, P.CUSTOMER_UPDATE, P.CUSTOMER_DELETE,
     P.QUOTATION_READ, P.QUOTATION_CREATE, P.QUOTATION_UPDATE, P.QUOTATION_DELETE,
@@ -109,6 +115,9 @@ const ROLE_PERMISSIONS = {
   // Travel Agent and Staff share the same access (matches backend).
   [ROLES.TRAVEL_AGENT]: [
     P.LEAD_READ, P.LEAD_CREATE, P.LEAD_UPDATE,
+    // Claims open leads; deliberately NOT LEAD_REASSIGN_LOCKED — once a colleague has spoken to
+    // the customer, taking the lead is a manager's call. Mirrors defaultsFor(TRAVEL_AGENT).
+    P.LEAD_CLAIM,
     P.BOOKING_READ, P.BOOKING_CREATE, P.BOOKING_UPDATE,
     P.CUSTOMER_READ, P.CUSTOMER_CREATE, P.CUSTOMER_UPDATE,
     P.QUOTATION_READ, P.QUOTATION_CREATE, P.QUOTATION_UPDATE,
