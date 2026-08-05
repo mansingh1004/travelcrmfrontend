@@ -40,6 +40,24 @@ const taskService = {
     await API.delete(`/tasks/${publicId}`);
   },
 
+  // ── All Tasks screen ────────────────────────────────────────
+  // These two are the ONLY task endpoints that use the standard envelope. Everything above returns
+  // a bare DTO because the board/calendar reads res.data directly; the paged list could not be
+  // retrofitted onto /tasks without breaking that, so it is a separate route.
+
+  // GET /api/tasks/list — PagedApiResponse<TaskResponse>.
+  // Returns the RAW axios response on purpose: usePagedList reads res.data.data + res.data.pagination.
+  // params: { tab, q, assignee, status, priority, category, page, size, sortBy, sortDir }
+  listPaged: (params = {}) => API.get("/tasks/list", { params }),
+
+  // GET /api/tasks/tab-counts — ApiResponse<{ today, yesterday, overdue, upcoming, all }>.
+  // Honours every filter except `tab`, and is computed from the same scoped query as listPaged,
+  // so a badge can never disagree with the list it opens.
+  tabCounts: async (params = {}) => {
+    const res = await API.get("/tasks/tab-counts", { params });
+    return res.data?.data ?? {};
+  },
+
   // GET /api/tasks/stats  (CRM_FULL) — { total, todo, inProgress, done, cancelled, overdue, dueToday }
   stats: async () => (await API.get("/tasks/stats")).data,
 

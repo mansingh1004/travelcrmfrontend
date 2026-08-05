@@ -6,11 +6,12 @@ import { Search as FiSearch, ArrowLeft as FiArrowLeft, ChevronDown as FiChevronD
 import { leadService } from "../api/leadService";
 import { useToast } from "@shared/ui/toast";
 import { getErrorMessage, isAlreadyReported } from "@shared/api/apiError";
+import { AddLogModal, LogsModal } from "../components/LeadLogModals";
+import { STAGE_FILTER_OPTIONS } from "../lib/leadStages";
 
-const STAGES = [
-  "All Stages", "New Lead", "Contacted", "Follow Up",
-  "Qualified", "Proposal Sent", "Ready to Book", "Converted", "Lost",
-];
+// Was a local list carrying a phantom "Ready to Book" (not in the backend enum, so filtering by
+// it sent an unknown value) and missing "Reopened" (which LeadStage.REOPENED does define).
+const STAGES = STAGE_FILTER_OPTIONS;
 
 const STAGE_CFG = {
   "New Lead":      { bg:"bg-blue-500",   text:"text-white" },
@@ -18,8 +19,9 @@ const STAGE_CFG = {
   "Follow Up":     { bg:"bg-amber-500",  text:"text-white" },
   "Qualified":     { bg:"bg-indigo-500", text:"text-white" },
   "Proposal Sent": { bg:"bg-purple-500", text:"text-white" },
-  "Ready to Book": { bg:"bg-teal-500",   text:"text-white" },
   "Converted":     { bg:"bg-green-600",  text:"text-white" },
+  // Violet matches the REOPENED marker already used in LeadHistoryDrawer.
+  "Reopened":      { bg:"bg-violet-500", text:"text-white" },
   "Lost":          { bg:"bg-red-500",    text:"text-white" },
 };
 const STAGE_DEF = { bg:"bg-slate-400", text:"text-white" };
@@ -180,6 +182,9 @@ export default function AllLeadLogs() {
   const [stage,   setStage]   = useState("All Stages");
   const [user,    setUser]    = useState("All Users");
   const [page,    setPage]    = useState(1);
+  // Lead whose log popup is open — replaces the old navigation to the duplicate routed pages.
+  const [addLogLead, setAddLogLead] = useState(null);
+  const [logsLead,   setLogsLead]   = useState(null);
 
   // Centralized toaster: <ToastHost/> (mounted beside the router in App.jsx) renders it.
   const { showToast } = useToast();
@@ -234,18 +239,19 @@ export default function AllLeadLogs() {
   });
   const totalLogs = data.reduce((s, l) => s + l.logCount, 0);
 
-  /* navigation handlers */
-  const handleNavigateLogs   = (lead) =>
-    navigate(`/LeadLogs/${lead.leadId}?name=${encodeURIComponent(lead.leadName)}`);
+  /* Log handlers — these used to navigate to the /LeadLogs and /AddLeadLog pages, which duplicated
+     these popups and had drifted (the add page never persisted anything; its list had no delete).
+     The modals take a `lead` shaped like the AllLeads row, so the grid's row is adapted here. */
+  const toLeadShape = (lead) => ({
+    publicId:  lead.leadId,
+    id:        lead.leadId,
+    customerName: lead.leadName,
+    phone:     lead.phone,
+    leadStage: lead.stage,
+  });
 
-  const handleNavigateAddLog = (lead) =>
-    navigate(
-      `/AddLeadLog/${lead.leadId}` +
-      `?name=${encodeURIComponent(lead.leadName)}` +
-      `&phone=${encodeURIComponent(lead.phone)}` +
-      `&stage=${encodeURIComponent(lead.stage)}` +
-      `&logs=${lead.logCount}`
-    );
+  const handleNavigateLogs   = (lead) => setLogsLead(toLeadShape(lead));
+  const handleNavigateAddLog = (lead) => setAddLogLead(toLeadShape(lead));
 
   const handleSearch = (e) => { e.preventDefault(); setPage(1); };
 
@@ -470,6 +476,23 @@ export default function AllLeadLogs() {
         )}
 
       </div>
+
+      {/* Log popups — the same components AllLeads uses, so the two screens cannot drift apart.
+          A saved log bumps that row's count without a full refetch. */}
+      {addLogLead && (
+        <AddLogModal
+          lead={addLogLead}
+          onClose={() => setAddLogLead(null)}
+          onLogAdded={() => {
+            setData(prev => prev.map(l =>
+              l.leadId === addLogLead.publicId ? { ...l, logCount: (l.logCount || 0) + 1 } : l));
+            setAddLogLead(null);
+          }}
+        />
+      )}
+      {logsLead && (
+        <LogsModal lead={logsLead} onClose={() => setLogsLead(null)} canDelete={false} />
+      )}
     </div>
   );
 }

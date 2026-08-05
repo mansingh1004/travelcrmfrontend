@@ -138,6 +138,7 @@
 
 
 import API from "@shared/api/http";
+import { normalizePhone } from "@shared/lib/phone";
 
 /* Master ids ride along the itinerary as strings from the <select>s; the backend wants a Long or
    nothing. "" must become null, not 0 — 0 is a row that points at a destination which does not
@@ -191,7 +192,10 @@ function transformFormData(formData, services = [], itinerary = []) {
 
   return {
     customerName:   formData.customerName?.trim()   || "",
-    phone:          formData.phone?.trim()          || "",
+    // .trim() only stripped the ENDS, so "+91 98765 43210" went to the server with its spaces
+    // intact and failed @Pattern ("^\\+?[1-9]\\d{7,14}$"). Normalised here, at the one point
+    // every caller passes through, rather than relying on each form to send a clean value.
+    phone:          normalizePhone(formData.phone)  || "",
     // null, not "" — email is optional on the entity (the column is nullable) and an empty string
     // is a value, so a blank field used to persist "" instead of leaving the column NULL.
     email:          formData.email?.trim()          || null,
@@ -257,15 +261,45 @@ function transformFormData(formData, services = [], itinerary = []) {
   };
 }
 
+// Drop null/undefined/empty params so the query string stays clean and the backend
+// reads an absent filter as "no filter" (never search=&stage=&fromDate=).
+const cleanParams = (obj) =>
+  Object.fromEntries(
+    Object.entries(obj).filter(([, v]) => v !== undefined && v !== null && v !== "")
+  );
+
 export const leadService = {
 
   // ── CREATE ────────────────────────────────────────────────
   createLead: (formData, services, itinerary) =>
     API.post("/leads", transformFormData(formData, services, itinerary)),
 
-  // ── GET ALL ───────────────────────────────────────────────
+  // ── GET ALL (legacy positional; used by booking/dashboard/report dropdowns) ──
+  // Left untouched on purpose — four other pages call it as getAllLeads(0, 200).
   getAllLeads: (page = 0, size = 100) =>
     API.get(`/leads?page=${page}&size=${size}`),
+
+  // ── SERVER-SIDE PAGINATED LIST (search + stage + type + date + work queues) ──
+  // The leads list's only fetch. `q` maps to the backend `search` param; null/blank args are
+  // stripped, so an absent filter widens to all leads.
+  //
+  // activeOnly / followUpDueBy are the two WORK-QUEUE filters and are not stages:
+  //   activeOnly=true          → everything that is not Converted or Lost (the "Active" tab)
+  //   followUpDueBy=YYYY-MM-DD → leads with a follow-up on or before that day ("Follow-ups")
+  // They exist because those two tabs used to be sent as stage=Active / stage=Follow-ups, which
+  // LeadStage.fromValue rejects with a 400. Send activeOnly WITH followUpDueBy for the work queue —
+  // that pair is what the Follow-ups Due card counts server-side.
+  listLeads: ({ page = 0, size = 25, sortBy = "createdAt", sortDir = "desc",
+                q, stage, leadType, fromDate, toDate, activeOnly, followUpDueBy } = {}) =>
+    API.get("/leads", {
+      params: cleanParams({
+        page, size, sortBy, sortDir, search: q, stage, leadType, fromDate, toDate,
+        // cleanParams drops null/undefined/"" — but NOT false, so an explicit activeOnly=false
+        // would still be sent. Normalise it away: absent and false mean the same thing here.
+        activeOnly: activeOnly === true ? true : undefined,
+        followUpDueBy,
+      }),
+    }),
 
   // ── GET BY PUBLIC ID ──────────────────────────────────────
   getLeadById: (publicId) =>
@@ -274,6 +308,7 @@ export const leadService = {
   // ── UPDATE ────────────────────────────────────────────────
   updateLead: (publicId, formData, services, itinerary) =>
     API.put(`/leads/${publicId}`, transformFormData(formData, services, itinerary)),
+
 
   // ── DELETE ────────────────────────────────────────────────
   deleteLead: (publicId) =>
@@ -361,6 +396,25 @@ export const leadService = {
     API.get("/leads/assignment/recommendation"),
 
   // ── STATISTICS ───────────────────────────────────────────
+  /**
+   * The All-Leads dashboard roll-up — pipeline shape, money in play, today's follow-ups and the
+   * period conversion cohort, aggregated server-side over the caller's whole LEAD_READ scope.
+   *
+   * Use this for every card and tab badge. Do NOT reduce over the array `getAllLeads` returns:
+   * that call is `page=0&size=100`, so past a hundred leads a client-side total silently describes
+   * the newest page while reading like a tenant figure — which is exactly the bug this replaced.
+   *
+   * `from`/`to` are inclusive `YYYY-MM-DD` strings; omit both for the tenant's current calendar
+   * month (computed in the TENANT's timezone, not the browser's).
+   */
+  getStatsSummary: ({ from, to } = {}) =>
+    API.get("/leads/stats/summary", {
+      params: {
+        ...(from ? { from } : {}),
+        ...(to ? { to } : {}),
+      },
+    }),
+
   getUserWorkload: () =>
     API.get("/leads/stats/workload"),
 
@@ -369,4 +423,25 @@ export const leadService = {
 
   getLeadCountForUser: (userPublicId) =>
     API.get(`/leads/stats/users/${userPublicId}/count`),
+
+  // ── BULK IMPORT (CSV / Excel) ────────────────────────────
+  /* Two steps by design: `previewImport` writes nothing and returns the same report shape as
+     `importLeads`, so the user sees exactly what will happen before any lead exists. Both send
+     multipart — do NOT set Content-Type by hand, the browser has to add the multipart boundary. */
+
+  previewImport: (file) => {
+    const body = new FormData();
+    body.append("file", file);
+    return API.post("/leads/import/preview", body);
+  },
+
+  importLeads: (file) => {
+    const body = new FormData();
+    body.append("file", file);
+    return API.post("/leads/import", body);
+  },
+
+  /* Blob, not a plain <a href> — the endpoint needs the Authorization header the interceptor adds. */
+  downloadImportTemplate: () =>
+    API.get("/leads/import/template", { responseType: "blob" }),
 };

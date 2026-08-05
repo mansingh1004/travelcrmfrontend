@@ -795,11 +795,19 @@ export default function Dashboard() {
           </div>
 
           {/* ── Row 1: 4 Hero Cards ── */}
+          {/* `trend` is deliberately NOT passed. These carried trend={12} / {0} / {28} / {15} —
+              four literals that never moved when the period changed, rendered as green ▲ pills
+              beside a "Live Data" badge and a genuinely live value. Nothing distinguished the
+              invented number from the real one.
+              /dashboard/analytics returns a single period with no previous/growth/delta field, so
+              there is nothing to point these at yet. HeroCard already skips the pill when `trend`
+              is null, so re-adding it later is one prop per card — once the backend supplies the
+              comparison and someone has defined what the period is measured against. */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <HeroCard icon={<FaUsers/>}      label="Total Leads"     value={D.totalLeads}     sub={`${selectedPeriodLabel} overview`}      from="from-blue-600"   to="to-indigo-700"  delay={0}   trend={12}/>
-            <HeroCard icon={<FaCheckCircle/>} label="Converted Leads" value={D.convertedLeads} sub={`${D.conversionRate}% rate`} from="from-green-500" to="to-emerald-700" delay={60}  trend={0}/>
-            <HeroCard icon={<FaRupeeSign/>}  label="Agency Revenue"  value={D.revenue}        sub="Total bookings value" from="from-teal-500"   to="to-cyan-700"    delay={120} isINR trend={28}/>
-            <HeroCard icon={<FaChartLine/>}  label="Net Profit"      value={D.profit}         sub={`${D.netMargin}% margin`}  from="from-amber-500" to="to-orange-700"  delay={180} isINR trend={15}/>
+            <HeroCard icon={<FaUsers/>}      label="Total Leads"     value={D.totalLeads}     sub={`${selectedPeriodLabel} overview`}      from="from-blue-600"   to="to-indigo-700"  delay={0}/>
+            <HeroCard icon={<FaCheckCircle/>} label="Converted Leads" value={D.convertedLeads} sub={`${D.conversionRate}% rate`} from="from-green-500" to="to-emerald-700" delay={60}/>
+            <HeroCard icon={<FaRupeeSign/>}  label="Agency Revenue"  value={D.revenue}        sub="Total bookings value" from="from-teal-500"   to="to-cyan-700"    delay={120} isINR/>
+            <HeroCard icon={<FaChartLine/>}  label="Net Profit"      value={D.profit}         sub={`${D.netMargin}% margin`}  from="from-amber-500" to="to-orange-700"  delay={180} isINR/>
           </div>
 
           {/* ── Row 2: 4 Mini Metric Cards ── */}

@@ -49,6 +49,7 @@ const MODULE_LABELS = {
   VENDORS: "Vendor Management",
   REPORTS: "Reports & Analytics",
   FLEET: "Fleet / Vehicle Diary",
+  HOTEL_MARKETPLACE: "Platform Hotel",
   WHATSAPP: "WhatsApp Integration",
   DISHA_AI: "Disha AI Assistant",
   PORTAL: "Traveler Portal",

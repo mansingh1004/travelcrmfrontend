@@ -162,6 +162,16 @@ const EVENT_STATUS = {
     chip: "border-orange-200 bg-orange-50 text-orange-700",
     text: "Plan limit reached",
   },
+  // Every quarantine shares the orange chip: the enquiry arrived intact and nothing was created.
+  // Deliberately NOT the red FAILED chip — these are actionable by the desk, not broken plumbing.
+  QUARANTINED_DUPLICATE: {
+    chip: "border-orange-200 bg-orange-50 text-orange-700",
+    text: "Contact already has an open lead",
+  },
+  QUARANTINED_TRASHED: {
+    chip: "border-orange-200 bg-orange-50 text-orange-700",
+    text: "Matching lead is in Trash",
+  },
   FAILED: {
     chip: "border-red-200 bg-red-50 text-red-700",
     text: "Failed",

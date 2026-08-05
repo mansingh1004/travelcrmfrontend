@@ -80,6 +80,12 @@ import MaintenanceOverlay from '@app/chrome/MaintenanceOverlay';
 import ReminderPopupCenter from
   "@features/reminders/components/ReminderPopupCenter";
 
+// Claim window. The PROVIDER wraps the whole chrome so the single SSE subscription lives above both
+// consumers — the always-mounted toast host and the leads page that mounts on navigation. Two
+// subscriptions would mean two connections per tab and two toasts per lead.
+import { LeadAlertProvider } from "@features/leads";
+import LeadAlertHost from "@app/chrome/LeadAlertHost";
+
 const Layout = () => { // 2. Yahan se { children } hata diya gaya hai
   // Default state ko ab false rakha hai taaki mobile par pehle se open na mile
   const [isSidebarExpanded, setIsSidebarExpanded] = useState(false);
@@ -90,6 +96,7 @@ const Layout = () => { // 2. Yahan se { children } hata diya gaya hai
   };
 
   return (
+    <LeadAlertProvider>
     <div className="flex h-screen flex-col overflow-hidden">
       <MaintenanceOverlay />
       <ImpersonationBanner />
@@ -130,6 +137,10 @@ const Layout = () => { // 2. Yahan se { children } hata diya gaya hai
        {/* Global reminder popup — visible on every authenticated CRM page */}
       <ReminderPopupCenter />
 
+      {/* New-lead broadcast popup — every user of the tenant, every page. A lead that arrives while
+          someone is deep in a booking form is exactly the one this exists to surface. */}
+      <LeadAlertHost />
+
       {/* Floating internal AI assistant — available on every authenticated page.
           Parked: the AI assistant is not part of this sprint's release, and the backend
           ships with disha.enabled=false, so /ai/chat 404s.
@@ -142,6 +153,7 @@ const Layout = () => { // 2. Yahan se { children } hata diya gaya hai
           backend's ChatController exists at all, so the two cannot drift. */}
       {/* <DishaWidget /> */}
     </div>
+    </LeadAlertProvider>
   );
 };
 

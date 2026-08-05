@@ -14,11 +14,36 @@ import API from "@shared/api/http";
 const toEnum = (v) =>
   v == null || v === "" ? undefined : String(v).trim().toUpperCase().replace(/[\s-]+/g, "_");
 
+// Drop null/undefined/empty params so the query string stays clean and the backend reads an
+// absent filter as "no filter" (never search=&status=).
+const cleanParams = (obj) =>
+  Object.fromEntries(
+    Object.entries(obj).filter(([, v]) => v !== undefined && v !== null && v !== "")
+  );
+
 const bookingService = {
 
   // ── Core CRUD ──────────────────────────────────────────────────────────────
+  // Legacy positional — kept for the CreateBooking dropdown callers. Do NOT reshape.
   getAll: (page = 0, size = 1000, sortBy = "createdAt", sortDir = "desc") =>
     API.get("/bookings", { params: { page, size, sortBy, sortDir } }),
+
+  // ── SERVER-SIDE PAGINATED LIST (search + status + payment + month filters) ──────────────
+  // Powers Allbookings via usePagedList. Shape matches the hook's fetcher:
+  // { page, size, sortBy, sortDir, q, ...filters }. `q` → backend `search`; status/paymentStatus
+  // are normalised to backend enum tokens; empty/undefined filters are stripped (⇒ widen to all).
+  list: ({ page = 0, size = 25, sortBy = "createdAt", sortDir = "desc",
+           q, status, paymentStatus, bookingMonth, travelMonth } = {}) =>
+    API.get("/bookings", {
+      params: cleanParams({
+        page, size, sortBy, sortDir,
+        search: q,
+        status: toEnum(status),
+        paymentStatus: toEnum(paymentStatus),
+        bookingMonth: bookingMonth || undefined,
+        travelMonth: travelMonth || undefined,
+      }),
+    }),
 
   getById: (publicId) => API.get(`/bookings/${publicId}`),
 

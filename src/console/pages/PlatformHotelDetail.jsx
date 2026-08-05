@@ -126,7 +126,7 @@ export default function PlatformHotelDetail() {
         <GlassCard className="mb-5 flex items-center gap-3 p-4">
           <StarRating value={hotel.rating ?? hotel.stars ?? 0} size={15} showValue />
           <span className="text-sm text-slate-500">
-            Live in the marketplace — every entitled tenant can search and import it.
+            Live in Platform Hotel — every entitled tenant can search and import it.
           </span>
         </GlassCard>
       )}
@@ -655,7 +655,7 @@ function UnpublishDialog({ hotel, onClose, onConfirm }) {
           <DialogTitle>Withdraw from sale</DialogTitle>
           <DialogDescription>
             {hotel.linkedTenantCount > 0
-              ? `${hotel.linkedTenantCount} tenant${hotel.linkedTenantCount === 1 ? " has" : "s have"} imported this hotel. Their copies are kept — quotations and bookings reference them — but stop being marketplace-bookable.`
+              ? `${hotel.linkedTenantCount} tenant${hotel.linkedTenantCount === 1 ? " has" : "s have"} imported this hotel. Their copies are kept — quotations and bookings reference them — but stop being bookable through Platform Hotel.`
               : "No tenant has imported this hotel yet."}
           </DialogDescription>
         </DialogHeader>

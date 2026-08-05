@@ -1,9 +1,17 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { ChevronDown, LoaderCircle, MapPinned, Plus, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { MapPinned, Plus, Trash2 } from "lucide-react";
 
 import { geographyService } from "@shared/api/geographyService";
+import { SearchableSelect } from "@features/leads";
 
-const selectClass = "w-full appearance-none rounded-lg border border-slate-200 bg-white px-3 py-2.5 pr-9 text-sm text-slate-800 outline-none hover:border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:bg-slate-50";
+// OLD — the class both native <select>s shared:
+// const selectClass = "w-full appearance-none rounded-lg border border-slate-200 bg-white px-3 py-2.5 pr-9 …";
+//
+// Destination and City are the two longest master lists a clerk meets on this form, and they were
+// the ones a keyboard could not reach: a native select answers a keystroke by jumping to the next
+// option starting with that letter, then forgets it. Both are the app's combobox now — the same
+// control Create Lead uses — so typing three letters actually narrows the list.
+const comboClass = "hover:border-slate-300 disabled:bg-slate-50";
 
 const normalize = (value) => String(value ?? "").trim().toLowerCase();
 const destinationIdOf = (item) => item?.id ?? item?.destinationId ?? item?.publicId ?? "";
@@ -90,6 +98,11 @@ export default function FastItinerary({ hydrationKey, itinerary, onAdd, onRemove
     previousLengthRef.current = itinerary.length;
   }, [itinerary]);
 
+  const destinationOptions = useMemo(
+    () => destinations.map((item) => ({ value: String(destinationIdOf(item)), label: item.name || "" })),
+    [destinations]
+  );
+
   const changeDestination = async (row, id) => {
     const destination = destinations.find((item) => String(destinationIdOf(item)) === String(id));
     onUpdate(row.id, "destinationId", id);
@@ -140,33 +153,53 @@ export default function FastItinerary({ hydrationKey, itinerary, onAdd, onRemove
             );
             const cityValue = selectedCity ? String(cityIdOf(selectedCity)) : row.city ? "__saved__" : "";
 
+            /* A row loaded from a lead or a booking snapshot can name a place that is no longer in
+               the master list. The native selects carried a "(saved)" option for exactly that, and
+               without it the combobox would find no label for the value and fall back to the
+               placeholder — i.e. silently show an empty row over saved data. */
+            const rowDestinationOptions = destinationValue === "__saved__"
+              ? [{ value: "__saved__", label: `${row.destination} (saved)` }, ...destinationOptions]
+              : destinationOptions;
+            const cityOptions = cities.map((item) => ({ value: String(cityIdOf(item)), label: item.name || "" }));
+            const rowCityOptions = cityValue === "__saved__"
+              ? [{ value: "__saved__", label: `${row.city} (saved)` }, ...cityOptions]
+              : cityOptions;
+
             return (
               <div key={row.id} className="grid grid-cols-1 gap-3 rounded-lg border border-slate-100 bg-slate-50/60 p-3 md:grid-cols-[38px_minmax(0,1fr)_minmax(0,1fr)_110px_38px] md:items-center md:border-0 md:bg-transparent md:p-0">
                 <span className="hidden h-8 w-8 items-center justify-center rounded-md bg-slate-100 text-xs font-bold text-slate-500 md:flex">{index + 1}</span>
 
-                <label className="min-w-0">
+                <div className="min-w-0">
                   <span className="mb-1 block text-xs font-semibold text-slate-500 md:hidden">Destination</span>
-                  <div className="relative">
-                    <select ref={(node) => { destinationRefs.current[row.id] = node; }} value={destinationValue} disabled={loadingDestinations} onChange={(event) => changeDestination(row, event.target.value)} className={selectClass}>
-                      <option value="">{loadingDestinations ? "Loading..." : "Select destination"}</option>
-                      {destinationValue === "__saved__" && <option value="__saved__">{row.destination} (saved)</option>}
-                      {destinations.map((item) => <option key={destinationIdOf(item) || item.name} value={String(destinationIdOf(item))}>{item.name}</option>)}
-                    </select>
-                    <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                  </div>
-                </label>
+                  <SearchableSelect
+                    triggerRef={(node) => { destinationRefs.current[row.id] = node; }}
+                    options={rowDestinationOptions}
+                    value={destinationValue}
+                    onChange={(next) => { if (next !== "__saved__") changeDestination(row, next); }}
+                    placeholder={loadingDestinations ? "Loading..." : "Select destination"}
+                    searchPlaceholder="Type a destination..."
+                    loading={loadingDestinations}
+                    accent="blue"
+                    advanceOnSelect
+                    className={comboClass}
+                  />
+                </div>
 
-                <label className="min-w-0">
+                <div className="min-w-0">
                   <span className="mb-1 block text-xs font-semibold text-slate-500 md:hidden">City</span>
-                  <div className="relative">
-                    <select value={cityValue} disabled={!destinationValue || loadingRows[row.id]} onChange={(event) => changeCity(row, event.target.value)} className={selectClass}>
-                      <option value="">{loadingRows[row.id] ? "Loading cities..." : destinationValue ? "Select city" : "Select destination first"}</option>
-                      {cityValue === "__saved__" && <option value="__saved__">{row.city} (saved)</option>}
-                      {cities.map((item) => <option key={cityIdOf(item) || item.name} value={String(cityIdOf(item))}>{item.name}</option>)}
-                    </select>
-                    {loadingRows[row.id] ? <LoaderCircle className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-blue-500" /> : <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />}
-                  </div>
-                </label>
+                  <SearchableSelect
+                    options={rowCityOptions}
+                    value={cityValue}
+                    onChange={(next) => { if (next !== "__saved__") changeCity(row, next); }}
+                    placeholder={loadingRows[row.id] ? "Loading cities..." : destinationValue ? "Select city" : "Select destination first"}
+                    searchPlaceholder="Type a city..."
+                    loading={Boolean(loadingRows[row.id])}
+                    disabled={!destinationValue}
+                    accent="blue"
+                    advanceOnSelect
+                    className={comboClass}
+                  />
+                </div>
 
                 <label>
                   <span className="mb-1 block text-xs font-semibold text-slate-500 md:hidden">Nights</span>
