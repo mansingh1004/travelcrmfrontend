@@ -73,8 +73,8 @@ export function MarketplaceHotel() {
         <Empty
           icon={Building2}
           title="Hotel not available"
-          hint="It may have been withdrawn from the marketplace."
-          action={<Button onClick={() => navigate("/marketplace")}>Back to marketplace</Button>}
+          hint="It may have been withdrawn from Platform Hotel."
+          action={<Button onClick={() => navigate("/marketplace")}>Back to Platform Hotel</Button>}
         />
       </Page>
     );
@@ -85,7 +85,7 @@ export function MarketplaceHotel() {
   return (
     <Page>
       <PageHeader
-        back={<BackLink onClick={() => navigate("/marketplace")}>Marketplace</BackLink>}
+        back={<BackLink onClick={() => navigate("/marketplace")}>Platform Hotel</BackLink>}
         title={
           <span className="inline-flex items-center gap-2">
             {hotel.name}

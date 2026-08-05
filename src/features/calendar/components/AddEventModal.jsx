@@ -221,7 +221,9 @@
 import { useEffect, useState } from "react";
 import { X, Loader2 } from "lucide-react";
 import { toast } from "@shared/ui/toast";
+import { hasPermission, P } from "@shared/lib/access";
 import taskService from "../api/taskService";
+import TripPicker, { tripLabel } from "./TripPicker";
 import {
   TASK_CATEGORIES, CATEGORY_LABEL, TASK_PRIORITIES, PRIORITY_META,
   TASK_STATUSES, TASK_STATUS_LABEL, toLocalInput, fromLocalInput,
@@ -230,6 +232,9 @@ import {
 const blank = {
   title: "", description: "", category: "MEETING", priority: "MEDIUM", status: "TODO",
   assignToPublicId: "", allDay: false, startAt: "", endAt: "", dueDate: "", location: "",
+  // Trip link. `bookingLabel` is display-only and never posted — it exists so the chip can render
+  // without re-fetching the booking the task already carries a snapshot of.
+  bookingPublicId: "", bookingLabel: "",
 };
 
 function initialForm(task, defaultDate) {
@@ -246,6 +251,10 @@ function initialForm(task, defaultDate) {
       endAt: toLocalInput(task.endAt),
       dueDate: toLocalInput(task.dueDate),
       location: task.location || "",
+      // TaskResponse already carries the snapshots, so editing a linked task shows the chip with
+      // no extra request.
+      bookingPublicId: task.bookingPublicId || "",
+      bookingLabel: tripLabel(task.bookingCode, task.customerName),
     };
   }
   const start = defaultDate ? new Date(defaultDate) : new Date();
@@ -257,6 +266,10 @@ export default function AddEventModal({ open, onClose, onSaved, users = [], task
   const [form, setForm] = useState(blank);
   const [saving, setSaving] = useState(false);
   const isEdit = !!task;
+
+  // Hidden rather than disabled without BOOKING_READ: the picker's only data source is the booking
+  // search, so for those users it could never show anything but a 403 toast.
+  const canLinkTrip = hasPermission(P.BOOKING_READ);
 
   useEffect(() => {
     if (open) setForm(initialForm(task, defaultDate));
@@ -287,7 +300,15 @@ export default function AddEventModal({ open, onClose, onSaved, users = [], task
       endAt: fromLocalInput(form.endAt),
       dueDate: fromLocalInput(form.dueDate),
       location: form.location.trim() || null,
+      // The backend resolves this within the tenant and snapshots bookingCode / guest / trip source
+      // onto the row — that is what fills the For, Guest and Trip Source columns on All Tasks.
+      bookingPublicId: form.bookingPublicId || null,
     };
+    // A null bookingPublicId means "unchanged" on a partial update, never "clear" — so removing an
+    // existing link needs the explicit flag, or the chip's X would silently do nothing.
+    if (isEdit && task.bookingPublicId && !form.bookingPublicId) {
+      payload.clearBookingLink = true;
+    }
     setSaving(true);
     try {
       if (isEdit) {
@@ -402,6 +423,23 @@ export default function AddEventModal({ open, onClose, onSaved, users = [], task
             <label className={lbl}>Location</label>
             <input className={field} value={form.location} onChange={set("location")} placeholder="e.g. Meeting room / Zoom" />
           </div>
+
+          {canLinkTrip && (
+            <div>
+              <label className={lbl}>Link to trip</label>
+              <TripPicker
+                value={form.bookingPublicId}
+                label={form.bookingLabel}
+                disabled={saving}
+                onChange={(bookingPublicId, bookingLabel) =>
+                  setForm((f) => ({ ...f, bookingPublicId, bookingLabel }))
+                }
+              />
+              <p className="mt-1 text-[11px] text-slate-400">
+                Fills Trip Source, Guest and Trip# on the All Tasks screen.
+              </p>
+            </div>
+          )}
 
           <div>
             <label className={lbl}>Notes</label>

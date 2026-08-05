@@ -37,6 +37,25 @@ const CHIME_THROTTLE_MS = 3_000;
 const SOUND_KEY = "leadAlertSound";
 const FONT = "'Plus Jakarta Sans',system-ui,-apple-system,'Segoe UI',sans-serif";
 
+/**
+ * The context keys this host cannot function without.
+ *
+ * Nothing links app chrome to a feature's context at compile time. An earlier cut of this file read
+ * `ctx?.toasts` / `ctx?.dismissToast` — names the provider has never published — and optional
+ * chaining turned that into an unconditional `return null` on every page: no popup, no chime, no
+ * console error, no crash. The feature looked shipped. A dev-only assertion is the cheapest thing
+ * that fails loudly instead; `import.meta.env.DEV` is a compile-time constant, so this whole check
+ * folds out of the production bundle.
+ */
+const REQUIRED_CTX = [
+  "cards",
+  "dismissCard",
+  "applyResult",
+  "patchLead",
+  "markClaimIneligible",
+  "canClaim",
+];
+
 const SOURCE_COLOR = {
   WEBSITE_FORM: "#2563eb", WEBSITE: "#2563eb", WEBLINK_ENQUIRY: "#2563eb",
   WHATSAPP: "#16a34a", JUSTDIAL: "#ea580c",
@@ -115,6 +134,22 @@ export default function LeadAlertHost() {
 
   const cards = ctx?.cards;
   const dismissCard = ctx?.dismissCard;
+
+  // Contract check — see REQUIRED_CTX. Once per mount: the provider builds a fresh value object on
+  // every render and the SLA tick re-renders it once a second, so the ref is what keeps a broken
+  // contract to a single line instead of a console full of them.
+  const contractWarned = useRef(false);
+  useEffect(() => {
+    if (!import.meta.env.DEV || !ctx || contractWarned.current) return;
+    const missing = REQUIRED_CTX.filter((k) => !(k in ctx));
+    if (missing.length) {
+      contractWarned.current = true;
+      console.error(
+        `[LeadAlertHost] LeadAlertProvider does not publish: ${missing.join(", ")}. ` +
+          "The new-lead popup renders nothing until the provider and this host agree."
+      );
+    }
+  }, [ctx]);
 
   /** Newest first for the eye; the DOM is reversed so the oldest sits in the corner. */
   const shown = (cards ?? []).slice(-MAX_CARDS);

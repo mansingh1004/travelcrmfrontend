@@ -669,16 +669,24 @@ export default function BookingFormPage() {
     String(lead.publicId || lead.id) === String(form.leadPublicId)
   ), [form.leadPublicId, leads]);
 
+  // OLD — code, name and phone were crushed into one label:
+  //   label: [lead.leadCode, lead.customerName, lead.phone].filter(Boolean).join(" · ")
+  // One long line per row truncated before the phone on a narrow column, and a phone search lit up
+  // a match the clerk could not see. The phone is a second line now, and still searchable.
   const leadOptions = useMemo(() => [
     { value: "", label: "Direct booking (no linked lead)" },
-    ...availableLeads.map((lead) => ({
-      value: lead.publicId || lead.id,
-      label: [
-        lead.leadCode || "Lead",
-        lead.customerName || lead.customer?.name || "Customer",
-        lead.phone || lead.customer?.phone,
-      ].filter(Boolean).join(" · "),
-    })),
+    ...availableLeads.map((lead) => {
+      const phone = lead.phone || lead.customer?.phone || "";
+      return {
+        value: lead.publicId || lead.id,
+        label: [
+          lead.leadCode || "Lead",
+          lead.customerName || lead.customer?.name || "Customer",
+        ].filter(Boolean).join(" · "),
+        sublabel: phone,
+        keywords: [phone, lead.destination].filter(Boolean).join(" "),
+      };
+    }),
   ], [availableLeads]);
 
   const matchedDestination = destinations.find((destination) =>
@@ -688,6 +696,34 @@ export default function BookingFormPage() {
   const destinationSelectValue = matchedDestination
     ? String(destinationIdOf(matchedDestination))
     : form.destination ? "__saved_destination__" : "";
+
+  /* Destination and Assigned To were native <select>s. On a native select a keystroke only jumps to
+     the next option starting with that letter and the browser forgets it a second later, so on a
+     destination master of any size the clerk could not type their way to a row — which is what
+     "search stops at the first letter" was. Both are the app's combobox now, same one Create Lead
+     uses, so typing runs a real multi-letter query. */
+  const destinationOptions = useMemo(() => [
+    ...(destinationSelectValue === "__saved_destination__"
+      ? [{ value: "__saved_destination__", label: `${form.destination} (saved)` }]
+      : []),
+    ...destinations.map((destination) => ({
+      value: String(destinationIdOf(destination)),
+      label: destination.name || "",
+    })),
+  ], [destinations, destinationSelectValue, form.destination]);
+
+  const assigneeOptions = useMemo(() => [
+    { value: "", label: "Current user" },
+    ...assignees.map((user) => {
+      const label = user.name || user.fullName || user.email || "";
+      return {
+        value: String(user.id ?? user.publicId ?? ""),
+        label,
+        sublabel: user.email && user.email !== label ? user.email : "",
+        keywords: user.email || "",
+      };
+    }),
+  ], [assignees]);
 
   // OLD — replaced in create-form redesign
   // const validate = () => {
@@ -1198,11 +1234,16 @@ export default function BookingFormPage() {
                   value={form.leadPublicId}
                   onChange={handleLeadChange}
                   placeholder="Search lead code, customer or phone"
+                  searchPlaceholder="Lead code, name or phone..."
                   loading={loadingLead}
                   disabled={editing}
                   icon={ClipboardList}
                   accent="blue"
-                  className="rounded-lg hover:border-slate-300 disabled:bg-slate-50"
+                  advanceOnSelect
+                  /* OLD — className="rounded-lg …": this was the page's only searchable select, so
+                     it was squared off to match the plain inputs. Now there are four of them and
+                     they all render like Create Lead's. */
+                  className="hover:border-slate-300 disabled:bg-slate-50"
                 />
               </Field>
             </div>
@@ -1323,20 +1364,32 @@ export default function BookingFormPage() {
             The money fields moved to the sticky rail, so "commercial" no longer lives here. */}
         <Panel icon={CalendarCheck2} title="Booking Details" description="Core booking and destination information">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {/* OLD — a native <select name="destination"> with the same options. Replaced with the
+                combobox for the search; `name` stays on the trigger so validate()'s
+                querySelector('[name="destination"]').focus() still lands on this control. */}
             <Field label="Destination" required error={errors.destination}>
-              <div className="relative">
-                <MapPin className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <select name="destination" onBlur={() => blurField("destination")} value={destinationSelectValue} disabled={loadingDestinations} onChange={(event) => {
-                  const selected = destinations.find((item) => String(destinationIdOf(item)) === event.target.value);
+              <SearchableSelect
+                name="destination"
+                options={destinationOptions}
+                value={destinationSelectValue}
+                onChange={(next) => {
+                  // "(saved)" is a read-only echo of a destination that is not in the master list —
+                  // re-picking it must not blank the two fields it stands for.
+                  if (next === "__saved_destination__") return;
+                  const selected = destinations.find((item) => String(destinationIdOf(item)) === next);
                   setField("destinationId", selected ? String(destinationIdOf(selected)) : "");
                   setField("destination", selected?.name || "");
-                }} className={`${controlClass("destination", true)} appearance-none pr-9`}>
-                  <option value="">{loadingDestinations ? "Loading destinations..." : "Select destination"}</option>
-                  {destinationSelectValue === "__saved_destination__" && <option value="__saved_destination__">{form.destination} (saved)</option>}
-                  {destinations.map((destination) => <option key={destinationIdOf(destination) || destination.name} value={String(destinationIdOf(destination))}>{destination.name}</option>)}
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              </div>
+                }}
+                onBlur={() => blurField("destination")}
+                placeholder={loadingDestinations ? "Loading destinations..." : "Select destination"}
+                searchPlaceholder="Type a destination..."
+                loading={loadingDestinations}
+                invalid={Boolean(errors.destination)}
+                icon={MapPin}
+                accent="blue"
+                advanceOnSelect
+                className="hover:border-slate-300"
+              />
               {destinationError && <p className="text-xs text-amber-600">{destinationError}</p>}
             </Field>
             <Field label="Package Type" optional>
@@ -1352,15 +1405,20 @@ export default function BookingFormPage() {
             <Field label="Booking Date" optional>
               <input type="date" value={form.bookingDate} onChange={(event) => setField("bookingDate", event.target.value)} className={controlClass("bookingDate")} />
             </Field>
+            {/* OLD — native <select> over the assignee list. Same swap as Destination: a tenant with
+                a full sales floor could not type a colleague's name to find them. */}
             <Field label="Assigned To" optional>
-              <div className="relative">
-                <UserCheck className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <select value={form.assignedUserId} onChange={(event) => setField("assignedUserId", event.target.value)} className={`${controlClass("assignedUserId", true)} appearance-none pr-9`}>
-                  <option value="">Current user</option>
-                  {assignees.map((user) => <option key={user.id || user.publicId} value={user.id || user.publicId}>{user.name || user.fullName || user.email}</option>)}
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              </div>
+              <SearchableSelect
+                options={assigneeOptions}
+                value={String(form.assignedUserId ?? "")}
+                onChange={(next) => setField("assignedUserId", next)}
+                placeholder="Current user"
+                searchPlaceholder="Search team member..."
+                icon={UserCheck}
+                accent="blue"
+                advanceOnSelect
+                className="hover:border-slate-300"
+              />
             </Field>
             {editing && <Field label="Booking Status" optional>
               <div className="relative">
