@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Accessibility,
   Bus,
@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 
 import { geographyService } from "@shared/api/geographyService";
+import { SearchableSelect } from "@features/leads";
 import TravellerCountFields from "@shared/ui/TravellerCountFields";
 
 const MODES = ["Flight / Airport", "Train / Rail", "Car / Road", "Bus", "Other"];
@@ -104,6 +105,14 @@ export default function FastTravelDetails({ form, setField, errors = {}, onBlurF
   const totalTravellers = totalAdults + (Number(form.children) || 0) + (Number(form.infants) || 0);
   const savedCountryMissing = form.departCountry && !countries.some((country) => country.name === form.departCountry);
 
+  /* The option value is the country NAME, not its id — departCountry is a name string all the way
+     into the payload. A saved country the master no longer lists keeps its own row so the field
+     never renders empty over real data. */
+  const countryOptions = useMemo(() => [
+    ...(savedCountryMissing ? [{ value: form.departCountry, label: form.departCountry }] : []),
+    ...countries.map((country) => ({ value: country.name, label: country.name })),
+  ], [countries, form.departCountry, savedCountryMissing]);
+
   return (
     <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
       <div className="flex flex-col gap-2 border-b border-slate-100 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
@@ -125,15 +134,23 @@ export default function FastTravelDetails({ form, setField, errors = {}, onBlurF
             <input name="travelDate" type="date" min={new Date().toISOString().slice(0, 10)} value={form.travelDate} onChange={(event) => setField("travelDate", event.target.value)} onBlur={() => onBlurField?.("travelDate")} aria-invalid={Boolean(errors.travelDate)} className={`${inputClass} ${errors.travelDate ? "border-red-300" : ""}`} />
           </IconField>
 
+          {/* OLD — a native <select> over the whole country master. ~200 rows behind a control whose
+              only keyboard affordance is "jump to the next option starting with this letter", which
+              it then forgets. Create Lead already answers this field with the combobox; this is the
+              same control, so typing "uni" reaches United Arab Emirates instead of cycling U-names.
+              The value is still the country NAME, exactly as the payload expects. */}
           <IconField label="Departure Country" icon={Globe2}>
-            <div className="relative">
-              <select value={form.departCountry} onChange={(event) => setField("departCountry", event.target.value)} className={`${inputClass} appearance-none pr-9`}>
-                <option value="">{loadingCountries ? "Loading countries..." : "Select country"}</option>
-                {savedCountryMissing && <option value={form.departCountry}>{form.departCountry}</option>}
-                {countries.map((country) => <option key={country.id || country.name} value={country.name}>{country.name}</option>)}
-              </select>
-              <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            </div>
+            <SearchableSelect
+              options={countryOptions}
+              value={form.departCountry || ""}
+              onChange={(next) => setField("departCountry", next)}
+              placeholder={loadingCountries ? "Loading countries..." : "Select country"}
+              searchPlaceholder="Type a country..."
+              loading={loadingCountries}
+              accent="teal"
+              advanceOnSelect
+              className="hover:border-slate-300"
+            />
           </IconField>
 
           <IconField label="Departure City" icon={MapPin}>

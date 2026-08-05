@@ -202,8 +202,8 @@ export function MarketplaceBookingRequest() {
         <Empty
           icon={Building2}
           title="Hotel not available"
-          hint="It may have been withdrawn from the marketplace."
-          action={<Button onClick={() => navigate("/marketplace")}>Back to marketplace</Button>}
+          hint="It may have been withdrawn from Platform Hotel."
+          action={<Button onClick={() => navigate("/marketplace")}>Back to Platform Hotel</Button>}
         />
       </Page>
     );
@@ -247,7 +247,7 @@ export function MarketplaceBookingRequest() {
           <Button onClick={() => { setDone(null); setForm(BLANK); setErrors({}); }}>
             Request another
           </Button>
-          <Button variant="ghost" onClick={() => navigate("/marketplace")}>Back to marketplace</Button>
+          <Button variant="ghost" onClick={() => navigate("/marketplace")}>Back to Platform Hotel</Button>
         </div>
       </Page>
     );

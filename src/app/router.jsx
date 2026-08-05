@@ -95,6 +95,7 @@ const SubscriptionInfo = lazyPage(() => import("@features/subscription"), "Subsc
 const Dashboard        = lazyPage(() => import("@features/dashboard"), "Dashboard");
 const TrashPage        = lazyPage(() => import("@features/trash"), "TrashPage");
 const Calendar         = lazyPage(() => import("@features/calendar"), "Calendar");
+const AllTasks         = lazyPage(() => import("@features/calendar"), "AllTasks");
 
 // ── Platform SuperAdmin Console — SEPARATE realm (own token "sa_token", violet/dark theme) ──
 const consoleFeature = () => import("@/console");
@@ -310,6 +311,9 @@ const AppRouter = () => {
           <Route path="Reminders" element={<Reminders/>}/>
           {/* Task & Team Calendar (gated by TASK_READ; sub-agents get a row-scoped personal calendar) */}
           <Route path="calendar" element={<Guard allow={hasPermission(P.TASK_READ)}><Calendar/></Guard>}/>
+          {/* All Tasks list — same TASK_READ gate and the same TASKS module as the calendar.
+              Rows are scoped per caller by the backend, so a sub-agent sees their own slice. */}
+          <Route path="tasks" element={<Guard allow={hasPermission(P.TASK_READ)}><AllTasks/></Guard>}/>
 
           <Route path="createquotation"  element={<CreateQuotation/>}/>
           {/* Package templates — gated by QUOTATION_* (page also self-checks). */}
