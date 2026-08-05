@@ -24,7 +24,7 @@ import {
   Eye, Pencil, Trash2, X, Mail, Phone, MapPin, Briefcase, CheckCircle, Copy,
   BarChart3, ArrowRightLeft, MessageCircle,
   DollarSign, Sparkles,
-  Building2, Plane, Ship, Car, Camera, BookOpen, Shield, ExternalLink
+  Building2, Plane, Ship, Car, Camera,  Bell, AlertCircle, BookOpen, Shield, ExternalLink
 } from 'lucide-react';
 import { WhatsAppIcon as FaWhatsapp } from "@shared/ui/WhatsAppIcon";
 import { Link } from 'react-router-dom';
