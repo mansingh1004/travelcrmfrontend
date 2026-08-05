@@ -829,6 +829,7 @@ import { buildAdultPayload, deriveAdultBreakdown, getAdultBreakdownError } from 
 import TravellerCountFields from "@shared/ui/TravellerCountFields";
 import { useToast } from "@shared/ui/toast";
 import { getErrorMessage, getFieldErrors, isAlreadyReported } from "@shared/api/apiError";
+import { phoneRule } from "@shared/lib/phone";
 
 // Backend LeadType — the priority vocabulary, exactly four values. Keep in step with
 // LeadInformation.jsx, AllLeads.jsx and the leads_lead_type_check constraint.
@@ -1315,10 +1316,11 @@ export function LeadFormPanels({
     setValue("totalAdults", getValues("totalAdults"), { shouldValidate: true });
   };
 
-  const phoneReg = register("phone", {
-    required: "Phone number is required",
-    pattern: { value: /^[+\d\s\-()]{7,20}$/, message: "Enter a valid phone number" },
-  });
+  // Was `pattern: /^[+\d\s\-()]{7,20}$/`, which accepted spaces, dashes and brackets that the
+  // server's @Pattern ("^\\+?[1-9]\\d{7,14}$") rejects — including this field's OWN placeholder,
+  // "+91 98765 43210". phoneRule validates the normalised value against the server's exact
+  // pattern, so what the placeholder shows now genuinely saves.
+  const phoneReg = register("phone", phoneRule);
 
   return (
     <>

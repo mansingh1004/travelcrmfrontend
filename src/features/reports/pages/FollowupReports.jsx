@@ -29,13 +29,17 @@ const TYPE_CFG = {
   "Booking Confirmation": { bg:"bg-teal-500",   text:"text-white" },
   "Custom":               { bg:"bg-slate-500",  text:"text-white" },
 };
+// Keyed on the backend LeadStage enum (see features/leads/lib/leadStages.js). Dropped
+// "Ready to Book", which is not one of its constants, and added the two that were missing —
+// "Follow Up" and "Reopened" both fell through to the New Lead colour below.
 const STAGE_CFG = {
-  "Ready to Book": { bg:"bg-blue-600",   text:"text-white" },
   "New Lead":      { bg:"bg-slate-600",  text:"text-white" },
   "Contacted":     { bg:"bg-cyan-600",   text:"text-white" },
+  "Follow Up":     { bg:"bg-amber-600",  text:"text-white" },
   "Qualified":     { bg:"bg-indigo-600", text:"text-white" },
   "Proposal Sent": { bg:"bg-purple-600", text:"text-white" },
   "Converted":     { bg:"bg-green-600",  text:"text-white" },
+  "Reopened":      { bg:"bg-violet-600", text:"text-white" },
   "Lost":          { bg:"bg-red-600",    text:"text-white" },
 };
 const TEMP_CFG = {

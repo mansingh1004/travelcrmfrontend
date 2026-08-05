@@ -15,6 +15,9 @@ export { default as TravelDetails } from "./components/TravelDetails";
 // stays put until something else forces that change.
 export { default as SearchableSelect } from "./components/SearchableSelect";
 export { leadService } from "./api/leadService";
+// The stage vocabulary, shared so the copies that had drifted (a phantom "Ready to Book", a
+// missing "Reopened") cannot come back.
+export { LEAD_STAGES, STAGE_FILTER_OPTIONS, isKnownStage } from "./lib/leadStages";
 
 // Incoming Leads — the claim window. The provider and the alert service are exported too because
 // app chrome (LeadAlertHost, mounted in Layout) needs them; that is the ONLY route past this

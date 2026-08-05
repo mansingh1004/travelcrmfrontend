@@ -7,11 +7,11 @@ import { leadService } from "../api/leadService";
 import { useToast } from "@shared/ui/toast";
 import { getErrorMessage, isAlreadyReported } from "@shared/api/apiError";
 import { AddLogModal, LogsModal } from "../components/LeadLogModals";
+import { STAGE_FILTER_OPTIONS } from "../lib/leadStages";
 
-const STAGES = [
-  "All Stages", "New Lead", "Contacted", "Follow Up",
-  "Qualified", "Proposal Sent", "Ready to Book", "Converted", "Lost",
-];
+// Was a local list carrying a phantom "Ready to Book" (not in the backend enum, so filtering by
+// it sent an unknown value) and missing "Reopened" (which LeadStage.REOPENED does define).
+const STAGES = STAGE_FILTER_OPTIONS;
 
 const STAGE_CFG = {
   "New Lead":      { bg:"bg-blue-500",   text:"text-white" },
@@ -19,8 +19,9 @@ const STAGE_CFG = {
   "Follow Up":     { bg:"bg-amber-500",  text:"text-white" },
   "Qualified":     { bg:"bg-indigo-500", text:"text-white" },
   "Proposal Sent": { bg:"bg-purple-500", text:"text-white" },
-  "Ready to Book": { bg:"bg-teal-500",   text:"text-white" },
   "Converted":     { bg:"bg-green-600",  text:"text-white" },
+  // Violet matches the REOPENED marker already used in LeadHistoryDrawer.
+  "Reopened":      { bg:"bg-violet-500", text:"text-white" },
   "Lost":          { bg:"bg-red-500",    text:"text-white" },
 };
 const STAGE_DEF = { bg:"bg-slate-400", text:"text-white" };

@@ -138,6 +138,7 @@
 
 
 import API from "@shared/api/http";
+import { normalizePhone } from "@shared/lib/phone";
 
 /* Master ids ride along the itinerary as strings from the <select>s; the backend wants a Long or
    nothing. "" must become null, not 0 — 0 is a row that points at a destination which does not
@@ -191,7 +192,10 @@ function transformFormData(formData, services = [], itinerary = []) {
 
   return {
     customerName:   formData.customerName?.trim()   || "",
-    phone:          formData.phone?.trim()          || "",
+    // .trim() only stripped the ENDS, so "+91 98765 43210" went to the server with its spaces
+    // intact and failed @Pattern ("^\\+?[1-9]\\d{7,14}$"). Normalised here, at the one point
+    // every caller passes through, rather than relying on each form to send a clean value.
+    phone:          normalizePhone(formData.phone)  || "",
     // null, not "" — email is optional on the entity (the column is nullable) and an empty string
     // is a value, so a blank field used to persist "" instead of leaving the column NULL.
     email:          formData.email?.trim()          || null,

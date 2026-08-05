@@ -3,6 +3,7 @@ import { User as FiUser, Phone as FiPhone, Mail as FiMail, Search as FiSearch, C
 
 import { leadService } from "../api/leadService";
 import { useLeadSources } from "../lib/useLeadSources";
+import { LEAD_STAGES } from "../lib/leadStages";
 
 // LEAD_SOURCES used to be a hardcoded array here. It listed 8 strings against a 9-constant backend
 // enum (now 25), so any lead carrying an unlisted source rendered as a blank select — inviting the
@@ -16,13 +17,9 @@ import { useLeadSources } from "../lib/useLeadSources";
 const LEAD_TYPES  = ["Fresh", "Hot", "Warm", "Cold"];
 const COMMUNICATION_PREFERENCES = ["WhatsApp", "Call", "Email", "SMS"];
 const PACKAGE_TYPES = ["Family", "Honeymoon", "Group", "Corporate", "Pilgrimage", "Adventure"];
-// Mirrors the backend LeadStage enum (8 constants) in declaration order. "Reopened" was missing
-// here while LeadStage.REOPENED existed server-side, so a reopened lead rendered with no matching
-// pill and could not be set from this form.
-const LEAD_STAGES = [
-  "New Lead", "Contacted", "Follow Up",
-  "Qualified", "Proposal Sent", "Converted", "Reopened", "Lost",
-];
+// The stage list used to live here as a local const. It now comes from ../lib/leadStages —
+// two OTHER copies had drifted from it (a phantom "Ready to Book" in the lead-logs filter,
+// a missing "Reopened" elsewhere), so there is one copy now.
 
 const stageColors = {
   "New Lead":      "bg-blue-100   text-blue-700",
