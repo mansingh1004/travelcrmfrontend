@@ -139,7 +139,11 @@ export default function CreateQuotation() {
   const [saving, setSaving] = useState(false);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [stylePickOpen, setStylePickOpen] = useState(false);   // Export-PDF design dialog
-  const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);   // "Save as Package" dialog
+  // "Save as Package" dialog — boolean ke bajaye ID rakhte hain. Create mode me quotation pehle
+  // save hoti hai aur usi ki fresh id modal ko jaati hai, isliye dialog kabhi bhi bina id ke
+  // (ya purani id ke saath) nahi khul sakta — state flush ke timing pe bharosa nahi karna padta.
+  const [saveTemplateId, setSaveTemplateId] = useState(null);
+  const [templateBusy, setTemplateBusy] = useState(false);    // sirf is button ka spinner
 
   // The only permission check on this page. The route itself is ungated (unlike the three template
   // routes), so the backend @PreAuthorize stays the real boundary — this just hides an action the
@@ -368,9 +372,12 @@ export default function CreateQuotation() {
         • create mode                  → CREATE a new quotation (POST)
      asNew = true  → "Save as New" button (only shown in edit mode):
         • always CREATE a fresh quotation from the current form. No id is sent, so the
-          backend makes a brand-new record with its own weblink; the original stays untouched. */
+          backend makes a brand-new record with its own weblink; the original stays untouched.
+
+     Return value: saved quotation ki id (success) ya null (validation/API fail). "Save as Package"
+     isi pe chain karta hai — pehle save, tabhi package dialog. */
   const handleSave = async (asNew = false) => {
-    if (!qtTitle.trim()) { showToast("Please enter a quotation title.", "error"); return; }
+    if (!qtTitle.trim()) { showToast("Please enter a quotation title.", "error"); return null; }
     try {
       setSaving(true);
       const allData = collectAllData();
@@ -385,6 +392,7 @@ export default function CreateQuotation() {
         await quotationService.updateQuotation(quotationId, allData);
         setIsDirty(false);
         showToast("Quotation updated successfully!");
+        return quotationId;
       } else {
         const res = await quotationService.createQuotation(allData);
         const newId = res.data?.data?.id || res.data?.data?.publicId || res.data?.id || res.data?.publicId;
@@ -393,12 +401,39 @@ export default function CreateQuotation() {
         // Point the URL at the new quotation so any further save updates IT, not the original.
         if (newId) navigate(`/createquotation?leadId=${leadId || ""}&quotationId=${newId}`, { replace: true });
         showToast(asNew ? "Saved as a new quotation!" : "Quotation created successfully!");
+        return newId || null;
       }
     } catch (err) {
       showToast(err.response?.data?.message || "Failed to save quotation.", "error");
+      return null;
     } finally {
       setSaving(false);
     }
+  };
+
+  /* ── Save as Package ──
+     Package backend pe SAVED quotation se banta hai (previewFromQuotation), form ki in-memory
+     state se nahi. Pehle isi wajah se button quotation save hone tak disabled tha — user ko
+     do alag steps karne padte the, aur edit mode me dirty changes chupchaap package se bahar
+     reh jaate the. Ab button hamesha enabled hai aur wo do-step khud kar deta hai:
+        create mode          → pehle CREATE, fresh id ke saath dialog
+        edit mode + changes  → pehle UPDATE, tabhi dialog (ab package me latest data jaata hai)
+        edit mode, no change → seedha dialog
+     Save fail hua (title missing / API error) to handleSave hi toast dikha chuka hai — yahan
+     bas chup-chaap ruk jaate hain, dialog nahi kholte. */
+  const openSaveTemplate = async () => {
+    if (saving || templateBusy) return;
+    let id = quotationId;
+    if (!id || isDirty) {
+      setTemplateBusy(true);
+      try {
+        id = await handleSave(false);
+      } finally {
+        setTemplateBusy(false);
+      }
+      if (!id) return;
+    }
+    setSaveTemplateId(id);
   };
 
   /* ── PDF ──
@@ -1179,20 +1214,22 @@ export default function CreateQuotation() {
               Cancel
             </button>
 
-            {/* Save as Package — captures the SAVED quotation, not the form in front of you.
-                A template is built server-side from the persisted record, so unsaved edits would be
-                invisible to it; disabling the button until the quotation exists is the honest way to
-                say that. Unsaved changes are flagged in the title rather than silently included. */}
+            {/* Save as Package — package hamesha SAVED quotation se banta hai, isliye ye button
+                click hote hi pehle quotation save/update karta hai aur phir dialog kholta hai.
+                Create mode me bhi enabled — pehle wala "save karke aao" wala disabled state hata
+                diya gaya hai (openSaveTemplate dekho). */}
             {canCreateTemplate && (
-              <button type="button" onClick={() => setSaveTemplateOpen(true)}
-                disabled={saving || !quotationId}
+              <button type="button" onClick={openSaveTemplate}
+                disabled={saving || templateBusy}
                 title={!quotationId
-                  ? "Save the quotation first — a package is built from the saved version"
-                  : (isDirty ? "Unsaved changes won't be included — update the quotation first" : undefined)}
+                  ? "Quotation pehle save hogi, phir package banega"
+                  : (isDirty ? "Changes pehle update honge, phir package banega" : undefined)}
                 className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 sm:px-6 py-2.5 font-bold text-sm rounded-xl
                   border-2 border-indigo-200 hover:border-indigo-300 text-indigo-700 bg-white hover:bg-indigo-50
                   transition-all active:scale-95 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed">
-                <BookmarkPlus size={15} strokeWidth={2.5} /> Save as Package
+                {templateBusy
+                  ? <><Loader2 size={15} className="animate-spin" /> Saving...</>
+                  : <><BookmarkPlus size={15} strokeWidth={2.5} /> Save as Package</>}
               </button>
             )}
 
@@ -1228,10 +1265,10 @@ export default function CreateQuotation() {
 
       {/* Save as Package. Reads the saved quotation server-side, shows what will and won't carry
           across, then writes a reusable template. */}
-      {saveTemplateOpen && quotationId && (
+      {saveTemplateId && (
         <SaveAsTemplateModal
-          quotationId={quotationId}
-          onClose={() => setSaveTemplateOpen(false)}
+          quotationId={saveTemplateId}
+          onClose={() => setSaveTemplateId(null)}
         />
       )}
 
