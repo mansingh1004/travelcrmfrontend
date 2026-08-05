@@ -147,7 +147,7 @@
 //   Tab                   closes and moves on, leaving the current value alone
 // ─────────────────────────────────────────────────────────────────────────────
 import { useState, useRef, useEffect, useMemo, useId } from "react";
-import { ChevronDown as FiChevronDown, Search as FiSearch } from "lucide-react";
+import { Check, ChevronDown as FiChevronDown, Search as FiSearch, X } from "lucide-react";
 
 /**
  * Accent classes, so this one combobox can serve features with different accents without any of
@@ -160,14 +160,56 @@ const ACCENTS = {
     searchFocus: "focus:border-teal-400",
     highlight: "bg-teal-50",
     selected: "text-teal-700",
+    // Added with the 3-letter search: the matched run inside a label, and the bar on the
+    // keyboard-highlighted row.
+    mark: "bg-teal-100 text-teal-900",
+    bar: "bg-teal-500",
   },
   blue: {
     focus: "focus:border-blue-400 focus:ring-blue-100",
     searchFocus: "focus:border-blue-400",
     highlight: "bg-blue-50",
     selected: "text-blue-700",
+    mark: "bg-blue-100 text-blue-900",
+    bar: "bg-blue-500",
   },
 };
+
+const FOCUSABLE =
+  'input:not([type="hidden"]):not([disabled]),select:not([disabled]),textarea:not([disabled]),' +
+  'button:not([disabled]),[tabindex]:not([tabindex="-1"])';
+
+const escapeRegExp = (text) => String(text).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** "goa bea" → ["goa","bea"]. Every token has to be present, so word order never matters. */
+const tokenize = (query) => String(query || "").trim().toLowerCase().split(/\s+/).filter(Boolean);
+
+/**
+ * -1 = not a match, otherwise lower is better. The tiers are what make three letters land on the
+ * row a clerk expects: an exact prefix ("goa" → Goa) outranks a word start ("goa" → North Goa)
+ * which outranks a mid-word hit ("goa" → Margoa), and a hit that only comes from the phone/keywords
+ * ranks last.
+ */
+const scoreOption = (haystack, label, query, tokens) => {
+  if (!tokens.every((token) => haystack.includes(token))) return -1;
+  if (label.startsWith(query)) return 0;
+  if (new RegExp(`(^|[^a-z0-9])${escapeRegExp(query)}`).test(label)) return 1;
+  if (label.includes(query)) return 2;
+  return 3;
+};
+
+/** Wraps every matched token in the label so the eye lands on the reason a row is in the list. */
+function Marked({ text, tokens, markClass }) {
+  const value = String(text ?? "");
+  if (!tokens.length) return value;
+  const pattern = new RegExp(`(${tokens.map(escapeRegExp).join("|")})`, "ig");
+  // String.split with a capturing group interleaves the matches at the odd indexes.
+  return value.split(pattern).map((part, index) =>
+    index % 2 === 1
+      ? <mark key={index} className={`rounded-[3px] px-[1px] font-bold ${markClass}`}>{part}</mark>
+      : part
+  );
+}
 
 export default function SearchableSelect({
   options = [],
@@ -180,6 +222,21 @@ export default function SearchableSelect({
   accent = "teal",
   className = "",
   disabled = false,
+  // ── Added for Create Booking; every one is optional, so the existing call sites are untouched.
+  name,                 // put on the trigger, so validate()'s querySelector('[name=…]').focus() works
+  onBlur,               // fires only when focus leaves the whole control, never on open
+  triggerRef,           // callback ref for the trigger — FastItinerary focuses a newly added row
+  searchPlaceholder = "Type to search...",
+  // Error border is a prop rather than something the caller appends to className: two `border-*`
+  // utilities in one class string are resolved by stylesheet order, not by the order they are
+  // written, so an appended border-red-300 is not reliably the one that wins.
+  invalid = false,
+  /* Create Booking prints "Enter → next field" in its header and its form-level handler implements
+     it for every input. A combobox breaks that: Enter picks the option and hands focus back to the
+     trigger, where the next Enter re-opens the panel instead of moving on. With this on, picking an
+     option lands the caret on the following control, so one Enter still means "done, next". Off by
+     default — Create Lead has no such contract and must keep behaving as it always has. */
+  advanceOnSelect = false,
 }) {
   const tone = ACCENTS[accent] || ACCENTS.teal;
   const [isOpen, setIsOpen] = useState(false);
@@ -189,27 +246,48 @@ export default function SearchableSelect({
 
   const wrapperRef = useRef(null);
   const buttonRef = useRef(null);
+  const searchRef = useRef(null);
   const listRef = useRef(null);
   const listId = useId();
 
   // Both shapes are in use across the app: { value, label } from the dropdown endpoints and
   // { id, name } from the master lists. Normalise once so callers never have to care.
+  // `sublabel` / `keywords` are opt-in: a second line to read, and extra text to match on without
+  // crowding the label (a lead's phone number, for instance). Nothing is auto-derived from the raw
+  // object — a master row's own `description` is HTML and has no business in a dropdown.
   const safeOptions = useMemo(
     () =>
       (Array.isArray(options) ? options : []).map((o, idx) => ({
         value: o.value ?? o.id ?? idx,
         label: o.label ?? o.name ?? String(o.value ?? o.id ?? idx),
+        sublabel: o.sublabel ?? o.hint ?? "",
+        keywords: o.keywords ?? "",
       })),
     [options]
   );
 
   const selectedLabel = safeOptions.find((o) => o.value === value)?.label || "";
 
+  const tokens = useMemo(() => (searchable ? tokenize(search) : []), [search, searchable]);
+
+  // OLD — one `label.includes(search)` pass, unranked:
+  //   return safeOptions.filter((o) => (o.label || "").toLowerCase().includes(needle));
+  // A single substring meant "goa bea" (or any two words typed in the order they are read) matched
+  // nothing, and the rows that came back were in master order, so the obvious answer to a
+  // three-letter query could sit thirty rows down.
   const filteredOptions = useMemo(() => {
-    if (!searchable || !search) return safeOptions;
-    const needle = search.toLowerCase();
-    return safeOptions.filter((o) => (o.label || "").toLowerCase().includes(needle));
-  }, [safeOptions, search, searchable]);
+    if (tokens.length === 0) return safeOptions;
+    const query = search.trim().toLowerCase();
+    const scored = [];
+    safeOptions.forEach((option, index) => {
+      const label = String(option.label || "").toLowerCase();
+      const haystack = `${label} ${option.sublabel} ${option.keywords}`.toLowerCase();
+      const score = scoreOption(haystack, label, query, tokens);
+      if (score >= 0) scored.push({ option, score, index });
+    });
+    scored.sort((a, b) => a.score - b.score || a.index - b.index);
+    return scored.map((entry) => entry.option);
+  }, [safeOptions, search, tokens]);
 
   const close = (returnFocus = true) => {
     setIsOpen(false);
@@ -236,24 +314,51 @@ export default function SearchableSelect({
     listRef.current.querySelector('[data-highlighted="true"]')?.scrollIntoView({ block: "nearest" });
   }, [highlight, isOpen]);
 
-  const openPanel = () => {
+  // `seed` is the character that opened the panel on the type-to-open path — see handleKeyDown.
+  const openPanel = (seed = "") => {
     if (buttonRef.current) {
       const rect = buttonRef.current.getBoundingClientRect();
-      const panelHeight = 300;
+      const panelHeight = 340;
       const spaceBelow = window.innerHeight - rect.bottom;
       setOpenUpward(spaceBelow < panelHeight && rect.top > spaceBelow);
     }
+    setSearch(seed);
     // Land on the current value so Enter straight after opening re-picks what is already selected
-    // instead of silently jumping to an unrelated first row. `search` is always "" on open, so the
-    // unfiltered list is the right one to index into.
-    const current = safeOptions.findIndex((o) => o.value === value);
+    // instead of silently jumping to an unrelated first row. With a seed the list is about to be
+    // filtered, so the only sane landing spot is the top match.
+    const current = seed ? -1 : safeOptions.findIndex((o) => o.value === value);
     setHighlight(current >= 0 ? current : 0);
     setIsOpen(true);
+  };
+
+  /* The next thing the clerk can type after this control. Everything inside the panel is skipped —
+     in DOM order the search box and its clear button sit immediately after the trigger, and both
+     are about to unmount, so focusing one would drop focus on the floor. */
+  const focusNextInForm = () => {
+    const trigger = buttonRef.current;
+    const form = trigger?.form || trigger?.closest("form");
+    if (!trigger || !form) return false;
+    const nodes = Array.from(form.querySelectorAll(FOCUSABLE)).filter(
+      (node) => node === trigger || (!wrapperRef.current?.contains(node) && node.offsetParent !== null)
+    );
+    const next = nodes[nodes.indexOf(trigger) + 1];
+    if (!next) return false;
+    next.focus();
+    if (typeof next.select === "function" && /^(text|number|tel|email|search)$/.test(next.type || "")) {
+      next.select();
+    }
+    return true;
   };
 
   const commit = (option) => {
     if (!option) return;
     onChange(option.value);
+    if (advanceOnSelect) {
+      setIsOpen(false);
+      setSearch("");
+      if (!focusNextInForm()) buttonRef.current?.focus();
+      return;
+    }
     close();
   };
 
@@ -305,19 +410,44 @@ export default function SearchableSelect({
         if (isOpen) close(false);
         break;
       default:
+        // Type-to-open. A native <select> answers a keystroke by jumping to the next option
+        // starting with that letter and forgetting it a second later, which is why the itinerary
+        // and country pickers behaved as if search stopped at the first letter. Here the keystroke
+        // opens the panel and becomes the first character of a real, unbounded query.
+        if (!isOpen && searchable && event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+          event.preventDefault();
+          // Space is the button's own "activate" key, not the first letter of anything — open, but
+          // do not seed the query with a blank.
+          openPanel(event.key === " " ? "" : event.key);
+        }
         break;
     }
   };
 
+  /* Only a focus move that leaves the whole control counts as a blur. Without the relatedTarget
+     check, opening the panel (focus: trigger → search box) would report a blur and paint a
+     "required" error under a field the clerk is in the middle of answering. */
+  const handleBlur = (event) => {
+    if (!onBlur) return;
+    if (wrapperRef.current?.contains(event.relatedTarget)) return;
+    onBlur(event);
+  };
+
   return (
-    <div className="relative" ref={wrapperRef}>
+    <div className="relative" ref={wrapperRef} onBlur={handleBlur}>
       {Icon && (
         <Icon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none z-10" />
       )}
 
       <button
-        ref={buttonRef}
+        ref={(node) => {
+          buttonRef.current = node;
+          // Callback form only — writing through a ref object passed as a prop is a mutation of
+          // props, which the react-hooks rules reject outright.
+          if (typeof triggerRef === "function") triggerRef(node);
+        }}
         type="button"
+        name={name}
         disabled={loading || disabled}
         onClick={() => (isOpen ? close(false) : openPanel())}
         onKeyDown={handleKeyDown}
@@ -325,8 +455,10 @@ export default function SearchableSelect({
         aria-expanded={isOpen}
         aria-haspopup="listbox"
         aria-controls={isOpen ? listId : undefined}
-        className={`w-full ${Icon ? "pl-9" : "pl-3"} pr-8 py-2.5 rounded-xl border border-slate-200 bg-white
-          text-sm text-left text-slate-700 ${tone.focus} focus:ring-2
+        aria-invalid={invalid || undefined}
+        className={`w-full ${Icon ? "pl-9" : "pl-3"} pr-8 py-2.5 rounded-xl border bg-white
+          text-sm text-left text-slate-700 focus:ring-2
+          ${invalid ? "border-red-300 focus:border-red-400 focus:ring-red-100" : `border-slate-200 ${tone.focus}`}
           outline-none transition-all cursor-pointer truncate disabled:opacity-60 disabled:cursor-not-allowed ${className}`}
       >
         {loading ? "Loading..." : selectedLabel || <span className="text-slate-400">{placeholder}</span>}
@@ -334,16 +466,21 @@ export default function SearchableSelect({
 
       <FiChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
 
+      {/* OLD — the open panel was a 2px-padded search box over a bare <li> list inside a max-h-64
+          box, with "No matches found" as the only feedback. Nothing told the clerk how many rows
+          were left, which characters had matched, or that the keyboard drove the list at all —
+          on a 200-row country master that is a list you scroll rather than search. */}
       {isOpen && !loading && (
         <div
-          className={`absolute z-20 w-full bg-white border border-slate-200 rounded-xl shadow-lg
-            max-h-64 overflow-hidden flex flex-col
-            ${openUpward ? "bottom-full mb-1" : "top-full mt-1"}`}
+          className={`absolute z-30 w-full min-w-[240px] bg-white border border-slate-200 rounded-xl
+            shadow-lg shadow-slate-900/5 overflow-hidden flex flex-col
+            ${openUpward ? "bottom-full mb-1.5" : "top-full mt-1.5"}`}
         >
           {searchable && (
-            <div className="relative p-2 border-b border-slate-100 flex-shrink-0">
-              <FiSearch className="absolute left-5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+            <div className="flex items-center gap-2 px-3 py-2 border-b border-slate-100 flex-shrink-0">
+              <FiSearch className="w-3.5 h-3.5 shrink-0 text-slate-400" />
               <input
+                ref={searchRef}
                 autoFocus
                 type="text"
                 value={search}
@@ -354,17 +491,40 @@ export default function SearchableSelect({
                   setHighlight(0);
                 }}
                 onKeyDown={handleKeyDown}
-                placeholder="Search..."
+                placeholder={searchPlaceholder}
                 aria-controls={listId}
                 aria-activedescendant={filteredOptions[highlight] ? `${listId}-${highlight}` : undefined}
-                className={`w-full pl-7 pr-2 py-1.5 text-sm rounded-lg border border-slate-200 outline-none ${tone.searchFocus}`}
+                className="w-full bg-transparent text-sm text-slate-800 placeholder-slate-400 outline-none"
               />
+              {search && (
+                <button
+                  type="button"
+                  // Keep the caret in the search box: a plain click would blur it first.
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => { setSearch(""); setHighlight(0); searchRef.current?.focus(); }}
+                  aria-label="Clear search"
+                  className="shrink-0 rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
           )}
 
-          <ul ref={listRef} id={listId} role="listbox" className="overflow-y-auto flex-1 min-h-0">
+          <ul
+            ref={listRef}
+            id={listId}
+            role="listbox"
+            // Picking with the mouse must not blur the search box first — that reports a blur the
+            // parent reads as "field left empty" a tick before onChange lands.
+            onMouseDown={(event) => event.preventDefault()}
+            className="overflow-y-auto flex-1 min-h-0 max-h-64 py-1"
+          >
             {filteredOptions.length === 0 ? (
-              <li className="px-3 py-2 text-sm text-slate-400">No matches found</li>
+              <li className="px-3 py-6 text-center">
+                <p className="text-sm font-medium text-slate-500">No matches</p>
+                {search && <p className="mt-0.5 text-xs text-slate-400">Nothing matched “{search}”</p>}
+              </li>
             ) : (
               filteredOptions.map((option, idx) => {
                 const selected = option.value === value;
@@ -378,16 +538,37 @@ export default function SearchableSelect({
                     data-highlighted={highlighted}
                     onMouseEnter={() => setHighlight(idx)}
                     onClick={() => commit(option)}
-                    className={`px-3 py-2 text-sm cursor-pointer ${
+                    className={`relative mx-1 flex items-center gap-2 rounded-lg pl-3 pr-2.5 py-2 text-sm cursor-pointer ${
                       highlighted ? tone.highlight : ""
-                    } ${selected ? `${tone.selected} font-medium` : "text-slate-700"}`}
+                    } ${selected ? `${tone.selected} font-semibold` : "text-slate-700"}`}
                   >
-                    {option.label}
+                    {highlighted && (
+                      <span className={`absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full ${tone.bar}`} />
+                    )}
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate">
+                        <Marked text={option.label} tokens={tokens} markClass={tone.mark} />
+                      </span>
+                      {option.sublabel && (
+                        <span className="mt-0.5 block truncate text-xs font-normal text-slate-400">
+                          <Marked text={option.sublabel} tokens={tokens} markClass={tone.mark} />
+                        </span>
+                      )}
+                    </span>
+                    {selected && <Check className="w-4 h-4 shrink-0" />}
                   </li>
                 );
               })
             )}
           </ul>
+
+          <div className="flex items-center justify-between gap-2 border-t border-slate-100 bg-slate-50/70 px-3 py-1.5 text-[11px] font-medium text-slate-400 flex-shrink-0">
+            <span>
+              {filteredOptions.length} {filteredOptions.length === 1 ? "result" : "results"}
+              {search && safeOptions.length !== filteredOptions.length ? ` of ${safeOptions.length}` : ""}
+            </span>
+            <span className="hidden sm:inline">↑↓ move · ↵ select · esc close</span>
+          </div>
         </div>
       )}
     </div>

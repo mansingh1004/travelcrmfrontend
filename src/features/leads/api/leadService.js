@@ -275,14 +275,26 @@ export const leadService = {
   getAllLeads: (page = 0, size = 100) =>
     API.get(`/leads?page=${page}&size=${size}`),
 
-  // ── SERVER-SIDE PAGINATED LIST (search + stage + date filters) ──────────────
-  // Powers AllLeads via usePagedList. Shape matches the hook's fetcher:
-  // { page, size, sortBy, sortDir, q, ...filters }. `q` maps to the backend `search`
-  // param; null/blank args are stripped, so an absent filter widens to all leads.
+  // ── SERVER-SIDE PAGINATED LIST (search + stage + type + date + work queues) ──
+  // The leads list's only fetch. `q` maps to the backend `search` param; null/blank args are
+  // stripped, so an absent filter widens to all leads.
+  //
+  // activeOnly / followUpDueBy are the two WORK-QUEUE filters and are not stages:
+  //   activeOnly=true          → everything that is not Converted or Lost (the "Active" tab)
+  //   followUpDueBy=YYYY-MM-DD → leads with a follow-up on or before that day ("Follow-ups")
+  // They exist because those two tabs used to be sent as stage=Active / stage=Follow-ups, which
+  // LeadStage.fromValue rejects with a 400. Send activeOnly WITH followUpDueBy for the work queue —
+  // that pair is what the Follow-ups Due card counts server-side.
   listLeads: ({ page = 0, size = 25, sortBy = "createdAt", sortDir = "desc",
-                q, stage, leadType, fromDate, toDate } = {}) =>
+                q, stage, leadType, fromDate, toDate, activeOnly, followUpDueBy } = {}) =>
     API.get("/leads", {
-      params: cleanParams({ page, size, sortBy, sortDir, search: q, stage, leadType, fromDate, toDate }),
+      params: cleanParams({
+        page, size, sortBy, sortDir, search: q, stage, leadType, fromDate, toDate,
+        // cleanParams drops null/undefined/"" — but NOT false, so an explicit activeOnly=false
+        // would still be sent. Normalise it away: absent and false mean the same thing here.
+        activeOnly: activeOnly === true ? true : undefined,
+        followUpDueBy,
+      }),
     }),
 
   // ── GET BY PUBLIC ID ──────────────────────────────────────
@@ -292,6 +304,7 @@ export const leadService = {
   // ── UPDATE ────────────────────────────────────────────────
   updateLead: (publicId, formData, services, itinerary) =>
     API.put(`/leads/${publicId}`, transformFormData(formData, services, itinerary)),
+
 
   // ── DELETE ────────────────────────────────────────────────
   deleteLead: (publicId) =>
