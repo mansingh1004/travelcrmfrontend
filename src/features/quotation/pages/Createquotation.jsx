@@ -8,7 +8,8 @@ import {
   Plane, Hotel, Map, Anchor, Car, Package, List, BarChart2,
   Home, ChevronRight, Save, Users, Calendar,
   Phone, FileText, MapPin, User, TrendingUp, Sparkles,
-  Wallet, ShieldCheck, Download, Share2, CheckCircle, Loader2, AlertCircle
+  Wallet, ShieldCheck, Download, Share2, CheckCircle, Loader2, AlertCircle,
+  BookmarkPlus
 } from "lucide-react";
 
 import FlightTab from "../components/FlightTab";
@@ -22,8 +23,10 @@ import SummaryPricingTab from "../components/SummaryPricingTab";
 
 import { Input, Label } from "../components/Ui";
 import QuotationStyleModal from "../components/QuotationStyleModal";
+import SaveAsTemplateModal from "../components/SaveAsTemplateModal";
 import { quotationService } from "../api/quotationService";
 import { leadService } from "@features/leads";
+import { hasPermission, P } from "@shared/lib/access";
 import { getErrorMessage, isAlreadyReported } from "@shared/api/apiError";
 import PdfDownloadLoader from "@shared/ui/PdfDownloadLoader";
 import { usePdfDownload } from "@shared/hooks/usePdfDownload";
@@ -136,6 +139,12 @@ export default function CreateQuotation() {
   const [saving, setSaving] = useState(false);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [stylePickOpen, setStylePickOpen] = useState(false);   // Export-PDF design dialog
+  const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);   // "Save as Package" dialog
+
+  // The only permission check on this page. The route itself is ungated (unlike the three template
+  // routes), so the backend @PreAuthorize stays the real boundary — this just hides an action the
+  // user cannot perform. Same idiom as PackageTemplates.jsx.
+  const canCreateTemplate = hasPermission(P.QUOTATION_CREATE);
   // Shared PDF pipeline — same hook + full-screen loader the leads list uses.
   const { downloadPdf: runPdfDownload, isDownloading: pdfBusy, progress: pdfProgress, progressSupported: pdfProgressSupported } = usePdfDownload();
   const [toast, setToast] = useState(null);
@@ -1170,6 +1179,23 @@ export default function CreateQuotation() {
               Cancel
             </button>
 
+            {/* Save as Package — captures the SAVED quotation, not the form in front of you.
+                A template is built server-side from the persisted record, so unsaved edits would be
+                invisible to it; disabling the button until the quotation exists is the honest way to
+                say that. Unsaved changes are flagged in the title rather than silently included. */}
+            {canCreateTemplate && (
+              <button type="button" onClick={() => setSaveTemplateOpen(true)}
+                disabled={saving || !quotationId}
+                title={!quotationId
+                  ? "Save the quotation first — a package is built from the saved version"
+                  : (isDirty ? "Unsaved changes won't be included — update the quotation first" : undefined)}
+                className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 sm:px-6 py-2.5 font-bold text-sm rounded-xl
+                  border-2 border-indigo-200 hover:border-indigo-300 text-indigo-700 bg-white hover:bg-indigo-50
+                  transition-all active:scale-95 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed">
+                <BookmarkPlus size={15} strokeWidth={2.5} /> Save as Package
+              </button>
+            )}
+
             {/* Save as New — only in edit mode. Clones the current form into a brand-new quotation
                 (fresh record + fresh weblink); the quotation being edited stays untouched. */}
             {quotationId && (
@@ -1199,6 +1225,15 @@ export default function CreateQuotation() {
         </div>
 
       </div>
+
+      {/* Save as Package. Reads the saved quotation server-side, shows what will and won't carry
+          across, then writes a reusable template. */}
+      {saveTemplateOpen && quotationId && (
+        <SaveAsTemplateModal
+          quotationId={quotationId}
+          onClose={() => setSaveTemplateOpen(false)}
+        />
+      )}
 
       {/* Export PDF → pick a design. One-off: the quotation's own design is untouched. */}
       {stylePickOpen && (

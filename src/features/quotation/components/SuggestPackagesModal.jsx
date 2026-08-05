@@ -7,7 +7,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { Sparkles, X, MapPin, Moon, Wallet, CalendarRange, Star, Loader2, PackageOpen, ArrowRight } from "lucide-react";
+import { Sparkles, X, MapPin, Moon, Wallet, CalendarRange, Star, Loader2, PackageOpen, ArrowRight, Repeat } from "lucide-react";
 import { templateService } from "../api/templateService";
 import MatchBadge, { matchTone } from "./MatchBadge";
 import { toast } from "@shared/ui/toast";
@@ -127,16 +127,30 @@ export default function SuggestPackagesModal({ lead, onClose }) {
               <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mb-4 -rotate-3">
                 <PackageOpen size={26} className="text-slate-400" />
               </div>
-              <p className="text-sm font-bold text-slate-600 mb-1">No packages cleared the bar</p>
+              <p className="text-sm font-bold text-slate-600 mb-1">No packages yet</p>
               <p className="text-xs text-slate-400 max-w-xs">
-                No active template scored high enough for this lead. Widen the budget or star tier, or
-                author a matching template.
+                Build a quotation for this lead and use <b>Save as Package</b> — it will be suggested
+                automatically the next time a similar enquiry comes in.
               </p>
             </div>
           ) : (
-            results.map((tpl) => (
-              <TemplateCard key={tpl.id} tpl={tpl} onApply={() => apply(tpl)} applying={applyingId === tpl.id} anyApplying={applyingId != null} />
-            ))
+            <>
+              {/* Cold start: the backend flags these when NOTHING cleared the score threshold. They
+                  are "here is what you have", not "here is what fits", and must never be mixed in
+                  with real matches — hence the divider rather than a subtler visual cue. */}
+              {results[0]?.belowThreshold && (
+                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                  <p className="text-xs font-bold text-slate-600">Nothing scored a strong match</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    Your closest packages are below, so you can start from one and edit — or widen the
+                    budget and star tier above and re-match.
+                  </p>
+                </div>
+              )}
+              {results.map((tpl) => (
+                <TemplateCard key={tpl.id} tpl={tpl} onApply={() => apply(tpl)} applying={applyingId === tpl.id} anyApplying={applyingId != null} />
+              ))}
+            </>
           )}
         </div>
       </div>
@@ -175,6 +189,13 @@ function TemplateCard({ tpl, onApply, applying, anyApplying }) {
             {tpl.hotelTier && (
               <span className="inline-flex items-center gap-0.5 text-[11px] font-bold text-amber-600">
                 {tpl.hotelTier}<Star size={11} className="fill-amber-400 text-amber-400" />
+              </span>
+            )}
+            {/* Usage is the ranking's tie-breaker, so showing it explains why two equal scores
+                ordered the way they did. */}
+            {tpl.timesApplied > 0 && (
+              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-400">
+                <Repeat size={10} /> used {tpl.timesApplied}×
               </span>
             )}
           </div>
