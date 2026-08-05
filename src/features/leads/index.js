@@ -4,8 +4,6 @@ export { default as AllLeads } from "./pages/AllLeads";
 export { default as CreateLead } from "./pages/CreateLead";
 // Create and Edit routes intentionally use one mode-aware page so their UI and validation cannot drift.
 export { default as EditLead } from "./pages/CreateLead";
-export { default as LeadLogs } from "./pages/LeadLogs";
-export { default as AddLeadLog } from "./pages/AddLeadLog";
 export { default as AllLeadLogs } from "./pages/AllLeadLogs";
 export { default as WhatsAppPanel } from "./pages/WhatsAppPanel";
 export { default as ItinerarySection } from "./components/ItinerarySection";
@@ -17,6 +15,9 @@ export { default as TravelDetails } from "./components/TravelDetails";
 // stays put until something else forces that change.
 export { default as SearchableSelect } from "./components/SearchableSelect";
 export { leadService } from "./api/leadService";
+// The stage vocabulary, shared so the copies that had drifted (a phantom "Ready to Book", a
+// missing "Reopened") cannot come back.
+export { LEAD_STAGES, STAGE_FILTER_OPTIONS, isKnownStage } from "./lib/leadStages";
 
 // Incoming Leads — the claim window. The provider and the alert service are exported too because
 // app chrome (LeadAlertHost, mounted in Layout) needs them; that is the ONLY route past this

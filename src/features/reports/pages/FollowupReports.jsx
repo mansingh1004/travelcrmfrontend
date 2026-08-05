@@ -29,13 +29,17 @@ const TYPE_CFG = {
   "Booking Confirmation": { bg:"bg-teal-500",   text:"text-white" },
   "Custom":               { bg:"bg-slate-500",  text:"text-white" },
 };
+// Keyed on the backend LeadStage enum (see features/leads/lib/leadStages.js). Dropped
+// "Ready to Book", which is not one of its constants, and added the two that were missing —
+// "Follow Up" and "Reopened" both fell through to the New Lead colour below.
 const STAGE_CFG = {
-  "Ready to Book": { bg:"bg-blue-600",   text:"text-white" },
   "New Lead":      { bg:"bg-slate-600",  text:"text-white" },
   "Contacted":     { bg:"bg-cyan-600",   text:"text-white" },
+  "Follow Up":     { bg:"bg-amber-600",  text:"text-white" },
   "Qualified":     { bg:"bg-indigo-600", text:"text-white" },
   "Proposal Sent": { bg:"bg-purple-600", text:"text-white" },
   "Converted":     { bg:"bg-green-600",  text:"text-white" },
+  "Reopened":      { bg:"bg-violet-600", text:"text-white" },
   "Lost":          { bg:"bg-red-600",    text:"text-white" },
 };
 const TEMP_CFG = {
@@ -140,6 +144,8 @@ function mapLeadsToTasks(leads) {
           travelDate,
           completed:       rem.status === "COMPLETED" || rem.completed || false,
           reminderId:      rem.id || rem.publicId,
+          // Backed by a real reminder row → can be completed server-side.
+          source:          "reminder",
         });
       });
     }
@@ -170,6 +176,10 @@ function mapLeadsToTasks(leads) {
             travelDate,
             completed:       false,
             reminderId:      log.id,
+            // NOT a reminder: this row is derived from a lead LOG that carries a followUpDate.
+            // `reminderId` here is a LOG id, so sending it to the task-complete endpoint would
+            // address the wrong record. Marked so the complete handlers can refuse it.
+            source:          "log",
           });
         });
     }
@@ -599,7 +609,11 @@ export default function FollowupReports() {
                 .toLocaleDateString("en-US",{month:"short",day:"numeric"})
             : "—",
           completed:       r.status === "COMPLETED" || r.completed || false,
+          // Left exactly as-is: these rows come FROM /reports/followup/tasks, so this is the
+          // identifier that endpoint itself issued — and it is the same endpoint family we send
+          // the complete back to. Re-ordering it here would be a guess, not a fix.
           reminderId:      r.publicId || r.id,
+          source:          "reminder",
         };
       };
 
@@ -710,25 +724,70 @@ export default function FollowupReports() {
   };
 
   /* ── MARK COMPLETE ── */
+  // Was local-only: it flipped `completed` in state and reported success without calling the
+  // server, so every completed follow-up came back on refresh. The old try/catch could never
+  // fire either — it wrapped setTasks, which cannot throw.
   const handleComplete = useCallback(async (taskId) => {
     const task = tasks.find(t => t.id === taskId);
     if (!task || task.completed) return;
+
+    if (task.source === "log") {
+      showToast("This follow-up comes from a lead log and has no reminder to complete.", "error");
+      return;
+    }
+    if (!task.reminderId) {
+      showToast("This follow-up has no reminder id and cannot be completed.", "error");
+      return;
+    }
+
+    const snapshot = tasks;
+    setTasks(prev => prev.map(t => t.id === taskId ? {...t, completed:true} : t));
     try {
-      // If backend has a mark-complete endpoint:
-      // await leadService.completeReminder(task.reminderId || task.leadId);
-      setTasks(prev => prev.map(t => t.id === taskId ? {...t, completed:true} : t));
+      await followupReportService.markComplete(task.reminderId);
       showToast("Task marked as completed.");
-    } catch {
-      showToast("Failed to mark task as completed.", "error");
+    } catch (err) {
+      setTasks(snapshot);   // a completion that did not happen must not look like one that did
+      showToast(err?.response?.data?.message || "Failed to mark task as completed.", "error");
     }
   }, [tasks, showToast]);
 
   /* ── BULK COMPLETE ── */
-  const handleBulkComplete = useCallback(() => {
-    setTasks(prev => prev.map(t => selected.has(t.id) ? {...t, completed:true} : t));
-    showToast(`${selected.size} task${selected.size>1?"s":""} marked as completed.`);
+  // Same defect as handleComplete, and it was not even async — no request, no error path.
+  const handleBulkComplete = useCallback(async () => {
+    // Log-derived rows have no reminder behind them, so they are excluded rather than sent and
+    // silently failed server-side.
+    const eligible = tasks.filter(t => selected.has(t.id) && !t.completed
+                                       && t.source !== "log" && t.reminderId);
+    const skipped  = selected.size - eligible.length;
+    if (!eligible.length) {
+      showToast("None of the selected follow-ups can be completed here.", "error");
+      return;
+    }
+
+    const snapshot = tasks;
+    const ids = new Set(eligible.map(t => t.id));
+    setTasks(prev => prev.map(t => ids.has(t.id) ? {...t, completed:true} : t));
     setSelected(new Set());
-  }, [selected, showToast]);
+
+    try {
+      const res = await followupReportService.bulkComplete(eligible.map(t => t.reminderId));
+      // Backend answers { completed, failed, message } — a bulk call can partially succeed, and
+      // local state cannot know WHICH ones failed, so any failure triggers a refetch.
+      const body = res?.data?.data ?? res?.data ?? {};
+      const done   = body.completed ?? eligible.length;
+      const failed = body.failed ?? 0;
+      showToast(
+        failed ? `${done} completed, ${failed} failed.`
+               : `${done} task${done > 1 ? "s" : ""} marked as completed.`
+                 + (skipped ? ` ${skipped} skipped.` : ""),
+        failed ? "error" : "success"
+      );
+      if (failed) fetchData();
+    } catch (err) {
+      setTasks(snapshot);
+      showToast(err?.response?.data?.message || "Failed to complete tasks.", "error");
+    }
+  }, [tasks, selected, showToast, fetchData]);
 
   /* ── CSV EXPORT ── */
   const handleExport = () => {
