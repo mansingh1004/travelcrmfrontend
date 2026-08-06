@@ -14,6 +14,7 @@ import {
 
 import { geographyService } from "@shared/api/geographyService";
 import TravellerCountFields from "@shared/ui/TravellerCountFields";
+import { SearchableSelect } from "@features/leads";
 
 const MODES = ["Flight / Airport", "Train / Rail", "Car / Road", "Bus", "Other"];
 const ASSISTANCE_TYPES = [
@@ -126,14 +127,17 @@ export default function FastTravelDetails({ form, setField, errors = {}, onBlurF
           </IconField>
 
           <IconField label="Departure Country" icon={Globe2}>
-            <div className="relative">
-              <select value={form.departCountry} onChange={(event) => setField("departCountry", event.target.value)} className={`${inputClass} appearance-none pr-9`}>
-                <option value="">{loadingCountries ? "Loading countries..." : "Select country"}</option>
-                {savedCountryMissing && <option value={form.departCountry}>{form.departCountry}</option>}
-                {countries.map((country) => <option key={country.id || country.name} value={country.name}>{country.name}</option>)}
-              </select>
-              <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            </div>
+            <SearchableSelect
+              options={[
+                ...(savedCountryMissing ? [{ value: form.departCountry, label: form.departCountry }] : []),
+                ...countries.map((country) => ({ value: country.name, label: country.name })),
+              ]}
+              value={form.departCountry}
+              onChange={(value) => setField("departCountry", value)}
+              placeholder="Select country"
+              loading={loadingCountries}
+              searchable
+            />
           </IconField>
 
           <IconField label="Departure City" icon={MapPin}>

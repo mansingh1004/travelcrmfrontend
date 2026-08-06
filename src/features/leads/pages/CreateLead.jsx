@@ -1320,6 +1320,13 @@ export function LeadFormPanels({
     pattern: { value: /^[+\d\s\-()]{7,20}$/, message: "Enter a valid phone number" },
   });
 
+  // Name must not contain numbers. Registered here so the input can wrap onChange to STRIP digits
+  // as they're typed; the pattern is the on-submit backstop, the backend @Pattern is the real gate.
+  const nameReg = register("customerName", {
+    required: "Customer name is required",
+    pattern: { value: /^[\p{L}\s.'-]+$/u, message: "Customer name cannot contain numbers" },
+  });
+
   return (
     <>
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,7fr)_minmax(300px,3fr)] lg:items-start">
@@ -1336,6 +1343,7 @@ export function LeadFormPanels({
               <Phone className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <input
                 {...phoneReg}
+                onChange={(e) => { e.target.value = e.target.value.replace(/[^+\d\s\-()]/g, ""); phoneReg.onChange(e); }}
                 ref={(node) => { phoneReg.ref(node); if (phoneRef) phoneRef.current = node; }}
                 id="phone"
                 type="tel"
@@ -1350,7 +1358,8 @@ export function LeadFormPanels({
 
           <Field id="customerName" label="Customer Name" required error={errors.customerName?.message}>
             <input
-              {...register("customerName", { required: "Customer name is required" })}
+              {...nameReg}
+              onChange={(e) => { e.target.value = e.target.value.replace(/[0-9]/g, ""); nameReg.onChange(e); }}
               id="customerName"
               autoComplete="name"
               placeholder="Full name"

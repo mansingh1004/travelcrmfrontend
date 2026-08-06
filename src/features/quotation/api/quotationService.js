@@ -281,10 +281,16 @@ export const quotationService = {
     return API.post(`/quotations/${id}/duplicate`);
   },
 
-  // 9. GENERATE PDF — GET /quotations/{id}/pdf[?style=CLASSIC|MODERN|PREMIUM]
+  // 9. GENERATE PDF — GET /quotations/{id}/pdf[?style=CLASSIC|MODERN|PREMIUM|LUXURY]
   //
   // `style` is a ONE-OFF design override chosen in the download dialog. It is not saved: the
   // quotation keeps whatever design its share link shows. Omit it to get the saved one.
+  //
+  // LUXURY renders through headless Chromium on the server rather than the OpenPDF engine the other
+  // three use, so it is slower (a second or two) and is the one style that can come back 503 when
+  // the browser is unavailable. Both are handled by the existing plumbing — the 30s client timeout
+  // already covers the slower render, and the shared interceptor toasts the 5xx — so there is no
+  // per-style branching here on purpose.
   generatePdf: (id, style) => {
     return API.get(`/quotations/${id}/pdf`, {
       responseType: "blob",

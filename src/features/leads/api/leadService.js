@@ -293,7 +293,7 @@ export const leadService = {
   updateLead: (publicId, formData, services, itinerary) =>
     API.put(`/leads/${publicId}`, transformFormData(formData, services, itinerary)),
 
-  // ── DELETE ────────────────────────────────────────────────
+  // ── DELETE ─────────────────────────────────────────
   deleteLead: (publicId) =>
     API.delete(`/leads/${publicId}`),
 

@@ -10,7 +10,7 @@
 // Styling follows AllLeads.jsx's inline-style modal idiom (fixed inset-0 z-50 overlay, click-outside
 // to close, Plus Jakarta Sans set explicitly — the tenant app applies no global font).
 
-import { X, FileText, Sparkles, Crown, Check } from "lucide-react";
+import { X, FileText, Sparkles, Crown, Gem, Check } from "lucide-react";
 
 const FONT = "'Plus Jakarta Sans', system-ui, sans-serif";
 
@@ -35,6 +35,18 @@ const STYLES = [
     accent: "#2e4460",
     icon: Crown,
     points: ["Quiet-luxury letterhead on ivory paper", "Settlement table, serif typography"],
+  },
+  // The only design NOT rendered by the backend's OpenPDF engine — it goes through headless
+  // Chromium, so it is also the only one that can answer 503 ("not available on this server") when
+  // the browser is missing or pdf.luxury.enabled=false. Nothing here needs to special-case that:
+  // the shared http interceptor already toasts a 5xx, and the caller's usePdfDownload hook clears
+  // its loading state on rejection like it does for any other failure.
+  {
+    value: "LUXURY",
+    title: "Luxury",
+    accent: "#c9a227",
+    icon: Gem,
+    points: ["Full-bleed navy & gold coffee-table book", "Photo cover, day cards, hotel spreads"],
   },
 ];
 

@@ -110,6 +110,15 @@ function normalizeBooking(b={}) {
 }
 
 const EMPTY = [];
+
+// AllBookings sort-column key (the normalised display field) → the Booking ENTITY field the backend
+// can ORDER BY. Anything not here falls back to createdAt server-side (see BOOKING_SORTS whitelist).
+const BOOKING_SORT_MAP = {
+  id: "id", code: "bookingCode", customer: "customerNameSnapshot", destination: "destinationSnapshot",
+  bookingDate: "bookingDate", travelDate: "travelDate", customerAmount: "customerAmount",
+  status: "status", payStatus: "paymentStatus",
+};
+
 const selectCls = "w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-700 font-medium focus:border-blue-400 focus:ring-2 focus:ring-blue-100 outline-none appearance-none cursor-pointer transition-all hover:border-slate-300";
 const inputCls  = "w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-700 placeholder-slate-400 font-medium focus:border-blue-400 focus:ring-2 focus:ring-blue-100 outline-none transition-all hover:border-slate-300";
 
@@ -519,6 +528,9 @@ export default function BookingsPage({
   const [sortDir,  setSortDir]  = useState("desc");
   const [page,     setPage]     = useState(1);
   const perPage = 10;
+  const [meta,     setMeta]     = useState(null);   // server pagination block (standalone mode)
+  const [overview, setOverview] = useState(EMPTY);  // stat-card source (standalone mode, capped)
+  const [debouncedSearch, setDebouncedSearch] = useState("");  // settled search that hits the server
   // selection + modals
   const [selected,      setSelected]      = useState(new Set());
   const [modal,         setModal]         = useState(null);
@@ -531,36 +543,76 @@ export default function BookingsPage({
 
   const selfManaged = propBookings.length===0;
 
+  // Debounce the search box so a keystroke isn't a request (standalone mode).
+  useEffect(()=>{ const t=setTimeout(()=>setDebouncedSearch(search.trim()),300); return ()=>clearTimeout(t); },[search]);
+
+  // Filters + sort → the server params the backend understands. "All …" sentinels ⇒ undefined
+  // (no filter); month names ⇒ 1-12; sort key ⇒ its entity field.
+  const serverParams = useMemo(()=>({
+    q:             debouncedSearch || undefined,
+    status:        filterStatus !== "All Status"          ? filterStatus : undefined,
+    paymentStatus: filterPay    !== "All Payment Status"  ? filterPay    : undefined,
+    bookingMonth:  filterMonth  !== "All Booking Months"  ? MONTHS.indexOf(filterMonth)+1  : undefined,
+    travelMonth:   filterTravel !== "All Travel Months"   ? MONTHS.indexOf(filterTravel)+1 : undefined,
+    sortBy:        BOOKING_SORT_MAP[sortKey] || "createdAt",
+    sortDir,
+  }),[debouncedSearch,filterStatus,filterPay,filterMonth,filterTravel,sortKey,sortDir]);
+  const serverParamsKey = JSON.stringify(serverParams);
+
+  // Any change to WHAT is listed resets to page 1 (1-based here).
+  useEffect(()=>{ setPage(1); },[serverParamsKey]);
+
+  // Guards against out-of-order responses: only the newest request may render.
+  const reqId = useRef(0);
+
+  // Standalone TABLE data source — one SERVER page (search/filter/sort/paging all in the DB, so a
+  // match on booking #900 is found even though only ~10 rows are ever in memory).
   const fetchBookings = useCallback(async()=>{
+    if (!selfManaged) return;
+    const id = ++reqId.current;
     setLoading(true);
     try {
-      const res=await bookingService.getAll(0,500);
-      const body=res.data;
-      const raw=Array.isArray(body?.data)?body.data:Array.isArray(body)?body:[];
-      setBookings(raw.map(normalizeBooking));
+      const res = await bookingService.list({ page: page-1, size: perPage, ...JSON.parse(serverParamsKey) });
+      if (id !== reqId.current) return;
+      const body = res?.data ?? {};
+      setBookings((Array.isArray(body.data)?body.data:[]).map(normalizeBooking));
+      setMeta(body.pagination ?? null);
     } catch (error) {
+      if (id !== reqId.current) return;
+      setBookings(EMPTY); setMeta(null);
       if (!isAlreadyReported(error)) showToast(getErrorMessage(error,"Failed to load bookings."),"error");
-    }
-    finally { setLoading(false); }
-  },[showToast]);
+    } finally { if (id===reqId.current) setLoading(false); }
+  },[selfManaged,page,perPage,serverParamsKey,showToast]);
 
   useEffect(()=>{
     if (selfManaged){fetchBookings();return;}
     setBookings(propBookings); setLoading(propLoading);
   },[propBookings,propLoading,selfManaged,fetchBookings]);
 
-  /* stats */
-  const stats = useMemo(()=>({
-    total:     bookings.length,
-    confirmed: bookings.filter(b=>b.status==="Confirmed").length,
-    revenue:   bookings.reduce((s,b)=>s+(b.customerAmount||0),0),
-    net:       bookings.reduce((s,b)=>s+(b.paid||0),0),
-    refunds:   bookings.filter(b=>b.payStatus==="Refunded").reduce((s,b)=>s+(b.paid||0),0),
-    profit:    bookings.reduce((s,b)=>s+(b.netProfit||0),0),
-  }),[bookings]);
+  // Separate overview fetch for the stat cards only (standalone). Capped at 500 — same as before;
+  // the searchable TABLE above is server-paged and uncapped.
+  useEffect(()=>{
+    if (!selfManaged) return;
+    bookingService.getAll(0,500)
+      .then(res=>{ const b=res.data; const raw=Array.isArray(b?.data)?b.data:Array.isArray(b)?b:[]; setOverview(raw.map(normalizeBooking)); })
+      .catch(()=>setOverview(EMPTY));
+  },[selfManaged]);
 
-  /* filtered + sorted */
-  const filtered = useMemo(()=>{
+  /* stats — from the overview set in standalone mode (so the page size doesn't shrink the numbers),
+     from the provided list when embedded. */
+  const statsSource = selfManaged ? overview : bookings;
+  const stats = useMemo(()=>({
+    total:     statsSource.length,
+    confirmed: statsSource.filter(b=>b.status==="Confirmed").length,
+    revenue:   statsSource.reduce((s,b)=>s+(b.customerAmount||0),0),
+    net:       statsSource.reduce((s,b)=>s+(b.paid||0),0),
+    refunds:   statsSource.filter(b=>b.payStatus==="Refunded").reduce((s,b)=>s+(b.paid||0),0),
+    profit:    statsSource.reduce((s,b)=>s+(b.netProfit||0),0),
+  }),[statsSource]);
+
+  /* Embedded mode still filters/sorts/paginates client-side over the provided list. In standalone
+     mode the server already did all three, so `bookings` IS the current page. */
+  const clientFiltered = useMemo(()=>{
     let out=[...bookings];
     const q=search.toLowerCase();
     if(q) out=out.filter(b=>(b.code||"").toLowerCase().includes(q)||(b.customer||"").toLowerCase().includes(q)||(b.destination||"").toLowerCase().includes(q));
@@ -578,8 +630,9 @@ export default function BookingsPage({
     return out;
   },[bookings,search,filterStatus,filterPay,filterMonth,filterTravel,sortKey,sortDir]);
 
-  const totalPages = Math.max(1,Math.ceil(filtered.length/perPage));
-  const pageData   = filtered.slice((page-1)*perPage,page*perPage);
+  const pageData   = selfManaged ? bookings : clientFiltered.slice((page-1)*perPage,page*perPage);
+  const totalCount = selfManaged ? (meta?.totalElements ?? 0) : clientFiltered.length;
+  const totalPages = Math.max(1, selfManaged ? (meta?.totalPages ?? 1) : Math.ceil(clientFiltered.length/perPage));
 
   /* handlers */
   const handleSort = key => {
@@ -688,9 +741,21 @@ const saveBookingExpenses = async (expenses) => {
   const thProps = { sortKey, sortDir, onSort:handleSort };
 
   /* CSV export */
-  const handleExportCSV = () => {
+  const handleExportCSV = async () => {
     const headers = ["Booking Code","Customer","Destination","Travel Date","Customer Amt","GST","TCS","Total Payable","Paid","Net Profit","Status","Payment Status"];
-    const rows = filtered.map(b=>[b.code,b.customer,b.destination,fmtDate(b.travelDate),b.customerAmount,b.gst,b.tcs,b.totalPayable,b.paid,b.netProfit,b.status,b.payStatus]);
+    // Standalone: export ALL rows matching the current filter (up to the backend max), not just the
+    // visible page. Embedded: the already-filtered client list.
+    let source = clientFiltered;
+    if (selfManaged) {
+      try {
+        const res = await bookingService.list({ page:0, size:200, ...serverParams });
+        source = (Array.isArray(res?.data?.data)?res.data.data:[]).map(normalizeBooking);
+      } catch (error) {
+        if (isAlreadyReported(error)) return;
+        showToast(getErrorMessage(error,"Couldn't export bookings."),"error"); return;
+      }
+    }
+    const rows = source.map(b=>[b.code,b.customer,b.destination,fmtDate(b.travelDate),b.customerAmount,b.gst,b.tcs,b.totalPayable,b.paid,b.netProfit,b.status,b.payStatus]);
     const csv  = [headers,...rows].map(r=>r.join(",")).join("\n");
     const blob = new Blob([csv],{type:"text/csv"});
     const url  = URL.createObjectURL(blob);
@@ -966,7 +1031,7 @@ const saveBookingExpenses = async (expenses) => {
           <div className="px-5 py-3.5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div className="flex items-center gap-3 flex-wrap">
               <span className="text-xs font-extrabold bg-blue-100 text-blue-600 px-2.5 py-1 rounded-full border border-blue-100">
-                {filtered.length} bookings
+                {totalCount} bookings
               </span>
               {selected.size>0 && hasPermission(P.BOOKING_DELETE) && (
                 <button onClick={handleBulkDelete} disabled={bulkDeleting}
@@ -1193,15 +1258,15 @@ const saveBookingExpenses = async (expenses) => {
           </div>
 
           {/* ── PAGINATION ── */}
-          {filtered.length>0&&(
+          {totalCount>0&&(
             <div className="px-5 py-4 border-t border-slate-100 bg-slate-50/60
               flex flex-col sm:flex-row items-center justify-between gap-3">
               <p className="text-xs text-slate-400 font-medium">
                 Showing{" "}
                 <span className="font-bold text-slate-600">{(page-1)*perPage+1}</span>–
-                <span className="font-bold text-slate-600">{Math.min(page*perPage,filtered.length)}</span>
+                <span className="font-bold text-slate-600">{Math.min(page*perPage,totalCount)}</span>
                 {" "}of{" "}
-                <span className="font-bold text-slate-600">{filtered.length}</span>
+                <span className="font-bold text-slate-600">{totalCount}</span>
               </p>
               <div className="flex items-center gap-1.5">
                 <button disabled={page===1} onClick={()=>setPage(1)}

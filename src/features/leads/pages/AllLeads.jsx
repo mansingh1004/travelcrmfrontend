@@ -28,12 +28,7 @@ import { QuotationWebView } from "@features/quotation";
 import { WeblinkAnalyticsModal } from "@features/quotation";
 import { SuggestPackagesModal } from "@features/quotation";
 import { QuotationStyleModal } from "@features/quotation";
-import ConvertToBookingModal from "../components/ConvertToBookingModal";
 import ImportLeadsModal from "../components/ImportLeadsModal";
-import {
-  useReactTable, getCoreRowModel, getSortedRowModel,
-  getPaginationRowModel,
-} from '@tanstack/react-table';
 
 /* ─── COLOR HELPERS ───────────────────────────────────── */
 const AVATAR_GRADIENTS = [
