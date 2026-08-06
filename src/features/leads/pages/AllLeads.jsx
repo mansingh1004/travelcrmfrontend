@@ -1578,7 +1578,7 @@ const Leads = () => {
 
   // Open by default: this block IS the business overview. Collapsed-by-default meant the first
   // thing the page told anyone about their pipeline was nothing.
-  const [analyticsOpen, setAnalyticsOpen] = useState(true);
+  const [analyticsOpen, setAnalyticsOpen] = useState(false);
 
   /* ── Dashboard numbers ─────────────────────────────────────────────────────
      TWO sources, deliberately not merged, because they answer at two different scopes:

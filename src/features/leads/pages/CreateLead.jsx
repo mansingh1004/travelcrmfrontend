@@ -1043,11 +1043,10 @@ function Chip({ selected, onClick, children }) {
       type="button"
       onClick={onClick}
       aria-pressed={selected}
-      className={`inline-flex min-w-0 items-center justify-center gap-1.5 rounded-lg border px-2.5 py-2 text-xs font-semibold transition ${
-        selected
-          ? "border-blue-600 bg-blue-600 text-white"
-          : "border-slate-200 bg-white text-slate-600 hover:border-blue-300 hover:bg-blue-50"
-      }`}
+      className={`inline-flex min-w-0 items-center justify-center gap-1.5 rounded-lg border px-2.5 py-2 text-xs font-semibold transition ${selected
+        ? "border-blue-600 bg-blue-600 text-white"
+        : "border-slate-200 bg-white text-slate-600 hover:border-blue-300 hover:bg-blue-50"
+        }`}
     >
       {selected && <Check className="h-3.5 w-3.5 shrink-0" />}
       <span className="truncate">{children}</span>
@@ -1325,442 +1324,442 @@ export function LeadFormPanels({
   return (
     <>
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,7fr)_minmax(300px,3fr)] lg:items-start">
-      {/* ── 1 · Customer ──────────────────────────────────────────────────────────────────────── */}
-      <div className={`min-w-0 ${compactRail ? "lg:col-start-1" : "lg:col-span-2"}`}>
-      <Panel
-        icon={CircleUserRound}
-        title="Customer"
-        description="Phone first — an existing lead on this number is flagged as you type"
-      >
-        <div className={`grid grid-cols-1 gap-4 sm:grid-cols-2 ${rapidEntry ? "lg:grid-cols-2" : "lg:grid-cols-4"}`}>
-          <Field id="phone" label="Phone" required error={errors.phone?.message}>
-            <div className="relative">
-              <Phone className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <input
-                {...phoneReg}
-                ref={(node) => { phoneReg.ref(node); if (phoneRef) phoneRef.current = node; }}
-                id="phone"
-                type="tel"
-                autoComplete="tel"
-                placeholder="+91 98765 43210"
-                aria-invalid={Boolean(errors.phone)}
-                aria-describedby={errors.phone ? "phone-error" : undefined}
-                className={control(errors.phone, true)}
-              />
-            </div>
-          </Field>
-
-          <Field id="customerName" label="Customer Name" required error={errors.customerName?.message}>
-            <input
-              {...register("customerName", { required: "Customer name is required" })}
-              id="customerName"
-              autoComplete="name"
-              placeholder="Full name"
-              aria-invalid={Boolean(errors.customerName)}
-              aria-describedby={errors.customerName ? "customerName-error" : undefined}
-              className={control(errors.customerName)}
-            />
-          </Field>
-
-          {!rapidEntry && (
-            <>
-              <Field id="email" label="Email" optional error={errors.email?.message}>
+        {/* ── 1 · Customer ──────────────────────────────────────────────────────────────────────── */}
+        <div className={`min-w-0 ${compactRail ? "lg:col-start-1" : "lg:col-span-2"}`}>
+          <Panel
+            icon={CircleUserRound}
+            title="Customer"
+            description="Phone first — an existing lead on this number is flagged as you type"
+          >
+            <div className={`grid grid-cols-1 gap-4 sm:grid-cols-2 ${rapidEntry ? "lg:grid-cols-2" : "lg:grid-cols-4"}`}>
+              <Field id="phone" label="Phone" required error={errors.phone?.message}>
                 <div className="relative">
-                  <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <Phone className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                   <input
-                    {...register("email", {
-                      pattern: { value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/, message: "Enter a valid email" },
-                    })}
-                    id="email"
-                    type="email"
-                    autoComplete="email"
-                    placeholder="name@email.com"
-                    aria-invalid={Boolean(errors.email)}
-                    className={control(errors.email, true)}
+                    {...phoneReg}
+                    ref={(node) => { phoneReg.ref(node); if (phoneRef) phoneRef.current = node; }}
+                    id="phone"
+                    type="tel"
+                    autoComplete="tel"
+                    placeholder="+91 98765 43210"
+                    aria-invalid={Boolean(errors.phone)}
+                    aria-describedby={errors.phone ? "phone-error" : undefined}
+                    className={control(errors.phone, true)}
                   />
                 </div>
               </Field>
 
-              <Field id="budget" label="Budget (₹)" optional error={errors.budget?.message}>
-                <div className="relative">
-                  <IndianRupee className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                  <input
-                    {...register("budget", { min: { value: 0, message: "Budget cannot be negative" } })}
-                    id="budget"
-                    type="number"
-                    min={0}
-                    step="1000"
-                    inputMode="numeric"
-                    placeholder="150000"
-                    onWheel={(event) => event.currentTarget.blur()}
-                    className={control(errors.budget, true)}
-                  />
-                </div>
-              </Field>
-            </>
-          )}
-        </div>
-
-        {belowPhone}
-
-        {!rapidEntry && <div className="mt-4 grid grid-cols-1 gap-4 border-t border-slate-100 pt-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Field id="birthDate" label="Birth Date" optional>
-            <input {...register("birthDate")} id="birthDate" type="date" max={today()} className={control(false)} />
-          </Field>
-          <Field id="anniversaryDate" label="Anniversary" optional>
-            <input {...register("anniversaryDate")} id="anniversaryDate" type="date" max={today()} className={control(false)} />
-          </Field>
-          <Field id="preferredCommunication" label="Preferred Channel" optional>
-            <div className="relative">
-              <select {...register("preferredCommunication")} id="preferredCommunication" className={`${control(false)} appearance-none pr-9`}>
-                <option value="">Select channel</option>
-                {COMMUNICATION_PREFERENCES.map((option) => <option key={option} value={option}>{option}</option>)}
-              </select>
-              <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            </div>
-          </Field>
-          <Field id="followUpDate" label="Follow-up Date" optional hint="Creates a reminder on save">
-            <input {...register("followUpDate")} id="followUpDate" type="date" min={today()} className={control(false)} />
-          </Field>
-        </div>}
-      </Panel>
-      </div>
-
-      {/* ── 2 · Trip ──────────────────────────────────────────────────────────────────────────── */}
-      <div className={`min-w-0 ${compactRail ? "lg:col-start-1" : "lg:col-span-2"}`}>
-      <Panel
-        icon={Route}
-        title="Trip"
-        description="Dates, departure and party size"
-        action={
-          <span className="inline-flex w-fit items-center rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">
-            {totalTravellers} traveller{totalTravellers === 1 ? "" : "s"} · {toInt(watch("rooms"), 1)} room
-            {toInt(watch("rooms"), 1) === 1 ? "" : "s"}
-          </span>
-        }
-      >
-        <div className={rapidEntry ? "max-w-sm" : "grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4"}>
-          <Field id="travelDate" label="Travel Date" required error={errors.travelDate?.message}>
-            <div className="relative">
-              <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <input
-                {...register("travelDate", { required: "Travel date is required" })}
-                id="travelDate"
-                type="date"
-                aria-invalid={Boolean(errors.travelDate)}
-                className={control(errors.travelDate, true)}
-              />
-            </div>
-          </Field>
-
-          {!rapidEntry && (
-            <>
-              <Field id="departCountry" label="Departing Country" optional>
-                <SearchableSelect
-                  options={countries}
-                  value={watch("departCountry") || ""}
-                  onChange={(value) => setValue("departCountry", value, { shouldDirty: true })}
-                  placeholder="Select country"
-                  loading={loadingCountries}
-                  icon={Globe2}
-                  searchable
+              <Field id="customerName" label="Customer Name" required error={errors.customerName?.message}>
+                <input
+                  {...register("customerName", { required: "Customer name is required" })}
+                  id="customerName"
+                  autoComplete="name"
+                  placeholder="Full name"
+                  aria-invalid={Boolean(errors.customerName)}
+                  aria-describedby={errors.customerName ? "customerName-error" : undefined}
+                  className={control(errors.customerName)}
                 />
               </Field>
 
-              <Field id="departCity" label="Departing City" optional>
-                <div className="relative">
-                  <MapPin className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                  <input {...register("departCity")} id="departCity" placeholder="e.g. Pune" className={control(false, true)} />
-                </div>
-              </Field>
+              {!rapidEntry && (
+                <>
+                  <Field id="email" label="Email" optional error={errors.email?.message}>
+                    <div className="relative">
+                      <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                      <input
+                        {...register("email", {
+                          pattern: { value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/, message: "Enter a valid email" },
+                        })}
+                        id="email"
+                        type="email"
+                        autoComplete="email"
+                        placeholder="name@email.com"
+                        aria-invalid={Boolean(errors.email)}
+                        className={control(errors.email, true)}
+                      />
+                    </div>
+                  </Field>
 
-              <Field id="departureMode" label="Departure Mode" optional>
+                  <Field id="budget" label="Budget (₹)" optional error={errors.budget?.message}>
+                    <div className="relative">
+                      <IndianRupee className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                      <input
+                        {...register("budget", { min: { value: 0, message: "Budget cannot be negative" } })}
+                        id="budget"
+                        type="number"
+                        min={0}
+                        step="1000"
+                        inputMode="numeric"
+                        placeholder="150000"
+                        onWheel={(event) => event.currentTarget.blur()}
+                        className={control(errors.budget, true)}
+                      />
+                    </div>
+                  </Field>
+                </>
+              )}
+            </div>
+
+            {belowPhone}
+
+            {!rapidEntry && <div className="mt-4 grid grid-cols-1 gap-4 border-t border-slate-100 pt-4 sm:grid-cols-2 lg:grid-cols-4">
+              <Field id="birthDate" label="Birth Date" optional>
+                <input {...register("birthDate")} id="birthDate" type="date" max={today()} className={control(false)} />
+              </Field>
+              <Field id="anniversaryDate" label="Anniversary" optional>
+                <input {...register("anniversaryDate")} id="anniversaryDate" type="date" max={today()} className={control(false)} />
+              </Field>
+              <Field id="preferredCommunication" label="Preferred Channel" optional>
                 <div className="relative">
-                  <select {...register("departureMode")} id="departureMode" className={`${control(false)} appearance-none pr-9`}>
-                    <option value="">Select mode</option>
-                    {DEPARTURE_MODES.map((mode) => <option key={mode} value={mode}>{mode}</option>)}
+                  <select {...register("preferredCommunication")} id="preferredCommunication" className={`${control(false)} appearance-none pr-9`}>
+                    <option value="">Select channel</option>
+                    {COMMUNICATION_PREFERENCES.map((option) => <option key={option} value={option}>{option}</option>)}
                   </select>
                   <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 </div>
               </Field>
-            </>
-          )}
+              <Field id="followUpDate" label="Follow-up Date" optional hint="Creates a reminder on save">
+                <input {...register("followUpDate")} id="followUpDate" type="date" min={today()} className={control(false)} />
+              </Field>
+            </div>}
+          </Panel>
         </div>
 
-        {!rapidEntry && departureMode === "Flight / Airport" && (
-          <div className="mt-4 grid grid-cols-1 gap-4 rounded-lg border border-sky-100 bg-sky-50/50 p-3 sm:grid-cols-3">
-            <Field id="departureAirport" label="Departure Airport" optional>
-              <div className="relative">
-                <Plane className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <input {...register("departureAirport")} id="departureAirport" placeholder="Airport name" className={control(false, true)} />
-              </div>
-            </Field>
-            <Field id="airportCode" label="Airport Code" optional>
-              <input {...register("airportCode")} id="airportCode" maxLength={8} placeholder="DEL" className={`${control(false)} uppercase`} />
-            </Field>
-            <Field id="preferredFlightTime" label="Preferred Time" optional>
-              <div className="relative">
-                <Clock3 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <input {...register("preferredFlightTime")} id="preferredFlightTime" type="time" className={control(false, true)} />
-              </div>
-            </Field>
-          </div>
-        )}
-
-        {!rapidEntry && departureMode === "Train / Rail" && (
-          <div className="mt-4 grid grid-cols-1 gap-4 rounded-lg border border-violet-100 bg-violet-50/50 p-3 sm:grid-cols-3">
-            <Field id="railwayStation" label="Railway Station" optional>
-              <div className="relative">
-                <TrainFront className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <input {...register("railwayStation")} id="railwayStation" placeholder="Station name" className={control(false, true)} />
-              </div>
-            </Field>
-            <Field id="trainClass" label="Train Class" optional>
-              <input {...register("trainClass")} id="trainClass" placeholder="2A, 3A, Sleeper" className={control(false)} />
-            </Field>
-            <Field id="preferredTrainTime" label="Preferred Time" optional>
-              <div className="relative">
-                <Clock3 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <input {...register("preferredTrainTime")} id="preferredTrainTime" type="time" className={control(false, true)} />
-              </div>
-            </Field>
-          </div>
-        )}
-
-        {!rapidEntry && departureMode === "Car / Road" && (
-          <div className="mt-4 grid grid-cols-1 gap-4 rounded-lg border border-amber-100 bg-amber-50/50 p-3 sm:grid-cols-3">
-            <Field id="pickupAddress" label="Pickup Address" optional>
-              <input {...register("pickupAddress")} id="pickupAddress" placeholder="Pickup address" className={control(false)} />
-            </Field>
-            <Field id="pickupDateTime" label="Pickup Date & Time" optional>
-              <input {...register("pickupDateTime")} id="pickupDateTime" type="datetime-local" className={control(false)} />
-            </Field>
-            <Field id="vehiclePreference" label="Vehicle Preference" optional>
-              <input {...register("vehiclePreference")} id="vehiclePreference" placeholder="Sedan, SUV, Traveller" className={control(false)} />
-            </Field>
-          </div>
-        )}
-
-        <div className="mt-4 border-t border-slate-100 pt-4">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500">Travellers &amp; Rooms</h3>
-            <p className="text-[11px] text-slate-400">Click a number and type to replace it</p>
-          </div>
-          <TravellerCountFields
-            values={{
-              totalAdults: watch("totalAdults"),
-              showAdultBreakdown,
-              male: watch("male"),
-              female: watch("female"),
-              children: watch("children"),
-              infants: watch("infants"),
-              rooms: watch("rooms"),
-              extraBeds: watch("extraBeds"),
-            }}
-            onCountChange={setAdultCount}
-            onToggleBreakdown={toggleAdultBreakdown}
-          />
-        </div>
-
-        {!rapidEntry && <div className="mt-4 border-t border-slate-100 pt-4">
-          <label className="flex w-fit cursor-pointer items-center gap-2 text-sm font-semibold text-slate-700">
-            <input
-              type="checkbox"
-              checked={Boolean(assistanceRequired)}
-              onChange={(event) => {
-                setValue("specialAssistanceRequired", event.target.checked, { shouldDirty: true });
-                if (event.target.checked && toInt(getValues("assistancePassengerCount")) < 1) {
-                  setValue("assistancePassengerCount", 1);
-                }
-              }}
-              className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-            />
-            <Accessibility className="h-4 w-4 text-blue-600" /> Special assistance required
-          </label>
-
-          {assistanceRequired && (
-            <div className="mt-3 grid gap-3 rounded-lg border border-blue-100 bg-blue-50/40 p-3 lg:grid-cols-[1fr_140px_1fr]">
-              <div>
-                <p className="mb-1.5 text-xs font-semibold text-slate-600">
-                  Assistance Type <span className="text-red-500">*</span>
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {ASSISTANCE_TYPES.map((type) => (
-                    <Chip key={type} selected={assistanceTypes.includes(type)} onClick={() => toggleAssistance(type)}>
-                      {type}
-                    </Chip>
-                  ))}
-                </div>
-                {errors.specialAssistanceTypes && (
-                  <p className="mt-1 text-xs text-red-500">{errors.specialAssistanceTypes.message}</p>
-                )}
-              </div>
-              <Field id="assistancePassengerCount" label="Passengers" error={errors.assistancePassengerCount?.message}>
-                <input
-                  {...register("assistancePassengerCount", {
-                    validate: (value) => {
-                      if (getValues("specialAssistanceRequired") !== true) return true;
-                      const count = toInt(value, 0);
-                      if (count < 1) return "At least one passenger needs assistance";
-                      if (count > totalTravellers) return "Cannot exceed the total travellers";
-                      return true;
-                    },
-                  })}
-                  id="assistancePassengerCount"
-                  type="number"
-                  min={1}
-                  max={Math.max(1, totalTravellers)}
-                  onFocus={(event) => event.target.select()}
-                  onWheel={(event) => event.currentTarget.blur()}
-                  className={control(false)}
-                />
-              </Field>
-              <Field id="specialAssistanceNotes" label="Assistance Notes" optional error={errors.specialAssistanceNotes?.message}>
-                <input
-                  {...register("specialAssistanceNotes", { maxLength: { value: 500, message: "Max 500 characters" } })}
-                  id="specialAssistanceNotes"
-                  placeholder="Specific support required"
-                  className={control(errors.specialAssistanceNotes)}
-                />
-              </Field>
-            </div>
-          )}
-        </div>}
-      </Panel>
-      </div>
-
-      {/* ── 3 · Itinerary + Pipeline ──────────────────────────────────────────────────────────── */}
-      <div className="min-w-0 lg:col-start-1">
-        <Panel
-          icon={MapPinned}
-          title="Itinerary"
-          // Says so out loud now that an untouched row is genuinely ignored on save. It used to be
-          // silently mandatory: leaving this panel alone posted a blank row and the server rejected
-          // the entire lead.
-          description="Optional — leave blank if the route is not decided yet"
-          action={
-            <button
-              type="button"
-              onClick={onAddRow}
-              className="inline-flex w-fit items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100"
-            >
-              <Plus className="h-3.5 w-3.5" /> Add Stop
-            </button>
-          }
-        >
-          <div className="mb-2 hidden grid-cols-[34px_minmax(0,1fr)_minmax(0,1fr)_96px_34px] gap-3 px-1 text-[11px] font-bold uppercase tracking-wide text-slate-400 md:grid">
-            <span>#</span><span>Destination</span><span>City</span><span>Nights</span><span />
-          </div>
-
-          {/* id is the scroll target for the half-filled-row check in save(). */}
-          <div id="itinerary-group" className="space-y-2.5">
-            {itinerary.map((row, index) => (
-              <div
-                key={row.id}
-                className="grid grid-cols-1 gap-3 rounded-lg border border-slate-100 bg-slate-50/60 p-3 md:grid-cols-[34px_minmax(0,1fr)_minmax(0,1fr)_96px_34px] md:items-center md:border-0 md:bg-transparent md:p-0"
-              >
-                <span className="hidden h-8 w-8 items-center justify-center rounded-md bg-slate-100 text-xs font-bold text-slate-500 md:flex">
-                  {index + 1}
-                </span>
-
-                <div className="min-w-0">
-                  <span className="mb-1 block text-xs font-semibold text-slate-500 md:hidden">Destination</span>
-                  <div className="flex items-center gap-1.5">
-                    <div className="min-w-0 flex-1">
-                      <SearchableSelect
-                        options={destinations}
-                        value={row.destinationId ? Number(row.destinationId) || row.destinationId : ""}
-                        onChange={(value) => chooseDestination(row.id, value)}
-                        placeholder={row.destination || "Select destination"}
-                        loading={loadingDestinations}
-                        searchable
-                      />
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setDestinationModalRow(row.id)}
-                      title="Add a new destination"
-                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-600"
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                </div>
-
-                <div className="min-w-0">
-                  <span className="mb-1 block text-xs font-semibold text-slate-500 md:hidden">City</span>
-                  <div className="flex items-center gap-1.5">
-                    <div className="min-w-0 flex-1">
-                      <SearchableSelect
-                        options={rowCities[row.id] || []}
-                        value={row.cityId ? Number(row.cityId) || row.cityId : ""}
-                        onChange={(value) => chooseCity(row.id, value)}
-                        placeholder={
-                          !row.destinationId ? "Select destination first"
-                            : loadingRows[row.id] ? "Loading..."
-                            : row.city || "Select city"
-                        }
-                        loading={Boolean(loadingRows[row.id])}
-                        searchable
-                      />
-                    </div>
-                    <button
-                      type="button"
-                      disabled={!row.destinationId}
-                      onClick={() => setCityModalRow(row.id)}
-                      title={row.destinationId ? "Add a new city" : "Select destination first"}
-                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-600 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                </div>
-
-                <div>
-                  <span className="mb-1 block text-xs font-semibold text-slate-500 md:hidden">Nights</span>
+        {/* ── 2 · Trip ──────────────────────────────────────────────────────────────────────────── */}
+        <div className={`min-w-0 ${compactRail ? "lg:col-start-1" : "lg:col-span-2"}`}>
+          <Panel
+            icon={Route}
+            title="Trip"
+            description="Dates, departure and party size"
+            action={
+              <span className="inline-flex w-fit items-center rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">
+                {totalTravellers} traveller{totalTravellers === 1 ? "" : "s"} · {toInt(watch("rooms"), 1)} room
+                {toInt(watch("rooms"), 1) === 1 ? "" : "s"}
+              </span>
+            }
+          >
+            <div className={rapidEntry ? "max-w-sm" : "grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4"}>
+              <Field id="travelDate" label="Travel Date" required error={errors.travelDate?.message}>
+                <div className="relative">
+                  <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                   <input
-                    type="number"
-                    min={0}
-                    max={60}
-                    step="1"
-                    inputMode="numeric"
-                    value={row.nights}
-                    onFocus={(event) => event.target.select()}
-                    onWheel={(event) => event.currentTarget.blur()}
-                    onChange={(event) => onUpdateRow(row.id, { nights: event.target.value })}
-                    onBlur={(event) => onUpdateRow(row.id, { nights: toInt(event.target.value) })}
-                    onKeyDown={(event) => {
-                      if (event.key !== "Enter") return;
-                      event.preventDefault();
-                      event.stopPropagation();
-                      if (index === itinerary.length - 1) onAddRow();
-                    }}
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    {...register("travelDate", { required: "Travel date is required" })}
+                    id="travelDate"
+                    type="date"
+                    aria-invalid={Boolean(errors.travelDate)}
+                    className={control(errors.travelDate, true)}
                   />
                 </div>
+              </Field>
 
-                <button
-                  type="button"
-                  onClick={() => onRemoveRow(row.id)}
-                  disabled={itinerary.length === 1}
-                  aria-label={`Remove stop ${index + 1}`}
-                  className="flex h-9 w-full items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-30 md:w-9"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
+              {!rapidEntry && (
+                <>
+                  <Field id="departCountry" label="Departing Country" optional>
+                    <SearchableSelect
+                      options={countries}
+                      value={watch("departCountry") || ""}
+                      onChange={(value) => setValue("departCountry", value, { shouldDirty: true })}
+                      placeholder="Select country"
+                      loading={loadingCountries}
+                      icon={Globe2}
+                      searchable
+                    />
+                  </Field>
+
+                  <Field id="departCity" label="Departing City" optional>
+                    <div className="relative">
+                      <MapPin className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                      <input {...register("departCity")} id="departCity" placeholder="e.g. Pune" className={control(false, true)} />
+                    </div>
+                  </Field>
+
+                  <Field id="departureMode" label="Departure Mode" optional>
+                    <div className="relative">
+                      <select {...register("departureMode")} id="departureMode" className={`${control(false)} appearance-none pr-9`}>
+                        <option value="">Select mode</option>
+                        {DEPARTURE_MODES.map((mode) => <option key={mode} value={mode}>{mode}</option>)}
+                      </select>
+                      <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    </div>
+                  </Field>
+                </>
+              )}
+            </div>
+
+            {!rapidEntry && departureMode === "Flight / Airport" && (
+              <div className="mt-4 grid grid-cols-1 gap-4 rounded-lg border border-sky-100 bg-sky-50/50 p-3 sm:grid-cols-3">
+                <Field id="departureAirport" label="Departure Airport" optional>
+                  <div className="relative">
+                    <Plane className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <input {...register("departureAirport")} id="departureAirport" placeholder="Airport name" className={control(false, true)} />
+                  </div>
+                </Field>
+                <Field id="airportCode" label="Airport Code" optional>
+                  <input {...register("airportCode")} id="airportCode" maxLength={8} placeholder="DEL" className={`${control(false)} uppercase`} />
+                </Field>
+                <Field id="preferredFlightTime" label="Preferred Time" optional>
+                  <div className="relative">
+                    <Clock3 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <input {...register("preferredFlightTime")} id="preferredFlightTime" type="time" className={control(false, true)} />
+                  </div>
+                </Field>
               </div>
-            ))}
-          </div>
+            )}
 
-          <div className="mt-3 flex flex-col gap-1 text-[11px] text-slate-400 sm:flex-row sm:items-center sm:justify-between">
-            <span>
-              {itinerary.reduce((sum, row) => sum + toInt(row.nights), 0)} nights ·{" "}
-              {itinerary.reduce((sum, row) => sum + toInt(row.nights), 0) + 1} days
-            </span>
-            <span>Press Enter in Nights to add the next stop.</span>
-          </div>
-        </Panel>
-      </div>
+            {!rapidEntry && departureMode === "Train / Rail" && (
+              <div className="mt-4 grid grid-cols-1 gap-4 rounded-lg border border-violet-100 bg-violet-50/50 p-3 sm:grid-cols-3">
+                <Field id="railwayStation" label="Railway Station" optional>
+                  <div className="relative">
+                    <TrainFront className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <input {...register("railwayStation")} id="railwayStation" placeholder="Station name" className={control(false, true)} />
+                  </div>
+                </Field>
+                <Field id="trainClass" label="Train Class" optional>
+                  <input {...register("trainClass")} id="trainClass" placeholder="2A, 3A, Sleeper" className={control(false)} />
+                </Field>
+                <Field id="preferredTrainTime" label="Preferred Time" optional>
+                  <div className="relative">
+                    <Clock3 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <input {...register("preferredTrainTime")} id="preferredTrainTime" type="time" className={control(false, true)} />
+                  </div>
+                </Field>
+              </div>
+            )}
+
+            {!rapidEntry && departureMode === "Car / Road" && (
+              <div className="mt-4 grid grid-cols-1 gap-4 rounded-lg border border-amber-100 bg-amber-50/50 p-3 sm:grid-cols-3">
+                <Field id="pickupAddress" label="Pickup Address" optional>
+                  <input {...register("pickupAddress")} id="pickupAddress" placeholder="Pickup address" className={control(false)} />
+                </Field>
+                <Field id="pickupDateTime" label="Pickup Date & Time" optional>
+                  <input {...register("pickupDateTime")} id="pickupDateTime" type="datetime-local" className={control(false)} />
+                </Field>
+                <Field id="vehiclePreference" label="Vehicle Preference" optional>
+                  <input {...register("vehiclePreference")} id="vehiclePreference" placeholder="Sedan, SUV, Traveller" className={control(false)} />
+                </Field>
+              </div>
+            )}
+
+            <div className="mt-4 border-t border-slate-100 pt-4">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500">Travellers &amp; Rooms</h3>
+                <p className="text-[11px] text-slate-400">Click a number and type to replace it</p>
+              </div>
+              <TravellerCountFields
+                values={{
+                  totalAdults: watch("totalAdults"),
+                  showAdultBreakdown,
+                  male: watch("male"),
+                  female: watch("female"),
+                  children: watch("children"),
+                  infants: watch("infants"),
+                  rooms: watch("rooms"),
+                  extraBeds: watch("extraBeds"),
+                }}
+                onCountChange={setAdultCount}
+                onToggleBreakdown={toggleAdultBreakdown}
+              />
+            </div>
+
+            {!rapidEntry && <div className="mt-4 border-t border-slate-100 pt-4">
+              <label className="flex w-fit cursor-pointer items-center gap-2 text-sm font-semibold text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={Boolean(assistanceRequired)}
+                  onChange={(event) => {
+                    setValue("specialAssistanceRequired", event.target.checked, { shouldDirty: true });
+                    if (event.target.checked && toInt(getValues("assistancePassengerCount")) < 1) {
+                      setValue("assistancePassengerCount", 1);
+                    }
+                  }}
+                  className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                />
+                <Accessibility className="h-4 w-4 text-blue-600" /> Special assistance required
+              </label>
+
+              {assistanceRequired && (
+                <div className="mt-3 grid gap-3 rounded-lg border border-blue-100 bg-blue-50/40 p-3 lg:grid-cols-[1fr_140px_1fr]">
+                  <div>
+                    <p className="mb-1.5 text-xs font-semibold text-slate-600">
+                      Assistance Type <span className="text-red-500">*</span>
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {ASSISTANCE_TYPES.map((type) => (
+                        <Chip key={type} selected={assistanceTypes.includes(type)} onClick={() => toggleAssistance(type)}>
+                          {type}
+                        </Chip>
+                      ))}
+                    </div>
+                    {errors.specialAssistanceTypes && (
+                      <p className="mt-1 text-xs text-red-500">{errors.specialAssistanceTypes.message}</p>
+                    )}
+                  </div>
+                  <Field id="assistancePassengerCount" label="Passengers" error={errors.assistancePassengerCount?.message}>
+                    <input
+                      {...register("assistancePassengerCount", {
+                        validate: (value) => {
+                          if (getValues("specialAssistanceRequired") !== true) return true;
+                          const count = toInt(value, 0);
+                          if (count < 1) return "At least one passenger needs assistance";
+                          if (count > totalTravellers) return "Cannot exceed the total travellers";
+                          return true;
+                        },
+                      })}
+                      id="assistancePassengerCount"
+                      type="number"
+                      min={1}
+                      max={Math.max(1, totalTravellers)}
+                      onFocus={(event) => event.target.select()}
+                      onWheel={(event) => event.currentTarget.blur()}
+                      className={control(false)}
+                    />
+                  </Field>
+                  <Field id="specialAssistanceNotes" label="Assistance Notes" optional error={errors.specialAssistanceNotes?.message}>
+                    <input
+                      {...register("specialAssistanceNotes", { maxLength: { value: 500, message: "Max 500 characters" } })}
+                      id="specialAssistanceNotes"
+                      placeholder="Specific support required"
+                      className={control(errors.specialAssistanceNotes)}
+                    />
+                  </Field>
+                </div>
+              )}
+            </div>}
+          </Panel>
+        </div>
+
+        {/* ── 3 · Itinerary + Pipeline ──────────────────────────────────────────────────────────── */}
+        <div className="min-w-0 lg:col-start-1">
+          <Panel
+            icon={MapPinned}
+            title="Itinerary"
+            // Says so out loud now that an untouched row is genuinely ignored on save. It used to be
+            // silently mandatory: leaving this panel alone posted a blank row and the server rejected
+            // the entire lead.
+            description="Optional — leave blank if the route is not decided yet"
+            action={
+              <button
+                type="button"
+                onClick={onAddRow}
+                className="inline-flex w-fit items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100"
+              >
+                <Plus className="h-3.5 w-3.5" /> Add Stop
+              </button>
+            }
+          >
+            <div className="mb-2 hidden grid-cols-[34px_minmax(0,1fr)_minmax(0,1fr)_96px_34px] gap-3 px-1 text-[11px] font-bold uppercase tracking-wide text-slate-400 md:grid">
+              <span>#</span><span>Destination</span><span>City</span><span>Nights</span><span />
+            </div>
+
+            {/* id is the scroll target for the half-filled-row check in save(). */}
+            <div id="itinerary-group" className="space-y-2.5">
+              {itinerary.map((row, index) => (
+                <div
+                  key={row.id}
+                  className="grid grid-cols-1 gap-3 rounded-lg border border-slate-100 bg-slate-50/60 p-3 md:grid-cols-[34px_minmax(0,1fr)_minmax(0,1fr)_96px_34px] md:items-center md:border-0 md:bg-transparent md:p-0"
+                >
+                  <span className="hidden h-8 w-8 items-center justify-center rounded-md bg-slate-100 text-xs font-bold text-slate-500 md:flex">
+                    {index + 1}
+                  </span>
+
+                  <div className="min-w-0">
+                    <span className="mb-1 block text-xs font-semibold text-slate-500 md:hidden">Destination</span>
+                    <div className="flex items-center gap-1.5">
+                      <div className="min-w-0 flex-1">
+                        <SearchableSelect
+                          options={destinations}
+                          value={row.destinationId ? Number(row.destinationId) || row.destinationId : ""}
+                          onChange={(value) => chooseDestination(row.id, value)}
+                          placeholder={row.destination || "Select destination"}
+                          loading={loadingDestinations}
+                          searchable
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setDestinationModalRow(row.id)}
+                        title="Add a new destination"
+                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-600"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="min-w-0">
+                    <span className="mb-1 block text-xs font-semibold text-slate-500 md:hidden">City</span>
+                    <div className="flex items-center gap-1.5">
+                      <div className="min-w-0 flex-1">
+                        <SearchableSelect
+                          options={rowCities[row.id] || []}
+                          value={row.cityId ? Number(row.cityId) || row.cityId : ""}
+                          onChange={(value) => chooseCity(row.id, value)}
+                          placeholder={
+                            !row.destinationId ? "Select destination first"
+                              : loadingRows[row.id] ? "Loading..."
+                                : row.city || "Select city"
+                          }
+                          loading={Boolean(loadingRows[row.id])}
+                          searchable
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        disabled={!row.destinationId}
+                        onClick={() => setCityModalRow(row.id)}
+                        title={row.destinationId ? "Add a new city" : "Select destination first"}
+                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-600 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <span className="mb-1 block text-xs font-semibold text-slate-500 md:hidden">Nights</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={60}
+                      step="1"
+                      inputMode="numeric"
+                      value={row.nights}
+                      onFocus={(event) => event.target.select()}
+                      onWheel={(event) => event.currentTarget.blur()}
+                      onChange={(event) => onUpdateRow(row.id, { nights: event.target.value })}
+                      onBlur={(event) => onUpdateRow(row.id, { nights: toInt(event.target.value) })}
+                      onKeyDown={(event) => {
+                        if (event.key !== "Enter") return;
+                        event.preventDefault();
+                        event.stopPropagation();
+                        if (index === itinerary.length - 1) onAddRow();
+                      }}
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => onRemoveRow(row.id)}
+                    disabled={itinerary.length === 1}
+                    aria-label={`Remove stop ${index + 1}`}
+                    className="flex h-9 w-full items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-30 md:w-9"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-3 flex flex-col gap-1 text-[11px] text-slate-400 sm:flex-row sm:items-center sm:justify-between">
+              <span>
+                {itinerary.reduce((sum, row) => sum + toInt(row.nights), 0)} nights ·{" "}
+                {itinerary.reduce((sum, row) => sum + toInt(row.nights), 0) + 1} days
+              </span>
+              <span>Press Enter in Nights to add the next stop.</span>
+            </div>
+          </Panel>
+        </div>
 
         <aside className={`min-w-0 ${compactRail ? "space-y-4 lg:sticky lg:top-[72px] lg:col-start-2 lg:row-start-1 lg:row-span-3" : "space-y-5 lg:col-start-2 lg:row-start-3"}`}>
           <Panel icon={UserCheck} title="Pipeline" description="Source, stage and ownership">
@@ -1920,7 +1919,9 @@ export default function LeadFormPage() {
   const [contactMatch, setContactMatch] = useState(EMPTY_MATCH);
   const [checkingContact, setCheckingContact] = useState(false);
   const [autoFilled, setAutoFilled] = useState([]);
-  const [rapidEntry, setRapidEntry] = useState(false);
+  // const [rapidEntry, setRapidEntry] = useState(false);
+  const [rapidEntry, setRapidEntry] = useState(() => !editing);
+
   const [savedThisSession, setSavedThisSession] = useState(readSessionCount);
 
   const phone = watch("phone");
@@ -2222,7 +2223,15 @@ export default function LeadFormPage() {
     showToast(formErrors[first]?.message || "Please fix the highlighted fields.", "error");
   };
 
-  const save = async (data, { addAnother } = {}) => {
+  // const save = async (data, { addAnother } = {}) => {
+
+  const save = async (
+    data,
+    {
+      addAnother = false,
+      createQuotation = false,
+    } = {},
+  ) => {
     if (services.length === 0) {
       // Inline, beside the picker — the old form raised this as a toast, which interrupts and then
       // disappears, leaving nothing next to the control that caused it.
@@ -2300,6 +2309,29 @@ export default function LeadFormPage() {
       setSavedThisSession(nextSessionCount);
       try { sessionStorage.setItem(SESSION_COUNT_KEY, String(nextSessionCount)); }
       catch { /* progress count is optional */ }
+
+      if (createQuotation) {
+        if (!leadPublicId) {
+          showToast(
+            "Lead was created, but quotation could not be opened because the lead ID was not returned.",
+            "warning",
+          );
+
+          navigate("/allleads");
+          return;
+        }
+
+        showToast(
+          `${created?.leadCode || "Lead"} created successfully. Continue with the quotation.`,
+          "success",
+        );
+
+        navigate(
+          `/createquotation?leadId=${encodeURIComponent(String(leadPublicId))}`,
+        );
+
+        return;
+      }
 
       if (addAnother) {
         // No navigation, no 1.2s timeout. Blank record, sticky fields kept, cursor already in
@@ -2573,7 +2605,7 @@ export default function LeadFormPage() {
             <span className="font-bold text-red-500">*</span> Required fields are marked.
             {!editing && " Save & New keeps repeated pipeline choices and services selected."}
           </p>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button type="button" onClick={() => navigate("/allleads")} disabled={submitting} className="flex-1 rounded-lg border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50 sm:flex-none">
               Cancel
             </button>
@@ -2585,6 +2617,27 @@ export default function LeadFormPage() {
             >
               <Plus className="h-4 w-4" /> Save &amp; New
             </button>}
+
+            {!editing && hasPermission(P.QUOTATION_CREATE) && (
+              <button
+                type="button"
+                onClick={handleSubmit(
+                  (data) =>
+                    save(data, {
+                      createQuotation: true,
+                    }),
+                  onInvalid,
+                )}
+                disabled={submitting}
+                className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60 sm:flex-none"
+              >
+                <Plus className="h-4 w-4" />
+                Save &amp; Create Quotation
+              </button>
+            )}
+
+
+
             <button type="submit" disabled={submitting} className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-blue-700 disabled:opacity-60 sm:flex-none">
               {submitting ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
               {submitting ? "Saving..." : editing ? "Save Changes" : "Save Lead"}
