@@ -182,7 +182,7 @@ export default function MarketplaceCommissions() {
         <div>
           <h1 className="text-xl font-bold text-heading">Platform earnings</h1>
           <p className="mt-0.5 text-sm text-body">
-            Every rupee the platform books on a marketplace hotel. Append-only — a wrong figure is
+            Every rupee the platform books on a Platform Hotel booking. Append-only — a wrong figure is
             corrected with a new row, never by editing an old one.
           </p>
         </div>

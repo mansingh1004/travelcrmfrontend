@@ -120,12 +120,19 @@ function normalizeBooking(b = {}) {
   const totalPayable   = Number(b.totalPayable)   || customerAmount + gst + tcs;
   const paid           = Number(b.paidAmount)     || 0;
   const totalInternalCosts = Number(b.totalInternalCosts) || 0;
+  // Supplier cost the agency itemised in the expense ledger, over and above the vendorCost typed on
+  // the booking. The two are ADDITIVE — the typed figure is what was declared up front, this is what
+  // was itemised afterwards — so totalSupplierCost is the one to show as "what this trip cost".
+  const totalVendorCosts  = Number(b.totalVendorCosts) || 0;
+  const totalSupplierCost = b.totalSupplierCost != null
+    ? Number(b.totalSupplierCost)
+    : vendorCost + totalVendorCosts;
   // The server settles every rupee, so its netProfit wins whenever it sent one — including a
   // legitimate 0. `Number(b.netProfit) || (...)` swallowed that zero and fell through to a
   // recomputation using different maths, so a zero-margin booking displayed an invented profit.
   const netProfit      = b.netProfit != null
     ? Number(b.netProfit)
-    : (customerAmount - vendorCost - totalInternalCosts);
+    : (customerAmount - totalSupplierCost - totalInternalCosts);
   const netMargin      = customerAmount > 0 ? ((netProfit / customerAmount) * 100).toFixed(1) : 0;
   const due            = b.pendingAmount != null ? Number(b.pendingAmount) : Math.max(0, totalPayable - paid);
   // Clamped: an overpaid booking (the ledger permits paid > totalPayable) reads 100%, not 105%.
@@ -162,6 +169,10 @@ function normalizeBooking(b = {}) {
     leadPhone:       b.leadPhone || b.customerPhone || b.phone || "",
     assignedUser:    b.assignedUserName || b.assignedUser?.fullName || b.assignedUser?.name || b.assignedTo || "—",
     customerAmount,  vendorCost, gst, tcs, totalInternalCosts, totalPayable, paid, due,
+    totalVendorCosts, totalSupplierCost,
+    // Supplier the typed vendorCost is owed to. Snapshot name, so it still reads after a rename.
+    vendorPublicId:  b.vendorPublicId || null,
+    vendorName:      b.vendorName || "",
     netProfit, netMargin, payPct, refunded,
     overseas:        !!b.overseasTourPackage,
     status:          (b.status || "PENDING").toUpperCase(),
@@ -1111,7 +1122,7 @@ export default function BookingDetails() {
             icon="⏳" gradient="from-amber-600 to-orange-600" delay={120}/>
           {canSeeMargin ? (
             <StatCard label="Net Profit" value={fmtINR(b.netProfit)}
-              sub={`Margin ${b.netMargin}% · Vendor ${fmtINR(b.vendorCost)}${b.totalInternalCosts > 0 ? ` · Internal ${fmtINR(b.totalInternalCosts)}` : ""}`}
+              sub={`Margin ${b.netMargin}% · Supplier ${fmtINR(b.totalSupplierCost)}${b.totalInternalCosts > 0 ? ` · Company ${fmtINR(b.totalInternalCosts)}` : ""}`}
               icon="📈" gradient="from-teal-600 to-cyan-600" delay={180}/>
           ) : (
             <StatCard label="Taxes" value={fmtINR(b.gst + b.tcs)}
@@ -1218,10 +1229,18 @@ export default function BookingDetails() {
                   ...(b.refunded > 0 ? [
                     ["Refunded",      b.refunded,       "text-rose-600 font-bold"],
                   ] : []),
+                  // Every term of netProfit = customerAmount − vendorCost − totalVendorCosts −
+                  // totalInternalCosts is listed, so the subtraction is readable off the panel
+                  // rather than being an unexplained number. The two ledger lines are hidden when
+                  // zero to keep an un-itemised booking's panel as short as it was before.
                   ...(canSeeMargin ? [
-                    ["Vendor Costs",  b.vendorCost,     "text-slate-500"],
+                    [b.vendorName ? `Vendor Cost — ${b.vendorName}` : "Vendor Cost (typed)",
+                                          b.vendorCost, "text-slate-500"],
+                    ...(b.totalVendorCosts > 0 ? [
+                      ["Vendor Costs (ledger)", b.totalVendorCosts, "text-slate-500"],
+                    ] : []),
                     ...(b.totalInternalCosts > 0 ? [
-                      ["Internal Costs", b.totalInternalCosts, "text-slate-500"],
+                      ["Company Costs (ledger)", b.totalInternalCosts, "text-slate-500"],
                     ] : []),
                     ["Net Profit",    b.netProfit,      b.netProfit >= 0 ? "text-green-600 font-bold" : "text-red-600 font-bold"],
                   ] : []),
@@ -1975,14 +1994,13 @@ export default function BookingDetails() {
                           </div>
                           <p className="text-[11px] font-semibold text-slate-400">
                             Vendor {fmtINR(expenseSummary.totalVendorExpense)} · Company {fmtINR(expenseSummary.totalInternalCosts)}
-                            <span className="font-normal"> (only Company lines reduce profit)</span>
+                            <span className="font-normal"> (every line reduces profit)</span>
                           </p>
-                          {canSeeMargin && Number(b.vendorCost) > 0 &&
-                            Math.abs(Number(expenseSummary.totalVendorExpense) - Number(b.vendorCost)) > 0.009 && (
+                          {canSeeMargin && Number(b.vendorCost) > 0 && (
                             <p className="text-[11px] text-slate-400">
-                              Ledger vendor expenses {fmtINR(expenseSummary.totalVendorExpense)} differ from the booking's
-                              vendor cost {fmtINR(b.vendorCost)} — informational only; the itemised ledger and the typed
-                              figure are separate records.
+                              These lines are <span className="font-semibold">on top of</span> the booking's typed vendor
+                              cost {fmtINR(b.vendorCost)} — together {fmtINR(b.totalSupplierCost)} of supplier cost. Do not
+                              re-enter here what that figure already covers, or it is deducted twice.
                             </p>
                           )}
                         </>

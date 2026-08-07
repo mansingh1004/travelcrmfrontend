@@ -814,7 +814,7 @@ export default function HotelTab({ onDataChange, paxInfo = {}, destinations = []
                   <Label required>City</Label>
                   {/* City lead ke itinerary se aati hai aur LOCKED (disabled) hai — user badal
                       nahi sakta. Yahi city upar wale hotel search ko us city pe scope karti hai. */}
-                  <Input value={h.city} disabled placeholder="City (from lead)" />
+                  <Input value={h.city} placeholder="City (from lead)" />
                 </div>
               </div>
 

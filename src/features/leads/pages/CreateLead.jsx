@@ -783,6 +783,10 @@
 // untouched on purpose: EditLead.jsx renders the same five components, and redesigning them here
 // would silently redesign Edit too. The panels below are local to this screen.
 // ─────────────────────────────────────────────────────────────────────────────
+
+
+
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { useNavigate, useParams } from "react-router-dom";
@@ -829,6 +833,7 @@ import { buildAdultPayload, deriveAdultBreakdown, getAdultBreakdownError } from 
 import TravellerCountFields from "@shared/ui/TravellerCountFields";
 import { useToast } from "@shared/ui/toast";
 import { getErrorMessage, getFieldErrors, isAlreadyReported } from "@shared/api/apiError";
+import { phoneRule } from "@shared/lib/phone";
 
 // Backend LeadType — the priority vocabulary, exactly four values. Keep in step with
 // LeadInformation.jsx, AllLeads.jsx and the leads_lead_type_check constraint.
@@ -854,11 +859,13 @@ const ASSISTANCE_TYPES = [
 // ids, not labels — the backend stores these lowercase keys and AllLeads colours off them.
 const SERVICES = [
   { id: "hotel", label: "Hotel" },
+   { id: "vehicle", label: "Vehicle" },
+   { id: "sightseeing", label: "Sightseeing" },
   { id: "flight", label: "Flight" },
   { id: "cruise", label: "Cruise" },
   { id: "visa", label: "Visa" },
-  { id: "sightseeing", label: "Sightseeing" },
-  { id: "vehicle", label: "Vehicle" },
+  
+ 
   { id: "insurance", label: "Insurance" },
   { id: "passport", label: "Passport" },
 ];
@@ -1315,10 +1322,11 @@ export function LeadFormPanels({
     setValue("totalAdults", getValues("totalAdults"), { shouldValidate: true });
   };
 
-  const phoneReg = register("phone", {
-    required: "Phone number is required",
-    pattern: { value: /^[+\d\s\-()]{7,20}$/, message: "Enter a valid phone number" },
-  });
+  // Was `pattern: /^[+\d\s\-()]{7,20}$/`, which accepted spaces, dashes and brackets that the
+  // server's @Pattern ("^\\+?[1-9]\\d{7,14}$") rejects — including this field's OWN placeholder,
+  // "+91 98765 43210". phoneRule validates the normalised value against the server's exact
+  // pattern, so what the placeholder shows now genuinely saves.
+  const phoneReg = register("phone", phoneRule);
 
   // Name must not contain numbers. Registered here so the input can wrap onChange to STRIP digits
   // as they're typed; the pattern is the on-submit backstop, the backend @Pattern is the real gate.

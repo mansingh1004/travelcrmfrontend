@@ -51,6 +51,30 @@ export const templateService = {
   async apply(templatePublicId, body) {
     return unwrap(await API.post(`/quotation-templates/${templatePublicId}/apply`, body));
   },
+
+  /**
+   * What "Save as Template" would capture from a saved quotation — derived name/nights/tier/price,
+   * the resolved cities, which sections come across, which are dropped, and the nearest existing
+   * template. Writes nothing.
+   *
+   * The losses are computed server-side on purpose: a quotation holds four sections a template has
+   * no table for, and a dialog that guessed at that list would drift from what actually happens.
+   *
+   * @returns SaveAsTemplatePreview
+   */
+  async previewFromQuotation(quotationPublicId) {
+    return unwrap(await API.get(`/quotation-templates/from-quotation/${quotationPublicId}/preview`));
+  },
+
+  /**
+   * Capture a saved quotation as a package template.
+   * @param body {quotationId, name?, description?, active?, hotelTier?, basePrice?, seasonMonths?, updateTemplateId?}
+   *             Every field but quotationId is an override — omit one to keep what the preview derived.
+   * @returns the created/updated QuotationTemplateResponse
+   */
+  async saveFromQuotation(body) {
+    return unwrap(await API.post("/quotation-templates/from-quotation", body));
+  },
 };
 
 export default templateService;

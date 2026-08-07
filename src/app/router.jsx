@@ -16,8 +16,6 @@ const leads = () => import("@features/leads");
 const AllLeads      = lazyPage(leads, "AllLeads");
 const CreateLead    = lazyPage(leads, "CreateLead");
 const EditLead      = lazyPage(leads, "EditLead");
-const LeadLogs      = lazyPage(leads, "LeadLogs");
-const AddLeadLog    = lazyPage(leads, "AddLeadLog");
 const AllLeadLogs   = lazyPage(leads, "AllLeadLogs");
 const WhatsAppPanel = lazyPage(leads, "WhatsAppPanel");
 const LeadAlerts    = lazyPage(leads, "LeadAlerts");
@@ -97,6 +95,7 @@ const SubscriptionInfo = lazyPage(() => import("@features/subscription"), "Subsc
 const Dashboard        = lazyPage(() => import("@features/dashboard"), "Dashboard");
 const TrashPage        = lazyPage(() => import("@features/trash"), "TrashPage");
 const Calendar         = lazyPage(() => import("@features/calendar"), "Calendar");
+const AllTasks         = lazyPage(() => import("@features/calendar"), "AllTasks");
 
 // ── Platform SuperAdmin Console — SEPARATE realm (own token "sa_token", violet/dark theme) ──
 const consoleFeature = () => import("@/console");
@@ -312,6 +311,9 @@ const AppRouter = () => {
           <Route path="Reminders" element={<Reminders/>}/>
           {/* Task & Team Calendar (gated by TASK_READ; sub-agents get a row-scoped personal calendar) */}
           <Route path="calendar" element={<Guard allow={hasPermission(P.TASK_READ)}><Calendar/></Guard>}/>
+          {/* All Tasks list — same TASK_READ gate and the same TASKS module as the calendar.
+              Rows are scoped per caller by the backend, so a sub-agent sees their own slice. */}
+          <Route path="tasks" element={<Guard allow={hasPermission(P.TASK_READ)}><AllTasks/></Guard>}/>
 
           <Route path="createquotation"  element={<CreateQuotation/>}/>
           {/* Package templates — gated by QUOTATION_* (page also self-checks). */}
@@ -340,8 +342,9 @@ const AppRouter = () => {
           <Route path="BookingRevenueAnalysis" element={<BookingRevenueAnalysis/>}/>
           <Route path="TravelDateAnalysis" element={<TravelDateAnalysis/>}/>
           <Route path="InternationalDomestic" element={<InternationalDomestic/>}/>
-          <Route path="LeadLogs" element={<LeadLogs/>}/>
-          <Route path="AddLeadLog" element={<AddLeadLog/>}/>
+          {/* /LeadLogs and /AddLeadLog are gone: they duplicated the AddLogModal / LogsModal
+              popups and had drifted out of sync (the add page never persisted a log). Both the
+              leads grid and the lead-logs summary now open those modals in place. */}
           <Route path="AllLeadLogs" element={<AllLeadLogs/>}/>
           <Route path="CompanySettings" element={<Guard allow={hasPermission(P.SETTINGS_MANAGE)}><CompanySettings/></Guard>}/>
           <Route path="EmailConfiguration" element={<Guard allow={hasPermission(P.SETTINGS_MANAGE)}><EmailConfiguration/></Guard>}/>

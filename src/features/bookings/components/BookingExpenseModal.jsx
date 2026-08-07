@@ -1470,7 +1470,7 @@
  * In production, move the Google Fonts import to your global stylesheet
  * instead of loading it per-mount.
  */
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   X,
   Plus,
@@ -1481,6 +1481,7 @@ import {
   ChevronDown,
   Landmark,
 } from "lucide-react";
+import { vendorService } from "@features/vendors";
 
 const EXPENSE_CATEGORIES = [
   "Hotel",
@@ -1515,6 +1516,15 @@ const COST_TYPES = [
 const INTERNAL_DEFAULT_CATEGORIES = new Set(["Commission", "Office Expense"]);
 const defaultCostType = (category) =>
   INTERNAL_DEFAULT_CATEGORIES.has(category) ? "INTERNAL" : "VENDOR";
+
+// The payee is picked from the vendor master, with an escape hatch. The backend column is a plain
+// free-text `vendorName` and stays that way on purpose: the payee on an expense line is very often a
+// driver, a local guide or a counter that was never onboarded as a Vendor, and forcing a FK would
+// make those lines unrecordable. So the dropdown WRITES A NAME, it does not write an id.
+//
+// This sentinel can never collide with a real vendor name — the master's own validation rejects a
+// name containing "<", and any collision would only mean the user sees the free-text box.
+const OTHER_VENDOR = "__OTHER__";
 
 // Backend caps a batch at @Size(max = 50) — one row over rejects the whole submission.
 const MAX_EXPENSE_ROWS = 50;
@@ -1572,6 +1582,10 @@ const createEmptyExpense = (booking) => {
     costType: defaultCostType(category),
     costTypeTouched: false, // once the user picks a cost type, category changes stop resetting it
     description: "",
+    // vendorPick drives the <select> only; vendorName is the single thing that is ever sent. When a
+    // master vendor is chosen the two hold the same string — keeping them separate is what lets
+    // "Other" show a blank box instead of inheriting the last selection.
+    vendorPick: "",
     vendorName: "",
     amount: "",
     paymentStatus: "CREDIT",
@@ -1599,6 +1613,33 @@ export default function BookingExpenseModal({
   const [expenses, setExpenses] = useState(() => [createEmptyExpense(booking)]);
   const [errors, setErrors] = useState({});
   const [openIndex, setOpenIndex] = useState(0);
+
+  // Vendor master, for the payee dropdown. Loaded once per mount and shared by every row.
+  //
+  // A failure here degrades to free text rather than blocking the modal: this is a cash-book entry
+  // the user is mid-way through typing, and a vendor list that did not load is no reason to stop
+  // them recording what they spent. That is also why nothing toasts — the user did not ask for this
+  // list, so a failure is not an outcome they need reported.
+  const [vendors, setVendors] = useState([]);
+  useEffect(() => {
+    let cancelled = false;
+    vendorService
+      .getAll()
+      .then((res) => {
+        if (cancelled) return;
+        const rows = res?.data?.data ?? res?.data ?? [];
+        const names = (Array.isArray(rows) ? rows : [])
+          .map((v) => v?.vendorName)
+          .filter(Boolean);
+        setVendors([...new Set(names)].sort((a, b) => a.localeCompare(b)));
+      })
+      .catch(() => {
+        if (!cancelled) setVendors([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const totals = useMemo(() => {
     return expenses.reduce(
@@ -1642,6 +1683,12 @@ export default function BookingExpenseModal({
         }
         if (field === "costType") {
           updated.costTypeTouched = true;
+        }
+        // Picking a master vendor IS picking the name — the payload carries no vendor id. "Other"
+        // clears the name so the free-text box opens empty rather than pre-filled with the vendor
+        // the user just rejected.
+        if (field === "vendorPick") {
+          updated.vendorName = value === OTHER_VENDOR ? "" : value;
         }
         return updated;
       })
@@ -2050,10 +2097,14 @@ export default function BookingExpenseModal({
                               </button>
                             ))}
                           </div>
+                          {/* Both classes now reduce the margin, so this line no longer says WHETHER
+                              the cost counts — it says which bucket reports it. Leaving the old
+                              "cash book only" copy would tell the user the opposite of what the
+                              number does. */}
                           <p className="mt-1 text-[9.5px] font-medium" style={{ color: "#64748b" }}>
                             {expense.costType === "INTERNAL"
-                              ? "Company cost — reduces booking profit"
-                              : "Supplier cost — cash book only"}
+                              ? "Agency overhead — reduces booking profit"
+                              : "Supplier cost — reduces booking profit"}
                           </p>
                         </Field>
                       </div>
@@ -2072,15 +2123,34 @@ export default function BookingExpenseModal({
 
                       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                         <Field label="Vendor / Payee">
-                          <input
-                            type="text"
-                            maxLength={200}
-                            value={expense.vendorName}
-                            onChange={(e) => updateExpense(index, "vendorName", e.target.value)}
-                            placeholder="Vendor name"
+                          <select
+                            value={expense.vendorPick}
+                            onChange={(e) => updateExpense(index, "vendorPick", e.target.value)}
                             disabled={saving}
                             className="eb-field"
-                          />
+                          >
+                            <option value="">Select vendor…</option>
+                            {vendors.map((name) => (
+                              <option key={name} value={name}>
+                                {name}
+                              </option>
+                            ))}
+                            <option value={OTHER_VENDOR}>Other (type a name)</option>
+                          </select>
+                          {/* Shown for "Other" AND whenever the list is empty — if the vendor master
+                              has no rows, or the request failed, a select with one usable option
+                              would leave the user unable to name the payee at all. */}
+                          {(expense.vendorPick === OTHER_VENDOR || vendors.length === 0) && (
+                            <input
+                              type="text"
+                              maxLength={200}
+                              value={expense.vendorName}
+                              onChange={(e) => updateExpense(index, "vendorName", e.target.value)}
+                              placeholder="Vendor / payee name"
+                              disabled={saving}
+                              className="eb-field mt-1.5"
+                            />
+                          )}
                         </Field>
 
                         <Field label="Due Date" error={errors[`${index}-dueDate`]}>

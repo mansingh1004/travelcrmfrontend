@@ -104,6 +104,7 @@ export default function ServicesSection({ selectedServices, onToggle }) {
                 key={service.id}
                 type="button"
                 onClick={() => onToggle(service.id)}
+                
                 className={`relative rounded-xl p-3.5 border-2 transition-all duration-200 text-left group
                   ${isSelected
                     ? `${c.selected} shadow-md scale-[1.02]`

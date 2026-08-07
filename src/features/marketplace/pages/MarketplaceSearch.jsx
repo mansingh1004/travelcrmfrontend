@@ -47,7 +47,7 @@ export function MarketplaceSearch() {
       .catch((e) => {
         if (!alive) return;
         setRows([]);
-        showToast(errMsg(e, "Could not load the hotel marketplace."), "error");
+        showToast(errMsg(e, "Could not load Platform Hotel."), "error");
       });
     return () => { alive = false; };
   }, [page, debouncedQ, city, minStars, showToast]);
@@ -83,7 +83,7 @@ export function MarketplaceSearch() {
   return (
     <Page width="max-w-7xl">
       <PageHeader
-        title="Hotel Marketplace"
+        title="Platform Hotel"
         subtitle="Hotels the platform has contracted. Import one to use it in your quotations, or request a booking through the platform."
         actions={
           <Button onClick={() => navigate("/marketplace/bookings")}>

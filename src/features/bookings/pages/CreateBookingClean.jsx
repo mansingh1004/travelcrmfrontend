@@ -16,6 +16,7 @@ import {
   MapPin,
   PackageCheck,
   Phone,
+  Store,
   Plus,
   RotateCcw,
   Search,
@@ -27,6 +28,7 @@ import FastItinerary from "../components/FastItinerary";
 import FastTravelDetails from "../components/FastTravelDetails";
 import { customerService } from "@features/customers";
 import { leadService, SearchableSelect } from "@features/leads";
+import { vendorService } from "@features/vendors";
 import { geographyService } from "@shared/api/geographyService";
 import { getErrorMessage, getFieldErrors, isAlreadyReported } from "@shared/api/apiError";
 import { buildAdultPayload, deriveAdultBreakdown, getAdultBreakdownError } from "@shared/lib/adultBreakdown";
@@ -146,6 +148,8 @@ const initialForm = () => ({
   services: [],
   tripNotes: "",
   customerAmount: "",
+  // Supplier the vendorCost is owed to. Empty = none chosen, which also keeps vendorCost disabled.
+  vendorPublicId: "",
   vendorCost: "",
   paidAmount: "0",
   // Drives TCS when the tenant's policy is overseas-only. The DTO always had this field; the form
@@ -220,20 +224,30 @@ export default function BookingFormPage() {
      difference between "the clerk changed this" and "the form is echoing what it loaded":
        • the travel-date rule, which must not treat an untouched past date as a new past booking;
        • the update payload, which must send money only when it actually changed — see handleSubmit. */
-  const loadedRef = useRef({ travelDate: "", customerAmount: "", vendorCost: "", paidAmount: "" });
+  const loadedRef = useRef({ travelDate: "", customerAmount: "", vendorPublicId: "", vendorCost: "", paidAmount: "" });
   const [bookingCode, setBookingCode] = useState("");
   const [leads, setLeads] = useState([]);
   const [assignees, setAssignees] = useState([]);
+  const [vendors, setVendors] = useState([]);
+  const [loadingVendors, setLoadingVendors] = useState(true);
   const [destinations, setDestinations] = useState([]);
   const [loadingDestinations, setLoadingDestinations] = useState(true);
   const [destinationError, setDestinationError] = useState("");
 
   const setField = useCallback((name, value) => {
-    setForm((current) => ({ ...current, [name]: value }));
+    setForm((current) => {
+      const next = { ...current, [name]: value };
+      // Clearing the vendor clears its cost. The input is disabled without a vendor, so a stale
+      // amount left behind would be invisible on screen and still be submitted — a supplier cost
+      // charged against a booking with no supplier.
+      if (name === "vendorPublicId" && !value) next.vendorCost = "";
+      return next;
+    });
     setErrors((current) => {
-      if (!current[name]) return current;
+      const stale = name === "vendorPublicId" ? ["vendorPublicId", "vendorCost"] : [name];
+      if (!stale.some((key) => current[key])) return current;
       const next = { ...current };
-      delete next[name];
+      stale.forEach((key) => delete next[key]);
       return next;
     });
   }, []);
@@ -442,13 +456,24 @@ export default function BookingFormPage() {
       leadService.getAllLeads(0, 200),
       bookingService.getEligibleAssignees(),
       geographyService.getAllDestinations(),
-    ]).then(([leadResult, assigneeResult, destinationResult]) => {
+      vendorService.getAll(),
+    ]).then(([leadResult, assigneeResult, destinationResult, vendorResult]) => {
       if (!active) return;
       if (leadResult.status === "fulfilled") setLeads(unwrapList(leadResult.value));
       if (assigneeResult.status === "fulfilled") {
         const list = unwrap(assigneeResult.value);
         setAssignees(Array.isArray(list) ? list : []);
       }
+      // Vendors gate the Vendor Cost field. A failure here leaves the list empty and the cost
+      // disabled — which is the correct degraded state, not a broken one: no vendor could be chosen,
+      // so no vendor cost should be attributable. The spend still goes in through the expense ledger.
+      if (vendorResult.status === "fulfilled") {
+        const list = unwrap(vendorResult.value);
+        setVendors(
+          (Array.isArray(list) ? list : []).filter((v) => v?.publicId && v?.vendorName)
+        );
+      }
+      setLoadingVendors(false);
       if (destinationResult.status === "fulfilled") {
         const list = destinationResult.value;
         setDestinations(Array.isArray(list) ? list : []);
@@ -500,6 +525,7 @@ export default function BookingFormPage() {
         loadedRef.current = {
           travelDate: dateInput(booking.travelDate),
           customerAmount: booking.customerAmount == null ? "" : String(booking.customerAmount),
+          vendorPublicId: booking.vendorPublicId || "",
           vendorCost: booking.vendorCost == null ? "" : String(booking.vendorCost),
           paidAmount: booking.paidAmount == null ? "0" : String(booking.paidAmount),
         };
@@ -552,6 +578,7 @@ export default function BookingFormPage() {
           services: Array.isArray(booking.services) ? booking.services : [],
           tripNotes: snapshot.notes || "",
           customerAmount: booking.customerAmount == null ? "" : String(booking.customerAmount),
+          vendorPublicId: booking.vendorPublicId || "",
           vendorCost: booking.vendorCost == null ? "" : String(booking.vendorCost),
           paidAmount: booking.paidAmount == null ? "0" : String(booking.paidAmount),
           overseasTourPackage: Boolean(booking.overseasTourPackage),
@@ -669,16 +696,24 @@ export default function BookingFormPage() {
     String(lead.publicId || lead.id) === String(form.leadPublicId)
   ), [form.leadPublicId, leads]);
 
+  // OLD — code, name and phone were crushed into one label:
+  //   label: [lead.leadCode, lead.customerName, lead.phone].filter(Boolean).join(" · ")
+  // One long line per row truncated before the phone on a narrow column, and a phone search lit up
+  // a match the clerk could not see. The phone is a second line now, and still searchable.
   const leadOptions = useMemo(() => [
     { value: "", label: "Direct booking (no linked lead)" },
-    ...availableLeads.map((lead) => ({
-      value: lead.publicId || lead.id,
-      label: [
-        lead.leadCode || "Lead",
-        lead.customerName || lead.customer?.name || "Customer",
-        lead.phone || lead.customer?.phone,
-      ].filter(Boolean).join(" · "),
-    })),
+    ...availableLeads.map((lead) => {
+      const phone = lead.phone || lead.customer?.phone || "";
+      return {
+        value: lead.publicId || lead.id,
+        label: [
+          lead.leadCode || "Lead",
+          lead.customerName || lead.customer?.name || "Customer",
+        ].filter(Boolean).join(" · "),
+        sublabel: phone,
+        keywords: [phone, lead.destination].filter(Boolean).join(" "),
+      };
+    }),
   ], [availableLeads]);
 
   const matchedDestination = destinations.find((destination) =>
@@ -688,6 +723,34 @@ export default function BookingFormPage() {
   const destinationSelectValue = matchedDestination
     ? String(destinationIdOf(matchedDestination))
     : form.destination ? "__saved_destination__" : "";
+
+  /* Destination and Assigned To were native <select>s. On a native select a keystroke only jumps to
+     the next option starting with that letter and the browser forgets it a second later, so on a
+     destination master of any size the clerk could not type their way to a row — which is what
+     "search stops at the first letter" was. Both are the app's combobox now, same one Create Lead
+     uses, so typing runs a real multi-letter query. */
+  const destinationOptions = useMemo(() => [
+    ...(destinationSelectValue === "__saved_destination__"
+      ? [{ value: "__saved_destination__", label: `${form.destination} (saved)` }]
+      : []),
+    ...destinations.map((destination) => ({
+      value: String(destinationIdOf(destination)),
+      label: destination.name || "",
+    })),
+  ], [destinations, destinationSelectValue, form.destination]);
+
+  const assigneeOptions = useMemo(() => [
+    { value: "", label: "Current user" },
+    ...assignees.map((user) => {
+      const label = user.name || user.fullName || user.email || "";
+      return {
+        value: String(user.id ?? user.publicId ?? ""),
+        label,
+        sublabel: user.email && user.email !== label ? user.email : "",
+        keywords: user.email || "",
+      };
+    }),
+  ], [assignees]);
 
   // OLD — replaced in create-form redesign
   // const validate = () => {
@@ -730,10 +793,13 @@ export default function BookingFormPage() {
       return f.travelDate < today() ? "Travel date cannot be in the past" : "";
     },
     customerAmount: (f) => (!(Number(f.customerAmount) > 0) ? "Amount must be greater than 0" : ""),
-    // Vendor cost is NOT optional: the backend binds it @NotNull with an exclusive @DecimalMin(0),
-    // so a blank or zero value is a 400 with no inline field error to show for it. Validate to the
-    // same rule here and the failure is caught on the field instead of on submit.
-    vendorCost: (f) => (!(Number(f.vendorCost) > 0) ? "Vendor cost must be greater than 0" : ""),
+    // Vendor cost is now REQUIRED ONLY WHEN A VENDOR IS CHOSEN, mirroring the relaxed backend
+    // contract (optional, inclusive @DecimalMin(0)). Naming a supplier and then leaving the amount
+    // blank is the one combination that is meaningless — it records a payee owed nothing.
+    vendorCost: (f) => {
+      if (!f.vendorPublicId) return "";
+      return !(Number(f.vendorCost) > 0) ? "Enter the cost for the selected vendor" : "";
+    },
     paidAmount: (f) => (Number(f.paidAmount) < 0 ? "Advance cannot be negative" : ""),
     totalAdults: (f) => getAdultBreakdownError(f),
   };
@@ -882,6 +948,9 @@ export default function BookingFormPage() {
       },
       bookingDate: form.bookingDate || null,
       customerAmount: Number(form.customerAmount),
+      // Both null when no vendor was chosen. vendorCost is optional on the backend now and stores 0;
+      // the supplier spend for such a booking comes from the expense ledger instead.
+      vendorPublicId: form.vendorPublicId || null,
       vendorCost: form.vendorCost === "" ? null : Number(form.vendorCost),
       paidAmount: Number(form.paidAmount) || 0,
       overseasTourPackage: form.overseasTourPackage,
@@ -912,12 +981,23 @@ export default function BookingFormPage() {
         const ifChanged = (key, value) =>
           String(form[key] ?? "") === String(loadedRef.current[key] ?? "") ? undefined : value;
 
+        /* Unlinking the vendor needs its own flag. Under the patch contract null means "leave
+           alone", so an emptied dropdown could not be expressed at all — the booking would silently
+           keep the supplier the clerk just removed. clearVendor says it explicitly, and the cost is
+           sent as 0 alongside, because a booking with no supplier owes no supplier money. */
+        const vendorCleared =
+          Boolean(loadedRef.current.vendorPublicId) && !form.vendorPublicId;
+
         await bookingService.update(routeBookingId, {
           destination: payload.destination,
           travelDate: payload.travelDate,
           bookingDate: payload.bookingDate,
+          vendorPublicId: ifChanged("vendorPublicId", payload.vendorPublicId),
+          clearVendor: vendorCleared ? true : undefined,
           customerAmount: ifChanged("customerAmount", payload.customerAmount),
-          vendorCost: ifChanged("vendorCost", payload.vendorCost),
+          // A cleared vendor sends an explicit 0 rather than the null ifChanged would produce —
+          // null is "leave alone", which would strand the old cost on a booking with no supplier.
+          vendorCost: vendorCleared ? 0 : ifChanged("vendorCost", payload.vendorCost),
           paidAmount: ifChanged("paidAmount", payload.paidAmount),
           overseasTourPackage: payload.overseasTourPackage,
           services: payload.services,
@@ -1198,11 +1278,16 @@ export default function BookingFormPage() {
                   value={form.leadPublicId}
                   onChange={handleLeadChange}
                   placeholder="Search lead code, customer or phone"
+                  searchPlaceholder="Lead code, name or phone..."
                   loading={loadingLead}
                   disabled={editing}
                   icon={ClipboardList}
                   accent="blue"
-                  className="rounded-lg hover:border-slate-300 disabled:bg-slate-50"
+                  advanceOnSelect
+                  /* OLD — className="rounded-lg …": this was the page's only searchable select, so
+                     it was squared off to match the plain inputs. Now there are four of them and
+                     they all render like Create Lead's. */
+                  className="hover:border-slate-300 disabled:bg-slate-50"
                 />
               </Field>
             </div>
@@ -1323,20 +1408,32 @@ export default function BookingFormPage() {
             The money fields moved to the sticky rail, so "commercial" no longer lives here. */}
         <Panel icon={CalendarCheck2} title="Booking Details" description="Core booking and destination information">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {/* OLD — a native <select name="destination"> with the same options. Replaced with the
+                combobox for the search; `name` stays on the trigger so validate()'s
+                querySelector('[name="destination"]').focus() still lands on this control. */}
             <Field label="Destination" required error={errors.destination}>
-              <div className="relative">
-                <MapPin className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <select name="destination" onBlur={() => blurField("destination")} value={destinationSelectValue} disabled={loadingDestinations} onChange={(event) => {
-                  const selected = destinations.find((item) => String(destinationIdOf(item)) === event.target.value);
+              <SearchableSelect
+                name="destination"
+                options={destinationOptions}
+                value={destinationSelectValue}
+                onChange={(next) => {
+                  // "(saved)" is a read-only echo of a destination that is not in the master list —
+                  // re-picking it must not blank the two fields it stands for.
+                  if (next === "__saved_destination__") return;
+                  const selected = destinations.find((item) => String(destinationIdOf(item)) === next);
                   setField("destinationId", selected ? String(destinationIdOf(selected)) : "");
                   setField("destination", selected?.name || "");
-                }} className={`${controlClass("destination", true)} appearance-none pr-9`}>
-                  <option value="">{loadingDestinations ? "Loading destinations..." : "Select destination"}</option>
-                  {destinationSelectValue === "__saved_destination__" && <option value="__saved_destination__">{form.destination} (saved)</option>}
-                  {destinations.map((destination) => <option key={destinationIdOf(destination) || destination.name} value={String(destinationIdOf(destination))}>{destination.name}</option>)}
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              </div>
+                }}
+                onBlur={() => blurField("destination")}
+                placeholder={loadingDestinations ? "Loading destinations..." : "Select destination"}
+                searchPlaceholder="Type a destination..."
+                loading={loadingDestinations}
+                invalid={Boolean(errors.destination)}
+                icon={MapPin}
+                accent="blue"
+                advanceOnSelect
+                className="hover:border-slate-300"
+              />
               {destinationError && <p className="text-xs text-amber-600">{destinationError}</p>}
             </Field>
             <Field label="Package Type" optional>
@@ -1352,15 +1449,20 @@ export default function BookingFormPage() {
             <Field label="Booking Date" optional>
               <input type="date" value={form.bookingDate} onChange={(event) => setField("bookingDate", event.target.value)} className={controlClass("bookingDate")} />
             </Field>
+            {/* OLD — native <select> over the assignee list. Same swap as Destination: a tenant with
+                a full sales floor could not type a colleague's name to find them. */}
             <Field label="Assigned To" optional>
-              <div className="relative">
-                <UserCheck className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <select value={form.assignedUserId} onChange={(event) => setField("assignedUserId", event.target.value)} className={`${controlClass("assignedUserId", true)} appearance-none pr-9`}>
-                  <option value="">Current user</option>
-                  {assignees.map((user) => <option key={user.id || user.publicId} value={user.id || user.publicId}>{user.name || user.fullName || user.email}</option>)}
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              </div>
+              <SearchableSelect
+                options={assigneeOptions}
+                value={String(form.assignedUserId ?? "")}
+                onChange={(next) => setField("assignedUserId", next)}
+                placeholder="Current user"
+                searchPlaceholder="Search team member..."
+                icon={UserCheck}
+                accent="blue"
+                advanceOnSelect
+                className="hover:border-slate-300"
+              />
             </Field>
             {editing && <Field label="Booking Status" optional>
               <div className="relative">
@@ -1440,10 +1542,45 @@ export default function BookingFormPage() {
                   <input name="customerAmount" type="number" min="0" step="0.01" value={form.customerAmount} onChange={(event) => setField("customerAmount", event.target.value)} onBlur={() => blurField("customerAmount")} onWheel={(event) => event.currentTarget.blur()} placeholder="0.00" className={controlClass("customerAmount", true)} />
                 </div>
               </Field>
-              <Field label="Vendor Cost (INR)" required error={errors.vendorCost}>
+              {/* Vendor gates Vendor Cost. The amount used to be asked for on its own and was
+                  REQUIRED, so every booking carried a supplier figure with no payee — and the agent
+                  had to commit to one at the moment of sale, before anything was actually booked.
+                  Now: pick a supplier and the amount opens up; leave it blank and the cost stays 0,
+                  with the real spend itemised later in the expense ledger (which reduces profit). */}
+              <Field label="Vendor" optional error={errors.vendorPublicId}>
+                {/* appearance-none + pr-9 is load-bearing: without it the browser draws its own
+                    dropdown arrow AND the ChevronDown below renders, giving two. Same recipe as the
+                    Package Type select above — left icon, suppressed native arrow, own chevron. */}
+                <div className="relative">
+                  <Store className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <select
+                    name="vendorPublicId"
+                    value={form.vendorPublicId}
+                    onChange={(event) => setField("vendorPublicId", event.target.value)}
+                    disabled={loadingVendors}
+                    className={`${controlClass("vendorPublicId", true)} appearance-none pr-9`}
+                  >
+                    <option value="">
+                      {loadingVendors ? "Loading vendors…" : "No vendor selected"}
+                    </option>
+                    {vendors.map((v) => (
+                      <option key={v.publicId} value={v.publicId}>
+                        {v.vendorName}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                </div>
+              </Field>
+              <Field
+                label="Vendor Cost (INR)"
+                required={Boolean(form.vendorPublicId)}
+                optional={!form.vendorPublicId}
+                error={errors.vendorCost}
+              >
                 <div className="relative">
                   <BadgeIndianRupee className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                  <input name="vendorCost" type="number" min="0" step="0.01" value={form.vendorCost} onChange={(event) => setField("vendorCost", event.target.value)} onBlur={() => blurField("vendorCost")} onWheel={(event) => event.currentTarget.blur()} placeholder="0.00" className={controlClass("vendorCost", true)} />
+                  <input name="vendorCost" type="number" min="0" step="0.01" value={form.vendorCost} onChange={(event) => setField("vendorCost", event.target.value)} onBlur={() => blurField("vendorCost")} onWheel={(event) => event.currentTarget.blur()} placeholder={form.vendorPublicId ? "0.00" : "Select a vendor first"} disabled={!form.vendorPublicId} className={controlClass("vendorCost", true)} />
                 </div>
               </Field>
               <Field label="Advance Collected (INR)" optional error={errors.paidAmount}>

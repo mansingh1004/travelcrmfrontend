@@ -4,23 +4,27 @@ import { useState, useEffect, memo, useMemo, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { leadService } from "../api/leadService";
+import { leadAlertService } from "../api/leadAlertService";
 import { quotationService } from "@features/quotation";
 import { hasPermission, P } from "@shared/lib/access";
 import { useToast } from "@shared/ui/toast";
 import { getErrorMessage, isAlreadyReported } from "@shared/api/apiError";
 import AccessDenied from "../components/AccessDenied";
+// Lifted out of this file so AllLeadLogs can use the same popups instead of routing to the
+// duplicate AddLeadLog / LeadLogs pages, which had drifted out of sync with these.
+import { AddLogModal, LogsModal } from "../components/LeadLogModals";
 import { formatToWhatsAppLink } from "../lib/whatsapp";
 import PdfDownloadLoader from '@/shared/ui/PdfDownloadLoader';
 import { usePdfDownload } from '@shared/hooks/usePdfDownload';
 import WhatsAppPanel from "./WhatsAppPanel";
 import {
-  Users, Trophy, PieChart, TrendingUp, Search,
+  Users, Trophy, TrendingUp, Search,
   DownloadCloud, FileText, Plus, Upload,
   Inbox, User, Calendar, ChevronDown,
   Eye, Pencil, Trash2, X, Mail, Phone, MapPin, Briefcase, CheckCircle, Copy,
-  BarChart3, ArrowRightLeft, MessageCircle, NotebookPen, Bell, AlertCircle,
+  BarChart3, ArrowRightLeft, MessageCircle,
   DollarSign, Sparkles,
-  Building2, Plane, Ship, Car, Camera, BookOpen, Shield, ExternalLink
+  Building2, Plane, Ship, Car, Camera,  Bell, AlertCircle, BookOpen, Shield, ExternalLink
 } from 'lucide-react';
 import { WhatsAppIcon as FaWhatsapp } from "@shared/ui/WhatsAppIcon";
 import { Link } from 'react-router-dom';
@@ -29,6 +33,11 @@ import { WeblinkAnalyticsModal } from "@features/quotation";
 import { SuggestPackagesModal } from "@features/quotation";
 import { QuotationStyleModal } from "@features/quotation";
 import ImportLeadsModal from "../components/ImportLeadsModal";
+
+/* @tanstack/react-table is no longer imported. It only supplied getPaginationRowModel() here —
+   paginating a page the server had already paginated — and made every row a Row wrapper the markup
+   had to unwrap. Sorting and paging are both server parameters now. */
+
 
 /* ─── COLOR HELPERS ───────────────────────────────────── */
 const AVATAR_GRADIENTS = [
@@ -62,6 +71,12 @@ const stagePill = (stage) => STAGE_PILL[stage] || 'bg-orange-100 text-orange-700
    runs through the Convert-to-booking flow, not a manual pick — but if a lead is already in a
    stage outside this list, the row still shows its real value (the option is prepended). */
 const STAGES = ['New Lead', 'Contacted', 'Follow Up', 'Qualified', 'Proposal Sent', 'Lost'];
+
+/* The two closed stages, by DISPLAY NAME — LeadStage serialises through @JsonValue, so the wire
+   format is "Converted"/"Lost", never the constant name. Mirrors LeadStageGroups.TERMINAL_STAGES
+   on the backend: active = everything that is not one of these, so a stage added to the enum later
+   counts as active on both sides without a change here. */
+const TERMINAL_STAGE_NAMES = ['Converted', 'Lost'];
 
 /* Backend LeadType — the priority vocabulary, exactly four values. Colour runs cold-to-hot so the
    pill reads at a glance. The old keys here ('Hot Lead', 'Warm Lead', 'Cold Lead', 'VIP',
@@ -131,16 +146,210 @@ const fmtMoneyINR = (v) => v == null ? null
 const fmtAmountINR = (v) => v == null ? null
   : new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
 
+/* Lakh/crore short form for the money CARDS only — a pipeline sum is eight digits and the full
+   "₹1,24,50,000" wraps and stops being readable at a glance. Table cells keep the exact figures
+   above; this is deliberately the summary form, and the card says so. */
+const fmtMoneyCompactINR = (v) => {
+  if (v == null) return null;
+  const n = Number(v);
+  if (!Number.isFinite(n)) return null;
+  const abs = Math.abs(n);
+  if (abs >= 1e7) return `₹${(n / 1e7).toFixed(2)} Cr`;
+  if (abs >= 1e5) return `₹${(n / 1e5).toFixed(2)} L`;
+  return fmtMoneyINR(n);
+};
+
+/* Seconds → the shortest honest unit. null stays "—": the backend sends null for "nobody has been
+   contacted yet", and rendering that as 0s would read as an instant response — the opposite fact.
+   Same rule the Incoming Leads page applies to the identical field. */
+const fmtDurationShort = (seconds) => {
+  if (seconds == null) return '—';
+  const s = Number(seconds);
+  if (!Number.isFinite(s)) return '—';
+  if (s < 60) return `${Math.round(s)}s`;
+  if (s < 3600) return `${Math.round(s / 60)}m`;
+  return `${(s / 3600).toFixed(1)}h`;
+};
+
+/* Stage / type counts off the summary payload. Both arrive zero-filled from the server, so a
+   missing key means the summary itself has not loaded — hence null, never 0, so callers can fall
+   back to the loaded page instead of flashing a confident wrong zero. */
+const stageCount = (summary, stage) =>
+  summary?.byStage?.find(s => s.stage === stage)?.count ?? null;
+const typeCount = (summary, type) =>
+  summary?.byType?.find(t => t.type === type)?.count ?? null;
+
+/* "1 Aug" — for the reporting-window caption on the conversion card. Parsed at local midnight
+   rather than as a bare "YYYY-MM-DD" (which Date treats as UTC and renders a day early west of
+   Greenwich). */
+const fmtDayMon = (iso) => {
+  if (!iso) return '';
+  const d = new Date(`${iso}T00:00:00`);
+  return Number.isNaN(d.getTime())
+    ? '' : d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+};
+
+/* ─── NEXT ACTION ─────────────────────────────────────
+   The column that answers the only question this screen exists to answer: who do I call next.
+   Everything else in a row is reference data the agent has to read and judge; this is a verdict.
+
+   Computed entirely from fields the list response already carries — followUpDate, logCount,
+   firstContactedAt, createdAt, travelDate, leadStage, the claim/SLA window and whether a quotation
+   exists — so it costs no extra request and no backend change.
+
+   First match wins: the order of the blocks below IS the priority order. Only 'late' and 'due' get
+   colour; everything else stays grey on purpose, so a coloured Next action always means the same
+   thing — someone is waiting on us. */
+
+const DAY_MS = 86400000;
+const startOfToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
+
+/* "2026-09-12" is a LocalDate, not an instant — new Date() reads it as UTC midnight and lands on
+   the previous day in any negative-offset zone. Split it instead. */
+const parseDateOnly = (s) => {
+  if (!s) return null;
+  const [y, m, d] = String(s).slice(0, 10).split('-').map(Number);
+  return (y && m && d) ? new Date(y, m - 1, d) : null;
+};
+const daysBetween = (later, earlier) => Math.round((later - earlier) / DAY_MS);
+
+/* Stages a lead cannot be in unless a human already spoke to the customer. Display names, because
+   that is the wire format — LeadStage serialises via @JsonValue, never NEW_LEAD. */
+const CONTACTED_STAGES = new Set(['Contacted', 'Follow Up', 'Qualified', 'Proposal Sent', 'Reopened']);
+
+function nextAction(lead, now = Date.now()) {
+  const today = startOfToday();
+  const stage = lead.leadStage;
+
+  // Closed either way — nothing is owed, so it must not compete for attention.
+  if (stage === 'Converted' || lead.convertedBookingPublicId) return { tone: 'done', label: 'Booked' };
+  if (stage === 'Lost') return { tone: 'none', label: 'Closed' };
+
+  /* 1. The trip already happened and this lead is STILL open.
+        Ranked above the follow-up on purpose: chasing a quotation for a journey that has already
+        come and gone is not work, it is noise, and the row needs a decision — close it, or re-date
+        it. These leads are otherwise completely invisible; they sit in the pipeline inflating the
+        Active card and the conversion rate forever, because nothing on the screen ever pointed at
+        them. Amber, not red: nobody is waiting on us, but the row does need a hand today. */
+  const travel = parseDateOnly(lead.travelDate);
+  if (travel) {
+    const past = daysBetween(today, travel);
+    if (past > 0) return { tone: 'due', label: `Trip date passed · ${past}d` };
+  }
+
+  // 2. An explicit promise to the customer outranks every heuristic below it.
+  const due = parseDateOnly(lead.followUpDate);
+  if (due) {
+    const late = daysBetween(today, due);
+    if (late > 0) return { tone: 'late', label: `Follow-up ${late}d overdue` };
+    if (late === 0) return { tone: 'due', label: 'Follow-up today' };
+    if (late === -1) return { tone: 'soon', label: 'Follow-up tomorrow' };
+  }
+
+  // 3. Unclaimed lead with the first-response clock still running.
+  if (lead.openToClaim && lead.createdAt) {
+    const leftMs = (lead.slaTargetSeconds || 0) * 1000 - (now - new Date(lead.createdAt).getTime());
+    return leftMs <= 0
+      ? { tone: 'late', label: 'Unclaimed · SLA missed' }
+      : { tone: 'due', label: `Unclaimed · ${Math.ceil(leftMs / 60000)}m left` };
+  }
+
+  /* 4. Never contacted. One day of silence is normal, three is a leak.
+        "Never contacted" has to mean exactly that. Log count alone is not evidence: an agent who
+        calls a customer and then flips the Stage dropdown to Contacted HAS contacted them, logged
+        or not — and a lead sitting in Contacted that keeps being called never-contacted is how a
+        column like this stops being believed. Three independent signals, any one is enough. */
+  const everContacted =
+    !!lead.firstContactedAt ||
+    (lead.logCount || 0) > 0 ||
+    CONTACTED_STAGES.has(stage);
+
+  const created = lead.createdAt ? new Date(lead.createdAt) : null;
+  const ageDays = created
+    ? daysBetween(today, new Date(created.getFullYear(), created.getMonth(), created.getDate()))
+    : 0;
+  if (!everContacted && ageDays >= 1) {
+    return { tone: ageDays >= 3 ? 'late' : 'due', label: `Never contacted · ${ageDays}d` };
+  }
+
+  /* 5. Contacted once, then went quiet. The natural continuation of rule 4: that one answers "has
+        anyone EVER spoken to them", this one answers "when did we last", which is how live leads
+        actually die — nobody decides to drop them, they just stop being called.
+
+        Reads lastActivityAt (newest non-deleted LeadLog, added to the list DTO for this). Absent on
+        a lead whose contact was recorded only as a stage change, and that is correct: with no log
+        there is no date to age, and rule 4's stage signal already stopped it shouting. */
+  const lastActivity = lead.lastActivityAt ? new Date(lead.lastActivityAt) : null;
+  if (lastActivity && !Number.isNaN(lastActivity.getTime())) {
+    const quietDays = daysBetween(
+      today,
+      new Date(lastActivity.getFullYear(), lastActivity.getMonth(), lastActivity.getDate()));
+    // 7 days is a week gone by with no touch; 14 is a lead nobody is working any more.
+    if (quietDays >= 14) return { tone: 'late', label: `No contact · ${quietDays}d` };
+    if (quietDays >= 7) return { tone: 'due', label: `No contact · ${quietDays}d` };
+  }
+
+  // 6. Departure closing in while the lead is still open. (Past dates were handled by rule 1.)
+  if (travel) {
+    const inDays = daysBetween(travel, today);
+    if (inDays === 0) return { tone: 'due', label: 'Travels today' };
+    if (inDays > 0 && inDays <= 14) return { tone: 'due', label: `Travels in ${inDays}d` };
+  }
+
+  /* 7. Pipeline nudges — a hint, never a shout.
+
+        The quote being well above what the customer said they could spend is the single most common
+        reason a "sent" quotation never gets answered, and both numbers were already sitting in the
+        row four columns apart with nothing comparing them. Ranked above "chase reply" because the
+        action is different: revise or renegotiate, not follow up again. */
+  const budget = Number(lead.budget);
+  const quoted = Number(lead.latestQuotation?.grandTotal);
+  if (Number.isFinite(budget) && budget > 0 && Number.isFinite(quoted) && quoted > budget) {
+    const overPct = Math.round(((quoted - budget) / budget) * 100);
+    // 15% is the line between "rounding and extras" and "this is not the trip they asked for".
+    if (overPct >= 15) return { tone: 'hint', label: `Quote ${overPct}% over budget` };
+  }
+
+  if (lead.latestQuotation?.publicId) return { tone: 'hint', label: 'Quote sent · chase reply' };
+  if (stage === 'Qualified') return { tone: 'hint', label: 'Send quotation' };
+  // The hygiene case rule 3 deliberately stopped shouting about: contact happened, but there is no
+  // record of what was said. Worth a nudge, not a red row.
+  if (!(lead.logCount > 0)) return { tone: 'hint', label: 'Contacted · no log yet' };
+  // A lead parked in Follow Up with no date will never surface in rule 1 — say so.
+  if (stage === 'Follow Up' && !due) return { tone: 'hint', label: 'Set a follow-up date' };
+  if (stage === 'New Lead' || stage === 'Contacted') return { tone: 'hint', label: 'Qualify this lead' };
+
+  // 8. A follow-up genuinely in the future needs nothing today — state it and stay quiet.
+  if (due) return { tone: 'none', label: `Follow-up ${due.toLocaleDateString('en-US', { day: 'numeric', month: 'short' })}` };
+
+  return { tone: 'none', label: '—' };
+}
+
+const ACTION_TONE = {
+  late: { dot: 'bg-red-500',     text: 'text-red-700',   wrap: 'bg-red-50 border-red-200' },
+  due:  { dot: 'bg-amber-500',   text: 'text-amber-800', wrap: 'bg-amber-50 border-amber-200' },
+  soon: { dot: 'bg-slate-400',   text: 'text-slate-600', wrap: 'bg-white border-slate-200' },
+  hint: { dot: 'bg-blue-400',    text: 'text-slate-500', wrap: 'bg-transparent border-transparent' },
+  done: { dot: 'bg-emerald-500', text: 'text-slate-400', wrap: 'bg-transparent border-transparent' },
+  none: { dot: 'bg-slate-200',   text: 'text-slate-400', wrap: 'bg-transparent border-transparent' },
+};
+
 /* ─── TABLE LAYOUT ────────────────────────────────────── */
 /* One source of truth for the columns — header, every row and the loading skeleton read
    this, so nothing can drift out of alignment. The table scrolls horizontally inside its
    wrapper (16 columns don't fit any laptop, same as the legacy CRM). */
 const LEAD_COLUMNS = [
   { key: 'select', label: '', width: 44, align: 'center' },
-  { key: 'leadId', label: 'Lead ID', width: 132 },
-  { key: 'info', label: 'Lead Info', width: 208 },
+  /* One person, one column. This was two — a 132px "Lead ID" holding a code and a created date,
+     sitting next to a 208px "Lead Info" holding the same person's name. The code now rides on the
+     name line and the created date moved into Next action, where a lead's age is the thing that
+     makes it urgent. */
+  { key: 'info', label: 'Lead', width: 232, sortKey: 'customerName' },
+  /* Placed second on purpose: after identity, the very next thing an agent should read is what they
+     owe this lead — not the destination. */
+  { key: 'action', label: 'Next action', width: 172 },
   { key: 'dest', label: 'Destination', width: 152 },
-  { key: 'travel', label: 'Travelers Info', width: 176 },
+  { key: 'travel', label: 'Travelers Info', width: 176, sortKey: 'travelDate' },
   { key: 'services', label: 'Services', width: 96, align: 'center' },
   { key: 'quote', label: 'Quotation', width: 160, align: 'center' },
   { key: 'booking', label: 'Booking', width: 122, align: 'center' },
@@ -149,14 +358,50 @@ const LEAD_COLUMNS = [
   { key: 'assigned', label: 'Assigned To', width: 150 },
   { key: 'amount', label: 'Amount', width: 132, align: 'right' },
   { key: 'margin', label: 'Margin', width: 120, align: 'right' },
-  { key: 'type', label: 'Type', width: 128, align: 'center' },
-  { key: 'stage', label: 'Stage', width: 138, align: 'center' },
+  { key: 'type', label: 'Type', width: 128, align: 'center', sortKey: 'leadType' },
+  { key: 'stage', label: 'Stage', width: 138, align: 'center', sortKey: 'leadStage' },
   { key: 'actions', label: 'Actions', width: 112, align: 'center' },
 ];
+
+/* Which headers are clickable. `sortKey` is the ENTITY property the backend sorts on, and every value
+   here must be in LeadServiceImpl.LEAD_SORT_WHITELIST or the server silently falls back to createdAt.
+
+   Amount and Margin are deliberately NOT sortable: both live on the lead's latest QUOTATION, not on
+   Lead, so there is no column for Postgres to order by. Sorting them would need the list query to
+   join the latest-quotation projection — real work, not a flag. Offering a header that quietly
+   sorted by something else would be worse than not offering it. */
 const LEAD_TABLE_MIN_W = LEAD_COLUMNS.reduce((sum, c) => sum + c.width, 0);
 
-/* Shared cell chrome — vertical rules between columns, consistent padding. */
-const TD = 'px-2.5 py-2.5 align-middle border-r border-slate-100 last:border-r-0';
+/* Shared cell chrome — vertical rules between columns, consistent padding.
+   Two paddings, identical otherwise: density changes the row HEIGHT and nothing else, so compact is
+   the same table with more of it on screen. LeadRow shadows `TD` with whichever applies;
+   everything else (the skeleton) keeps the comfortable default. */
+const TD_COMFY = 'px-2.5 py-2.5 align-middle border-r border-slate-100 last:border-r-0';
+const TD_COMPACT = 'px-2.5 py-1 align-middle border-r border-slate-100 last:border-r-0';
+const TD = TD_COMFY;
+
+/* Frozen first columns.
+
+   The table is 2154px wide and always scrolls sideways on a laptop, so reaching Stage or Actions
+   means the name has already left the screen — you end up scrolling back and forth to check whose
+   row you are about to change. Pinning the checkbox and the Lead column removes that entirely, and
+   costs nothing visually until you actually scroll.
+
+   The cells need their OWN background: a sticky cell floats over its neighbours, so without one the
+   scrolled content shows straight through. That in turn breaks the row's `hover:bg-slate-50/70`,
+   which is why the <tr> carries `group` and these use `group-hover:`.
+
+   Edge separation is a box-shadow, not a border: `border-collapse: collapse` (set on the table)
+   drops borders on sticky cells in several browsers, and the shadow doubles as the depth cue that
+   tells you the column is pinned. */
+const FROZEN_TH = {
+  select: 'sticky left-0 z-20 bg-blue-600',
+  info: 'sticky left-[44px] z-20 bg-blue-600 shadow-[2px_0_5px_-2px_rgba(15,23,42,.35)]',
+};
+const FROZEN_TD = {
+  select: 'sticky left-0 z-10 bg-white group-hover:bg-slate-50',
+  info: 'sticky left-[44px] z-10 bg-white group-hover:bg-slate-50 shadow-[2px_0_5px_-2px_rgba(15,23,42,.12)]',
+};
 const alignClass = (a) => a === 'right' ? 'text-right' : a === 'center' ? 'text-center' : 'text-left';
 
 /* ─── PAGINATION ─────────────────────────────────────── */
@@ -240,39 +485,77 @@ function CommonPagination({ pageIndex, pageSize, totalElements, totalPages, goTo
 }
 
 /* ─── STAT CARD ──────────────────────────────────────── */
-function StatCard({ icon: Icon, label, value, suffix = '', gradient, delay = 0 }) {
-  const [displayed, setDisplayed] = useState(0);
+/* Same card as the Bookings dashboard (Allbookings.jsx:117) — label above the figure, icon in a
+   rounded tile top-right, two decorative circles, requestAnimationFrame count-up. Kept visually
+   identical on purpose: two list screens in the same product showing two different card languages
+   reads as two different products.
+
+   Two additions this page needs and Bookings does not:
+
+   `value` may be a pre-formatted STRING — "₹4.20 L", "12m", "—". Money and durations must not go
+   through the counter (it steps in integers), so a non-number is rendered as-is.
+
+   `caption` is not decoration. These nine cards are measured over three different populations —
+   the caller's own row scope, the tenant as a whole (the two claim-window figures), and the
+   reporting period — so without a line saying which, the numbers look like they should add up,
+   don't, and get reported as a bug. */
+function StatCard({ card, value, caption, loading = false, onClick }) {
+  const numeric = typeof value === 'number' && Number.isFinite(value);
+  const [disp, setDisp] = useState(0);
+  const raf = useRef(null);
+
   useEffect(() => {
-    let start = 0;
-    const target = typeof value === 'number' ? value : 0;
-    if (target === 0) { setDisplayed(0); return; }
-    const step = Math.ceil(target / 60);
-    const interval = setInterval(() => {
-      start = Math.min(start + step, target);
-      setDisplayed(start);
-      if (start >= target) clearInterval(interval);
-    }, 16);
-    return () => clearInterval(interval);
-  }, [value]);
+    cancelAnimationFrame(raf.current);
+    if (!numeric) return;
+    const target = value;
+    if (!target) { setDisp(0); return; }
+    const start = performance.now();
+    const step = (ts) => {
+      const p = Math.min((ts - start) / 900, 1);
+      const ease = 1 - Math.pow(1 - p, 3);
+      setDisp(Math.round(ease * target));
+      if (p < 1) raf.current = requestAnimationFrame(step);
+    };
+    raf.current = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf.current);
+  }, [value, numeric]);
+
+  const Icon = card.icon;
+  const clickable = typeof onClick === 'function';
 
   return (
     <div
-      className={`relative overflow-hidden rounded-2xl bg-gradient-to-br ${gradient} p-5 sm:p-6 text-white
-        shadow-lg hover:-translate-y-1 hover:shadow-2xl transition-all duration-300 cursor-pointer group fade-up`}
-      style={{ animationDelay: `${delay}ms` }}
+      role={clickable ? 'button' : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      onClick={onClick}
+      onKeyDown={clickable ? (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); }
+      } : undefined}
+      className={`bg-gradient-to-br ${card.gradient} rounded-2xl p-5 text-white shadow-lg relative
+        overflow-hidden group transition-all duration-300 outline-none h-full
+        focus-visible:ring-4 focus-visible:ring-white/40
+        ${clickable ? 'cursor-pointer hover:-translate-y-1 hover:shadow-xl' : ''}`}
     >
-      <span className="pointer-events-none absolute -right-6 -bottom-12 w-40 h-40 rounded-full bg-white/10 group-hover:bg-white/20 transition-colors" />
-      <span className="pointer-events-none absolute right-6 bottom-2 w-20 h-20 rounded-full bg-white/10" />
-      <span className="pointer-events-none absolute -right-8 -top-8 w-28 h-28 rounded-full bg-white/5" />
+      <div className="absolute -right-5 -top-5 w-24 h-24 rounded-full bg-white/10 group-hover:scale-110 transition-transform duration-500" />
+      <div className="absolute -right-2 -bottom-7 w-20 h-20 rounded-full bg-white/10" />
 
-      <div className="relative z-10">
-        <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-white/20 group-hover:bg-white/30 backdrop-blur-sm flex items-center justify-center transition-all mb-4 sm:mb-5">
-          <Icon size={22} strokeWidth={2.2} />
+      <div className="relative z-10 flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-[10px] font-extrabold uppercase tracking-widest opacity-80 mb-1">{card.label}</p>
+          {loading ? (
+            <div className="h-7 w-20 rounded-lg bg-white/25 animate-pulse" />
+          ) : (
+            <p className="text-2xl sm:text-3xl font-extrabold leading-none truncate">
+              {numeric ? disp.toLocaleString('en-IN') : (value ?? '—')}
+            </p>
+          )}
+          {caption ? (
+            <p className="text-[10px] font-medium opacity-75 mt-1.5 leading-snug">{caption}</p>
+          ) : null}
         </div>
-        <p className="text-3xl sm:text-4xl font-extrabold leading-none tracking-tight mb-1.5">
-          {displayed.toLocaleString('en-IN')}{suffix}
-        </p>
-        <p className="text-xs font-bold uppercase tracking-widest text-white/80">{label}</p>
+        <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
+          <Icon size={18} strokeWidth={2.4} />
+        </div>
       </div>
     </div>
   );
@@ -511,8 +794,10 @@ function LeadRow({
   onView, onEditNavigate, onDelete, onStageChange, onTypeChange,
   onViewQuotations, onSuggestPackages, onConvert, onAddLog, onViewLogs,
   onWeblinkStats, onWeblinkView, onWhatsApp,
-  canEdit, canDelete, canConvert, canCreateQuotation,
+  canEdit, canDelete, canConvert, canCreateQuotation, dense,
 }) {
+  // Shadows the module-level TD for this row only — density is a row-height setting.
+  const TD = dense ? TD_COMPACT : TD_COMFY;
   const { avatar, accent } = colorForIndex(index);
   const name = lead.customerName || 'N/A';
   const initial = (name || 'U').charAt(0).toUpperCase();
@@ -528,9 +813,14 @@ function LeadRow({
   const q = lead.latestQuotation;
   const isConverted = lead.leadStage === 'Converted' || !!lead.convertedBookingPublicId;
 
-  // Human-readable code when the backend sends one (tenant_sequences), else a short publicId.
-  const displayCode = lead.displayCode || lead.leadCode
-    || (lead.publicId ? String(lead.publicId).slice(0, 8).toUpperCase() : `LD-${lead.id}`);
+  // Human-readable code when the backend sends one (lead_sequences), else an em-dash.
+  //
+  // NO UUID FALLBACK. The old chain ended in `LD-${lead.id}`, and LeadResponseDto exposes the UUID
+  // as `id` (there is no `publicId` key on the wire), so the moment leadCode was missing this
+  // printed the full raw UUID — "LD-296ebd28-af1f-40db-9e1f-f8d84f5ffb58" — in the Lead ID column.
+  // A UUID is not a lead reference anyone can read out on a call; showing nothing is strictly better
+  // than showing something wrong, and it surfaces a missing code instead of disguising it.
+  const displayCode = lead.displayCode || lead.leadCode || '—';
 
   const destinations = Array.isArray(lead.itinerary) ? lead.itinerary.filter(d => d && d.destination) : [];
   const totalNights = destinations.reduce((s, d) => s + (Number(d.nights) || 0), 0);
@@ -542,6 +832,10 @@ function LeadRow({
       : { day: 'numeric', month: 'short' }) : null;
   const travelStr = fmtDate(lead.travelDate, true);
   const createdStr = fmtDate(lead.createdAt, false);
+
+  // The verdict this row exists to deliver, from fields the list response already carries.
+  const action = nextAction(lead);
+  const tone = ACTION_TONE[action.tone] || ACTION_TONE.none;
 
   const amountStr = q?.grandTotal != null ? fmtAmountINR(q.grandTotal) : null;
   // Margin comes off the quotation when the backend exposes it; "—" until then.
@@ -583,32 +877,33 @@ function LeadRow({
 
   return (
     <tr
-      className="border-t border-slate-100 hover:bg-slate-50/70 transition-colors"
+      className="group border-t border-slate-100 hover:bg-slate-50/70 transition-colors"
       style={{ animation: 'fadeUp .35s ease both', animationDelay: `${index * 30}ms` }}
     >
       {/* ── Select ── */}
-      <td className={`${TD} text-center`} style={{ borderLeft: `3px solid ${accent}` }}>
+      <td className={`${TD} text-center ${FROZEN_TD.select}`} style={{ borderLeft: `3px solid ${accent}` }}>
         <input
           type="checkbox" checked={selected} onChange={() => onToggleSelect(lead.id)}
           className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-400 cursor-pointer"
         />
       </td>
 
-      {/* ── Lead ID ── */}
-      <td className={TD}>
-        <p className="text-xs font-extrabold text-slate-700 font-mono truncate" title={lead.publicId || lead.id}>{displayCode}</p>
-        <p className="text-[10px] text-slate-400 font-medium mt-0.5">{createdStr ? `Added ${createdStr}` : '—'}</p>
-      </td>
-
-      {/* ── Lead Info ── */}
-      <td className={TD}>
+      {/* ── Lead (identity: name + code + how to reach them) ── */}
+      <td className={`${TD} ${FROZEN_TD.info}`}>
         <div className="flex items-center gap-2.5 min-w-0">
           <div className={`w-9 h-9 rounded-full bg-gradient-to-br ${avatar} flex items-center justify-center text-white text-xs font-extrabold shadow-sm flex-shrink-0`}>{initial}</div>
           <div className="min-w-0">
-            <button onClick={() => onView(lead)}
-              className="text-sm font-bold text-blue-600 hover:text-blue-700 capitalize truncate block max-w-full text-left">
-              {name}
-            </button>
+            {/* Name leads, code follows it — the code is what a customer quotes back on the phone,
+                so it has to be visible, but it is never what the agent scans for. */}
+            <div className="flex items-baseline gap-1.5 min-w-0">
+              <button onClick={() => onView(lead)}
+                className="text-sm font-bold text-blue-600 hover:text-blue-700 capitalize truncate text-left min-w-0">
+                {name}
+              </button>
+              <span className="text-[10px] font-bold text-slate-400 font-mono flex-shrink-0" title={lead.publicId || lead.id}>
+                {displayCode}
+              </span>
+            </div>
             <PhoneLink phone={lead.phone} iconSize={10}
               className="text-[11px] text-slate-500 max-w-full"
               onWhatsApp={onWhatsApp ? () => onWhatsApp(lead) : undefined} />
@@ -618,6 +913,23 @@ function LeadRow({
               </p>
             )}
           </div>
+        </div>
+      </td>
+
+      {/* ── Next action ── */}
+      {/* The verdict, not the data. Red/amber only when someone is actually waiting; the created
+          date sits underneath because age is what makes a lead urgent. */}
+      <td className={TD}>
+        <div className={`inline-flex items-start gap-1.5 px-2 py-1 rounded-lg border max-w-full ${tone.wrap}`}>
+          <span className={`w-1.5 h-1.5 rounded-full mt-[5px] flex-shrink-0 ${tone.dot}`} />
+          <span className="min-w-0">
+            <span className={`block text-[11px] font-bold leading-tight truncate ${tone.text}`} title={action.label}>
+              {action.label}
+            </span>
+            <span className="block text-[10px] text-slate-400 font-medium mt-0.5">
+              {createdStr ? `Added ${createdStr}` : '—'}
+            </span>
+          </span>
         </div>
       </td>
 
@@ -789,12 +1101,12 @@ function LeadRow({
 
       {/* ── Amount ── */}
       <td className={`${TD} text-right`}>
-        <span className={`text-sm font-extrabold ${amountStr ? 'text-slate-800' : 'text-slate-300'}`}>{amountStr || '—'}</span>
+        <span className={`text-sm font-extrabold tabular-nums ${amountStr ? 'text-slate-800' : 'text-slate-300'}`}>{amountStr || '—'}</span>
       </td>
 
       {/* ── Margin ── */}
       <td className={`${TD} text-right`}>
-        <span className={`text-sm font-bold ${marginStr ? 'text-emerald-700' : 'text-slate-300'}`}>{marginStr || '—'}</span>
+        <span className={`text-sm font-bold tabular-nums ${marginStr ? 'text-emerald-700' : 'text-slate-300'}`}>{marginStr || '—'}</span>
       </td>
 
       {/* ── Type ── */}
@@ -1195,238 +1507,6 @@ function QuotationsModal({ lead, onClose, canDelete, canEdit }) {
   );
 }
 
-/* ─── ADD LOG MODAL ──────────────────────────────────── */
-/* Popup version of the old AddLeadLog page: read-only current stage + hint, inline field
-   validation, and an amber follow-up box that auto-creates a reminder assigned to you. */
-function AddLogModal({ lead, onClose, onLogAdded }) {
-  const [comment, setComment] = useState('');
-  const [createReminder, setCreateReminder] = useState(false);
-  const [followUpDate, setFollowUpDate] = useState('');
-  const [errs, setErrs] = useState({});
-  const [saving, setSaving] = useState(false);
-  const leadId = lead.publicId || lead.id;
-  const today = new Date().toISOString().slice(0, 10);
-
-  const { showToast } = useToast();
-
-  const validate = () => {
-    const e = {};
-    if (!comment.trim()) e.comment = 'Log comment is required';
-    else if (comment.trim().length < 5) e.comment = 'Comment must be at least 5 characters';
-    if (createReminder && !followUpDate) e.followUpDate = 'Please select a follow-up date for the reminder';
-    return e;
-  };
-
-  const submit = async () => {
-    const e = validate();
-    if (Object.keys(e).length) { setErrs(e); showToast('Please fix the errors below.', 'error'); return; }
-    try {
-      setSaving(true);
-      await leadService.addLog(leadId, { comment, createReminder, followUpDate, stage: lead.leadStage });
-      showToast('Log saved successfully!', 'success');
-      if (onLogAdded) onLogAdded(leadId);
-      onClose();
-    } catch (err) {
-      if (isAlreadyReported(err)) return;   // <ToastHost/> already showed it
-      showToast(getErrorMessage(err, 'Failed to save log. Please try again.'), 'error');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[92vh] overflow-y-auto z-10">
-        <div className="bg-gradient-to-r from-slate-800 to-slate-700 px-6 py-5 rounded-t-2xl flex items-center justify-between">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-xl bg-white/15 flex items-center justify-center text-amber-300 flex-shrink-0"><NotebookPen size={18} /></div>
-            <div className="min-w-0">
-              <h2 className="text-white font-extrabold text-base truncate">Add Log for {lead.customerName || 'Lead'}</h2>
-              {lead.phone && (
-                <p className="text-slate-300 text-xs mt-0.5 inline-flex items-center gap-1"><Phone size={11} /> {lead.phone}</p>
-              )}
-            </div>
-          </div>
-          <button onClick={onClose} className="w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 text-white flex items-center justify-center flex-shrink-0"><X size={16} /></button>
-        </div>
-        <div className="p-6 space-y-5">
-
-          {/* Current Stage — read-only (snapshotted onto the log server-side) */}
-          <div>
-            <label className="block text-xs font-bold text-slate-500 mb-1.5">Current Stage</label>
-            <input type="text" value={lead.leadStage || '—'} readOnly
-              className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-600 font-medium cursor-not-allowed" />
-            <p className="mt-1 text-[11px] text-slate-400">Stage is read-only here — change it from the stage dropdown in the leads list.</p>
-          </div>
-
-          {/* Log comment — required, inline validation */}
-          <div>
-            <label className="block text-xs font-bold text-slate-500 mb-1.5">Log Comment <span className="text-red-500">*</span></label>
-            <textarea rows={5} value={comment} autoFocus
-              onChange={e => { setComment(e.target.value); setErrs(p => ({ ...p, comment: '' })); }}
-              placeholder="Enter notes, follow-up details, call summary, or any important info about this lead…"
-              className={`w-full px-3 py-2.5 rounded-xl border text-sm text-slate-700 placeholder-slate-400 outline-none transition-all resize-none ${errs.comment ? 'border-red-300 focus:border-red-400 focus:ring-2 focus:ring-red-50' : 'border-slate-200 focus:border-amber-400 focus:ring-2 focus:ring-amber-50'}`} />
-            {errs.comment
-              ? <p className="mt-1 text-[11px] text-red-500 flex items-center gap-1"><AlertCircle size={12} className="flex-shrink-0" />{errs.comment}</p>
-              : <p className="mt-1 text-[11px] text-slate-400">Minimum 5 characters.</p>}
-          </div>
-
-          {/* Create reminder + follow-up date */}
-          <div className="space-y-3">
-            <div className="flex items-start gap-3">
-              <input id="createReminder" type="checkbox" checked={createReminder}
-                onChange={e => { setCreateReminder(e.target.checked); if (!e.target.checked) { setFollowUpDate(''); setErrs(p => ({ ...p, followUpDate: '' })); } }}
-                className="w-4 h-4 mt-0.5 rounded border-slate-300 text-amber-600 focus:ring-amber-400 cursor-pointer" />
-              <div className="flex-1">
-                <label htmlFor="createReminder" className="text-sm font-bold text-slate-700 cursor-pointer select-none">Create reminder for follow-up</label>
-                <p className="text-[11px] text-slate-400 mt-0.5">Check this to also create a follow-up reminder.</p>
-              </div>
-              <Bell size={16} className={`mt-0.5 flex-shrink-0 transition-colors ${createReminder ? 'text-amber-500' : 'text-slate-300'}`} />
-            </div>
-
-            {createReminder && (
-              <div className="ml-7 p-4 bg-amber-50 border border-amber-200 rounded-xl fade-up">
-                <label className="text-[11px] font-extrabold text-amber-700 uppercase tracking-wide mb-2 flex items-center gap-1.5">
-                  <Calendar size={13} /> Follow-up Date <span className="text-red-500">*</span>
-                </label>
-                <input type="date" value={followUpDate} min={today}
-                  onChange={e => { setFollowUpDate(e.target.value); setErrs(p => ({ ...p, followUpDate: '' })); }}
-                  className={`w-full px-3 py-2.5 rounded-xl border text-sm text-slate-700 bg-white outline-none transition-all ${errs.followUpDate ? 'border-red-300 focus:border-red-400 focus:ring-2 focus:ring-red-50' : 'border-amber-300 focus:border-amber-400 focus:ring-2 focus:ring-amber-50'}`} />
-                {errs.followUpDate && (
-                  <p className="mt-1 text-[11px] text-red-500 flex items-center gap-1"><AlertCircle size={12} className="flex-shrink-0" />{errs.followUpDate}</p>
-                )}
-                <p className="mt-2 text-[11px] text-amber-600">A reminder will be automatically created and assigned to you.</p>
-              </div>
-            )}
-          </div>
-
-          <div className="flex gap-3 pt-1">
-            <button onClick={onClose} disabled={saving} className="flex-1 py-2.5 rounded-xl border-2 border-slate-200 hover:border-slate-300 text-slate-600 font-bold text-sm transition-all bg-white hover:bg-slate-50 disabled:opacity-50">Cancel</button>
-            <button onClick={submit} disabled={saving} className="flex-1 py-2.5 rounded-xl text-white font-bold text-sm transition-all shadow-md bg-slate-800 hover:bg-slate-900 disabled:opacity-50 inline-flex items-center justify-center gap-2">
-              {saving && <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />}
-              {saving ? 'Saving…' : 'Save Log'}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ─── LOGS LIST MODAL (all activity logs for one lead) ─── */
-function LogsModal({ lead, onClose, canDelete }) {
-  const [list, setList] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [deletingId, setDeletingId] = useState(null);
-  const leadId = lead.publicId || lead.id;
-
-  const { showToast } = useToast();
-
-  const remove = async (logEntry) => {
-    if (!window.confirm('Delete this log entry? This cannot be undone.')) return;
-    try {
-      setDeletingId(logEntry.id);
-      await leadService.deleteLog(leadId, logEntry.id);
-      setList(prev => prev.filter(l => l.id !== logEntry.id));
-      showToast('Log deleted.', 'success');
-    } catch (e) {
-      if (isAlreadyReported(e)) return;   // <ToastHost/> already showed it
-      showToast(getErrorMessage(e, 'Failed to delete log.'), 'error');
-    } finally {
-      setDeletingId(null);
-    }
-  };
-
-  useEffect(() => {
-    let active = true;
-    (async () => {
-      try {
-        setLoading(true);
-        const res = await leadService.getLeadLogs(leadId);
-        const body = res.data;
-        const data = Array.isArray(body?.data) ? body.data : Array.isArray(body) ? body : [];
-        // Newest first (backend already orders desc; defensive re-sort).
-        data.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
-        if (active) setList(data);
-      } catch (e) {
-        // Inline banner, not a toast — it explains the empty list in place.
-        if (active) setError(getErrorMessage(e, 'Could not load logs. Please try again.'));
-      } finally {
-        if (active) setLoading(false);
-      }
-    })();
-    return () => { active = false; };
-  }, [leadId]);
-
-  const fmtDateTime = (d) => d
-    ? new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-    : '—';
-  const fmtDate = (d) => d
-    ? new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-    : null;
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[88vh] flex flex-col z-10">
-        <div className="bg-gradient-to-r from-slate-800 to-slate-700 px-6 py-4 rounded-t-2xl flex items-center justify-between flex-shrink-0">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-xl bg-white/15 flex items-center justify-center text-amber-300 flex-shrink-0"><NotebookPen size={18} /></div>
-            <div className="min-w-0">
-              <h2 className="text-white font-extrabold text-base truncate">Activity Logs{!loading && !error ? ` (${list.length})` : ''}</h2>
-              <p className="text-slate-300 text-xs truncate">{lead.customerName || 'Lead'} {'·'} newest first</p>
-            </div>
-          </div>
-          <button onClick={onClose} className="w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 text-white flex items-center justify-center flex-shrink-0"><X size={16} /></button>
-        </div>
-
-        <div className="p-5 overflow-y-auto">
-          {loading ? (
-            <div className="py-10 text-center text-slate-400 text-sm">Loading logs{'…'}</div>
-          ) : error ? (
-            <div className="py-10 text-center text-red-500 text-sm">{error}</div>
-          ) : list.length === 0 ? (
-            <div className="py-10 text-center text-slate-400 text-sm">No logs yet for this lead.</div>
-          ) : (
-            <div className="space-y-3">
-              {list.map((log, idx) => (
-                <div key={log.id || idx} className={`border rounded-xl p-4 transition-all ${idx === 0 ? 'border-amber-300 bg-amber-50/40' : 'border-slate-200'}`}>
-                  <div className="flex items-start justify-between gap-3 flex-wrap">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {idx === 0 && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200">Latest</span>}
-                      {log.stage && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border bg-slate-100 text-slate-700 border-slate-200">{log.stage}</span>}
-                    </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      <p className="text-xs text-slate-400 whitespace-nowrap inline-flex items-center gap-1"><Calendar size={11} /> {fmtDateTime(log.createdAt)}</p>
-                      {canDelete && (
-                        <button onClick={() => remove(log)} disabled={deletingId === log.id} title="Delete log"
-                          className="w-6 h-6 rounded-lg bg-red-50 hover:bg-red-100 text-red-500 flex items-center justify-center transition-all disabled:opacity-50 flex-shrink-0">
-                          <Trash2 size={12} />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  <p className="text-sm text-slate-700 leading-relaxed mt-2 whitespace-pre-wrap">{log.comment}</p>
-                  <div className="flex items-center justify-between gap-3 mt-3 flex-wrap">
-                    <span className="inline-flex items-center gap-1.5 text-xs text-slate-500">
-                      <span className="w-5 h-5 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-white flex items-center justify-center text-[9px] font-extrabold">{(log.addedBy || 'S').charAt(0).toUpperCase()}</span>
-                      {log.addedBy || 'System'}
-                    </span>
-                    {fmtDate(log.followUpDate) && (
-                      <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-600"><Bell size={11} /> Follow-up: {fmtDate(log.followUpDate)}</span>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // Local yyyy-mm-dd (never toISOString, which is UTC and can shift the day across a timezone).
 function isoDate(d) {
@@ -1456,22 +1536,73 @@ function dateRangeFor(dateFilter, startDate, endDate) {
 /* ─── MAIN COMPONENT ─────────────────────────────────── */
 const Leads = () => {
   const navigate = useNavigate();
+  /* The ONE dataset on this screen: the current server page, already narrowed by search, tab and
+     date in SQL. Nothing below re-filters it.
+
+     Until now the page fetched this AND a separate one-shot 200-row `overviewLeads`, rendered the
+     SECOND one, and threw this away — so every server filter was discarded, the stage dropdown
+     snapped back to its old value after a successful save, and deleted or imported leads did not
+     move on screen. */
   const [leads, setLeads] = useState([]);            // current SERVER page — the table's rows
-  const [overviewLeads, setOverviewLeads] = useState([]);  // stat cards + tab badges only (capped)
-  const [meta, setMeta] = useState(null);            // server pagination block
+  const [meta, setMeta] = useState(null);            // server pagination: {page,size,totalElements,totalPages}
   const [loading, setLoading] = useState(true);
+
+  /* Row density, persisted — someone who works this list all day sets it once. Read lazily so the
+     first paint is already correct instead of flipping after mount. */
+  const [dense, setDense] = useState(() => {
+    try { return localStorage.getItem('leads:density') === 'compact'; } catch { return false; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('leads:density', dense ? 'compact' : 'comfortable'); } catch { /* private mode */ }
+  }, [dense]);
 
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 10 });
   const [activeTab, setActiveTab] = useState('All');
 
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');   // settled value that actually hits the server
-  const [sortOrder] = useState('desc');
+  /* Sorting is a SERVER parameter, so it orders the whole result set — not the page. This used to be
+     `useState('desc')` with no setter ever called and no clickable header anywhere, so the list was
+     permanently newest-first and Travel Date could not be sorted at all. */
+  const [sort, setSort] = useState({ by: 'createdAt', dir: 'desc' });
+  const toggleSort = (sortKey) => {
+    if (!sortKey) return;
+    setSort(prev => prev.by === sortKey
+      // Same column: flip. Dates and names want opposite first clicks, but one predictable rule
+      // beats a per-column special case nobody can remember.
+      ? { by: sortKey, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
+      : { by: sortKey, dir: 'asc' });
+  };
   const [dateFilter, setDateFilter] = useState('all');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
 
-  const [analyticsOpen, setAnalyticsOpen] = useState(false);
+  // Open by default: this block IS the business overview. Collapsed-by-default meant the first
+  // thing the page told anyone about their pipeline was nothing.
+  const [analyticsOpen, setAnalyticsOpen] = useState(true);
+
+  /* ── Dashboard numbers ─────────────────────────────────────────────────────
+     TWO sources, deliberately not merged, because they answer at two different scopes:
+
+       summary     GET /leads/stats/summary  — the caller's OWN row scope (admin ⇒ tenant,
+                   manager ⇒ team, agent ⇒ own), aggregated in the database.
+       alertStats  GET /leads/alerts/stats   — tenant-WIDE by design: an open lead is visible to
+                   everyone precisely so anyone can claim it, so this figure is the same number for
+                   the whole team. The two cards built on it say "tenant-wide" for that reason.
+
+     Both stay null until they land. Consumers fall back to the loaded page and label it — they
+     never render a confident zero for a number that simply has not arrived. */
+  const [summary, setSummary] = useState(null);
+  const [alertStats, setAlertStats] = useState(null);
+  const [statsLoading, setStatsLoading] = useState(true);
+
+  /* The day every "today" figure is measured against. The server computes its counts in the
+     TENANT's timezone and echoes the date back, so the client agrees with the card instead of
+     drifting by a day for anyone whose browser sits in another zone.
+
+     Declared HERE, above serverParams, and not further down where it used to sit: serverParams
+     reads it during render, and a `const` below would be in the temporal dead zone. */
+  const todayKey = summary?.today ?? new Date().toLocaleDateString('en-CA');
 
   const [viewLead, setViewLead] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -1499,19 +1630,39 @@ const Leads = () => {
   // Any change to WHAT is listed resets to page 0 (else you land on page 5 of a 1-page result).
   useEffect(() => {
     setPagination(p => (p.pageIndex === 0 ? p : { ...p, pageIndex: 0 }));
-  }, [debouncedSearch, activeTab, dateFilter, startDate, endDate, pagination.pageSize]);
+  }, [debouncedSearch, activeTab, dateFilter, startDate, endDate, pagination.pageSize, sort.by, sort.dir]);
 
-  // Tabs + date filter → the server params the backend understands. 'Fresh' is a leadType,
-  // every other non-'All' tab is a stage; the date filter becomes an ISO from/to range.
+  /* Tabs + date filter → the server params the backend understands.
+
+     THREE vocabularies share one `activeTab` state and they do NOT all map to `stage`:
+       · Fresh / Hot / Warm / Cold  are leadTypes
+       · Active and Follow-ups      are work queues, not stages at all
+       · everything else            is a real LeadStage displayName
+
+     This used to send `stage=<tab>` for every non-Fresh tab, so Active, Follow-ups and Hot posted
+     `stage=Active` etc. — and LeadStage.fromValue throws on those, i.e. a 400. It was invisible only
+     because the table rendered a different array and the failed response was discarded.
+
+     `activeOnly` and `followUpDueBy` are the two predicates added to LeadSpecification for exactly
+     this; Follow-ups sends BOTH, so it means "overdue or due today, still open" — the same thing
+     getStatsSummary counts for the card that opens this tab. */
   const serverParams = useMemo(() => {
     const p = {};
-    if (activeTab === 'Fresh') p.leadType = 'Fresh';
-    else if (activeTab !== 'All') p.stage = activeTab;
+    if (LEAD_TYPES.includes(activeTab)) {
+      p.leadType = activeTab;
+    } else if (activeTab === 'Active') {
+      p.activeOnly = true;
+    } else if (activeTab === 'Follow-ups') {
+      p.activeOnly = true;
+      p.followUpDueBy = todayKey;
+    } else if (activeTab !== 'All') {
+      p.stage = activeTab;
+    }
     const { fromDate, toDate } = dateRangeFor(dateFilter, startDate, endDate);
     if (fromDate) p.fromDate = fromDate;
     if (toDate) p.toDate = toDate;
     return p;
-  }, [activeTab, dateFilter, startDate, endDate]);
+  }, [activeTab, dateFilter, startDate, endDate, todayKey]);
   const serverParamsKey = JSON.stringify(serverParams);
 
   // Guards against out-of-order responses: only the newest request in flight may render.
@@ -1526,8 +1677,8 @@ const Leads = () => {
       const response = await leadService.listLeads({
         page: pagination.pageIndex,
         size: pagination.pageSize,
-        sortBy: 'createdAt',
-        sortDir: sortOrder,
+        sortBy: sort.by,
+        sortDir: sort.dir,
         q: debouncedSearch || undefined,
         ...JSON.parse(serverParamsKey),
       });
@@ -1547,28 +1698,55 @@ const Leads = () => {
     } finally {
       if (id === reqId.current) setLoading(false);
     }
-  }, [pagination.pageIndex, pagination.pageSize, sortOrder, debouncedSearch, serverParamsKey]);
+  }, [pagination.pageIndex, pagination.pageSize, sort.by, sort.dir, debouncedSearch, serverParamsKey]);
 
-  useEffect(() => { fetchLeads(); }, [fetchLeads]);
-
-  // Separate lightweight fetch that feeds ONLY the stat cards + tab badges (the aggregate overview).
-  // Pass an EXPLICIT size so the badges never depend on the getAllLeads default (which other callers
-  // may set low) — this is why the count showed 5. Accurate up to 200 leads; for a truly unbounded
-  // roll-up a dedicated COUNT endpoint would be needed, but the searchable TABLE is already
-  // server-paged and uncapped, so search/pagination are unaffected either way.
-  useEffect(() => {
-    leadService.getAllLeads(0, 200)
-      .then(res => {
-        const d = res?.data;
-        let data = [];
-        if (Array.isArray(d?.data)) data = d.data;
-        else if (d?.data && Array.isArray(d.data.content)) data = d.data.content;
-        else if (Array.isArray(d?.content)) data = d.content;
-        else if (Array.isArray(d)) data = d;
-        setOverviewLeads(data);
-      })
-      .catch(() => setOverviewLeads([]));
+  /**
+   * The cards' data. Ambient by nature: a failed roll-up leaves the cards showing "—" and this
+   * function adds NO toast of its own — the list is what the user asked for, and a broken badge
+   * must not put a second error in front of them.
+   *
+   * (The shared interceptor may still speak for 401/403/429/5xx — see shared/api/authRealm.js. That
+   * is its contract for things the user cannot act on, and it is one toast, not two: nothing here
+   * re-reports it the way fetchLeads has to.)
+   *
+   * allSettled, not all: the two calls have different scopes and different failure modes, and one
+   * being down must not blank the other.
+   */
+  const fetchStats = useCallback(async () => {
+    setStatsLoading(true);
+    const [summaryRes, alertRes] = await Promise.allSettled([
+      leadService.getStatsSummary(),
+      leadAlertService.getStats(),
+    ]);
+    // leadService returns the raw axios response (ApiResponse envelope); leadAlertService unwraps.
+    setSummary(summaryRes.status === 'fulfilled' ? (summaryRes.value?.data?.data ?? null) : null);
+    setAlertStats(alertRes.status === 'fulfilled' ? (alertRes.value ?? null) : null);
+    setStatsLoading(false);
   }, []);
+
+  /* Both effects are guarded on the SAME key the page gates on. Hooks run before the `denied`
+     early-return below (:AccessDenied), so without this a user who reaches /allleads by URL
+     without LEAD_READ fires requests that all 403 — and the shared interceptor toasts each one on
+     top of the access-denied screen. */
+  useEffect(() => {
+    if (!hasPermission(P.LEAD_READ)) return;
+    fetchLeads();
+  }, [fetchLeads]);
+
+  useEffect(() => {
+    if (!hasPermission(P.LEAD_READ)) return;
+    fetchStats();
+  }, [fetchStats]);
+
+  /* REMOVED: the second, uncapped `getAllLeads(0, 200)` overview fetch that used to live here.
+     A whole extra list request on every mount, whose only job was to feed card and badge FALLBACKS
+     that were wrong by construction (a 200-row sample presented as scope totals) and that
+     /leads/stats/summary now answers correctly in SQL. It was also the one effect on this page NOT
+     gated on LEAD_READ, so opening /allleads by URL without the permission fired a 403 and the
+     interceptor toasted it on top of the AccessDenied screen.
+
+     Consequence, deliberately: when a roll-up has not landed, cards and badges show "—" rather than
+     a confident number derived from one page. */
 
   // ── Navigate to standalone /EditLead/:id page ──
   const handleEditNavigate = (lead) => {
@@ -1619,6 +1797,9 @@ const Leads = () => {
       );
 
       setLeads(prev => prev.map(l => l.id === leadToUpdate.id ? { ...l, leadStage: newStage } : l));
+      // A stage move changes Active / Proposal Sent / Converted and the pipeline value with it.
+      // The row is patched locally, but the cards are server-side — they have to be re-asked.
+      fetchStats();
       showToast(`Lead ${leadToUpdate.leadCode || leadToUpdate.customerName || ''} marked as ${newStage}!`);
     } catch (err) {
       if (isAlreadyReported(err)) return;   // <ToastHost/> already showed it
@@ -1643,6 +1824,7 @@ const Leads = () => {
       );
 
       setLeads(prev => prev.map(l => l.id === leadToUpdate.id ? { ...l, leadType: newType } : l));
+      fetchStats();   // the Fresh badge is a server count now
       showToast(`Lead #${leadToUpdate.id} set to ${newType}!`);
     } catch (err) {
       if (isAlreadyReported(err)) return;   // <ToastHost/> already showed it
@@ -1655,8 +1837,13 @@ const Leads = () => {
       if (typeof leadService.deleteLead === 'function') {
         await leadService.deleteLead(deleteTarget.publicId || deleteTarget.id);
       }
+      // Drop it immediately so the row goes away, then re-read the page: with server-side paging a
+      // deletion shifts every following row up by one, so the local filter alone would leave the
+      // page one short and the total stale until the next navigation.
       setLeads(prev => prev.filter(l => l.id !== deleteTarget.id));
       setSelectedIds(prev => prev.filter(id => id !== deleteTarget.id));
+      fetchLeads();
+      fetchStats();
       showToast(`Lead ${deleteTarget.leadCode || deleteTarget.customerName || ''} has been deleted.`);
       setDeleteTarget(null);
     } catch (err) {
@@ -1679,33 +1866,165 @@ const Leads = () => {
     ));
   };
 
-  // Overview set (stat cards + tab badges). Deliberately NOT the table's `leads` — those are just the
-  // current server page now, so counting them would report "12 of 25" instead of the tenant total.
-  const safeLeads = useMemo(() => (Array.isArray(overviewLeads) ? overviewLeads : []), [overviewLeads]);
+  /* The table's rows — the current server page. */
+  const safeLeads = useMemo(() => (Array.isArray(leads) ? leads : []), [leads]);
 
-  // Lead-funnel stats for the cards, derived from the loaded set. A lead counts as a
-  // "booking" once it's Converted or linked to a booking (same rule the row uses).
-  // Conversion = won / all leads; Win rate = won / closed (won + lost) only.
-  const stats = useMemo(() => {
-    const total = safeLeads.length;
-    const bookings = safeLeads.filter(l => l.leadStage === 'Converted' || l.convertedBookingPublicId).length;
-    const lost = safeLeads.filter(l => l.leadStage === 'Lost').length;
-    const closed = bookings + lost;
-    return {
-      bookings,
-      conversion: total ? Math.round((bookings / total) * 100) : 0,
-      winRate: closed ? Math.round((bookings / closed) * 100) : 0,
-    };
-  }, [safeLeads]);
+  /* TWO different totals, and conflating them is what made the old header badge lie:
+       scopeTotal    — every lead in the caller's row scope, IGNORING the current filters. Only the
+                       server roll-up knows this, so it is null until /stats/summary lands.
+       filteredTotal — how many rows the CURRENT query matched, across all pages. This is what the
+                       "N results" pill and the pager must read.
+     Neither is ever computed from the loaded rows. A page-derived figure dressed as a total is the
+     defect this change exists to remove, so where a number is genuinely unknown the UI shows "—". */
+  const scopeTotal = summary?.totalLeads ?? null;
+  const filteredTotal = meta?.totalElements ?? safeLeads.length;
 
-  // ── Server-driven derivations — the table renders the server page directly (no client filter,
-  //   no client pagination). Search / stage / type / date all run in the DB via listLeads(),
-  //   so a match on lead #2000 is found even though only ~10 rows are ever in memory. ──
-  const pageRows      = leads;
-  const totalElements = meta?.totalElements ?? 0;
-  const totalPages    = Math.max(1, meta?.totalPages ?? 1);
+  const summaryMissing = !statsLoading && !summary;
+
+  /* Counts that used to come from a 200-row client-side sample. Server aggregate or nothing. */
+  const followUpsDueCount = summary
+    ? summary.followUpsOverdue + summary.followUpsDueToday
+    : null;
+
+  /* ── The nine cards ────────────────────────────────────────────────────────────────────────
+     Four on the first row, five on the second, in the order the owner specified. Shape and styling
+     are the Bookings dashboard's (Allbookings.jsx:76) so the two list screens read as one product.
+
+     Every figure is a SERVER aggregate. Two different scopes are represented and that is why every
+     card carries a caption:
+       · seven of them follow the caller's own LEAD_READ row scope (admin ⇒ tenant, manager ⇒ team,
+         agent ⇒ own) — GET /leads/stats/summary;
+       · "Needs 1st Contact" and "Avg 1st Response" are TENANT-WIDE by design — an open lead is
+         broadcast to everyone precisely so anyone can claim it, so those two will not add up
+         against the rest and say so.
+
+     `value: null` is what a card shows as "—". It is never coerced to 0: for the response-time card
+     null means "nobody has been contacted yet", and 0 would read as an instant reply. */
+  const periodLabel = summary
+    ? `${fmtDayMon(summary.periodFrom)}–${fmtDayMon(summary.periodTo)}`
+    : 'this month';
+  /* Was "this page only — roll-up unavailable", back when a failed roll-up fell back to counting the
+     loaded rows. Nothing falls back to the page any more: a missing aggregate renders "—", so the
+     caption says only that the number is unknown, not that it describes a page. */
+  const rollupDown = summaryMissing ? 'roll-up unavailable' : null;
+
+  const statCards = [
+    // ── Row 1: what the pipeline IS, right now ──
+    {
+      key: 'total', label: 'Total Leads', icon: Users, gradient: 'from-blue-600 to-indigo-500',
+      // The caller's whole scope, NOT meta.totalElements — that one moves with the active filter,
+      // and a "Total Leads" card that drops when you type in the search box is a bug report.
+      value: scopeTotal,
+      caption: rollupDown ?? 'all leads in your scope',
+      loading: statsLoading && !summary,
+      onClick: () => setActiveTab('All'),
+    },
+    {
+      key: 'hot', label: 'Hot Leads', icon: Sparkles, gradient: 'from-rose-500 to-red-600',
+      value: typeCount(summary, 'Hot'),
+      caption: rollupDown ?? 'highest-priority enquiries',
+      loading: statsLoading && !summary,
+      onClick: () => setActiveTab('Hot'),
+    },
+    {
+      key: 'active', label: 'Active', icon: Inbox, gradient: 'from-cyan-500 to-teal-600',
+      value: summary?.activeLeads ?? null,
+      caption: rollupDown ?? 'open — not Converted or Lost',
+      loading: statsLoading && !summary,
+      onClick: () => setActiveTab('Active'),
+    },
+    {
+      key: 'lost', label: 'Lost', icon: X, gradient: 'from-slate-600 to-slate-700',
+      value: summary?.lostLeads ?? null,
+      caption: rollupDown ?? 'closed without a booking',
+      loading: statsLoading && !summary,
+      onClick: () => setActiveTab('Lost'),
+    },
+
+    // ── Row 2: what the team DID, and what is owed ──
+    {
+      // All-time converted, so it sits in the same family as Total/Active/Lost. The period figure
+      // and the COHORT rate (of the leads created in that window, how many closed) ride in the
+      // caption — pairing a period's wins with all-time creations would divide two populations.
+      key: 'converted', label: 'Converted', icon: Trophy, gradient: 'from-green-500 to-emerald-600',
+      value: summary?.convertedLeads ?? null,
+      caption: summary
+        ? (summary.conversionRate == null
+            ? `${summary.convertedInPeriod} in ${periodLabel}`
+            : `${summary.convertedInPeriod} in ${periodLabel} · ${summary.conversionRate}% of ${summary.createdInPeriod} new`)
+        : (rollupDown ?? 'won leads'),
+      loading: statsLoading && !summary,
+      onClick: () => setActiveTab('Converted'),
+    },
+    {
+      key: 'followups', label: 'Follow-ups Due', icon: Bell, gradient: 'from-amber-500 to-orange-500',
+      value: followUpsDueCount,
+      caption: summary
+        ? `${summary.followUpsOverdue} overdue · ${summary.followUpsDueToday} today`
+        : (rollupDown ?? 'overdue + due today'),
+      loading: statsLoading && !summary,
+      onClick: () => setActiveTab('Follow-ups'),
+    },
+    {
+      key: 'unclaimed', label: 'Needs 1st Contact', icon: AlertCircle, gradient: 'from-orange-600 to-red-600',
+      value: alertStats?.openToClaim ?? null,
+      caption: alertStats
+        ? `${alertStats.slaBreaches ?? 0} past target · tenant-wide`
+        : 'tenant-wide',
+      loading: statsLoading && !alertStats,
+      onClick: () => navigate('/leads/incoming'),
+    },
+    {
+      key: 'response', label: 'Avg 1st Response', icon: TrendingUp, gradient: 'from-violet-500 to-purple-600',
+      value: alertStats ? fmtDurationShort(alertStats.avgFirstResponseSeconds) : null,
+      caption: alertStats
+        ? `target ${Math.max(1, Math.round((alertStats.slaTargetSeconds ?? 300) / 60))}m · today · tenant-wide`
+        : 'contacted today · tenant-wide',
+      loading: statsLoading && !alertStats,
+      onClick: () => navigate('/leads/incoming'),
+    },
+    {
+      // Σ budget over ACTIVE leads. The coverage line is not optional: budget is nullable and often
+      // empty on a fresh enquiry, so the sum alone reads as "the pipeline is worth this" when it may
+      // be describing four leads out of eighty.
+      key: 'pipeline', label: 'Pipeline Value', icon: DollarSign, gradient: 'from-sky-600 to-blue-700',
+      value: summary ? (fmtMoneyCompactINR(summary.activePipelineValue) ?? '₹0') : null,
+      caption: summary
+        ? `${summary.activeWithBudget} of ${summary.activeLeads} active have a budget`
+        : 'customer-stated budget',
+      loading: statsLoading && !summary,
+      onClick: () => setActiveTab('Active'),
+    },
+  ];
+
+  /* REMOVED: the client-side `filteredLeads` memo. It re-applied search, the date window and the
+     tab to rows the server had ALREADY narrowed by exactly those three — a second, weaker copy of
+     the same rules running over one page, which is what made every "filter" a lie past the fetch
+     cap. `serverParams` above is now the single place a filter is expressed. */
+
+  /* REMOVED: the TanStack table. It only ever supplied getPaginationRowModel() here — paginating a
+     page the server had already paginated — and in exchange every row arrived as a Row WRAPPER that
+     the markup had to unwrap via row.original. Sorting is a server parameter (sortBy/sortDir) and
+     paging is server-side, so it had no job left.
+
+     It had to go together with the client-side filtering above: fixing the data source alone would
+     have made the screen worse, because page 2 of any filtered result would render empty. */
+  const pageRows = safeLeads;
+  const totalPages = Math.max(1, meta?.totalPages ?? 1);
   const safePageIndex = meta?.page ?? pagination.pageIndex;
-  const pageSize      = meta?.size ?? pagination.pageSize;
+  const pageSize = pagination.pageSize;
+
+  /* Deleting the last row of the last page leaves the client asking for a page the server no longer
+     has, and the answer to that is an empty grid on a non-empty list. Step back instead; changing
+     pageIndex re-runs fetchLeads through its useCallback dependency. Filter changes are already
+     handled by the reset-to-page-0 effect above — this covers only the shrink-underneath case. */
+  useEffect(() => {
+    if (!meta) return;
+    const lastPage = Math.max(0, (meta.totalPages ?? 1) - 1);
+    if (pagination.pageIndex > lastPage) {
+      setPagination(p => ({ ...p, pageIndex: lastPage }));
+    }
+  }, [meta, pagination.pageIndex]);
 
   // Header checkbox works on the current page, like the old CRM.
   const pageIds = pageRows.map(l => l.id);
@@ -1736,7 +2055,11 @@ const Leads = () => {
 
       {/* Refetches only when leads actually landed, so a cancelled or all-duplicate
           import does not churn the list. */}
-      <ImportLeadsModal open={importOpen} onClose={() => setImportOpen(false)} onImported={fetchLeads} />
+      <ImportLeadsModal
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        onImported={() => { fetchLeads(); fetchStats(); }}
+      />
 
       {waLead && <WhatsAppPanel lead={waLead} onClose={() => setWaLead(null)} />}
       {viewLead && <ViewLeadModal lead={viewLead} onClose={() => setViewLead(null)} onEdit={l => { setViewLead(null); handleEditNavigate(l); }} canEdit={hasPermission(P.LEAD_UPDATE)} />}
@@ -1768,7 +2091,11 @@ const Leads = () => {
               <div>
                 <h1 className="text-xl font-extrabold text-slate-800 tracking-tight flex items-center gap-2">
                   Leads Management
-                  <span className="hidden sm:inline text-xs bg-gradient-to-r from-violet-500 to-purple-600 text-white font-bold px-2.5 py-0.5 rounded-full">{safeLeads.length} total</span>
+                  {/* The caller's real total, off `pagination.totalElements` — not the page size,
+                      which is what this badge used to show. */}
+                  <span className="hidden sm:inline text-xs bg-gradient-to-r from-violet-500 to-purple-600 text-white font-bold px-2.5 py-0.5 rounded-full">
+                    {scopeTotal == null ? '—' : scopeTotal.toLocaleString('en-IN')} total
+                  </span>
                 </h1>
                 <div className="text-xs text-slate-400 mt-0.5 flex items-center gap-1 font-medium">
                   <span className="hover:text-blue-600 cursor-pointer transition-colors">Home</span>
@@ -1816,13 +2143,28 @@ const Leads = () => {
             </div>
             <span className="text-sm font-extrabold text-slate-700 flex-shrink-0">Analytics</span>
 
-            {/* Summary pills — only shown when collapsed */}
+            {/* Compact values when the cards are collapsed — the same four the team watches most,
+                read off the same server roll-up so collapsing changes the layout, not the truth. */}
             {!analyticsOpen && (
               <div className="flex items-center gap-2 flex-wrap ml-1">
-                <span className="text-xs font-bold px-3 py-1 rounded-full bg-teal-100 text-teal-700 border border-teal-200">{safeLeads.length} Leads</span>
-                <span className="text-xs font-bold px-3 py-1 rounded-full bg-green-100 text-green-700 border border-green-200">{stats.bookings} Booked</span>
-                <span className="text-xs font-bold px-3 py-1 rounded-full bg-amber-100 text-amber-700 border border-amber-200">{stats.conversion}% Conv.</span>
-                <span className="text-xs font-bold px-3 py-1 rounded-full bg-red-100 text-red-700 border border-red-200">{stats.winRate}% Win</span>
+                <span className="text-xs font-bold px-3 py-1 rounded-full bg-teal-100 text-teal-700 border border-teal-200">
+                  {summary ? summary.activeLeads.toLocaleString('en-IN') : '—'} Active
+                </span>
+                <span className="text-xs font-bold px-3 py-1 rounded-full bg-amber-100 text-amber-700 border border-amber-200">
+                  {followUpsDueCount == null ? '—' : followUpsDueCount.toLocaleString('en-IN')} Follow-ups
+                </span>
+                <span className="text-xs font-bold px-3 py-1 rounded-full bg-red-100 text-red-700 border border-red-200">
+                  {/* "—", not 0, when the tiles have not landed — the same rule the card follows.
+                      A fabricated 0 here is the worst one on the page: it is the figure that tells
+                      someone to go and claim a lead nobody has answered. */}
+                  {alertStats ? alertStats.openToClaim.toLocaleString('en-IN') : '—'} Unclaimed
+                </span>
+                <span className="text-xs font-bold px-3 py-1 rounded-full bg-green-100 text-green-700 border border-green-200">
+                  {summary ? summary.convertedLeads.toLocaleString('en-IN') : '—'} Converted
+                </span>
+                <span className="text-xs font-bold px-3 py-1 rounded-full bg-blue-100 text-blue-700 border border-blue-200">
+                  {summary ? (fmtMoneyCompactINR(summary.activePipelineValue) ?? '₹0') : '—'} Pipeline
+                </span>
               </div>
             )}
 
@@ -1833,26 +2175,58 @@ const Leads = () => {
             />
           </button>
 
-          {/* Full gradient cards — only rendered when open */}
+          {/* ── The nine cards: 4 on the first row, 5 on the second ───────────────────────────
+              Two separate grids, not one 9-item grid — a single grid would wrap 5+4 or 3+3+3
+              depending on the breakpoint, and the split is specified. Both collapse to 2 columns
+              on phones, where "row 1 / row 2" stops meaning anything anyway.
+
+              Definitions (and the reason each caption exists) are on `statCards` above. */}
           {analyticsOpen && (
-            <div
-              className="grid grid-cols-2 md:grid-cols-4 gap-4 px-5 pb-5"
-              style={{ animation: 'fadeIn .25s ease both' }}
-            >
-              <StatCard icon={Users} label="Total Leads" value={safeLeads.length} gradient="from-cyan-400 via-teal-500 to-teal-600" delay={0} />
-              <StatCard icon={Trophy} label="Bookings" value={stats.bookings} gradient="from-emerald-400 via-green-500 to-green-600" delay={60} />
-              <StatCard icon={PieChart} label="Conversion" value={stats.conversion} suffix="%" gradient="from-amber-400 via-orange-500 to-orange-600" delay={120} />
-              <StatCard icon={TrendingUp} label="Win Rate" value={stats.winRate} suffix="%" gradient="from-rose-400 via-red-500 to-red-600" delay={180} />
+            <div className="px-5 pb-5 space-y-4" style={{ animation: 'fadeIn .25s ease both' }}>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                {statCards.slice(0, 4).map((card, i) => (
+                  <div key={card.key} className="fade-up" style={{ animationDelay: `${i * 40}ms` }}>
+                    <StatCard
+                      card={card}
+                      value={card.value}
+                      caption={card.caption}
+                      loading={card.loading}
+                      onClick={card.onClick}
+                    />
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-4">
+                {statCards.slice(4).map((card, i) => (
+                  <div key={card.key} className="fade-up" style={{ animationDelay: `${(i + 4) * 40}ms` }}>
+                    <StatCard
+                      card={card}
+                      value={card.value}
+                      caption={card.caption}
+                      loading={card.loading}
+                      onClick={card.onClick}
+                    />
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
 
         <div className="bg-white/80 backdrop-blur-md rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden">
 
-          <div className="px-5 py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <div className="flex items-center gap-3 flex-wrap">
-              <h2 className="text-base font-extrabold text-slate-700">Leads Directory</h2>
-              <span className="text-xs bg-gradient-to-r from-violet-500 to-purple-600 text-white font-bold px-3 py-1 rounded-full">{totalElements} results</span>
+          <div className="px-5 py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center gap-3 flex-wrap">
+                <h2 className="text-base font-extrabold text-slate-700">Leads Directory</h2>
+                <span className="text-xs bg-gradient-to-r from-violet-500 to-purple-600 text-white font-bold px-3 py-1 rounded-full">{filteredTotal.toLocaleString('en-IN')} results</span>
+              </div>
+              {/* REMOVED: the "this table holds the newest N" truncation notice. It described a real
+                  problem — cards measured over the whole scope, table over a capped in-memory slice —
+                  and it could never actually render, because the totalCount it was gated on was only
+                  ever decremented, never set. Both halves are moot now: the table is a true server
+                  page, so the cards and the list describe the same population. */}
             </div>
             {(searchTerm || dateFilter !== 'all' || activeTab !== 'All') && (
               <button onClick={() => { setDateFilter('all'); setSearchTerm(''); setActiveTab('All'); }} className="text-xs text-slate-400 hover:text-red-500 font-bold flex items-center gap-1.5 transition-colors">
@@ -1890,14 +2264,51 @@ const Leads = () => {
                   <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-600 focus:border-blue-400 focus:ring-2 focus:ring-blue-50 outline-none transition-all" />
                 </div>
               )}
+
+              {/* Row density. Persisted in localStorage['leads:density'] — someone who works this
+                  list all day sets it once. Pushed right so it reads as a VIEW control, not a
+                  filter: it changes nothing about which leads are listed. */}
+              <div className="sm:ml-auto flex items-center gap-1 rounded-full border border-slate-200 bg-white p-1 shadow-sm">
+                {[
+                  { key: false, label: 'Comfortable' },
+                  { key: true, label: 'Compact' },
+                ].map(opt => (
+                  <button
+                    key={String(opt.key)}
+                    onClick={() => setDense(opt.key)}
+                    aria-pressed={dense === opt.key}
+                    className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all ${dense === opt.key
+                      ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-sm shadow-blue-200'
+                      : 'text-slate-500 hover:text-blue-600'}`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
           <div className="px-5 py-4 border-b border-slate-100 overflow-x-auto">
             {(() => {
-              const freshCount = safeLeads.filter(l => l.leadType === 'Fresh').length;
-              const newLeadCount = safeLeads.filter(l => l.leadStage === 'New Lead').length;
-              const contactedCount = safeLeads.filter(l => l.leadStage === 'Contacted').length;
+              /* Badges read the SERVER roll-up and fall back to the loaded page only while it is
+                 in flight (or if it failed) — they used to be page counts unconditionally, so
+                 "Contacted 41" meant "41 of the newest 100", not 41 in the pipeline.
+
+                 Every tab a card can click into has a button here, so the selected filter is
+                 always visible: Active and Follow-ups exist for exactly that reason. */
+              const tabs = [
+                { name: 'All',        count: scopeTotal },
+                { name: 'Active',     count: summary?.activeLeads ?? null },
+                { name: 'Follow-ups', count: followUpsDueCount },
+                { name: 'Hot',        count: typeCount(summary, 'Hot'),
+                                      dot: 'bg-red-500 shadow-red-500/50' },
+                { name: 'Fresh',      count: typeCount(summary, 'Fresh'),
+                                      dot: 'bg-emerald-500 shadow-emerald-500/50' },
+                { name: 'New Lead',   count: stageCount(summary, 'New Lead') },
+                { name: 'Contacted',  count: stageCount(summary, 'Contacted') },
+                { name: 'Converted',  count: stageCount(summary, 'Converted') },
+                { name: 'Lost',       count: stageCount(summary, 'Lost') },
+              ];
 
               const btnClass = (tabName) => `px-4 py-2 rounded-full text-sm font-bold flex items-center gap-2 shadow-sm transition-all border ${activeTab === tabName
                 ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white border-transparent shadow-blue-200'
@@ -1909,19 +2320,17 @@ const Leads = () => {
 
               return (
                 <div className="flex gap-2 min-w-max">
-                  <button onClick={() => setActiveTab('All')} className={btnClass('All')}>
-                    All <span className={badgeClass('All')}>{safeLeads.length}</span>
-                  </button>
-                  <button onClick={() => setActiveTab('Fresh')} className={btnClass('Fresh')}>
-                    <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-sm shadow-emerald-500/50" /> Fresh
-                    <span className={badgeClass('Fresh')}>{freshCount}</span>
-                  </button>
-                  <button onClick={() => setActiveTab('New Lead')} className={btnClass('New Lead')}>
-                    New Lead <span className={badgeClass('New Lead')}>{newLeadCount}</span>
-                  </button>
-                  <button onClick={() => setActiveTab('Contacted')} className={btnClass('Contacted')}>
-                    Contacted <span className={badgeClass('Contacted')}>{contactedCount}</span>
-                  </button>
+                  {tabs.map(tab => (
+                    <button key={tab.name} onClick={() => setActiveTab(tab.name)} className={btnClass(tab.name)}>
+                      {tab.dot && <div className={`w-2.5 h-2.5 rounded-full shadow-sm ${tab.dot}`} />}
+                      {tab.name}
+                      {/* null → "—". Number(null) is 0, so the old cast printed a confident zero for
+                          every badge whose roll-up had not arrived yet. */}
+                      <span className={badgeClass(tab.name)}>
+                        {tab.count == null ? '—' : Number(tab.count).toLocaleString('en-IN')}
+                      </span>
+                    </button>
+                  ))}
                 </div>
               );
             })()}
@@ -1944,17 +2353,41 @@ const Leads = () => {
 
               <thead>
                 <tr className="bg-blue-600  text-[11px] font-extrabold text-white uppercase tracking-wider">
-                  {LEAD_COLUMNS.map(c => (
-                    <th key={c.key}
-                      className={`px-2.5 py-3 border-r border-blue-500/60 last:border-r-0 whitespace-nowrap ${alignClass(c.align)}`}>
-                      {c.key === 'select' ? (
-                        <input
-                          type="checkbox" checked={allPageSelected} onChange={toggleSelectAll}
-                          className="w-4 h-4 rounded border-white/60 text-emerald-700 focus:ring-white cursor-pointer"
-                        />
-                      ) : c.label}
-                    </th>
-                  ))}
+                  {LEAD_COLUMNS.map(c => {
+                    const active = c.sortKey && sort.by === c.sortKey;
+                    return (
+                      <th key={c.key}
+                        aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : undefined}
+                        className={`px-2.5 py-3 border-r border-blue-500/60 last:border-r-0 whitespace-nowrap
+                          ${alignClass(c.align)} ${FROZEN_TH[c.key] || ''}`}>
+                        {c.key === 'select' ? (
+                          <input
+                            type="checkbox" checked={allPageSelected} onChange={toggleSelectAll}
+                            aria-label="Select all leads on this page"
+                            className="w-4 h-4 rounded border-white/60 text-emerald-700 focus:ring-white cursor-pointer"
+                          />
+                        ) : c.sortKey ? (
+                          /* Sorts the WHOLE result set server-side, not the page. The caret only
+                             appears on the active column — sixteen permanent carets would be noise. */
+                          <button
+                            type="button"
+                            onClick={() => toggleSort(c.sortKey)}
+                            title={`Sort by ${c.label}`}
+                            className={`group inline-flex items-center gap-1 uppercase tracking-wider font-extrabold
+                              transition-opacity hover:opacity-80 ${alignClass(c.align)}`}
+                          >
+                            {c.label}
+                            <ChevronDown
+                              size={12}
+                              className={`transition-all ${active
+                                ? `opacity-100 ${sort.dir === 'asc' ? 'rotate-180' : ''}`
+                                : 'opacity-0 group-hover:opacity-50'}`}
+                            />
+                          </button>
+                        ) : c.label}
+                      </th>
+                    );
+                  })}
                 </tr>
               </thead>
 
@@ -1976,6 +2409,8 @@ const Leads = () => {
                   </tr>
                 ) : (
                   pageRows.map((lead, idx) => {
+                    // Plain lead objects now — the TanStack Row wrapper (and the row.original
+                    // unwrapping it forced on every field read) went with the client-side table.
                     return (
                       <LeadRow
                         key={lead.id}
@@ -2000,6 +2435,7 @@ const Leads = () => {
                         canDelete={hasPermission(P.LEAD_DELETE)}
                         canConvert={hasPermission(P.BOOKING_CREATE)}
                         canCreateQuotation={hasPermission(P.QUOTATION_CREATE)}
+                        dense={dense}
                       />
                     );
                   })
@@ -2011,7 +2447,7 @@ const Leads = () => {
           <CommonPagination
             pageIndex={safePageIndex}
             pageSize={pageSize}
-            totalElements={totalElements}
+            totalElements={filteredTotal}
             totalPages={totalPages}
             goToPage={goToPage}
             changePageSize={changePageSize}

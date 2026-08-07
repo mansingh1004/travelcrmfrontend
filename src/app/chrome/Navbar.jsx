@@ -28,6 +28,8 @@ const TYPE_DOT = {
   PAYMENT: "bg-emerald-500",
   LEAD:    "bg-violet-500",
   REMIND:  "bg-amber-500",
+  // Substring match, so this one key covers TASK_ASSIGNED / TASK_COMPLETED / TASK_OVERDUE.
+  TASK:    "bg-rose-500",
 };
 const typeDot = (type = "") =>
   Object.entries(TYPE_DOT).find(([k]) => type.includes(k))?.[1] ?? "bg-slate-400";
@@ -250,6 +252,10 @@ const Navbar = memo(function Navbar({
     REMINDER: "/Reminders",
     CUSTOMER: "/AllCustomers",
     VENDOR: "/AllVendors",
+    // An unmapped referenceType makes the notification silently unclickable. Task notifications
+    // have been published with referenceType "TASK" since the task module shipped, but the backend
+    // enum did not list it, so they persisted as null and never reached this map at all.
+    TASK: "/tasks",
   };
 
   const handleClickNotif = async (notif) => {

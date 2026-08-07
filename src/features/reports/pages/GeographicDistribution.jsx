@@ -133,7 +133,17 @@ export default function GeographicDistribution() {
       perPage:   1000,
       page:      1,
     })
-      .then((res)=>{ if(alive) setData(res.data?.rows || []); })
+      // The array was guarded (`|| []`) but the fields inside it were not, so a lead saved with a
+      // blank country put a null straight into state and into every consumer. Normalised once
+      // here so nothing downstream has to keep re-guarding the same two fields.
+      .then((res)=>{
+        if (!alive) return;
+        setData((res.data?.rows || []).map(r => ({
+          ...r,
+          city:    r.city    ?? "",
+          country: r.country ?? "",
+        })));
+      })
       .catch(()=>{ if(alive){ setData([]); showToast("Failed to load geographic data.", "error"); } })
       .finally(()=>{ if(alive) setLoading(false); });
     return ()=>{ alive = false; };
@@ -179,12 +189,21 @@ export default function GeographicDistribution() {
   };
 
   /* filtered + searched */
-  const filtered = useMemo(()=>
-    data.filter(r=>
-      r.city.toLowerCase().includes(search.toLowerCase()) ||
-      r.country.toLowerCase().includes(search.toLowerCase())
-    )
-  ,[data,search]);
+  // Was `r.city.toLowerCase() || r.country.toLowerCase()` with no guard. A row with a null
+  // country only blew up ONCE SOMETHING WAS TYPED: with an empty box the left side matches
+  // (every string contains "") and `||` short-circuits, so the country was never touched. Type
+  // anything, the left side goes false, the right side runs, and null.toLowerCase() throws —
+  // inside a useMemo, during render, so the whole reports route hit the error boundary.
+  // `|| ""` and not `?.`: r.city?.toLowerCase() yields undefined, and undefined.includes() throws
+  // exactly the same way.
+  const filtered = useMemo(()=>{
+    const q = search.trim().toLowerCase();
+    if (!q) return data;                       // nothing typed — skip the pass entirely
+    return data.filter(r=>
+      (r.city    || "").toLowerCase().includes(q) ||
+      (r.country || "").toLowerCase().includes(q)
+    );
+  },[data,search]);
 
   /* totals row */
   const totals = useMemo(()=>({
