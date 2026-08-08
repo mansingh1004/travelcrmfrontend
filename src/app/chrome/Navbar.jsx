@@ -3,13 +3,14 @@ import { memo, useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom"; 
 import {
   Menu, Plane, Bell, User, ChevronDown, ChevronRight, CalendarPlus,
-  Search, Settings, LogOut, HelpCircle, CheckCheck,
+  Settings, LogOut, HelpCircle, CheckCheck, Zap,
 } from "lucide-react";
 import { notificationService } from "@features/reminders";
 import BookingReminderBell from "./BookingReminderBell";
 import ReminderBell from "./ReminderBell";
 import { companyService } from "@features/settings";
 import { getErrorMessage } from "@shared/api/apiError";
+import { hasPermission, P } from "@shared/lib/access";
 import { toast } from "@shared/ui/toast";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -101,12 +102,12 @@ const Navbar = memo(function Navbar({
   toggleSidebar,
   appName     = "TravelCRM",
   breadcrumb,
-  onNewBooking,
 }) {
   const navigate = useNavigate();
 
   const [dropdownOpen,  setDropdownOpen]  = useState(false);
   const [notifOpen,     setNotifOpen]     = useState(false);
+  const [createOpen,    setCreateOpen]    = useState(false);
   // The booking-reminder and reminder icons navigate straight to their pages — they hold no
   // open-state, so only the notification bell and the profile menu take part in the dropdown
   // exclusion below.
@@ -118,6 +119,8 @@ const Navbar = memo(function Navbar({
   // The bell is notifications-only: the badge is the server's unread-notification count and
   // nothing else. Reminders have their own surface and must never be added back in here.
   const badgeCount = unreadCount;
+  const canCreateBooking = hasPermission(P.BOOKING_CREATE);
+  const canCreateLead = hasPermission(P.LEAD_CREATE);
   const [company, setCompany] = useState(null);
   const menuItems = [
   { icon: User, label: "My Profile", path: "/CompanyProfile" },
@@ -217,6 +220,7 @@ const Navbar = memo(function Navbar({
     const opening = !notifOpen;
     setNotifOpen(opening);
     setDropdownOpen(false);
+    setCreateOpen(false);
     if (opening) {
       setLoading(true);
       try {
@@ -281,7 +285,7 @@ const Navbar = memo(function Navbar({
     }
   };
 
-  const closeAll = () => { setDropdownOpen(false); setNotifOpen(false); };
+  const closeAll = () => { setDropdownOpen(false); setNotifOpen(false); setCreateOpen(false); };
 
   const handleLogout = () => {
     localStorage.removeItem("token");
@@ -360,16 +364,65 @@ const Navbar = memo(function Navbar({
           <Search size={18} />
         </button> */}
 
-        {/* New Booking CTA (Hidden on tiny phones, visible everywhere else) */}
-        <button
-          onClick={() => onNewBooking ? onNewBooking() : navigate("/CreateBooking")}
-          aria-label="Create booking"
-          title="Create booking"
-          className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 active:scale-95 transition-all text-xs font-semibold border border-blue-100"
-        >
-          <CalendarPlus size={15} />
-          <span className="hidden lg:block">New Booking</span>
-        </button>
+        {/* Fast-create menu: booking and Rapid Lead stay one click away without crowding the navbar. */}
+        {(canCreateBooking || canCreateLead) && (
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => {
+                setCreateOpen((open) => !open);
+                setDropdownOpen(false);
+                setNotifOpen(false);
+              }}
+              aria-label="Create booking or rapid lead"
+              aria-haspopup="menu"
+              aria-expanded={createOpen}
+              title="Quick Create"
+              className="flex items-center gap-2 rounded-lg border border-blue-100 bg-blue-50 px-2.5 py-1.5 text-xs font-semibold text-blue-600 transition-all hover:bg-blue-100 active:scale-95 sm:px-3"
+            >
+              <CalendarPlus size={15} />
+              <span className="hidden lg:block">Quick Create</span>
+              <ChevronDown size={13} className={`hidden transition-transform sm:block ${createOpen ? "rotate-180" : ""}`} />
+            </button>
+
+            {createOpen && (
+              <div role="menu" className="absolute right-0 top-full z-50 mt-2 w-64 overflow-hidden rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl shadow-slate-200/60">
+                {canCreateBooking && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => { setCreateOpen(false); navigate("/CreateBooking"); }}
+                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition hover:bg-blue-50"
+                  >
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-600">
+                      <CalendarPlus size={17} />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-sm font-bold text-slate-800">Create Booking</span>
+                      <span className="block text-[11px] text-slate-500">Start a new confirmed trip</span>
+                    </span>
+                  </button>
+                )}
+                {canCreateLead && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => { setCreateOpen(false); navigate("/createlead?mode=rapid"); }}
+                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition hover:bg-violet-50"
+                  >
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-100 text-violet-600">
+                      <Zap size={17} />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-sm font-bold text-slate-800">New Enquiry · Rapid</span>
+                      <span className="block text-[11px] text-slate-500">Fast intake and quick quotation</span>
+                    </span>
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Booking reminders — deliberately NOT `hidden sm:flex` like the button above it, which
             disappears below 640px. This has to stay reachable on phones. */}
@@ -467,7 +520,7 @@ const Navbar = memo(function Navbar({
         {/* User dropdown */}
         <div className="relative">
           <button
-            onClick={() => { setDropdownOpen(!dropdownOpen); setNotifOpen(false); }}
+            onClick={() => { setDropdownOpen(!dropdownOpen); setNotifOpen(false); setCreateOpen(false); }}
             className="flex items-center gap-2 p-1 sm:pl-1 sm:pr-2 rounded-full hover:bg-slate-100 active:scale-95 transition-all"
           >
             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-[11px] font-bold shadow-sm flex-shrink-0 border-2 border-white">
@@ -537,7 +590,7 @@ const Navbar = memo(function Navbar({
       </div>
 
       {/* Click-outside overlay */}
-      {(dropdownOpen || notifOpen) && (
+      {(dropdownOpen || notifOpen || createOpen) && (
         <div className="fixed inset-0 z-[-1]" onClick={closeAll} />
       )}
     </header>

@@ -314,12 +314,12 @@ export default function CreateQuotation() {
   }, [editId, loadedData]);
 
   /* ── Collect all data ─ */
-  const collectAllData = useCallback(() => ({
-    leadId,
+  const collectAllData = useCallback(({ includeLead = true } = {}) => ({
+    leadId: includeLead ? leadId : null,
     destinationId,
     title: qtTitle || "Quotation",
     version,
-    stage,
+    quotationStage: "Draft",
     templateStyle,
     // `?? true` fail-open tha: jis tab pe user gaya hi nahi uska `included` undefined rehta
     // hai, aur section lead ke against bhi ON chala jaata tha. Fallback ab lead-derived gate
@@ -380,7 +380,7 @@ export default function CreateQuotation() {
     if (!qtTitle.trim()) { showToast("Please enter a quotation title.", "error"); return null; }
     try {
       setSaving(true);
-      const allData = collectAllData();
+      const allData = collectAllData({ includeLead: !(quotationId && !asNew) });
       // DEBUG — vehicle data save hone se pehle dekho
       console.log("=== SAVE: vehicleData state ===", vehicleData);
       console.log("=== SAVE: vehicles being sent ===", allData.vehicles);

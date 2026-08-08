@@ -41,32 +41,44 @@ function CountInput({ name, label, icon: Icon, value, onChange, min = 0, invalid
   );
 }
 
-export default function TravellerCountFields({ values, onCountChange, onToggleBreakdown, theme = "blue" }) {
+export default function TravellerCountFields({
+  values,
+  onCountChange,
+  onToggleBreakdown,
+  theme = "blue",
+  compact = false,
+  showBreakdownInCompact = false,
+  showExtraBedsInCompact = false,
+}) {
   const tone = THEMES[theme] || THEMES.blue;
   const error = getAdultBreakdownError(values);
+  const showBreakdown = !compact || showBreakdownInCompact;
+  const showExtraBeds = !compact || showExtraBedsInCompact;
 
   return (
     <div>
-      <div className="grid grid-cols-2 items-start gap-2.5 sm:grid-cols-3 lg:grid-cols-5">
+      <div className={`grid grid-cols-2 items-start gap-2.5 sm:grid-cols-4 ${showExtraBeds ? "lg:grid-cols-5" : "lg:grid-cols-4"}`}>
         <div className="space-y-2">
           <CountInput name="totalAdults" label="Total Adults" icon={Users} value={values.totalAdults} onChange={onCountChange} invalid={Boolean(error)} focusClass={tone.focus} />
-          <label className="flex cursor-pointer items-start gap-2 text-xs font-semibold leading-4 text-slate-700">
-            <input
-              type="checkbox"
-              checked={Boolean(values.showAdultBreakdown)}
-              onChange={(event) => onToggleBreakdown(event.target.checked)}
-              className={`mt-px h-4 w-4 shrink-0 rounded border-slate-300 ${tone.checkbox}`}
-            />
-            <span>Specify adult gender count</span>
-          </label>
+          {showBreakdown && (
+            <label className="flex cursor-pointer items-start gap-2 text-xs font-semibold leading-4 text-slate-700">
+              <input
+                type="checkbox"
+                checked={Boolean(values.showAdultBreakdown)}
+                onChange={(event) => onToggleBreakdown(event.target.checked)}
+                className={`mt-px h-4 w-4 shrink-0 rounded border-slate-300 ${tone.checkbox}`}
+              />
+              <span>Specify adult gender count</span>
+            </label>
+          )}
         </div>
         <CountInput name="children" label="Children" icon={Users} value={values.children} onChange={onCountChange} focusClass={tone.focus} />
         <CountInput name="infants" label="Infants" icon={Baby} value={values.infants} onChange={onCountChange} focusClass={tone.focus} />
         <CountInput name="rooms" label="Rooms" icon={BedDouble} value={values.rooms} onChange={onCountChange} min={1} focusClass={tone.focus} />
-        <CountInput name="extraBeds" label="Extra Beds" icon={BedDouble} value={values.extraBeds} onChange={onCountChange} focusClass={tone.focus} />
+        {showExtraBeds && <CountInput name="extraBeds" label="Extra Beds" icon={BedDouble} value={values.extraBeds} onChange={onCountChange} focusClass={tone.focus} />}
       </div>
 
-      {values.showAdultBreakdown && (
+      {showBreakdown && values.showAdultBreakdown && (
         <div className="mt-3 space-y-2">
           <div className="grid max-w-md grid-cols-2 gap-2.5">
             <CountInput name="male" label="Adult Male" icon={Mars} value={values.male} onChange={onCountChange} invalid={Boolean(error)} focusClass={tone.focus} />

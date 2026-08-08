@@ -272,6 +272,7 @@ function transformHotelData(frontendData) {
       size:      room.size,
       occupancy: room.occupancy ? parseInt(room.occupancy) : null,
       bedType:   room.bedType,
+      baseRate:  room.baseRate !== "" && room.baseRate != null ? parseFloat(room.baseRate) : null,
       description: room.description,
     })),
 
@@ -312,23 +313,40 @@ export function transformHotelResponse(backendData) {
     overview:     backendData.overview,
     amenities:    backendData.amenities ?? [],
 
+    origin:                  backendData.origin ?? "TENANT",
+    platformOwned:           backendData.platformOwned === true,
+    platformHotelPublicId:   backendData.platformHotelPublicId ?? null,
+    syncStatus:              backendData.syncStatus ?? null,
+    lastSyncedAt:            backendData.lastSyncedAt ?? null,
+    marketplaceBookable:     backendData.marketplaceBookable === true,
+
     // ── IMAGE — backend se wapas le aao (imagePath ya imageUrl) ──
     imagePath:    backendData.imagePath ?? backendData.imageUrl ?? "",
 
     roomTypes: (backendData.roomTypes ?? []).map((room) => ({
-      id:          room.id,
+      id:          room.id || room.roomTypeId,
+      publicId:    room.publicId,
       name:        room.name,
       size:        room.size,
       occupancy:   room.occupancy?.toString() ?? "",
       bedType:     room.bedType,
+      baseRate:    room.baseRate?.toString() ?? "",
       description: room.description,
+      images:      room.images ?? [],
+      active:      room.active !== false,
+      platformOwned: room.platformOwned === true,
+      platformSourcePublicId: room.platformSourcePublicId ?? null,
     })),
 
     mealPlans: (backendData.mealPlans ?? []).map((meal) => ({
-      id:          meal.id,
+      id:          meal.id || meal.mealPlanId,
+      publicId:    meal.publicId,
       name:        meal.name,
       price:       meal.price?.toString() ?? "",
       description: meal.description,
+      active:      meal.active !== false,
+      platformOwned: meal.platformOwned === true,
+      platformSourcePublicId: meal.platformSourcePublicId ?? null,
     })),
   };
 }
@@ -429,6 +447,7 @@ export const hotelService = {
       size:        roomData.size,
       occupancy:   roomData.occupancy ? parseInt(roomData.occupancy) : null,
       bedType:     roomData.bedType,
+      baseRate:    roomData.baseRate !== "" && roomData.baseRate != null ? parseFloat(roomData.baseRate) : null,
       description: roomData.description,
     };
     return API.post(`/hotels/${hotelId}/room-types`, mappedRoom);
@@ -440,10 +459,16 @@ export const hotelService = {
       size:        roomData.size,
       occupancy:   roomData.occupancy ? parseInt(roomData.occupancy) : null,
       bedType:     roomData.bedType,
+      baseRate:    roomData.baseRate !== "" && roomData.baseRate != null ? parseFloat(roomData.baseRate) : null,
       description: roomData.description,
     };
     return API.put(`/hotels/${hotelId}/room-types/${roomTypeId}`, mappedRoom);
   },
+
+  updateRoomBaseRate: (hotelId, roomTypeId, baseRate) =>
+    API.patch(`/hotels/${hotelId}/room-types/${roomTypeId}/base-rate`, {
+      baseRate: baseRate !== "" && baseRate != null ? parseFloat(baseRate) : null,
+    }),
 
   deleteRoomType: (hotelId, roomTypeId) => {
     return API.delete(`/hotels/${hotelId}/room-types/${roomTypeId}`);

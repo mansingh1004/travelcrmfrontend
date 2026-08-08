@@ -1005,7 +1005,7 @@ function LeadRow({
               </button>
             )}
             {canCreateQuotation && (
-              <Link to={`/createquotation?leadId=${lead.publicId || lead.id}`}
+              <Link to={`/quick-quote?leadId=${lead.publicId || lead.id}`}
                 className="inline-flex items-center gap-0.5 px-2 py-1 rounded-md bg-slate-100 hover:bg-blue-100 text-slate-600 hover:text-blue-700 border border-slate-200 text-[10px] font-bold transition-all">
                 <Plus size={11} /> New
               </Link>

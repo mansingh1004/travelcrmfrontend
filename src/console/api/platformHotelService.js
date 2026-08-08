@@ -9,7 +9,7 @@
 import ConsoleAPI, { unwrap } from "./consoleHttp";
 import { SUPERADMIN_MFA_HEADER } from "./userService";
 
-const BASE = "/super-admin/hotel-catalog";
+const BASE = "/super-admin/marketplace";
 
 const stepUpHeaders = (mfaCode) => ({
   headers: { [SUPERADMIN_MFA_HEADER]: mfaCode },

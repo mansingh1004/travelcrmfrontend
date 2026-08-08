@@ -62,6 +62,7 @@ const NotificationSettings = lazyPage(reminders, "NotificationSettings");
 
 const quotation = () => import("@features/quotation");
 const CreateQuotation = lazyPage(quotation, "CreateQuotation");
+const QuickQuotation = lazyPage(quotation, "QuickQuotation");
 const PublicQuotationPage = lazyPage(quotation, "PublicQuotationPage");
 const PackageTemplates = lazyPage(quotation, "PackageTemplates");
 const TemplateBuilder = lazyPage(quotation, "TemplateBuilder");
@@ -291,7 +292,7 @@ const AppRouter = () => {
               />
 
               {/* Create Lead Route */}
-              <Route path="createlead" element={<CreateLead />} />
+              <Route path="createlead" element={<Guard allow={hasPermission(P.LEAD_CREATE)}><CreateLead /></Guard>} />
               <Route path="masters/city" element={<City />} />
               <Route path="masters/destinations" element={<Destinations />} />
               <Route path="Allbookings" element={<Allbookings />} />
@@ -315,7 +316,8 @@ const AppRouter = () => {
               Rows are scoped per caller by the backend, so a sub-agent sees their own slice. */}
               <Route path="tasks" element={<Guard allow={hasPermission(P.TASK_READ)}><AllTasks /></Guard>} />
 
-              <Route path="createquotation" element={<CreateQuotation />} />
+              <Route path="createquotation" element={<Guard allow={(hasPermission(P.QUOTATION_CREATE) || hasPermission(P.QUOTATION_UPDATE)) && hasPermission(P.LEAD_READ)}><CreateQuotation /></Guard>} />
+              <Route path="quick-quote" element={<Guard allow={hasPermission(P.QUOTATION_CREATE) && hasPermission(P.LEAD_READ)}><QuickQuotation /></Guard>} />
               {/* Package templates — gated by QUOTATION_* (page also self-checks). */}
               <Route path="quotations/templates" element={<Guard allow={hasPermission(P.QUOTATION_READ)}><PackageTemplates /></Guard>} />
               <Route path="quotations/templates/new" element={<Guard allow={hasPermission(P.QUOTATION_CREATE)}><TemplateBuilder /></Guard>} />

@@ -3,7 +3,7 @@ import { useState, useEffect, useRef, useCallback, useLayoutEffect } from "react
 import { createPortal } from "react-dom";
 import {
   Hotel, Search, Info, Plus, IndianRupee, Star, MapPin,
-  ChevronDown, Edit2, X, Check, Upload, AlertCircle, BedDouble
+  ChevronDown, Edit2, X, Check, Upload, AlertCircle, BedDouble, ShieldCheck
 } from "lucide-react";
 import { Label, Input, Select, SectionCard, RemoveBtn, IncludeToggle, RichText } from "./Ui";
 import { ROOM_TYPES, MEAL_PLANS } from "../Constants";
@@ -23,7 +23,7 @@ function calcNights(checkIn, checkOut) {
 /* ════════════════════════════════════════════════════════
    INLINE HOTEL SEARCH DROPDOWN
 ═══════════════════════════════════════════════════════ */
-function HotelSearchDropdown({ value, onSelect, allHotels, loading, onAdd, onEdit, selectedHotelId, defaultCity = "", placeholder = "Type to search hotels..." }) {
+function HotelSearchDropdown({ value, onSelect, allHotels, loading, onAdd, onEdit, selectedHotelId, selectedPlatformOwned = false, defaultCity = "", placeholder = "Type to search hotels..." }) {
   const [open,   setOpen]   = useState(false);
   const [search, setSearch] = useState("");
   const [pos,    setPos]    = useState(null);
@@ -95,7 +95,12 @@ function HotelSearchDropdown({ value, onSelect, allHotels, loading, onAdd, onEdi
   };
 
   // ── STRICT city filter: city set hai to SIRF usi city ke hotels. Match na ho to khaali. ──
-  const baseList = defaultCity ? (allHotels || []).filter(cityMatches) : (allHotels || []);
+  const selectableHotels = (allHotels || []).filter((hotel) => {
+    const platformOwned = hotel.platformOwned || hotel.origin === "PLATFORM_SYNC";
+    if (!platformOwned) return true;
+    return hotel.syncStatus !== "SOURCE_INACTIVE" && hotel.marketplaceBookable !== false;
+  });
+  const baseList = defaultCity ? selectableHotels.filter(cityMatches) : selectableHotels;
   const filtered = term
     ? baseList.filter(h => (h.name || "").toLowerCase().includes(term))
     : baseList;
@@ -165,6 +170,11 @@ function HotelSearchDropdown({ value, onSelect, allHotels, loading, onAdd, onEdi
                   <span className={`text-sm truncate block ${sel ? "text-violet-700 font-semibold" : "text-slate-700 font-medium"}`}>
                     {h.name}{starLabel(h)}
                   </span>
+                  {(h.platformOwned || h.origin === "PLATFORM_SYNC") && (
+                    <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[9px] font-extrabold uppercase tracking-wide text-violet-700">
+                      <ShieldCheck size={9} /> Platform
+                    </span>
+                  )}
                   {city && (
                     <div className="flex items-center gap-1 text-xs text-slate-400 mt-0.5">
                       <MapPin size={9} className="text-rose-400 flex-shrink-0" />
@@ -213,8 +223,8 @@ function HotelSearchDropdown({ value, onSelect, allHotels, loading, onAdd, onEdi
 
         {/* ✏️ Edit button (sirf jab hotel select ho) */}
         <button
-          type="button" onClick={onEdit} disabled={!selectedHotelId}
-          title={selectedHotelId ? "Edit selected hotel" : "Select a hotel first"}
+          type="button" onClick={onEdit} disabled={!selectedHotelId || selectedPlatformOwned}
+          title={selectedPlatformOwned ? "Platform hotel details are managed by SuperAdmin" : selectedHotelId ? "Edit selected hotel" : "Select a hotel first"}
           className="w-9 h-10 sm:w-10 flex items-center justify-center rounded-xl bg-amber-50 hover:bg-amber-500
             text-amber-600 hover:text-white border border-amber-200 hover:border-amber-500 transition-all flex-shrink-0
             disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-amber-50 disabled:hover:text-amber-600">
@@ -577,7 +587,7 @@ export default function HotelTab({ onDataChange, paxInfo = {}, destinations = []
       name: "", city, checkIn, checkOut,
       roomType: "", mealPlan: "", refundable: true,
       pricePerRoom: 0, rooms: 1,
-      imagePath: "", hotelId: null, stars: 0,
+      imagePath: "", hotelId: null, platformHotelPublicId: null, platformOwned: false, stars: 0,
       _nightsHint: nights,  // display ke liye, backend ko nahi jaata
     };
   }
@@ -664,6 +674,8 @@ export default function HotelTab({ onDataChange, paxInfo = {}, destinations = []
         city:     hotel._city || hotel.city || hotel.destinationName || h.city,
         imagePath: hotel._image || hotel.imagePath || hotel.imageUrl || "",
         hotelId:  hotel.publicId || hotel.hotelId || hotel.id || null,
+        platformHotelPublicId: hotel.platformHotelPublicId || null,
+        platformOwned: hotel.platformOwned === true || hotel.origin === "PLATFORM_SYNC",
         stars:    hotel.stars || 0,
       };
     }));
@@ -683,6 +695,7 @@ export default function HotelTab({ onDataChange, paxInfo = {}, destinations = []
     const fullHotel = allHotels.find(
       h => (h.publicId || h.hotelId || h.id) === hotelRow.hotelId
     );
+    if (fullHotel?.platformOwned || fullHotel?.origin === "PLATFORM_SYNC") return;
     setActiveRowId(rowId);
     setEditHotel(fullHotel || { ...hotelRow });
     setModalOpen(true);
@@ -806,6 +819,9 @@ export default function HotelTab({ onDataChange, paxInfo = {}, destinations = []
                     onAdd={() => handleAdd(h.id)}
                     onEdit={() => handleEdit(h.id, h)}
                     selectedHotelId={h.hotelId}
+                    selectedPlatformOwned={h.platformOwned || allHotels.some((hotel) =>
+                      (hotel.publicId || hotel.hotelId || hotel.id) === h.hotelId
+                      && (hotel.platformOwned || hotel.origin === "PLATFORM_SYNC"))}
                     defaultCity={h.city}
                     placeholder={h.city ? `Search hotels in ${h.city}...` : "Type to search hotels..."}
                   />

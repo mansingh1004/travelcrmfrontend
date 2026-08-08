@@ -1325,7 +1325,7 @@
 
 
 import { useState, useMemo, useEffect, useCallback } from "react";
-import { Search, Plus, ChevronDown, ChevronUp, X, Star, MapPin, Phone, Globe, Upload, Hotel, Building2, Utensils, Wifi, Car, Dumbbell, Waves, ConciergeBell, PlaneTakeoff, Edit2, Trash2, Check, AlertCircle, Home, ChevronRight, Shield } from "lucide-react";
+import { Search, Plus, ChevronDown, ChevronUp, X, Star, MapPin, Phone, Globe, Upload, Hotel, Building2, Utensils, Wifi, Car, Dumbbell, Waves, ConciergeBell, PlaneTakeoff, Edit2, Trash2, Check, AlertCircle, Home, ChevronRight, ShieldCheck } from "lucide-react";
 import { hotelService, transformHotelResponse, uploadHotelImageToCloudinary } from "../api/HotelService";
 import { geographyService } from "@shared/api/geographyService";
 import { getErrorMessage } from "@shared/api/apiError";
@@ -1355,7 +1355,7 @@ const emptyHotel = {
   amenities: [], isDefault: false, roomTypes: [], mealPlans: [],
   imagePath: "",   // ← IMAGE URL (Cloudinary se)
 };
-const emptyRoom = { name: "", size: "", occupancy: "", bedType: "King", description: "" };
+const emptyRoom = { name: "", size: "", occupancy: "", bedType: "King", baseRate: "", description: "" };
 const emptyMeal = { name: "", price: "", description: "" };
 
 /* ─── DESIGN TOKENS ──────────────────────────────────────── */
@@ -1375,6 +1375,8 @@ function Badge({ children, color = "blue" }) {
     amber: "bg-amber-100 text-amber-700 border-amber-200",
     red:   "bg-red-100 text-red-700 border-red-200",
     cyan:  "bg-cyan-100 text-cyan-700 border-cyan-200",
+    violet:"bg-violet-100 text-violet-700 border-violet-200",
+    rose:  "bg-rose-100 text-rose-700 border-rose-200",
   };
   return (
     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${map[color]}`}>
@@ -1404,6 +1406,7 @@ function FInput({ label, required, error, className = "", ...props }) {
       )}
       <input
         className={`border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all
+          disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500 disabled:hover:border-slate-200
           ${error ? "border-red-300 bg-red-50/50 focus:ring-red-200" : "border-slate-200 bg-white hover:border-slate-300"}`}
         {...props}
       />
@@ -1426,6 +1429,7 @@ function FSelect({ label, required, children, error, className = "", ...props })
       )}
       <select
         className={`border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 bg-white transition-all
+          disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500 disabled:hover:border-slate-200
           ${error ? "border-red-300" : "border-slate-200 hover:border-slate-300"}`}
         {...props}
       >
@@ -1447,7 +1451,7 @@ function FTextarea({ label, className = "", ...props }) {
       <textarea
         className="border border-slate-200 hover:border-slate-300 rounded-xl px-3 py-2.5 text-sm
           focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400
-          bg-white resize-none transition-all"
+          bg-white resize-none transition-all disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500 disabled:hover:border-slate-200"
         rows={3}
         {...props}
       />
@@ -1541,6 +1545,7 @@ export default function HotelMaster() {
 
   // ── Image upload handler (backend-proxied) ──
   const handleHotelImageUpload = async (e) => {
+    if (form.platformOwned) return;
     const file = e.target.files?.[0];
     if (!file) return;
     if (!file.type.match("image.*")) {
@@ -1768,15 +1773,18 @@ console.log("✅ New Hotel Created! Backend assigned ID:", savedHotel.id || save
     }
   };
 
-  const handleDelete = async (destId, hotelId) => {
-   
-    if (!window.confirm("Delete this hotel?")) return;
+  const handleDelete = async (hotel) => {
+    const hotelId = hotel?.id;
+    const prompt = hotel?.platformOwned
+      ? "Remove this Platform hotel from My Hotels? Existing quotations will remain unchanged."
+      : "Delete this hotel?";
+    if (!window.confirm(prompt)) return;
     try {
       await hotelService.deleteHotel(hotelId);
       // Re-query rather than filtering the row out locally: deleting the last row on a page has to
       // pull the next page's rows up, and only the server knows what those are.
       await reload();
-      toast.success("Hotel deleted successfully!");
+      toast.success(hotel?.platformOwned ? "Platform hotel removed from My Hotels." : "Hotel deleted successfully!");
 
     } catch (err) {
       toast.error(getErrorMessage(err, "Failed to delete hotel."));
@@ -1797,14 +1805,26 @@ console.log("✅ New Hotel Created! Backend assigned ID:", savedHotel.id || save
       const hotelId = editingHotel?.id;
       if (hotelId) {
         if (editRoomIdx !== null) {
-          await hotelService.updateRoomType(hotelId, form.roomTypes[editRoomIdx].id, roomForm);
+          const existingRoom = form.roomTypes[editRoomIdx];
+          const res = existingRoom.platformOwned
+            ? await hotelService.updateRoomBaseRate(hotelId, existingRoom.id, roomForm.baseRate)
+            : await hotelService.updateRoomType(hotelId, existingRoom.id, roomForm);
+          const savedRoom = res?.data?.data ?? res?.data ?? {};
+          const savedRoomId = savedRoom.roomTypeId || savedRoom.id || existingRoom.id;
+          if (!existingRoom.platformOwned && roomImageFiles?.length && savedRoomId) {
+            await hotelService.uploadRoomImages(hotelId, savedRoomId, roomImageFiles);
+          }
         } else {
           const res = await hotelService.addRoomType(hotelId, roomForm);
-          if (roomImageFiles && res.data?.id) await hotelService.uploadRoomImages(hotelId, res.data.id, roomImageFiles);
+          const savedRoom = res?.data?.data ?? res?.data ?? {};
+          const savedRoomId = savedRoom.roomTypeId || savedRoom.id;
+          if (roomImageFiles?.length && savedRoomId) {
+            await hotelService.uploadRoomImages(hotelId, savedRoomId, roomImageFiles);
+          }
         }
       }
       const rooms = [...(form.roomTypes || [])];
-      if (editRoomIdx !== null) { rooms[editRoomIdx] = { ...roomForm, id: rooms[editRoomIdx].id }; }
+      if (editRoomIdx !== null) { rooms[editRoomIdx] = { ...rooms[editRoomIdx], ...roomForm, id: rooms[editRoomIdx].id }; }
       else { rooms.push({ ...roomForm, id: Date.now() }); }
       setForm(f => ({ ...f, roomTypes: rooms }));
       setRoomModal(false);
@@ -1815,7 +1835,9 @@ console.log("✅ New Hotel Created! Backend assigned ID:", savedHotel.id || save
 
   const deleteRoom = async (idx) => {
     const hotelId = editingHotel?.id;
-    const roomId  = form.roomTypes[idx]?.id;
+    const room = form.roomTypes[idx];
+    if (room?.platformOwned) return;
+    const roomId  = room?.id;
     if (hotelId && roomId) {
       try { await hotelService.deleteRoomType(hotelId, roomId); }
       catch (err) { toast.error(getErrorMessage(err, "Failed to delete.")); return; }
@@ -1851,7 +1873,9 @@ console.log("✅ New Hotel Created! Backend assigned ID:", savedHotel.id || save
 
   const deleteMeal = async (idx) => {
     const hotelId = editingHotel?.id;
-    const mealId  = form.mealPlans[idx]?.id;
+    const meal = form.mealPlans[idx];
+    if (meal?.platformOwned) return;
+    const mealId  = meal?.id;
     if (hotelId && mealId) {
       try { await hotelService.deleteMealPlan(hotelId, mealId); }
       catch (err) { toast.error(getErrorMessage(err, "Failed to delete.")); return; }
@@ -2098,6 +2122,11 @@ console.log("✅ New Hotel Created! Backend assigned ID:", savedHotel.id || save
                                   <div className="min-w-0 flex-1">
                                     <div className="flex items-center gap-2 flex-wrap">
                                       <span className="font-bold text-slate-800 text-[14px]">{hotel.name}</span>
+                                      {hotel.platformOwned && (
+                                        <span className="inline-flex items-center gap-1 rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-violet-700">
+                                          <ShieldCheck size={10} /> Platform
+                                        </span>
+                                      )}
                                       {hotel.isDefault && <Badge color="cyan">Default</Badge>}
                                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full text-white
                                         bg-gradient-to-r ${STAR_COLORS[hotel.stars] || "from-slate-400 to-slate-500"}`}>
@@ -2139,12 +2168,12 @@ console.log("✅ New Hotel Created! Backend assigned ID:", savedHotel.id || save
                                   <button onClick={() => openEdit(hotel, dest.id)}
                                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100
                                       text-blue-600 text-xs font-bold border border-blue-200 hover:border-blue-300 transition-all">
-                                    <Edit2 size={12} /> Edit
+                                    <Edit2 size={12} /> {hotel.platformOwned ? "Manage" : "Edit"}
                                   </button>
-                                  <button onClick={() => handleDelete(dest.id, hotel.id)}
+                                  <button onClick={() => handleDelete(hotel)}
                                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100
                                       text-rose-500 text-xs font-bold border border-rose-200 hover:border-rose-300 transition-all">
-                                    <Trash2 size={12} /> Delete
+                                    <Trash2 size={12} /> {hotel.platformOwned ? "Remove" : "Delete"}
                                   </button>
                                 </div>
                               </div>
@@ -2192,7 +2221,9 @@ console.log("✅ New Hotel Created! Backend assigned ID:", savedHotel.id || save
                 </div>
                 <div className="min-w-0">
                   <h2 className="font-extrabold text-white text-[16px] sm:text-lg leading-tight">
-                    {editingHotel ? `Edit — ${editingHotel.name || "Hotel"}` : "Add New Hotel"}
+                    {editingHotel
+                      ? `${form.platformOwned ? "Manage" : "Edit"} — ${editingHotel.name || "Hotel"}`
+                      : "Add New Hotel"}
                   </h2>
                   <p className="text-[11px] text-blue-200 font-medium hidden sm:block">
                     Fill in the details below · Fields marked * are required
@@ -2205,7 +2236,7 @@ console.log("✅ New Hotel Created! Backend assigned ID:", savedHotel.id || save
                     px-4 sm:px-5 py-2 sm:py-2.5 rounded-xl text-sm transition-all active:scale-95 shadow-sm disabled:opacity-60">
                   {saving
                     ? <><div className="w-4 h-4 border-2 border-blue-200 border-t-blue-600 rounded-full animate-spin" /><span className="hidden sm:inline">Saving...</span></>
-                    : <><Check size={15} strokeWidth={2.5} /><span className="hidden sm:inline">Save Hotel</span></>
+                    : <><Check size={15} strokeWidth={2.5} /><span className="hidden sm:inline">{form.platformOwned ? "Save Local Settings" : "Save Hotel"}</span></>
                   }
                 </button>
                 <button onClick={closeModal}
@@ -2220,6 +2251,16 @@ console.log("✅ New Hotel Created! Backend assigned ID:", savedHotel.id || save
               <div className="mx-4 sm:mx-6 mt-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-600 flex items-center gap-2 flex-shrink-0">
                 <AlertCircle size={14} className="flex-shrink-0" /> {saveError}
                 <button onClick={() => setSaveError("")} className="ml-auto"><X size={13} /></button>
+              </div>
+            )}
+
+            {form.platformOwned && (
+              <div className="mx-4 sm:mx-6 mt-4 flex items-start gap-2 rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm text-violet-800 flex-shrink-0">
+                <ShieldCheck size={16} className="mt-0.5 flex-shrink-0" />
+                <span>
+                  Platform maintains the hotel and room descriptions. You can manage the contact person,
+                  default preference, tenant selling rates, and your own additional rooms or meal plans.
+                </span>
               </div>
             )}
 
@@ -2259,24 +2300,26 @@ console.log("✅ New Hotel Created! Backend assigned ID:", savedHotel.id || save
                 {/* Basic Info */}
                 <SectionCard icon={Hotel} iconBg="bg-blue-100" iconColor="text-blue-600" title="Basic Information">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <FSelect label="Country" required value={formCountryId} onChange={e => handleFormCountryChange(e.target.value)}>
+                    <FSelect label="Country" required value={formCountryId} disabled={form.platformOwned}
+                      onChange={e => handleFormCountryChange(e.target.value)}>
                       <option value="">{formCountries.length === 0 ? "Loading…" : "Select country"}</option>
                       {formCountries.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                     </FSelect>
                     <FSelect label="Destination" required error={errors.destinationId}
                       value={form.destinationId} onChange={e => handleFormDestinationChange(e.target.value)}
-                      disabled={!formCountryId || loadingFormDest}>
+                      disabled={form.platformOwned || !formCountryId || loadingFormDest}>
                       <option value="">{!formCountryId ? "Select country first" : loadingFormDest ? "Loading…" : formDestinations.length === 0 ? "No destinations" : "Select destination"}</option>
                       {formDestinations.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                     </FSelect>
                     <FSelect label="City" required error={errors.city}
                       value={form.city} onChange={e => setForm(f => ({ ...f, city: e.target.value }))}
-                      disabled={!form.destinationId || loadingFormCity}>
+                      disabled={form.platformOwned || !form.destinationId || loadingFormCity}>
                       <option value="">{!form.destinationId ? "Select destination first" : loadingFormCity ? "Loading…" : formCities.length === 0 ? "No cities" : "Select city"}</option>
                       {formCities.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
                     </FSelect>
                     <FInput label="Hotel Name" required error={errors.name}
                       placeholder="e.g. The Grand Palace"
+                      disabled={form.platformOwned}
                       value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
 
                     {/* ── Image Upload — backend-proxied, with preview ── */}
@@ -2291,15 +2334,18 @@ console.log("✅ New Hotel Created! Backend assigned ID:", savedHotel.id || save
                         <div className="mb-3 relative inline-block w-full">
                           <img src={form.imagePath} alt="Hotel"
                             className="w-full max-h-52 object-cover rounded-xl border border-slate-200" />
-                          <button type="button"
-                            onClick={() => { setForm(f => ({ ...f, imagePath: "" })); setHotelImageFile(null); }}
-                            className="absolute top-2 right-2 bg-rose-500 text-white p-1.5 rounded-lg hover:bg-rose-600 shadow-md">
-                            <X size={14} />
-                          </button>
+                          {!form.platformOwned && (
+                            <button type="button"
+                              onClick={() => { setForm(f => ({ ...f, imagePath: "" })); setHotelImageFile(null); }}
+                              className="absolute top-2 right-2 bg-rose-500 text-white p-1.5 rounded-lg hover:bg-rose-600 shadow-md">
+                              <X size={14} />
+                            </button>
+                          )}
                         </div>
                       )}
 
-                      <label className={`border-2 border-dashed rounded-xl p-4 flex items-center gap-3 cursor-pointer transition-all group
+                      <label className={`border-2 border-dashed rounded-xl p-4 flex items-center gap-3 transition-all group
+                        ${form.platformOwned ? "cursor-not-allowed border-slate-200 bg-slate-50 opacity-70" : "cursor-pointer"}
                         ${imageUploading ? "border-blue-300 bg-blue-50" : "border-slate-200 hover:border-blue-300 hover:bg-blue-50/40"}`}>
                         <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0
                           ${form.imagePath ? "bg-blue-100" : "bg-slate-100 group-hover:bg-blue-100"}`}>
@@ -2310,25 +2356,28 @@ console.log("✅ New Hotel Created! Backend assigned ID:", savedHotel.id || save
                         </div>
                         <div className="min-w-0">
                           <p className={`text-sm font-semibold truncate ${form.imagePath ? "text-blue-600" : "text-slate-400 group-hover:text-blue-500"}`}>
-                            {imageUploading ? "Uploading to cloud..." : form.imagePath ? "Change image" : "Click to upload hotel image"}
+                            {form.platformOwned ? "Image maintained by Platform" : imageUploading ? "Uploading to cloud..." : form.imagePath ? "Change image" : "Click to upload hotel image"}
                           </p>
                           <p className="text-xs text-slate-400">PNG, JPG up to 10MB</p>
                         </div>
                         <input type="file" className="hidden" accept="image/*"
-                          disabled={imageUploading}
+                          disabled={imageUploading || form.platformOwned}
                           onChange={handleHotelImageUpload} />
                       </label>
                     </div>
 
                     <FInput label="Full Address" placeholder="Street, area, landmark..."
                       className="sm:col-span-2"
+                      disabled={form.platformOwned}
                       value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} />
                     <FSelect label="Star Category" required error={errors.stars}
+                      disabled={form.platformOwned}
                       value={form.stars} onChange={e => setForm(f => ({ ...f, stars: e.target.value }))}>
                       {[5,4,3,2,1].map(s => <option key={s} value={s}>{s} Star</option>)}
                     </FSelect>
                     <FInput label="Review Rating" type="number" min="0" max="5" step="0.1"
                       placeholder="e.g. 4.5 / 5.0"
+                      disabled={form.platformOwned}
                       value={form.rating} onChange={e => setForm(f => ({ ...f, rating: e.target.value }))} />
                   </div>
 
@@ -2357,10 +2406,13 @@ console.log("✅ New Hotel Created! Backend assigned ID:", savedHotel.id || save
                     <FInput label="Contact Person" placeholder="Full name"
                       value={form.contact} onChange={e => setForm(f => ({ ...f, contact: e.target.value }))} />
                     <FInput label="Phone Number" placeholder="+91 xxxxxxxxxx"
+                      disabled={form.platformOwned}
                       value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} />
                     <FInput label="Email Address" type="email" placeholder="hotel@example.com"
+                      disabled={form.platformOwned}
                       value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
                     <FInput label="Website" placeholder="www.example.com"
+                      disabled={form.platformOwned}
                       value={form.website} onChange={e => setForm(f => ({ ...f, website: e.target.value }))} />
                   </div>
                 </SectionCard>
@@ -2369,6 +2421,7 @@ console.log("✅ New Hotel Created! Backend assigned ID:", savedHotel.id || save
                 <SectionCard icon={Globe} iconBg="bg-violet-100" iconColor="text-violet-600" title="Description & Amenities">
                   <FTextarea label="Hotel Overview"
                     placeholder="Describe the hotel, its location, unique features..."
+                    disabled={form.platformOwned}
                     value={form.overview} onChange={e => setForm(f => ({ ...f, overview: e.target.value }))}
                     rows={3} />
                   <div className="mt-4">
@@ -2378,7 +2431,7 @@ console.log("✅ New Hotel Created! Backend assigned ID:", savedHotel.id || save
                         const Icon     = a.icon;
                         const selected = form.amenities?.includes(a.id);
                         return (
-                          <button key={a.id} type="button" onClick={() => toggleAmenity(a.id)}
+                          <button key={a.id} type="button" disabled={form.platformOwned} onClick={() => toggleAmenity(a.id)}
                             className={`amenity-btn flex items-center gap-2 px-3 py-2.5 rounded-xl border text-xs font-semibold transition-all
                               ${selected
                                 ? "border-blue-400 bg-blue-600 text-white shadow-md shadow-blue-200"
@@ -2436,21 +2489,33 @@ console.log("✅ New Hotel Created! Backend assigned ID:", savedHotel.id || save
                             <Building2 size={13} className="text-blue-500" />
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-bold text-slate-700 truncate">{r.name}</p>
+                            <div className="flex items-center gap-2">
+                              <p className="text-sm font-bold text-slate-700 truncate">{r.name}</p>
+                              {r.platformOwned && <Badge color="violet">Platform</Badge>}
+                              {r.active === false && <Badge color="rose">Inactive</Badge>}
+                            </div>
                             <p className="text-xs text-slate-400">
                               {r.bedType} · {r.occupancy} pax
                               {r.size && ` · ${r.size}`}
                             </p>
+                            <p className={`mt-0.5 text-xs font-semibold ${r.baseRate !== "" && r.baseRate != null ? "text-emerald-600" : "text-amber-600"}`}>
+                              {r.baseRate !== "" && r.baseRate != null
+                                ? `₹${Number(r.baseRate).toLocaleString("en-IN")} / room / night`
+                                : "No rate added"}
+                            </p>
                           </div>
                           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all flex-shrink-0">
                             <button onClick={() => openEditRoom(i)}
+                              title={r.platformOwned ? "Edit tenant selling rate" : "Edit room type"}
                               className="w-7 h-7 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-500 flex items-center justify-center transition-all">
                               <Edit2 size={12} />
                             </button>
-                            <button onClick={() => deleteRoom(i)}
-                              className="w-7 h-7 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-400 flex items-center justify-center transition-all">
-                              <Trash2 size={12} />
-                            </button>
+                            {!r.platformOwned && (
+                              <button onClick={() => deleteRoom(i)}
+                                className="w-7 h-7 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-400 flex items-center justify-center transition-all">
+                                <Trash2 size={12} />
+                              </button>
+                            )}
                           </div>
                         </div>
                       ))}
@@ -2495,7 +2560,11 @@ console.log("✅ New Hotel Created! Backend assigned ID:", savedHotel.id || save
                             <Utensils size={13} className="text-emerald-500" />
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-bold text-slate-700 truncate">{m.name}</p>
+                            <div className="flex items-center gap-2">
+                              <p className="text-sm font-bold text-slate-700 truncate">{m.name}</p>
+                              {m.platformOwned && <Badge color="violet">Platform</Badge>}
+                              {m.active === false && <Badge color="rose">Inactive</Badge>}
+                            </div>
                             <p className="text-xs text-emerald-600 font-semibold">₹{m.price} / person</p>
                           </div>
                           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all flex-shrink-0">
@@ -2503,10 +2572,12 @@ console.log("✅ New Hotel Created! Backend assigned ID:", savedHotel.id || save
                               className="w-7 h-7 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-500 flex items-center justify-center transition-all">
                               <Edit2 size={12} />
                             </button>
-                            <button onClick={() => deleteMeal(i)}
-                              className="w-7 h-7 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-400 flex items-center justify-center transition-all">
-                              <Trash2 size={12} />
-                            </button>
+                            {!m.platformOwned && (
+                              <button onClick={() => deleteMeal(i)}
+                                className="w-7 h-7 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-400 flex items-center justify-center transition-all">
+                                <Trash2 size={12} />
+                              </button>
+                            )}
                           </div>
                         </div>
                       ))}
@@ -2522,8 +2593,10 @@ console.log("✅ New Hotel Created! Backend assigned ID:", savedHotel.id || save
       {/* ── Room Type Modal ── */}
       {roomModal && (
         <NestedModal
-          title={editRoomIdx !== null ? "Edit Room Type" : "Add Room Type"}
-          subtitle="Configure room capacity, size and bed type"
+          title={roomForm.platformOwned ? "Set Tenant Selling Rate" : editRoomIdx !== null ? "Edit Room Type" : "Add Room Type"}
+          subtitle={roomForm.platformOwned
+            ? "Platform maintains the room details; this rate belongs to your agency"
+            : "Configure room capacity, bed type and base selling rate"}
           icon={Building2}
           iconBg="bg-blue-100"
           onClose={() => setRoomModal(false)}
@@ -2536,22 +2609,28 @@ console.log("✅ New Hotel Created! Backend assigned ID:", savedHotel.id || save
             )}
             <FInput label="Room Name" required error={roomErrors.name}
               placeholder="e.g. Deluxe Sea View Room"
+              disabled={roomForm.platformOwned}
               value={roomForm.name} onChange={e => setRoomForm(f => ({ ...f, name: e.target.value }))} />
             <div className="grid grid-cols-2 gap-4">
               <FInput label="Room Size" placeholder="e.g. 45 sqm"
+                disabled={roomForm.platformOwned}
                 value={roomForm.size} onChange={e => setRoomForm(f => ({ ...f, size: e.target.value }))} />
               <FInput label="Max Occupancy" required error={roomErrors.occupancy}
                 type="number" min="1" placeholder="e.g. 2"
+                disabled={roomForm.platformOwned}
                 value={roomForm.occupancy} onChange={e => setRoomForm(f => ({ ...f, occupancy: e.target.value }))} />
             </div>
-            <FSelect label="Bed Type" value={roomForm.bedType}
+            <FSelect label="Bed Type" value={roomForm.bedType} disabled={roomForm.platformOwned}
               onChange={e => setRoomForm(f => ({ ...f, bedType: e.target.value }))}>
               {BED_TYPES.map(b => <option key={b}>{b}</option>)}
             </FSelect>
+            <FInput label="Base Rate (₹ per room / night)" type="number" min="0" step="0.01"
+              placeholder="Leave blank if rate is not available"
+              value={roomForm.baseRate} onChange={e => setRoomForm(f => ({ ...f, baseRate: e.target.value }))} />
             <div>
               <label className="text-xs font-semibold text-slate-600 block mb-1.5">Room Images</label>
-              <label className="border-2 border-dashed border-slate-200 hover:border-blue-300 hover:bg-blue-50/40
-                rounded-xl p-5 flex flex-col items-center gap-2 cursor-pointer transition-all">
+              <label className={`border-2 border-dashed border-slate-200 rounded-xl p-5 flex flex-col items-center gap-2 transition-all
+                ${roomForm.platformOwned ? "cursor-not-allowed bg-slate-50 opacity-60" : "cursor-pointer hover:border-blue-300 hover:bg-blue-50/40"}`}>
                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${roomImageFiles?.length ? "bg-blue-100" : "bg-slate-100"}`}>
                   <Upload size={18} className={roomImageFiles?.length ? "text-blue-500" : "text-slate-400"} />
                 </div>
@@ -2560,11 +2639,13 @@ console.log("✅ New Hotel Created! Backend assigned ID:", savedHotel.id || save
                 </span>
                 <span className="text-xs text-slate-400">PNG, JPG · Multiple allowed</span>
                 <input type="file" className="hidden" accept="image/*" multiple
+                  disabled={roomForm.platformOwned}
                   onChange={e => setRoomImageFiles(e.target.files)} />
               </label>
             </div>
             <FTextarea label="Description"
               placeholder="Describe the room, view, features..."
+              disabled={roomForm.platformOwned}
               value={roomForm.description} onChange={e => setRoomForm(f => ({ ...f, description: e.target.value }))} />
             <button onClick={saveRoom} disabled={roomSaving}
               className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800
@@ -2572,7 +2653,7 @@ console.log("✅ New Hotel Created! Backend assigned ID:", savedHotel.id || save
                 flex items-center justify-center gap-2 shadow-md shadow-blue-200">
               {roomSaving
                 ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Saving...</>
-                : <><Check size={15} /> {editRoomIdx !== null ? "Update Room Type" : "Add Room Type"}</>}
+                : <><Check size={15} /> {roomForm.platformOwned ? "Save Selling Rate" : editRoomIdx !== null ? "Update Room Type" : "Add Room Type"}</>}
             </button>
           </div>
         </NestedModal>
@@ -2581,8 +2662,10 @@ console.log("✅ New Hotel Created! Backend assigned ID:", savedHotel.id || save
       {/* ── Meal Plan Modal ── */}
       {mealModal && (
         <NestedModal
-          title={editMealIdx !== null ? "Edit Meal Plan" : "Add Meal Plan"}
-          subtitle="Set meal plan name, price and description"
+          title={mealForm.platformOwned ? "Set Meal Selling Price" : editMealIdx !== null ? "Edit Meal Plan" : "Add Meal Plan"}
+          subtitle={mealForm.platformOwned
+            ? "Platform maintains the meal description; this price belongs to your agency"
+            : "Set meal plan name, price and description"}
           icon={Utensils}
           iconBg="bg-emerald-100"
           onClose={() => setMealModal(false)}
@@ -2598,6 +2681,7 @@ console.log("✅ New Hotel Created! Backend assigned ID:", savedHotel.id || save
                 Meal Plan Name <span className="text-rose-500">*</span>
               </label>
               <input list="mealExamples" placeholder="e.g. CP (Breakfast)"
+                disabled={mealForm.platformOwned}
                 value={mealForm.name} onChange={e => setMealForm(f => ({ ...f, name: e.target.value }))}
                 className={`border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all
                   ${mealErrors.name ? "border-red-300 bg-red-50/50" : "border-slate-200 bg-white hover:border-slate-300"}`} />
@@ -2615,6 +2699,7 @@ console.log("✅ New Hotel Created! Backend assigned ID:", savedHotel.id || save
               value={mealForm.price} onChange={e => setMealForm(f => ({ ...f, price: e.target.value }))} />
             <FTextarea label="What's Included"
               placeholder="Breakfast buffet, evening snacks, beverages..."
+              disabled={mealForm.platformOwned}
               value={mealForm.description} onChange={e => setMealForm(f => ({ ...f, description: e.target.value }))} />
             <button onClick={saveMeal} disabled={mealSaving}
               className="w-full bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800
