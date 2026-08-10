@@ -20,6 +20,7 @@ import RefundBookingModal from "../components/RefundBookingModal";
 import BookingInvoiceModal from "../components/BookingInvoiceModal";
 import CancelBookingModal from "../components/CancelBookingModal";
 import BookingExpenseModal from "../components/BookingExpenseModal";
+import BookingVariationModal from "../components/BookingVariationModal";
 import BookingAttentionBar from "../components/BookingAttentionBar";
 import BookingTabs from "../components/BookingTabs";
 import BookingActivityTimeline from "../components/BookingActivityTimeline";
@@ -96,6 +97,14 @@ const TONE = {
 const fmtINR = n => n != null
   ? "₹" + Number(n).toLocaleString("en-IN", { minimumFractionDigits:2, maximumFractionDigits:2 })
   : "₹0.00";
+/* Money that can legitimately go either way — a variation's deltas, and the net they produce.
+   The sign is carried EXPLICITLY rather than implied by colour: "+₹2,000" and "−₹500" read the
+   same in a screenshot, in a printout and to someone who cannot distinguish red from green. */
+const signedINR = n => {
+  const v = Number(n) || 0;
+  if (v === 0) return "₹0.00";
+  return (v > 0 ? "+" : "−") + fmtINR(Math.abs(v));
+};
 const fmtDate = d => d
   ? new Date(d).toLocaleDateString("en-IN", { day:"2-digit", month:"short", year:"numeric" })
   : "—";
@@ -138,6 +147,12 @@ function normalizeBooking(b = {}) {
   // Clamped: an overpaid booking (the ledger permits paid > totalPayable) reads 100%, not 105%.
   const payPct         = totalPayable > 0 ? Math.min(100, Math.round((paid / totalPayable) * 100)) : 0;
   const refunded       = Number(b.refundedAmount) || 0;
+  // The variation ledger's two net figures, both already inside the totals above: the customer side
+  // is part of totalPayable, the cost side is part of netProfit. Surfaced separately so the screen
+  // can say WHY the numbers moved — "₹1,10,000 payable, of which ₹2,000 came from changes after
+  // booking" is a different sentence from "₹1,10,000 payable".
+  const customerAdjustments = Number(b.totalCustomerAdjustments) || 0;
+  const costVariations      = Number(b.totalCostVariations) || 0;
 
   // Traveller counts live on tripSnapshot.travellers — the top-level keys were never part of
   // BookingResponseDTO and are kept only as fallbacks for pre-normalised callers.
@@ -174,6 +189,7 @@ function normalizeBooking(b = {}) {
     vendorPublicId:  b.vendorPublicId || null,
     vendorName:      b.vendorName || "",
     netProfit, netMargin, payPct, refunded,
+    customerAdjustments, costVariations,
     overseas:        !!b.overseasTourPackage,
     status:          (b.status || "PENDING").toUpperCase(),
     payStatus:       (b.paymentStatus || b.payStatus || "UNPAID").toUpperCase(),
@@ -505,6 +521,13 @@ export default function BookingDetails() {
      disbursements recorded here over time. */
   const [expenses,       setExpenses]       = useState([]);
   const [expenseSummary, setExpenseSummary] = useState(null);
+  const [variations,        setVariations]        = useState([]);
+  const [variationSummary,  setVariationSummary]  = useState(null);
+  const [variationCategories, setVariationCategories] = useState([]);
+  const [showVariationModal, setShowVariationModal] = useState(false);
+  const [editVariation,      setEditVariation]      = useState(null);
+  const [variationSaving,    setVariationSaving]    = useState(false);
+  const [variationBusy,      setVariationBusy]      = useState(null);
   const [showAddExpense, setShowAddExpense] = useState(false);
   const [expenseSaving,  setExpenseSaving]  = useState(false);
   const [settleExp,      setSettleExp]      = useState(null);   // publicId whose settle form is open
@@ -593,6 +616,48 @@ export default function BookingDetails() {
     }
   }, [showToast]);
 
+  /* The variation ledger — rows, the server's rollup, and the category list off the backend enum. */
+  const fetchVariations = useCallback(async () => {
+    const bid = bookingIdRef.current;
+    if (!bid) return;
+    try {
+      const [listRes, summaryRes, catRes] = await Promise.all([
+        bookingService.getVariations(bid),
+        bookingService.getVariationSummary(bid),
+        bookingService.getVariationCategories(bid),
+      ]);
+      const list = unwrap(listRes);
+      setVariations(Array.isArray(list) ? list : []);
+      setVariationSummary(unwrap(summaryRes) || null);
+      const cats = unwrap(catRes);
+      setVariationCategories(Array.isArray(cats) ? cats : []);
+    } catch (error) {
+      if (isAlreadyReported(error)) return;
+      showToast(getErrorMessage(error, "Couldn't load cost variations."), "error");
+    }
+  }, [showToast]);
+
+  /**
+   * The two money ROLLUPS, loaded on mount rather than with their tab.
+   *
+   * The ledger ROWS stay lazy behind the Finance tab — they are long and most visits never open it.
+   * The summaries are different: they drive cards in the always-visible KPI strip, and a card that
+   * reads ₹0 until you happen to click Finance is worse than no card. Two small rollups.
+   *
+   * Failures are swallowed: these enrich cards that already have a booking-level fallback, and the
+   * user did not ask for them, so a failure is not an outcome worth interrupting them about.
+   */
+  const fetchMoneySummaries = useCallback(async () => {
+    const bid = bookingIdRef.current;
+    if (!bid || !canSeeMargin) return;
+    const [exp, vari] = await Promise.allSettled([
+      bookingService.getExpenseSummary(bid),
+      bookingService.getVariationSummary(bid),
+    ]);
+    if (exp.status === "fulfilled")  setExpenseSummary(unwrap(exp.value) || null);
+    if (vari.status === "fulfilled") setVariationSummary(unwrap(vari.value) || null);
+  }, [canSeeMargin]);
+
   const loadAll = useCallback(async () => {
     setLoading(true);
     // Reset — never carry a previous booking's UUID across a param change: on the code path the
@@ -603,13 +668,17 @@ export default function BookingDetails() {
     setPayments([]);
     setExpenses([]);
     setExpenseSummary(null);
+    setVariations([]);
+    setVariationSummary(null);
     setReminders([]);
     setTimeline([]);
     setDataEpoch(v => v + 1);
     await fetchBooking();
     await fetchServices();
+    // After fetchBooking, because it is what resolves bookingIdRef on the booking-code route.
+    await fetchMoneySummaries();
     setLoading(false);
-  }, [id, fetchBooking, fetchServices]);
+  }, [id, fetchBooking, fetchServices, fetchMoneySummaries]);
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
@@ -708,7 +777,10 @@ export default function BookingDetails() {
     if (tab === "payments" && !loadedSectionsRef.current.has("payments")) {
       loadedSectionsRef.current.add("payments");
       jobs.push(fetchPayments());
-      if (canSeeMargin) jobs.push(fetchExpenses());
+      if (canSeeMargin) {
+        jobs.push(fetchExpenses());
+        jobs.push(fetchVariations());
+      }
     }
     if (tab === "reminders" && canReadReminders && !loadedSectionsRef.current.has("reminders")) {
       loadedSectionsRef.current.add("reminders");
@@ -728,7 +800,8 @@ export default function BookingDetails() {
       if (active) setSectionLoading(null);
     });
     return () => { active = false; };
-  }, [booking?.id, tab, dataEpoch, canSeeMargin, canReadReminders, fetchPayments, fetchExpenses, fetchReminders, fetchTimeline]);
+  }, [booking?.id, tab, dataEpoch, canSeeMargin, canReadReminders, fetchPayments, fetchExpenses,
+      fetchVariations, fetchReminders, fetchTimeline]);
 
   const handleSendReminder = async (remId) => {
     if (remId == null) return;
@@ -802,6 +875,51 @@ export default function BookingDetails() {
       showToast(getErrorMessage(error, "Couldn't save booking expenses."), "error");
     } finally {
       setExpenseSaving(false);
+    }
+  };
+
+  /* A variation write moves BOTH ledgers' consequences: the customer side changes totalPayable and
+     can flip the payment status, the cost side changes netProfit. So the booking itself is refetched
+     alongside the ledger — refreshing only the rows would leave the header cards quoting the old
+     totals until the next navigation. */
+  const refreshVariationMoney = useCallback(async () => {
+    await Promise.all([fetchVariations(), fetchBooking()]);
+  }, [fetchVariations, fetchBooking]);
+
+  const saveVariations = async (payload) => {
+    if (!booking?.id) return;
+    setVariationSaving(true);
+    try {
+      if (editVariation) {
+        await bookingService.updateVariation(booking.id, editVariation.publicId, payload);
+        showToast("Change updated.", "success");
+      } else {
+        await bookingService.addVariations(booking.id, payload);
+        showToast(`${payload.length} change(s) recorded.`, "success");
+      }
+      setShowVariationModal(false);
+      setEditVariation(null);
+      await refreshVariationMoney();
+    } catch (error) {
+      if (isAlreadyReported(error)) return;
+      showToast(getErrorMessage(error, "Couldn't save the change."), "error");
+    } finally {
+      setVariationSaving(false);
+    }
+  };
+
+  const handleDeleteVariation = async (variation) => {
+    if (!booking?.id) return;
+    setVariationBusy(variation.publicId);
+    try {
+      await bookingService.deleteVariation(booking.id, variation.publicId);
+      showToast("Change removed.", "success");
+      await refreshVariationMoney();
+    } catch (error) {
+      if (isAlreadyReported(error)) return;
+      showToast(getErrorMessage(error, "Couldn't remove the change."), "error");
+    } finally {
+      setVariationBusy(null);
     }
   };
 
@@ -978,6 +1096,24 @@ export default function BookingDetails() {
     ? `${fmtDate(b.travelDate)}${travelEnd ? ` → ${fmtDate(travelEnd)}` : ""}${b.totalNights ? ` · ${b.totalNights}N` : ""}`
     : "—";
   const receiptCount = payments.filter(p => String(p.entryType || "RECEIPT").toUpperCase() !== "REFUND").length;
+
+  /* What is still owed to suppliers. Straight off the server's expense rollup — the ledger rows
+     themselves stay behind the Finance tab, so this is null until the summary loads. */
+  const vendorOutstanding = Number(expenseSummary?.totalOutstanding) || 0;
+
+  /* The collection deadline, said in the only terms that matter to whoever is chasing it: how long
+     is left before the customer travels. Derived from travelDate rather than a reminder row, so it
+     needs no extra fetch and cannot disagree with the date on the booking. */
+  /* Parsed as `${date}T00:00:00` — a bare "YYYY-MM-DD" is parsed as UTC midnight, so comparing it
+     against a local midnight silently shifts the count by a day west of Greenwich. */
+  const daysToTravel = b.travelDate
+    ? Math.ceil((new Date(`${b.travelDate}T00:00:00`).getTime() - new Date().setHours(0, 0, 0, 0)) / 86400000)
+    : null;
+  const nextDueLabel = b.due <= 0 || daysToTravel == null
+    ? ""
+    : daysToTravel < 0 ? "travel date passed"
+      : daysToTravel === 0 ? "travels today"
+        : `${daysToTravel} day${daysToTravel === 1 ? "" : "s"} to travel`;
   const snap = b.tripSnapshot;
   const dep  = snap?.departure || null;
   const sa   = snap?.specialAssistance || null;
@@ -988,9 +1124,7 @@ export default function BookingDetails() {
         : dep.railwayStation || null)
     : null;
 
-  const daysToTravel = b.travelDate
-    ? Math.ceil((new Date(`${b.travelDate}T00:00:00`).getTime() - new Date().setHours(0, 0, 0, 0)) / 86400000)
-    : null;
+  // daysToTravel is declared once, above, where nextDueLabel first needs it.
   const missingVendors = services.filter(s => !s.vendorPublicId && !s.vendorName).length;
   const alerts = [
     b.due > 0 && { tone: "rose", title: `${fmtINR(b.due)} customer payment pending`, action: "Open Finance", tab: "payments" },
@@ -1028,6 +1162,12 @@ export default function BookingDetails() {
       {showAddExpense && <BookingExpenseModal booking={b} saving={expenseSaving}
         onClose={()=>{ if (!expenseSaving) setShowAddExpense(false); }}
         onSave={saveExpenses}/>}
+      {showVariationModal && <BookingVariationModal booking={b}
+        categories={variationCategories}
+        variation={editVariation}
+        saving={variationSaving}
+        onClose={()=>{ if (!variationSaving) { setShowVariationModal(false); setEditVariation(null); } }}
+        onSave={saveVariations}/>}
       {assignSvc   && <AssignVendorModal booking={b} service={assignSvc} showToast={showToast}
         onClose={()=>setAssignSvc(null)}
         onAssigned={()=>{ fetchServices(); fetchBooking(); }}/>}
@@ -1055,9 +1195,14 @@ export default function BookingDetails() {
                 className="w-9 h-9 rounded-xl bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition-all flex-shrink-0">
                 <FiArrowLeft className="w-4 h-4 text-slate-600"/>
               </button>
+              {/* The three facts that identify the booking sit HERE, in the header.
+                  The customer's name and the booking date used to be buried inside the Overview
+                  tab's Customer and Booking Snapshot sections, so the one line that answers "whose
+                  booking is this, and when was it taken?" required opening a tab and scrolling. */}
               <div className="min-w-0">
                 <div className="flex items-center gap-2.5 flex-wrap">
-                  <h1 className="text-lg font-extrabold text-slate-800">Booking Details</h1>
+                  <h1 className="text-lg font-extrabold text-slate-800 truncate max-w-[22ch] sm:max-w-none"
+                    title={b.customer}>{b.customer}</h1>
                   <span className="text-sm font-bold text-blue-600 bg-blue-50 border border-blue-100 px-2.5 py-0.5 rounded-lg">{b.code}</span>
                   <span className={`text-xs font-bold px-2.5 py-1 rounded-full border flex items-center gap-1.5 ${statusStyle}`}>
                     <span className={`w-1.5 h-1.5 rounded-full ${statusDot}`}/>
@@ -1067,13 +1212,27 @@ export default function BookingDetails() {
                     💳 {titleCase(b.payStatus)}
                   </span>
                 </div>
-                <nav aria-label="Breadcrumb" className="text-xs text-slate-400 mt-0.5 hidden sm:block">
-                  <button type="button" onClick={()=>navigate("/")} className="hover:text-blue-600">Home</button>
-                  <span className="mx-1">/</span>
-                  <button type="button" onClick={()=>navigate("/Allbookings")} className="hover:text-blue-600">Bookings</button>
-                  <span className="mx-1">/</span>
-                  <span className="text-blue-600 font-bold" aria-current="page">View</span>
-                </nav>
+                <div className="flex items-center gap-2 flex-wrap text-xs text-slate-400 mt-1">
+                  <span className="font-semibold text-slate-500">Booked {fmtDate(b.bookingDate)}</span>
+                  <span className="text-slate-300">·</span>
+                  <span className="font-semibold text-slate-500">Travel {fmtDate(b.travelDate)}</span>
+                  {b.destination && b.destination !== "—" && (
+                    <>
+                      <span className="text-slate-300">·</span>
+                      <span className="font-semibold text-slate-500 truncate max-w-[18ch]" title={b.destination}>
+                        {b.destination}
+                      </span>
+                    </>
+                  )}
+                  <nav aria-label="Breadcrumb" className="hidden lg:flex items-center">
+                    <span className="text-slate-300 mx-1">·</span>
+                    <button type="button" onClick={()=>navigate("/")} className="hover:text-blue-600">Home</button>
+                    <span className="mx-1">/</span>
+                    <button type="button" onClick={()=>navigate("/Allbookings")} className="hover:text-blue-600">Bookings</button>
+                    <span className="mx-1">/</span>
+                    <span className="text-blue-600 font-bold" aria-current="page">View</span>
+                  </nav>
+                </div>
               </div>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
@@ -1108,26 +1267,65 @@ export default function BookingDetails() {
           onOpen={(alert)=>alert.route ? navigate(alert.route) : setTab(alert.tab)}/>
 
         {/* ── KPI STRIP ──
-            The margin cards are gated: an agent sees what the customer owes, not what the agency
-            paid. See canSeeMargin — UI courtesy only, the API still returns them. */}
+            Two rows of four. Row 1 is what the CUSTOMER owes and has paid; row 2 is what the
+            agency made and what the trip is.
+
+            Net Profit and Taxes used to share one slot, swapped by permission — so a manager who
+            could see margin could never see the tax split, and vice versa, which is not what either
+            of them wanted. They are separate cards now; the margin cards are still gated on
+            canSeeMargin, and that gate is UI courtesy — the API is the real boundary. */}
         <div className="grid gap-4 grid-cols-2 xl:grid-cols-4">
           <StatCard label="Total Payable" value={fmtINR(b.totalPayable)}
-            sub={`Incl. GST ${fmtINR(b.gst)} · TCS ${fmtINR(b.tcs)}`}
+            sub={`Base ${fmtINR(b.customerAmount)} · GST ${fmtINR(b.gst)} · TCS ${fmtINR(b.tcs)}${
+              b.customerAdjustments !== 0 ? ` · Changes ${signedINR(b.customerAdjustments)}` : ""}`}
             icon="🧾" gradient="from-blue-600 to-indigo-600" delay={0}/>
+
+          {/* Variations: the money that moved AFTER the booking was made. Its own card because
+              "why is the total not what we quoted?" is otherwise unanswerable from this screen. */}
+          <StatCard label="Changes & Extras"
+            value={variationSummary ? signedINR(variationSummary.netCustomerAdjustment) : fmtINR(b.customerAdjustments)}
+            sub={variationSummary
+              ? `${variationSummary.variationCount} event${variationSummary.variationCount === 1 ? "" : "s"}`
+                + (Number(variationSummary.totalWaived) > 0 ? ` · ${fmtINR(variationSummary.totalWaived)} waived` : "")
+                + (canSeeMargin && Number(variationSummary.netCostVariation) !== 0
+                    ? ` · cost ${signedINR(variationSummary.netCostVariation)}` : "")
+              : "Charges & waivers after booking"}
+            icon="🔀" gradient="from-violet-600 to-purple-600" delay={60}/>
+
           <StatCard label="Net Collected" value={fmtINR(netCollected)}
             sub={`${fmtINR(b.paid)} gross across ${receiptCount} receipt${receiptCount === 1 ? "" : "s"}${b.refunded > 0 ? ` · ${fmtINR(b.refunded)} refunded` : ""}`}
-            icon="✓" gradient="from-green-600 to-emerald-600" delay={60}/>
+            icon="✓" gradient="from-green-600 to-emerald-600" delay={120}/>
+
           <StatCard label="Pending" value={fmtINR(b.due)}
-            sub={`${b.payPct}% of total collected`}
-            icon="⏳" gradient="from-amber-600 to-orange-600" delay={120}/>
-          {canSeeMargin ? (
+            sub={`${b.payPct}% collected${nextDueLabel ? ` · ${nextDueLabel}` : ""}`}
+            icon="⏳" gradient="from-amber-600 to-orange-600" delay={180}/>
+        </div>
+
+        <div className="grid gap-4 grid-cols-2 xl:grid-cols-4">
+          {canSeeMargin && (
             <StatCard label="Net Profit" value={fmtINR(b.netProfit)}
               sub={`Margin ${b.netMargin}% · Supplier ${fmtINR(b.totalSupplierCost)}${b.totalInternalCosts > 0 ? ` · Company ${fmtINR(b.totalInternalCosts)}` : ""}`}
-              icon="📈" gradient="from-teal-600 to-cyan-600" delay={180}/>
-          ) : (
-            <StatCard label="Taxes" value={fmtINR(b.gst + b.tcs)}
-              sub={`GST ${fmtINR(b.gst)} · TCS ${fmtINR(b.tcs)}`}
-              icon="🏛️" gradient="from-slate-600 to-slate-500" delay={180}/>
+              icon="📈" gradient="from-teal-600 to-cyan-600" delay={0}/>
+          )}
+
+          <StatCard label="Taxes" value={fmtINR(b.gst + b.tcs)}
+            sub={`GST ${fmtINR(b.gst)} · TCS ${fmtINR(b.tcs)}`}
+            icon="🏛️" gradient="from-slate-600 to-slate-500" delay={60}/>
+
+          <StatCard label="Trip"
+            value={b.totalNights > 0 ? `${b.totalNights}N` : fmtDate(b.travelDate)}
+            sub={`${fmtDate(b.travelDate)} · ${b.adults} adult${b.adults === 1 ? "" : "s"}${
+              b.children > 0 ? ` · ${b.children} child${b.children === 1 ? "" : "ren"}` : ""}${
+              b.infants > 0 ? ` · ${b.infants} infant${b.infants === 1 ? "" : "s"}` : ""}`}
+            icon="🧭" gradient="from-sky-600 to-blue-500" delay={120}/>
+
+          {canSeeMargin && (
+            <StatCard label="Vendor Outstanding" value={fmtINR(vendorOutstanding)}
+              sub={expenseSummary
+                ? `${fmtINR(expenseSummary.totalExpense)} billed · ${fmtINR(expenseSummary.totalPaid)} paid${
+                    Number(expenseSummary.overdueOutstanding) > 0 ? ` · ${fmtINR(expenseSummary.overdueOutstanding)} overdue` : ""}`
+                : "Payable to suppliers"}
+              icon="🏦" gradient="from-rose-600 to-pink-600" delay={180}/>
           )}
         </div>
 
@@ -2128,6 +2326,119 @@ export default function BookingDetails() {
                         <button onClick={()=>setShowAddExpense(true)}
                           className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white text-xs font-bold transition-all">
                           <FiPlus className="w-3.5 h-3.5"/> Add Expenses
+                        </button>
+                      )}/>
+                  )}
+                </Section>}
+
+                {/* ══ COST VARIATIONS ══
+                    Money that moved AFTER the booking was confirmed. Deliberately its own section
+                    rather than rows in the expense ledger: the two are disjoint by design (planned
+                    cost vs unplanned event) and each feeds profit through its own total, so mixing
+                    them on screen would invite recording an event in both — which subtracts the same
+                    rupees twice. */}
+                {canSeeMargin && <Section title="Changes After Booking"
+                  sub="Itinerary changes, extra activities, permits, route & hotel changes — and what each did to the money"
+                  icon={<FiRefreshCw className="w-4 h-4"/>} tone="purple"
+                  action={ canEditBooking && variations.length > 0 && (
+                    <button onClick={()=>{ setEditVariation(null); setShowVariationModal(true); }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-50 hover:bg-violet-100 text-violet-700 border border-violet-200 text-xs font-bold transition-all">
+                      <FiPlus className="w-3.5 h-3.5"/> Record change
+                    </button>
+                  )}>
+
+                  {variations.length > 0 ? (
+                    <div className="space-y-3">
+                      {/* Profit before vs after — the "was going off-plan worth it?" line. */}
+                      {variationSummary && (
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                          <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
+                            <p className="text-[11px] font-semibold text-slate-400">Charged extra</p>
+                            <p className="text-sm font-extrabold text-slate-800">{fmtINR(variationSummary.totalExtraCharged)}</p>
+                            {Number(variationSummary.totalWaived) > 0 && (
+                              <p className="text-[10px] text-amber-600 font-semibold">{fmtINR(variationSummary.totalWaived)} waived</p>
+                            )}
+                          </div>
+                          <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
+                            <p className="text-[11px] font-semibold text-slate-400">Extra cost</p>
+                            <p className="text-sm font-extrabold text-slate-800">{fmtINR(variationSummary.totalExtraCost)}</p>
+                            {Number(variationSummary.totalCostRecovered) > 0 && (
+                              <p className="text-[10px] text-emerald-600 font-semibold">{fmtINR(variationSummary.totalCostRecovered)} recovered</p>
+                            )}
+                          </div>
+                          <div className={`rounded-xl border px-3 py-2 ${Number(variationSummary.netImpact) >= 0 ? "bg-emerald-50 border-emerald-100" : "bg-rose-50 border-rose-100"}`}>
+                            <p className={`text-[11px] font-semibold ${Number(variationSummary.netImpact) >= 0 ? "text-emerald-600" : "text-rose-500"}`}>Net effect</p>
+                            <p className={`text-sm font-extrabold ${Number(variationSummary.netImpact) >= 0 ? "text-emerald-700" : "text-rose-700"}`}>
+                              {signedINR(variationSummary.netImpact)}
+                            </p>
+                          </div>
+                          <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
+                            <p className="text-[11px] font-semibold text-slate-400">Profit</p>
+                            <p className="text-sm font-extrabold text-slate-800">{fmtINR(variationSummary.netProfit)}</p>
+                            <p className="text-[10px] text-slate-400 font-semibold">
+                              was {fmtINR(variationSummary.profitBeforeVariations)}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
+                      {variations.map((v) => {
+                        const net = Number(v.netImpact) || 0;
+                        const busy = variationBusy === v.publicId;
+                        return (
+                          <div key={v.publicId} className="bg-slate-50 rounded-xl border border-slate-100 px-4 py-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <p className="text-sm font-bold text-slate-800 truncate">{v.description}</p>
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-100 text-violet-700">
+                                    {v.categoryLabel || v.category}
+                                  </span>
+                                </div>
+                                <p className="text-xs text-slate-400 mt-0.5">
+                                  {fmtDate(v.variationDate)}
+                                  {v.vendorName ? ` · ${v.vendorName}` : ""}
+                                  {v.referenceNumber ? ` · ${v.referenceNumber}` : ""}
+                                </p>
+                                <div className="flex items-center gap-3 mt-1.5 text-[11px] font-semibold flex-wrap">
+                                  <span className="text-slate-500">
+                                    Customer <span className="text-slate-800">{signedINR(v.customerAmountDelta)}</span>
+                                  </span>
+                                  <span className="text-slate-500">
+                                    Cost <span className="text-slate-800">{signedINR(v.agencyCostDelta)}</span>
+                                  </span>
+                                  <span className={net >= 0 ? "text-emerald-600" : "text-rose-600"}>
+                                    Net {signedINR(net)}
+                                  </span>
+                                </div>
+                                {v.notes && <p className="text-[11px] text-slate-400 mt-1">{v.notes}</p>}
+                              </div>
+
+                              {canEditBooking && (
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <button onClick={()=>{ setEditVariation(v); setShowVariationModal(true); }}
+                                    disabled={busy} title="Edit"
+                                    className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-400 hover:text-violet-600 hover:border-violet-200 flex items-center justify-center disabled:opacity-40">
+                                    <FiEdit2 className="w-3 h-3"/>
+                                  </button>
+                                  <button onClick={()=>handleDeleteVariation(v)}
+                                    disabled={busy} title="Remove"
+                                    className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-200 flex items-center justify-center disabled:opacity-40">
+                                    <FiTrash2 className="w-3 h-3"/>
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <EmptyState icon="🔀" text="Nothing changed after this booking was made"
+                      action={canEditBooking && (
+                        <button onClick={()=>{ setEditVariation(null); setShowVariationModal(true); }}
+                          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 text-white text-xs font-bold transition-all">
+                          <FiPlus className="w-3.5 h-3.5"/> Record a change
                         </button>
                       )}/>
                   )}

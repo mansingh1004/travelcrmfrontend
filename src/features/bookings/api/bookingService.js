@@ -278,6 +278,47 @@ const bookingService = {
   deleteExpense: (bookingId, expenseId) =>
     API.delete(`/bookings/${bookingId}/expenses/${expenseId}`),
 
+  // ── Cost variations (money that moved AFTER the booking was confirmed) ──────
+  // Itinerary changes, extra activities, permits, route/hotel changes, penalties.
+  //
+  // ONE ROW CARRIES BOTH SIDES: `customerAmountDelta` (what the customer was billed or waived) and
+  // `agencyCostDelta` (what it cost us, or what a supplier credited back). Both are SIGNED —
+  // +2000 charged / −500 waived, +3000 cost / −200 credit — so a waiver is not a different kind of
+  // row, just a negative one. `netImpact` comes back computed; never derive it in the browser.
+  //
+  // The server reconciles the booking in the same transaction: a customer-side row moves
+  // totalPayable and can flip a PAID booking back to PARTIAL, and a cost-side row moves netProfit.
+  // Refetch the booking after any write here.
+  //
+  // Gated BOOKING_PROFIT_READ to see, + BOOKING_UPDATE to change — same as the expense ledger,
+  // because these rows carry the agency's cost.
+
+  getVariations: (bookingId) => API.get(`/bookings/${bookingId}/variations`),
+
+  // Totals, per-category rollup, and profitBeforeVariations vs netProfit.
+  getVariationSummary: (bookingId) => API.get(`/bookings/${bookingId}/variations/summary`),
+
+  // Served from the backend enum so the category list is never hardcoded here.
+  getVariationCategories: (bookingId) => API.get(`/bookings/${bookingId}/variations/categories`),
+
+  // BULK create — body is { variations: [row, ...] } (max 50), one transaction.
+  // Row: { category, description, customerAmountDelta?, agencyCostDelta?, variationDate,
+  //        vendorName?, referenceNumber?, notes? }
+  // A row with both deltas zero is rejected: that is a note, not a ledger entry.
+  addVariations: (bookingId, rows) =>
+    API.post(`/bookings/${bookingId}/variations`, { variations: rows }),
+
+  // Full representation, not a patch — an omitted amount is written as zero, which is the only way
+  // to say "this turned out to cost nothing after all".
+  updateVariation: (bookingId, variationId, body) =>
+    API.put(`/bookings/${bookingId}/variations/${variationId}`, body),
+
+  deleteVariation: (bookingId, variationId) =>
+    API.delete(`/bookings/${bookingId}/variations/${variationId}`),
+
+  restoreVariation: (bookingId, variationId) =>
+    API.post(`/bookings/${bookingId}/variations/${variationId}/restore`),
+
   // ── Service line items + vendor assignment ──────────────────────────────────
   // GET  /bookings/{id}/services
   getServices: (bookingId) => API.get(`/bookings/${bookingId}/services`),
