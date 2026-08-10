@@ -154,6 +154,18 @@ function normalizeBooking(b = {}) {
   const customerAdjustments = Number(b.totalCustomerAdjustments) || 0;
   const costVariations      = Number(b.totalCostVariations) || 0;
 
+  // Agent / agency commission. A null commissionType means no arrangement was made at all, which is
+  // a different statement from a zero commission — the UI shows nothing rather than "₹0".
+  const commission = b.commissionType ? {
+    payee:  b.commissionPayeeName || "",
+    type:   b.commissionType,
+    value:  Number(b.commissionValue) || 0,
+    amount: Number(b.commissionAmount) || 0,
+    status: b.commissionStatus || "PENDING",
+    paidOn: b.commissionPaidOn || null,
+    notes:  b.commissionNotes || "",
+  } : null;
+
   // Traveller counts live on tripSnapshot.travellers — the top-level keys were never part of
   // BookingResponseDTO and are kept only as fallbacks for pre-normalised callers.
   const snap = b.tripSnapshot || null;
@@ -189,7 +201,7 @@ function normalizeBooking(b = {}) {
     vendorPublicId:  b.vendorPublicId || null,
     vendorName:      b.vendorName || "",
     netProfit, netMargin, payPct, refunded,
-    customerAdjustments, costVariations,
+    customerAdjustments, costVariations, commission,
     overseas:        !!b.overseasTourPackage,
     status:          (b.status || "PENDING").toUpperCase(),
     payStatus:       (b.paymentStatus || b.payStatus || "UNPAID").toUpperCase(),
@@ -1671,6 +1683,63 @@ export default function BookingDetails() {
                       )}
                       {sa.passengerCount != null && <KV label="Passengers Needing Assistance" value={sa.passengerCount}/>}
                       {sa.notes && <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{sa.notes}</p>}
+                    </div>
+                  </Section>
+                )}
+
+                {/* ── AGENT / AGENCY COMMISSION ──
+                    What this booking owes whoever brought it. Sits in Overview, beside Source
+                    Traceability, because it belongs to the same question — where did this booking
+                    come from, and what did getting it cost us.
+
+                    Behind canSeeMargin: the commission is a cost and it reduces the booking's
+                    profit, so it is the same class of figure as supplier spend.
+
+                    Rendered only when an arrangement EXISTS. A booking nobody was paid for shows
+                    nothing rather than "₹0.00", because those are different facts. */}
+                {canSeeMargin && b.commission && (
+                  <Section title="Agent Commission"
+                    sub="What this booking owes the party that brought it"
+                    icon={<FiUser className="w-4 h-4"/>} tone="indigo">
+                    <div className="space-y-3">
+                      <div className="flex items-start justify-between gap-4 flex-wrap">
+                        <div className="min-w-0">
+                          <p className="text-sm font-extrabold text-slate-800 truncate">
+                            {b.commission.payee || "Unnamed payee"}
+                          </p>
+                          <p className="text-xs text-slate-400 mt-0.5">
+                            {b.commission.type === "PERCENT"
+                              ? `${b.commission.value}% of ${fmtINR(b.customerAmount)} booking value`
+                              : "Flat amount"}
+                          </p>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p className="text-lg font-extrabold text-slate-800">{fmtINR(b.commission.amount)}</p>
+                          <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
+                            b.commission.status === "PAID"
+                              ? "bg-green-100 text-green-700"
+                              : "bg-amber-100 text-amber-700"}`}>
+                            {b.commission.status === "PAID" ? "Paid" : "Pending"}
+                          </span>
+                        </div>
+                      </div>
+
+                      {b.commission.status === "PAID" && b.commission.paidOn && (
+                        <p className="text-xs text-slate-400">Paid on {fmtDate(b.commission.paidOn)}</p>
+                      )}
+                      {b.commission.notes && (
+                        <p className="text-xs text-slate-500 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2">
+                          {b.commission.notes}
+                        </p>
+                      )}
+
+                      {/* Stated because it is not obvious and it is the difference between a margin
+                          that reads right and one that reads twice as good as it is. */}
+                      <p className="text-[11px] text-slate-400 leading-relaxed border-t border-slate-100 pt-2.5">
+                        Already deducted from this booking's profit — it is owed from the moment it is
+                        agreed, so marking it paid moves cash, not margin. Don't also add it to the
+                        Expense Ledger as a Commission row, or it comes off the profit twice.
+                      </p>
                     </div>
                   </Section>
                 )}
