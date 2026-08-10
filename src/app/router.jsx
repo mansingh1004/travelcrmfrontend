@@ -40,6 +40,7 @@ const EditBooking = lazyPage(bookings, "EditBooking");
 const BookingDetails = lazyPage(bookings, "BookingDetails");
 const BookingPayments = lazyPage(bookings, "BookingPayments");
 const BookingServices = lazyPage(bookings, "BookingServices");
+const DuplicateBookings = lazyPage(bookings, "DuplicateBookings");
 
 const customers = () => import("@features/customers");
 const AllCustomers = lazyPage(customers, "AllCustomers");
@@ -325,6 +326,10 @@ const AppRouter = () => {
               <Route path="Allbookings" element={<Allbookings />} />
               <Route path="CreateBooking" element={<Guard allow={hasPermission(P.BOOKING_CREATE)}><CreateBooking /></Guard>} />
               <Route path="CreateBooking/:leadId" element={<Guard allow={hasPermission(P.BOOKING_CREATE)}><CreateBooking /></Guard>} />
+              {/* Guarded on BOOKING_CANCEL, which is what the resolve endpoint needs — the page is
+                  useless to anyone who can only look at it. The service additionally demands
+                  BOOKING_REFUND, and the page says so rather than failing at the button. */}
+              <Route path="DuplicateBookings" element={<Guard allow={hasPermission(P.BOOKING_CANCEL)}><DuplicateBookings /></Guard>} />
               <Route path="masters/hotels" element={<Hotel />} />
               <Route path="masters/airlines" element={<Airline />} />
               <Route path="masters/cruises" element={<Cruise />} />

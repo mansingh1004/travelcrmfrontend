@@ -9,6 +9,7 @@ export { default as BookingDetails } from "./pages/BookingDetails";
 export { default as bookingService } from "./api/bookingService";
 export { default as BookingPayments } from "./pages/BookingPayments";
 export { default as BookingServices } from "./pages/BookingServices"
+export { default as DuplicateBookings } from "./pages/DuplicateBookings";
 // Previous Create Booking UI is intentionally kept for reference:
 // export { default as CreateBooking } from "./pages/CreateBooking";
 export { default as CreateBooking } from "./pages/CreateBookingClean";
