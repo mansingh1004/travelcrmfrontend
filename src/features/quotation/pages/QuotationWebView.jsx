@@ -961,7 +961,7 @@ if (style === "LUXURY")  return  <LuxuryWebView data={q} pdfUrl={`${API}/public/
           <img src={q.coverImageUrl} alt="" style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"cover", opacity: 0.5 }} />
         )}
 
-        {/* ── Airplane orbit ── */}
+       
         <div style={{ position:"absolute", inset:0, overflow:"hidden", pointerEvents:"none", zIndex:0 }}>
           <svg width="100%" height="100%" viewBox="0 0 1200 400" preserveAspectRatio="xMidYMid slice" style={{ position:"absolute", inset:0 }}>
             <defs>
