@@ -735,7 +735,7 @@ import { useParams } from "react-router-dom";
 import { getErrorMessage } from "@shared/api/apiError";
 import ModernWebView from "../components/ModernWebView";
 import PremiumWebView from "../components/PremiumWebView";
-
+import LuxuryWebView from "../components/LuxuryWebView";
 const API = import.meta.env.VITE_API_URL || "http://localhost:8080/api";
 
 const inr = (v) => (v == null ? "—" : `₹${Number(v).toLocaleString("en-IN")}`);
@@ -848,8 +848,13 @@ export default function QuotationWebView({ publicId, styleOverride }) {
   if (!q)      return <Centered>Quotation not found.</Centered>;
 
   const style = styleOverride || q.templateStyle;
+ 
+
   if (style === "MODERN")  return <ModernWebView  data={q} pdfUrl={`${API}/public/quotations/${publicId}/pdf`} />;
   if (style === "PREMIUM") return <PremiumWebView data={q} pdfUrl={`${API}/public/quotations/${publicId}/pdf`} />;
+if (style === "LUXURY")  return  <LuxuryWebView data={q} pdfUrl={`${API}/public/quotations/${publicId}/pdf`}/>;
+
+
 
   const c = q.customer || {};
   const company = q.company || q.organization || {};
