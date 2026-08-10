@@ -1267,14 +1267,17 @@ export default function BookingDetails() {
           onOpen={(alert)=>alert.route ? navigate(alert.route) : setTab(alert.tab)}/>
 
         {/* ── KPI STRIP ──
-            Two rows of four. Row 1 is what the CUSTOMER owes and has paid; row 2 is what the
-            agency made and what the trip is.
+            ONE row: what the customer owes, what changed, what came in, what is left, what we made,
+            and what we still owe suppliers. Six on a wide screen, wrapping to three and then two.
 
-            Net Profit and Taxes used to share one slot, swapped by permission — so a manager who
-            could see margin could never see the tax split, and vice versa, which is not what either
-            of them wanted. They are separate cards now; the margin cards are still gated on
-            canSeeMargin, and that gate is UI courtesy — the API is the real boundary. */}
-        <div className="grid gap-4 grid-cols-2 xl:grid-cols-4">
+            No Taxes card — GST and TCS are the BREAKUP of Total Payable, and a card whose value was
+            their sum said nothing the first card's sub-line does not say better. No Trip card
+            either: dates and pax are trip facts, not money, and they already have a home in Trip &
+            Travellers. Both were crowding the one row this strip is supposed to be.
+
+            Net Profit and Vendor Outstanding are gated on canSeeMargin — UI courtesy, the API is the
+            real boundary — so a sales user sees four cards, not six. */}
+        <div className="grid gap-3 grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
           <StatCard label="Total Payable" value={fmtINR(b.totalPayable)}
             sub={`Base ${fmtINR(b.customerAmount)} · GST ${fmtINR(b.gst)} · TCS ${fmtINR(b.tcs)}${
               b.customerAdjustments !== 0 ? ` · Changes ${signedINR(b.customerAdjustments)}` : ""}`}
@@ -1293,31 +1296,18 @@ export default function BookingDetails() {
             icon="🔀" gradient="from-violet-600 to-purple-600" delay={60}/>
 
           <StatCard label="Net Collected" value={fmtINR(netCollected)}
-            sub={`${fmtINR(b.paid)} gross across ${receiptCount} receipt${receiptCount === 1 ? "" : "s"}${b.refunded > 0 ? ` · ${fmtINR(b.refunded)} refunded` : ""}`}
+            sub={`${fmtINR(b.paid)} gross · ${receiptCount} receipt${receiptCount === 1 ? "" : "s"}${b.refunded > 0 ? ` · ${fmtINR(b.refunded)} refunded` : ""}`}
             icon="✓" gradient="from-green-600 to-emerald-600" delay={120}/>
 
           <StatCard label="Pending" value={fmtINR(b.due)}
             sub={`${b.payPct}% collected${nextDueLabel ? ` · ${nextDueLabel}` : ""}`}
             icon="⏳" gradient="from-amber-600 to-orange-600" delay={180}/>
-        </div>
 
-        <div className="grid gap-4 grid-cols-2 xl:grid-cols-4">
           {canSeeMargin && (
             <StatCard label="Net Profit" value={fmtINR(b.netProfit)}
               sub={`Margin ${b.netMargin}% · Supplier ${fmtINR(b.totalSupplierCost)}${b.totalInternalCosts > 0 ? ` · Company ${fmtINR(b.totalInternalCosts)}` : ""}`}
-              icon="📈" gradient="from-teal-600 to-cyan-600" delay={0}/>
+              icon="📈" gradient="from-teal-600 to-cyan-600" delay={240}/>
           )}
-
-          <StatCard label="Taxes" value={fmtINR(b.gst + b.tcs)}
-            sub={`GST ${fmtINR(b.gst)} · TCS ${fmtINR(b.tcs)}`}
-            icon="🏛️" gradient="from-slate-600 to-slate-500" delay={60}/>
-
-          <StatCard label="Trip"
-            value={b.totalNights > 0 ? `${b.totalNights}N` : fmtDate(b.travelDate)}
-            sub={`${fmtDate(b.travelDate)} · ${b.adults} adult${b.adults === 1 ? "" : "s"}${
-              b.children > 0 ? ` · ${b.children} child${b.children === 1 ? "" : "ren"}` : ""}${
-              b.infants > 0 ? ` · ${b.infants} infant${b.infants === 1 ? "" : "s"}` : ""}`}
-            icon="🧭" gradient="from-sky-600 to-blue-500" delay={120}/>
 
           {canSeeMargin && (
             <StatCard label="Vendor Outstanding" value={fmtINR(vendorOutstanding)}
@@ -1325,7 +1315,7 @@ export default function BookingDetails() {
                 ? `${fmtINR(expenseSummary.totalExpense)} billed · ${fmtINR(expenseSummary.totalPaid)} paid${
                     Number(expenseSummary.overdueOutstanding) > 0 ? ` · ${fmtINR(expenseSummary.overdueOutstanding)} overdue` : ""}`
                 : "Payable to suppliers"}
-              icon="🏦" gradient="from-rose-600 to-pink-600" delay={180}/>
+              icon="🏦" gradient="from-rose-600 to-pink-600" delay={300}/>
           )}
         </div>
 
