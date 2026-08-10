@@ -1196,6 +1196,19 @@ export default function BookingDetails() {
                   The customer's name and the booking date used to be buried inside the Overview
                   tab's Customer and Booking Snapshot sections, so the one line that answers "whose
                   booking is this, and when was it taken?" required opening a tab and scrolling. */}
+              {/* Identity, and only identity.
+                  Three things were removed rather than restyled, because each was a worse copy of
+                  something already on screen within a hundred pixels:
+
+                  • the payment-status pill — the card strip below states the exact amounts collected
+                    and pending, and the percentage; a coarse "Partly Paid" underneath the name added
+                    a fourth place to read the same fact and the first one to be stale;
+                  • the Home / Bookings / View breadcrumb — the back arrow immediately to its left
+                    already goes to the bookings list, and nobody navigates to Home from a booking;
+                  • the Documents button — Documents is a TAB, forty pixels below, and the button did
+                    nothing but switch to it.
+
+                  What is left answers "whose booking, which one, what state, which trip". */}
               <div className="min-w-0">
                 <div className="flex items-center gap-2.5 flex-wrap">
                   <h1 className="text-lg font-extrabold text-slate-800 truncate max-w-[22ch] sm:max-w-none"
@@ -1204,9 +1217,6 @@ export default function BookingDetails() {
                   <span className={`text-xs font-bold px-2.5 py-1 rounded-full border flex items-center gap-1.5 ${statusStyle}`}>
                     <span className={`w-1.5 h-1.5 rounded-full ${statusDot}`}/>
                     {titleCase(b.status)}
-                  </span>
-                  <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${payStyle}`}>
-                    💳 {titleCase(b.payStatus)}
                   </span>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap text-xs text-slate-400 mt-1">
@@ -1221,22 +1231,14 @@ export default function BookingDetails() {
                       </span>
                     </>
                   )}
-                  <nav aria-label="Breadcrumb" className="hidden lg:flex items-center">
-                    <span className="text-slate-300 mx-1">·</span>
-                    <button type="button" onClick={()=>navigate("/")} className="hover:text-blue-600">Home</button>
-                    <span className="mx-1">/</span>
-                    <button type="button" onClick={()=>navigate("/Allbookings")} className="hover:text-blue-600">Bookings</button>
-                    <span className="mx-1">/</span>
-                    <span className="text-blue-600 font-bold" aria-current="page">View</span>
-                  </nav>
                 </div>
               </div>
             </div>
+            {/* Two actions, no utilities. Refresh is gone: every write on this page already refetches
+                what it touched, so the button existed for the case where the server changed under a
+                stale tab — which a reload covers, and which nobody stays on this screen long enough
+                to hit. loadAll is still the mount path and still what every modal's onSaved calls. */}
             <div className="flex items-center gap-2 flex-wrap">
-              <button onClick={loadAll}
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-200 hover:border-blue-300 bg-white text-slate-600 hover:text-blue-600 text-xs font-bold transition-all">
-                <FiRefreshCw className={`w-3.5 h-3.5 ${loading?"animate-spin":""}`}/> Refresh
-              </button>
               {canAddPayment && (
                 <button onClick={()=>setShowAddPay(true)}
                   className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white text-xs font-bold shadow-sm transition-all">
@@ -1249,10 +1251,6 @@ export default function BookingDetails() {
                   <FiEdit2 className="w-3.5 h-3.5"/> Edit
                 </button>
               )}
-              <button onClick={()=>setTab("documents")}
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 text-xs font-bold transition-all">
-                <FiFolder className="w-3.5 h-3.5"/> Documents
-              </button>
             </div>
           </div>
         </div>
