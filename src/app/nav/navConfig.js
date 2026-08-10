@@ -252,6 +252,16 @@ export const NAV_SECTIONS = [
             keywords: "create trip confirm",
             can: () => hasPermission(P.BOOKING_CREATE),
           },
+          {
+            // Clean-up, not a daily destination: new duplicates are blocked at creation, so this
+            // normally shows an empty state. Gated on BOOKING_CANCEL because that is what resolving
+            // one takes — showing it to someone who can only look is a dead end.
+            id: "bookings.duplicates",
+            label: "Duplicate bookings",
+            path: "/DuplicateBookings",
+            keywords: "duplicate double entered twice merge cleanup",
+            can: () => hasPermission(P.BOOKING_CANCEL),
+          },
         ],
       },
       {
