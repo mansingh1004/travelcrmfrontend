@@ -641,8 +641,9 @@ export default function BookingDetails() {
    * The two money ROLLUPS, loaded on mount rather than with their tab.
    *
    * The ledger ROWS stay lazy behind the Finance tab — they are long and most visits never open it.
-   * The summaries are different: they drive cards in the always-visible KPI strip, and a card that
-   * reads ₹0 until you happen to click Finance is worse than no card. Two small rollups.
+   * The summaries are different: the variation rollup drives a card in the always-visible KPI strip,
+   * and the expense rollup drives the attention bar's overdue-supplier warning. Both would otherwise
+   * read empty until someone happened to click Finance, which for a warning is worse than useless.
    *
    * Failures are swallowed: these enrich cards that already have a booking-level fallback, and the
    * user did not ask for them, so a failure is not an outcome worth interrupting them about.
@@ -1097,10 +1098,6 @@ export default function BookingDetails() {
     : "—";
   const receiptCount = payments.filter(p => String(p.entryType || "RECEIPT").toUpperCase() !== "REFUND").length;
 
-  /* What is still owed to suppliers. Straight off the server's expense rollup — the ledger rows
-     themselves stay behind the Finance tab, so this is null until the summary loads. */
-  const vendorOutstanding = Number(expenseSummary?.totalOutstanding) || 0;
-
   /* The collection deadline, said in the only terms that matter to whoever is chasing it: how long
      is left before the customer travels. Derived from travelDate rather than a reminder row, so it
      needs no extra fetch and cannot disagree with the date on the booking. */
@@ -1275,17 +1272,21 @@ export default function BookingDetails() {
             either: dates and pax are trip facts, not money, and they already have a home in Trip &
             Travellers. Both were crowding the one row this strip is supposed to be.
 
-            Net Profit and Vendor Outstanding are gated on canSeeMargin — UI courtesy, the API is the
-            real boundary — so a sales user sees four cards, not six. */}
-        <div className="grid gap-3 grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+            Net Profit is gated on canSeeMargin — UI courtesy, the API is the real boundary — so a
+            sales user sees four cards, not five. */}
+        <div className="grid gap-3 grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
           <StatCard label="Total Payable" value={fmtINR(b.totalPayable)}
             sub={`Base ${fmtINR(b.customerAmount)} · GST ${fmtINR(b.gst)} · TCS ${fmtINR(b.tcs)}${
               b.customerAdjustments !== 0 ? ` · Changes ${signedINR(b.customerAdjustments)}` : ""}`}
             icon="🧾" gradient="from-blue-600 to-indigo-600" delay={0}/>
 
-          {/* Variations: the money that moved AFTER the booking was made. Its own card because
-              "why is the total not what we quoted?" is otherwise unanswerable from this screen. */}
-          <StatCard label="Changes & Extras"
+          {/* The money that moved AFTER the booking was made. Its own card because "why is the total
+              not what we quoted?" is otherwise unanswerable from this screen.
+
+              The value is SIGNED and can go negative — a booking where more was waived than charged
+              reads "−₹500", which is the honest answer even though the label says Charges. The
+              sub-line names the waived figure so the minus is never a puzzle. */}
+          <StatCard label="Additional Charges"
             value={variationSummary ? signedINR(variationSummary.netCustomerAdjustment) : fmtINR(b.customerAdjustments)}
             sub={variationSummary
               ? `${variationSummary.variationCount} event${variationSummary.variationCount === 1 ? "" : "s"}`
@@ -1307,15 +1308,6 @@ export default function BookingDetails() {
             <StatCard label="Net Profit" value={fmtINR(b.netProfit)}
               sub={`Margin ${b.netMargin}% · Supplier ${fmtINR(b.totalSupplierCost)}${b.totalInternalCosts > 0 ? ` · Company ${fmtINR(b.totalInternalCosts)}` : ""}`}
               icon="📈" gradient="from-teal-600 to-cyan-600" delay={240}/>
-          )}
-
-          {canSeeMargin && (
-            <StatCard label="Vendor Outstanding" value={fmtINR(vendorOutstanding)}
-              sub={expenseSummary
-                ? `${fmtINR(expenseSummary.totalExpense)} billed · ${fmtINR(expenseSummary.totalPaid)} paid${
-                    Number(expenseSummary.overdueOutstanding) > 0 ? ` · ${fmtINR(expenseSummary.overdueOutstanding)} overdue` : ""}`
-                : "Payable to suppliers"}
-              icon="🏦" gradient="from-rose-600 to-pink-600" delay={300}/>
           )}
         </div>
 
