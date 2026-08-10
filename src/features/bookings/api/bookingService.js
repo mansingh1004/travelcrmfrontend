@@ -62,9 +62,18 @@ const bookingService = {
   getEligibleAssignees: () => API.get("/bookings/assignment/eligible-users"),
 
   // POST /bookings/preview — dry-run of the money the server would stamp on create:
-  // { customerAmount, vendorCost?, paidAmount?, overseasTourPackage? } →
-  // { gst, tcs, totalPayable, netProfit, pendingAmount, paymentStatus }.
+  // { customerAmount, vendorCost?, paidAmount?, overseasTourPackage?,
+  //   applyGst?, gstInclusive?, applyTcs? } →
+  // { customerAmount, gst, tcs, totalPayable, netProfit, pendingAmount, paymentStatus }.
   // The create form renders these verbatim — the UI never computes tax itself.
+  //
+  // The three tax flags are TRI-STATE: null/undefined means "follow the tenant's accounting
+  // settings", true/false is an explicit override for this booking. Never coerce them to a boolean
+  // on the way out — sending false where the user chose nothing pins today's default onto the row.
+  //
+  // Under gstInclusive the posted customerAmount is the GROSS, and the RETURNED customerAmount is
+  // the pre-tax base derived out of it — which is what the booking actually stores. Render that,
+  // not the number the user typed, wherever "taxable value" is shown.
   previewFinancials: (body) => API.post("/bookings/preview", body),
 
   update: (publicId, bookingData) => API.put(`/bookings/${publicId}`, bookingData),
@@ -145,13 +154,62 @@ const bookingService = {
   getPayments: (bookingId) => API.get(`/bookings/${bookingId}/payments`),
 
   // POST /bookings/{id}/payments
-  // body: { amount, paymentType?, paymentMethod?, paymentDate?, reference?, notes?, serviceItemPublicId? }
-  // paymentMethod is a free label ("Bank Transfer", "Credit Card", …) — sent as-is.
+  // body: { amount, paymentType?, paymentMethod?, paymentAccount?, paidByName?,
+  //         receivedByUserPublicId?, paymentDate?, paymentTime?, reference?, notes?,
+  //         serviceItemPublicId? }
+  //
+  // paymentMethod is a free label ("Bank Transfer", "Credit Card", …) and paymentAccount is the
+  // bank/cash-box it landed in — both sent as-is. paymentTime is "HH:mm" and is genuinely optional:
+  // omit it rather than sending a made-up 00:00.
+  //
+  // NOTE — recording a payment needs only BOOKING_READ. There is no permission check to run before
+  // showing the form; whoever can see the booking can book its money.
   addPayment: (bookingId, data) => API.post(`/bookings/${bookingId}/payments`, data),
 
-  // DELETE /bookings/{id}/payments/{paymentId}
+  // POST /bookings/{id}/payments/batch — several receipts in ONE transaction.
+  // body: { payments: [row, ...] } (max 50), each row the same shape as addPayment.
+  // The over-payment ceiling applies to the batch TOTAL, so rows that individually fit but together
+  // exceed the balance are rejected as a set and nothing is written.
+  addPayments: (bookingId, rows) =>
+    API.post(`/bookings/${bookingId}/payments/batch`, { payments: rows }),
+
+  // PUT /bookings/{id}/payments/{paymentId} — correct a recorded entry. Requires PAYMENT_MANAGE.
+  // FULL representation, not a patch: every field is written, so omitting one CLEARS it.
+  // `amendmentReason` is mandatory and is stored with the amending user + timestamp.
+  updatePaymentEntry: (bookingId, paymentId, data) =>
+    API.put(`/bookings/${bookingId}/payments/${paymentId}`, data),
+
+  // DELETE /bookings/{id}/payments/{paymentId} — requires PAYMENT_MANAGE.
   deletePayment: (bookingId, paymentId) =>
     API.delete(`/bookings/${bookingId}/payments/${paymentId}`),
+
+  // ── Payment receipts (optional evidence on a ledger row) ────────────────────
+  // Bytes live in Postgres and are served only through the authenticated download below — there is
+  // no public URL to embed. Attaching is OPTIONAL everywhere: a payment with no receipt is complete.
+  // Upload rides BOOKING_READ (same as recording the payment); DELETE needs PAYMENT_MANAGE.
+
+  getPaymentAttachments: (bookingId, paymentId) =>
+    API.get(`/bookings/${bookingId}/payments/${paymentId}/attachments`),
+
+  // multipart `file` — JPG / PNG / WEBP / PDF, 10 MB, counted against the tenant's storage quota
+  // (a 403 here means the plan's storage is full, not that permission is missing).
+  uploadPaymentAttachment: (bookingId, paymentId, file, onProgress) => {
+    const form = new FormData();
+    form.append("file", file);
+    return API.post(`/bookings/${bookingId}/payments/${paymentId}/attachments`, form, {
+      headers: { "Content-Type": "multipart/form-data" },
+      onUploadProgress: onProgress,
+    });
+  },
+
+  // The bytes, as a blob — hand res.data to openBlob()/downloadBlob(). Fetched through the shared
+  // client so the JWT is attached; an <img src> pointing at this path would be unauthenticated.
+  getPaymentAttachmentFile: (bookingId, paymentId, attachmentId) =>
+    API.get(`/bookings/${bookingId}/payments/${paymentId}/attachments/${attachmentId}/file`,
+      { responseType: "blob" }),
+
+  deletePaymentAttachment: (bookingId, paymentId, attachmentId) =>
+    API.delete(`/bookings/${bookingId}/payments/${paymentId}/attachments/${attachmentId}`),
 
   // ── Expense ledger (money OUT to vendors — mirror of the payment ledger) ────
   // POST /bookings/{id}/expenses — BULK create; body is { expenses: [row, ...] } (max 50).

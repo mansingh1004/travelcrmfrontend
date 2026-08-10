@@ -156,10 +156,59 @@ const initialForm = () => ({
   // never sent it, so an overseas booking silently under-collected TCS. Explicit checkbox — the
   // package-type list (Family/Honeymoon/...) carries no domestic-vs-overseas signal to derive from.
   overseasTourPackage: false,
+  // ── Per-booking tax overrides — TRI-STATE, and the null matters ────────────────────────────
+  //
+  // null = "not decided here, follow the tenant's accounting settings"; true/false = an explicit
+  // answer for this booking. They are NOT booleans: a plain false would mean "this booking says no"
+  // and would pin an answer onto every booking anyone merely opened, overriding the tenant's own
+  // configuration. The UI's third state ("Default") is what writes the null back.
+  //
+  // gstInclusive additionally changes what `customerAmount` MEANS on the way in — under inclusive
+  // it is the gross the customer pays and the server derives the pre-tax base out of it, returning
+  // that base as the preview's customerAmount.
+  applyGst: null,
+  gstInclusive: null,
+  applyTcs: null,
   assignedUserId: "",
   leadPublicId: "",
   status: "PENDING",
 });
+
+/**
+ * A three-way segmented control for a nullable boolean.
+ *
+ * A checkbox cannot express what these fields mean. `null` is not "off" — it is "nobody decided
+ * here, follow the tenant's setting" — and collapsing it to false would pin an explicit answer onto
+ * every booking anyone merely opened, silently overriding the tenant's own tax configuration.
+ * Comparison is by identity so `null` and `false` stay distinct options.
+ */
+function TriToggle({ label, value, onChange, options, hint }) {
+  return (
+    <div>
+      <span className="block text-[11px] font-semibold text-slate-600">{label}</span>
+      <div className="mt-1.5 inline-flex w-full rounded-lg border border-slate-200 bg-white p-0.5">
+        {options.map((opt) => {
+          const active = value === opt.value;
+          return (
+            <button
+              key={String(opt.value)}
+              type="button"
+              onClick={() => onChange(opt.value)}
+              className={`flex-1 rounded-md px-2 py-1.5 text-[11px] font-bold transition-all ${
+                active
+                  ? "bg-blue-600 text-white shadow-sm"
+                  : "text-slate-500 hover:bg-slate-50 hover:text-slate-700"
+              }`}
+            >
+              {opt.label}
+            </button>
+          );
+        })}
+      </div>
+      {hint && <p className="mt-1 text-[10px] font-normal leading-snug text-slate-400">{hint}</p>}
+    </div>
+  );
+}
 
 function Panel({ icon: Icon, title, description, action, children }) {
   return (
@@ -582,6 +631,13 @@ export default function BookingFormPage() {
           vendorCost: booking.vendorCost == null ? "" : String(booking.vendorCost),
           paidAmount: booking.paidAmount == null ? "0" : String(booking.paidAmount),
           overseasTourPackage: Boolean(booking.overseasTourPackage),
+          // Kept TRI-STATE on load: `?? null` preserves "inheriting the tenant setting", which
+          // Boolean() would flatten to false. Flattening here would mean that merely opening and
+          // saving a booking pins today's tenant default onto it forever — the same class of bug
+          // LEAD_SOURCES has on the lead form.
+          applyGst: booking.applyGst ?? null,
+          gstInclusive: booking.gstInclusive ?? null,
+          applyTcs: booking.applyTcs ?? null,
           assignedUserId: booking.assignedUserId || "",
           leadPublicId: booking.sourceLeadPublicId || booking.leadId || "",
           status: booking.status || "PENDING",
@@ -954,6 +1010,9 @@ export default function BookingFormPage() {
       vendorCost: form.vendorCost === "" ? null : Number(form.vendorCost),
       paidAmount: Number(form.paidAmount) || 0,
       overseasTourPackage: form.overseasTourPackage,
+      applyGst: form.applyGst,
+      gstInclusive: form.gstInclusive,
+      applyTcs: form.applyTcs,
       services: form.services,
       assignedUserId: form.assignedUserId || null,
       leadPublicId: form.leadPublicId || null,
@@ -1000,6 +1059,20 @@ export default function BookingFormPage() {
           vendorCost: vendorCleared ? 0 : ifChanged("vendorCost", payload.vendorCost),
           paidAmount: ifChanged("paidAmount", payload.paidAmount),
           overseasTourPackage: payload.overseasTourPackage,
+
+          /* Tax overrides collide with the patch contract: null means "leave unchanged" on the
+             wire, but null is ALSO the stored value meaning "inherit the tenant setting". One
+             field cannot carry both readings, so patch-semantics wins and going BACK to inherit
+             is expressed by its own flag. Sent only when a control actually moved to Default —
+             otherwise an ordinary edit would reset overrides it never touched. */
+          clearTaxOverrides:
+            ["applyGst", "gstInclusive", "applyTcs"].some(
+              (k) => loadedRef.current[k] != null && form[k] == null
+            ) || undefined,
+          // undefined is dropped by JSON.stringify, so an unset override never reaches the wire.
+          applyGst:     form.applyGst     ?? undefined,
+          gstInclusive: form.gstInclusive ?? undefined,
+          applyTcs:     form.applyTcs     ?? undefined,
           services: payload.services,
           assignedUserId: payload.assignedUserId,
           tripSnapshot: payload.tripSnapshot,
@@ -1122,6 +1195,11 @@ export default function BookingFormPage() {
           vendorCost: previewVendor,
           paidAmount: previewPaid,
           overseasTourPackage: form.overseasTourPackage,
+          // Sent as-is, nulls included: null is "follow the tenant setting" on the wire too, and
+          // coercing to false here would make the preview quote tax the save would not.
+          applyGst: form.applyGst,
+          gstInclusive: form.gstInclusive,
+          applyTcs: form.applyTcs,
         }));
         if (previewTicket.current !== ticket) return; // stale reply — a newer request owns the panel
         setPreview(data);
@@ -1135,7 +1213,8 @@ export default function BookingFormPage() {
       }
     }, 400);
     return () => window.clearTimeout(timer);
-  }, [previewAmount, previewVendor, previewPaid, form.overseasTourPackage]);
+  }, [previewAmount, previewVendor, previewPaid, form.overseasTourPackage,
+      form.applyGst, form.gstInclusive, form.applyTcs]);
 
   // Render-time gate for the Computed panel: with no valid amount the panel shows its hint and
   // any leftover preview/previewState from a previous amount is ignored rather than reset.
@@ -1601,6 +1680,60 @@ export default function BookingFormPage() {
                   <span className="block font-normal text-slate-400">TCS is collected on overseas packages when your accounting policy says so</span>
                 </span>
               </label>
+
+              {/* ── Tax for THIS booking ─────────────────────────────────────────────────────
+                  Each control is tri-state and starts on "Default", which means the tenant's
+                  Accounting Settings decide. Only touch one when this particular deal differs —
+                  if TCS is wrong on every booking, the fix is the tenant setting, not this. */}
+              <div className="sm:col-span-2 rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-3">
+                <p className="text-xs font-semibold text-slate-700">Tax for this booking</p>
+                <p className="mt-0.5 text-[11px] font-normal text-slate-400">
+                  Leave on Default to follow your Accounting Settings.
+                </p>
+
+                <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                  <TriToggle
+                    label="Price entered is"
+                    value={form.gstInclusive}
+                    onChange={(v) => setField("gstInclusive", v)}
+                    options={[
+                      { value: null,  label: "Default" },
+                      { value: false, label: "Excl. GST" },
+                      { value: true,  label: "Incl. GST" },
+                    ]}
+                    hint={
+                      form.gstInclusive === true
+                        ? "The amount above is the all-in price; the taxable value is derived from it."
+                        : null
+                    }
+                  />
+                  <TriToggle
+                    label="Charge GST"
+                    value={form.applyGst}
+                    onChange={(v) => setField("applyGst", v)}
+                    options={[
+                      { value: null,  label: "Default" },
+                      { value: true,  label: "Yes" },
+                      { value: false, label: "No" },
+                    ]}
+                  />
+                  <TriToggle
+                    label="Collect TCS"
+                    value={form.applyTcs}
+                    onChange={(v) => setField("applyTcs", v)}
+                    options={[
+                      { value: null,  label: "Default" },
+                      { value: true,  label: "Yes" },
+                      { value: false, label: "No" },
+                    ]}
+                    hint={
+                      form.applyTcs === null
+                        ? "Domestic packages don't attract TCS — set your policy to Overseas only in Accounting Settings."
+                        : null
+                    }
+                  />
+                </div>
+              </div>
             </div>
           </Panel>
 
@@ -1625,9 +1758,21 @@ export default function BookingFormPage() {
             )}
             {previewActive && preview && (
               <div className={`space-y-2 transition-opacity ${previewState === "loading" ? "opacity-60" : ""}`}>
+                {/* Under inclusive pricing the base is DERIVED from the gross, so it differs from
+                    what was typed — and it is the figure the booking actually stores and profits
+                    off. Shown only when the two disagree, so exclusive bookings keep the old panel. */}
+                {preview.customerAmount != null
+                  && Number(preview.customerAmount) !== previewAmount && (
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-semibold text-slate-400">Taxable value</span>
+                    <span className="font-bold text-slate-700">{inr(preview.customerAmount)}</span>
+                  </div>
+                )}
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-semibold text-slate-400">GST</span>
-                  <span className="font-bold text-slate-700">+ {inr(preview.gst)}</span>
+                  <span className="font-bold text-slate-700">
+                    {form.gstInclusive === true ? "incl. " : "+ "}{inr(preview.gst)}
+                  </span>
                 </div>
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-semibold text-slate-400">TCS</span>
