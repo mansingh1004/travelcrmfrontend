@@ -52,10 +52,20 @@ const bookingService = {
   // Chronological operational audit for the booking detail Activity tab.
   getTimeline: (publicId) => API.get(`/bookings/${publicId}/timeline`),
 
-  create: (bookingData) => API.post("/bookings", bookingData),
+  // Both create paths REQUIRE an `Idempotency-Key` header — the backend rejects the request with
+  // 400 when it is missing (BookingController:64, LeadConversionController:45). The key must be
+  // STABLE across retries of the same intent, so it is supplied by the caller (useIdempotencyKey
+  // from @shared/lib/idempotency), never generated here: a key minted per call would be different
+  // on every retry and would create a second booking instead of replaying the first.
+  //
+  // Same key + same body ⇒ the original booking comes back. Same key + a DIFFERENT body ⇒ 409,
+  // rather than silently returning someone else's booking.
+  create: (bookingData, idempotencyKey) =>
+    API.post("/bookings", bookingData, { headers: { "Idempotency-Key": idempotencyKey } }),
 
-  convertFromLead: (leadPublicId, payload) =>
-    API.post(`/leads/${leadPublicId}/convert-to-booking`, payload),
+  convertFromLead: (leadPublicId, payload, idempotencyKey) =>
+    API.post(`/leads/${leadPublicId}/convert-to-booking`, payload,
+      { headers: { "Idempotency-Key": idempotencyKey } }),
 
   // Staff selectable in the "Assigned To" dropdown on the create + convert forms. Requires
   // BOOKING_CREATE; a user without it never sees the control, so a 403 here is not expected.

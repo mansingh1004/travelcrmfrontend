@@ -6,6 +6,7 @@ import { bookingService } from "@features/bookings";
 import { quotationService } from "@features/quotation";
 import { useToast } from "@shared/ui/toast";
 import { getErrorMessage, isAlreadyReported } from "@shared/api/apiError";
+import { useIdempotencyKey } from "@shared/lib/idempotency";
 
 /* res.data?.data ?? res.data — the project-wide envelope unwrap */
 const unwrap = (res) => res?.data?.data ?? res?.data;
@@ -68,6 +69,12 @@ export default function ConvertToBookingModal({ lead, onClose, onConverted }) {
   // Toasts go straight to the shared store — no `onToast` prop, so this modal no longer
   // depends on whichever page happened to render it.
   const { showToast } = useToast();
+
+  /* POST /leads/{id}/convert-to-booking rejects a request with no Idempotency-Key (400). One key
+     per open modal, deliberately NOT reset on failure: retrying after a timeout must replay the
+     original conversion rather than convert the same lead twice. The modal closes on success, so
+     the next conversion mounts a fresh instance and gets a fresh key. */
+  const { key: idempotencyKey } = useIdempotencyKey("cv");
 
   const [form, setForm] = useState({
     customerName:   lead.customerName || '',
@@ -240,7 +247,7 @@ export default function ConvertToBookingModal({ lead, onClose, onConverted }) {
         assignedUserId: form.assignedUserId || null,
       };
       
-      const booking = unwrap(await bookingService.convertFromLead(leadId, payload));
+      const booking = unwrap(await bookingService.convertFromLead(leadId, payload, idempotencyKey));
       showToast(`Booking ${booking?.bookingCode || ''} created from lead`, 'success');
       onConverted?.(lead, booking);
       onClose();

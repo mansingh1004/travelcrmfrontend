@@ -32,6 +32,7 @@ import { vendorService } from "@features/vendors";
 import { geographyService } from "@shared/api/geographyService";
 import { getErrorMessage, getFieldErrors, isAlreadyReported } from "@shared/api/apiError";
 import { buildAdultPayload, deriveAdultBreakdown, getAdultBreakdownError } from "@shared/lib/adultBreakdown";
+import { useIdempotencyKey } from "@shared/lib/idempotency";
 import { useToast } from "@shared/ui/toast";
 
 const FONT = "'Plus Jakarta Sans',system-ui,sans-serif";
@@ -290,6 +291,10 @@ export default function BookingFormPage() {
        • the update payload, which must send money only when it actually changed — see handleSubmit. */
   const loadedRef = useRef({ travelDate: "", customerAmount: "", vendorPublicId: "", vendorCost: "", paidAmount: "" });
   const [bookingCode, setBookingCode] = useState("");
+  /* POST /bookings rejects a request with no Idempotency-Key (400). One key per form instance,
+     held across failed submits so a retry after a timeout replays the original create instead of
+     making a second booking; reset only after a save the user considers finished. */
+  const { key: idempotencyKey, reset: resetIdempotencyKey } = useIdempotencyKey("bk");
   /* Where a lead-seeded Customer Amount came from, so the field can say so. Without it the clerk
      sees a number they did not type and has no way to tell whether it is the quoted price or a
      leftover — which is exactly when someone "corrects" a correct figure. Holds the seeded amount
@@ -1122,9 +1127,14 @@ export default function BookingFormPage() {
         return;
       }
 
-      const booking = unwrap(await bookingService.create(payload));
+      const booking = unwrap(await bookingService.create(payload, idempotencyKey));
       writeSticky(form);
       const id = booking?.publicId || booking?.id;
+
+      // Retire the key only now the record is genuinely finished. Doing it in the catch — or on
+      // every submit — would hand a retry a NEW key, and the retry would create a second booking
+      // instead of replaying the first, which is the exact failure the header exists to stop.
+      resetIdempotencyKey();
 
       // OLD — replaced in create-form redesign
       // showToast(`Booking ${booking?.bookingCode || ""} created successfully.`, "success");
