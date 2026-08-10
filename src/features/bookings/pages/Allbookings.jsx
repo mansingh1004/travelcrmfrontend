@@ -212,9 +212,10 @@ function BookingModal({ booking, onClose, onEdit, onCancel, onRefresh }) {
         {/* Header */}
         <div className="bg-gradient-to-r from-blue-600 to-indigo-500 px-6 py-5 rounded-t-3xl flex items-start justify-between">
           <div>
+            {/* Same swap as the list card: the person first, the reference underneath. */}
             <p className="text-white/80 text-[10px] font-extrabold uppercase tracking-widest mb-1">Booking Detail</p>
-            <h2 className="text-white text-xl font-extrabold tracking-tight">{booking.code}</h2>
-            <p className="text-white/90 text-sm mt-0.5">{booking.customer}</p>
+            <h2 className="text-white text-xl font-extrabold tracking-tight">{booking.customer}</h2>
+            <p className="text-white/80 text-xs mt-0.5 font-bold tracking-wide">{booking.code}</p>
           </div>
           <button onClick={onClose}
             className="w-9 h-9 rounded-full bg-white/20 hover:bg-white/30 text-white flex items-center justify-center transition-all">
@@ -359,17 +360,24 @@ function MobileBookingCard({ b, onView, onEdit, onCancel, onDelete, onInvoice, d
       hover:shadow-md hover:border-blue-200 transition-all duration-200">
       <div className="h-1 -mx-4 -mt-4 rounded-t-2xl bg-gradient-to-r from-blue-600 to-indigo-500 mb-3"/>
       <div className="flex items-start justify-between gap-3">
+        {/* The CUSTOMER leads, the code follows.
+            A booking code is how the system refers to the row; a name is how a person refers to it.
+            Leading with the code made every card in the list open with a near-identical string that
+            differs only in its last digits — the eye had to skip past it to find the one fact it was
+            scanning for. The code is still here, just smaller and on the line that carries the
+            supporting detail. */}
         <div className="min-w-0">
-          <div className="flex items-center gap-2 flex-wrap mb-1">
-            <span className="text-xs font-extrabold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-lg border border-blue-100">
-              {b.code}
-            </span>
+          <div className="flex items-center gap-2 flex-wrap mb-0.5">
+            <p className="font-extrabold text-slate-800 text-sm truncate">{b.customer}</p>
             <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full flex items-center gap-1 ${STATUS_STYLE[b.status]}`}>
               <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT[b.status]}`}/>{b.status}
             </span>
           </div>
-          <p className="font-extrabold text-slate-800 text-sm truncate">{b.customer}</p>
-          <p className="text-xs text-slate-400 mt-0.5">📍 {b.destination}</p>
+          <p className="text-[11px] text-slate-400 truncate">
+            <span className="font-bold text-slate-500">{b.code}</span>
+            <span className="mx-1 text-slate-300">·</span>
+            📍 {b.destination}
+          </p>
         </div>
         <div className="text-right flex-shrink-0">
           <p className="text-base font-extrabold text-slate-800">{fmtINR(b.totalPayable)}</p>
