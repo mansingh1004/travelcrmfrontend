@@ -170,6 +170,18 @@ const initialForm = () => ({
   applyGst: null,
   gstInclusive: null,
   applyTcs: null,
+  // ── Agent / agency commission ──────────────────────────────────────────────────────────────
+  // What this booking owes whoever brought it. An empty commissionType means no arrangement, which
+  // is the ordinary case — the fields stay collapsed until someone says there is one.
+  //
+  // ⚠ Do NOT also record the same commission as a "Commission" expense row: that category is an
+  // INTERNAL cost and already reduces profit, so entering it twice deducts it twice.
+  commissionPayeeName: "",
+  commissionType: "",
+  commissionValue: "",
+  commissionStatus: "PENDING",
+  commissionPaidOn: "",
+  commissionNotes: "",
   assignedUserId: "",
   leadPublicId: "",
   status: "PENDING",
@@ -621,6 +633,10 @@ export default function BookingFormPage() {
           vendorPublicId: booking.vendorPublicId || "",
           vendorCost: booking.vendorCost == null ? "" : String(booking.vendorCost),
           paidAmount: booking.paidAmount == null ? "0" : String(booking.paidAmount),
+          // Only the TYPE is needed here, and only to answer one question on save: did this booking
+          // have a commission that the form no longer does? That is the case clearCommission exists
+          // for, and a null on the wire cannot express it.
+          commissionType: booking.commissionType || "",
         };
         setBookingCode(booking.bookingCode || "");
         setSelectedCustomer(customer || {
@@ -682,6 +698,14 @@ export default function BookingFormPage() {
           applyGst: booking.applyGst ?? null,
           gstInclusive: booking.gstInclusive ?? null,
           applyTcs: booking.applyTcs ?? null,
+          commissionPayeeName: booking.commissionPayeeName || "",
+          commissionType: booking.commissionType || "",
+          // The agreed TERMS, not the computed rupees — a percent commission must load back as the
+          // percent, or opening and saving a booking would freeze today's amount as a flat fee.
+          commissionValue: booking.commissionValue == null ? "" : String(booking.commissionValue),
+          commissionStatus: booking.commissionStatus || "PENDING",
+          commissionPaidOn: booking.commissionPaidOn || "",
+          commissionNotes: booking.commissionNotes || "",
           assignedUserId: booking.assignedUserId || "",
           leadPublicId: booking.sourceLeadPublicId || booking.leadId || "",
           status: booking.status || "PENDING",
@@ -1057,6 +1081,15 @@ export default function BookingFormPage() {
       applyGst: form.applyGst,
       gstInclusive: form.gstInclusive,
       applyTcs: form.applyTcs,
+      // Sent only when an arrangement was actually made. An empty type means "no commission", and
+      // the server reads a null type exactly that way — no need for a separate flag on create.
+      commissionPayeeName: form.commissionType ? (form.commissionPayeeName?.trim() || null) : null,
+      commissionType: form.commissionType || null,
+      commissionValue: form.commissionType && form.commissionValue !== "" ? Number(form.commissionValue) : null,
+      commissionStatus: form.commissionType ? (form.commissionStatus || "PENDING") : null,
+      commissionPaidOn: form.commissionType && form.commissionStatus === "PAID"
+        ? (form.commissionPaidOn || null) : null,
+      commissionNotes: form.commissionType ? (form.commissionNotes?.trim() || null) : null,
       services: form.services,
       assignedUserId: form.assignedUserId || null,
       leadPublicId: form.leadPublicId || null,
@@ -1117,6 +1150,18 @@ export default function BookingFormPage() {
           applyGst:     form.applyGst     ?? undefined,
           gstInclusive: form.gstInclusive ?? undefined,
           applyTcs:     form.applyTcs     ?? undefined,
+
+          /* Commission under the same patch contract. Removing an arrangement cannot be expressed by
+             sending nulls — those mean "leave alone" — so it gets its own flag, exactly like
+             clearVendor. Sent only when the booking HAD a commission and the form no longer does. */
+          clearCommission:
+            (loadedRef.current.commissionType && !form.commissionType) ? true : undefined,
+          commissionPayeeName: form.commissionType ? (payload.commissionPayeeName ?? "") : undefined,
+          commissionType:      form.commissionType || undefined,
+          commissionValue:     form.commissionType ? payload.commissionValue : undefined,
+          commissionStatus:    form.commissionType ? payload.commissionStatus : undefined,
+          commissionPaidOn:    form.commissionType ? payload.commissionPaidOn : undefined,
+          commissionNotes:     form.commissionType ? (payload.commissionNotes ?? "") : undefined,
           services: payload.services,
           assignedUserId: payload.assignedUserId,
           tripSnapshot: payload.tripSnapshot,
@@ -1273,6 +1318,17 @@ export default function BookingFormPage() {
   // Drives the "Custom" chip, so a deviation is visible without reading three controls.
   const taxOverridden =
     form.applyGst != null || form.gstInclusive != null || form.applyTcs != null;
+
+  /* What the commission works out to, shown live beside the control.
+     Mirrors BookingCommissionCalculator deliberately — a percent is of the PRE-TAX base, never the
+     total payable — but it is a PREVIEW only: the server recomputes and stores its own figure, and
+     that one wins. Kept in JS rather than fetched because it is arithmetic on two numbers already
+     on screen, and a round-trip per keystroke for that would be absurd. */
+  const commissionPreview = form.commissionType === "FLAT"
+    ? Math.max(0, Number(form.commissionValue) || 0)
+    : form.commissionType === "PERCENT"
+      ? Math.max(0, ((Number(previewAmount) || 0) * (Number(form.commissionValue) || 0)) / 100)
+      : 0;
 
   // OLD — replaced in create-form redesign
   // const resetForm = () => {
@@ -1744,6 +1800,98 @@ export default function BookingFormPage() {
                   <span className="block font-normal text-slate-400">TCS is collected on overseas packages when your accounting policy says so</span>
                 </span>
               </label>
+
+              {/* ── Agent / agency commission ────────────────────────────────────────────────
+                  Collapsed to a single control until someone says there IS an arrangement, because
+                  most bookings have none and six always-visible fields for the exception would push
+                  the tax controls below the fold on the one panel that has to stay scannable. */}
+              <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-slate-700">Agent commission</p>
+                    <p className="mt-0.5 text-xs font-normal leading-relaxed text-slate-400">
+                      For a booking brought by an agent, agency or referrer.
+                    </p>
+                  </div>
+                  {form.commissionType && commissionPreview > 0 && (
+                    <span className="shrink-0 rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold text-indigo-700">
+                      {inr(commissionPreview)}
+                    </span>
+                  )}
+                </div>
+
+                <div className="mt-3">
+                  <TriToggle
+                    label="Commission type"
+                    value={form.commissionType}
+                    onChange={(v) => setField("commissionType", v)}
+                    options={[
+                      { value: "",        label: "None" },
+                      { value: "PERCENT", label: "Percent" },
+                      { value: "FLAT",    label: "Flat" },
+                    ]}
+                  />
+                </div>
+
+                {form.commissionType && (
+                  <div className="mt-3 space-y-3">
+                    <Field label="Paid to" optional>
+                      <input name="commissionPayeeName" value={form.commissionPayeeName}
+                        onChange={(event) => setField("commissionPayeeName", event.target.value)}
+                        placeholder="Agent / agency name"
+                        className={controlClass("commissionPayeeName")} />
+                    </Field>
+
+                    <Field
+                      label={form.commissionType === "PERCENT" ? "Rate (%)" : "Amount (INR)"}
+                      optional
+                    >
+                      <div className="relative">
+                        {form.commissionType === "FLAT" && (
+                          <IndianRupee className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                        )}
+                        <input name="commissionValue" type="number" min="0" step="0.01"
+                          value={form.commissionValue}
+                          onChange={(event) => setField("commissionValue", event.target.value)}
+                          onWheel={(event) => event.currentTarget.blur()}
+                          placeholder={form.commissionType === "PERCENT" ? "5.00" : "0.00"}
+                          className={controlClass("commissionValue", form.commissionType === "FLAT")} />
+                      </div>
+                      {/* Said explicitly because it is the one thing people assume wrongly: the
+                          percent is of the booking VALUE, not of the tax-inclusive total. */}
+                      {form.commissionType === "PERCENT" && (
+                        <p className="mt-1 text-[10px] font-normal leading-snug text-slate-400">
+                          Percent of the booking value ({inr(previewAmount || 0)}), before GST and TCS.
+                        </p>
+                      )}
+                    </Field>
+
+                    <TriToggle
+                      label="Status"
+                      value={form.commissionStatus}
+                      onChange={(v) => setField("commissionStatus", v)}
+                      options={[
+                        { value: "PENDING", label: "Pending" },
+                        { value: "PAID",    label: "Paid" },
+                      ]}
+                    />
+
+                    {form.commissionStatus === "PAID" && (
+                      <Field label="Paid on" optional>
+                        <input name="commissionPaidOn" type="date" value={form.commissionPaidOn}
+                          onChange={(event) => setField("commissionPaidOn", event.target.value)}
+                          className={controlClass("commissionPaidOn")} />
+                      </Field>
+                    )}
+
+                    <p className="text-[10px] font-normal leading-relaxed text-slate-400">
+                      Comes out of this booking's profit as soon as it is agreed — marking it paid
+                      moves cash, not margin. Don't also add it as a Commission expense, or it is
+                      deducted twice.
+                    </p>
+                  </div>
+                )}
+              </div>
 
               {/* ── Tax for THIS booking ─────────────────────────────────────────────────────
                   Each control is tri-state and starts on "Default", which means the tenant's
