@@ -291,14 +291,14 @@ export default function AllLeadLogs() {
                   <span className="hidden sm:inline ml-3 text-xs">
                     <span className="hover:text-blue-600 cursor-pointer" onClick={() => navigate("/")}>Home</span>
                     <span className="mx-1 text-slate-300">/</span>
-                    <span className="hover:text-blue-600 cursor-pointer" onClick={() => navigate("/allleads ")}>Leads</span>
+                    <span className="hover:text-blue-600 cursor-pointer" onClick={() => navigate("/allleads")}>Leads</span>
                     <span className="mx-1 text-slate-300">/</span>
                     <span className="text-blue-600 font-bold">Lead Logs</span>
                   </span>
                 </p>
               </div>
             </div>
-            <button onClick={() => navigate("/allleads ")}
+            <button onClick={() => navigate("/allleads")}
               className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200
                 hover:border-blue-300 bg-white hover:bg-blue-50 text-slate-600 hover:text-blue-600
                 text-sm font-bold transition-all shadow-sm">

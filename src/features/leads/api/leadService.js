@@ -254,6 +254,16 @@ function transformFormData(formData, services = [], itinerary = []) {
                       ? Number(formData.budget)
                       : null,
     notes:          formData.notes?.trim()          || "",
+    roomAllocations: Array.isArray(formData.roomAllocations) ? formData.roomAllocations.map((room, index) => ({
+      roomNumber: index + 1,
+      roomCategoryPreference: room.roomCategoryPreference || "Any",
+      bedPreference: room.bedPreference || "Any",
+      adults: Number(room.adults) || 0,
+      children: Number(room.children) || 0,
+      infants: Number(room.infants) || 0,
+      extraBeds: Number(room.extraBeds) || 0,
+      childAges: Array.isArray(room.childAges) ? room.childAges.map(Number).filter(Number.isFinite) : [],
+    })) : undefined,
     
     // --- Services & Itinerary Arrays ---
     services:       Array.isArray(services) ? services : [],
@@ -362,9 +372,10 @@ export const leadService = {
    *
    * Returns the lead, or null when there is no match — "not found" is the ordinary answer to a
    * duplicate check, not an error the clerk needs to see.
-   */
+  */
   findLeadByContact: async (keyword) => {
-    const identifier = String(keyword || "").trim();
+    const raw = String(keyword || "").trim();
+    const identifier = raw.includes("@") ? raw.toLowerCase() : normalizePhone(raw);
     if (!identifier) return null;
     try {
       const response = await API.get("/leads/search", { params: { keyword: identifier } });
@@ -381,13 +392,17 @@ export const leadService = {
      branches on `keyword.contains("@")`, so this has always accepted an email too — the name was
      the only thing that said otherwise.
 
-     Known limit: the phone branch is an EXACT string match on the stored value, so "+91 98765 43210"
-     and "9876543210" are two different keys and only one of them finds the lead. The canonical
-     column (leads.phone_normalized) exists and would close that gap, but the human duplicate path
-     deliberately still compares raw — see LeadRepository's note on why moving it would make two
-     legally-coexisting open leads permanently un-editable. Changing that is a backend decision, not
-     something this probe should route around. */
+     Phone input is normalized through the same helper used by create/update before this fallback
+     runs, so ordinary typing separators do not create a false miss. */
   findLeadByPhone: (keyword) => leadService.findLeadByContact(keyword),
+
+  // Quick Quote needs the existing-lead warning and existing-customer prefill at the same moment.
+  // This read model keeps the matching rules in their owning backend modules while saving one HTTP
+  // round-trip on every valid phone/email probe.
+  lookupQuickQuoteContact: ({ phone, email } = {}) =>
+    API.get("/leads/quick-quote/contact", {
+      params: cleanParams({ phone, email }),
+    }),
 
   // ── USERS ────────────────────────────
   getUsers: () =>

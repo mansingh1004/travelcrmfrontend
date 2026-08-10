@@ -10,7 +10,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Building2, Check, ClipboardList, Download, MapPin, Search, Star } from "lucide-react";
+import {
+  Building2, Check, ClipboardList, Download, DownloadCloud, Loader2, MapPin, Search, Star, X,
+} from "lucide-react";
 import { marketplaceService } from "../api/marketplaceService";
 import {
   Button, Card, Empty, Hint, Input, Page, PageHeader, Pager, Select,
@@ -32,6 +34,8 @@ export function MarketplaceSearch() {
   const [city, setCity] = useState("");
   const [minStars, setMinStars] = useState("");
   const [importing, setImporting] = useState(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkResult, setBulkResult] = useState(null);
 
   useEffect(() => {
     const t = setTimeout(() => { setDebouncedQ(q.trim()); setPage(0); }, 350);
@@ -56,6 +60,29 @@ export function MarketplaceSearch() {
 
   // "/" jumps to search from anywhere on the page — and is ignored while a field already has focus.
   useHotkeys({ "/": () => searchRef.current?.focus() });
+
+  /**
+   * Import everything matching the CURRENT filters, so "Import all" means what is on screen.
+   *
+   * The server caps each call, so `truncated` is surfaced rather than hidden — otherwise a partial
+   * run reads as a finished one and the tenant never learns there is more.
+   */
+  const runImportAll = async () => {
+    setBulkBusy(true);
+    setBulkResult(null);
+    try {
+      const result = await marketplaceService.importAllHotels({
+        q: debouncedQ, city: city.trim(), minStars: minStars || undefined,
+      });
+      setBulkResult(result);
+      showToast(result.summary, result.failed > 0 ? "warning" : "success");
+      load();
+    } catch (e) {
+      showToast(errMsg(e, "Could not import the hotels."), "error");
+    } finally {
+      setBulkBusy(false);
+    }
+  };
 
   const runImport = async (hotel) => {
     setImporting(hotel.publicId);
@@ -86,11 +113,47 @@ export function MarketplaceSearch() {
         title="Platform Hotel"
         subtitle="Hotels the platform has contracted. Import one to use it in your quotations, or request a booking through the platform."
         actions={
-          <Button onClick={() => navigate("/marketplace/bookings")}>
-            <ClipboardList /> My requests
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="secondary" onClick={runImportAll} disabled={bulkBusy || !rows?.length}>
+              {bulkBusy ? <Loader2 className="animate-spin" /> : <DownloadCloud />}
+              {bulkBusy ? "Importing…" : "Import all"}
+            </Button>
+            <Button onClick={() => navigate("/marketplace/bookings")}>
+              <ClipboardList /> My requests
+            </Button>
+          </div>
         }
       />
+
+      {/*
+        Bulk result. Deliberately a persistent panel, not a toast: importing 200 hotels routinely
+        skips most of them because the tenant's geography master has no matching City, and the list
+        of which cities to add IS the useful output. A toast would take that away after 6 seconds.
+      */}
+      {bulkResult && (
+        <Card className="mb-6">
+          <div className="flex items-start gap-3">
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-slate-800">{bulkResult.summary}</p>
+              {bulkResult.failures?.length > 0 && (
+                <ul className="mt-2 max-h-52 space-y-1 overflow-y-auto text-xs text-slate-600">
+                  {bulkResult.failures.map((f) => (
+                    <li key={f.platformHotelPublicId} className="flex gap-2">
+                      <span className="font-medium text-slate-800">{f.name}</span>
+                      <span className="text-slate-400">·</span>
+                      <span>{f.reason}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <button onClick={() => setBulkResult(null)}
+              className="rounded p-1 text-slate-400 hover:text-slate-700">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </Card>
+      )}
 
       <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-center">
         <div className="relative w-full sm:max-w-xs">

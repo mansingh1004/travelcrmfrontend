@@ -38,6 +38,11 @@ export const P = {
   // High-privilege: override/waive a cancellation charge and disburse refunds. TENANT_ADMIN-only
   // until explicitly granted (mirrors LEAD_PERMANENT_DELETE — not in any non-admin role default).
   BOOKING_REFUND: "BOOKING_REFUND", CANCELLATION_POLICY_MANAGE: "CANCELLATION_POLICY_MANAGE",
+  // Amend or delete an already-recorded payment entry. Deliberately asymmetric with RECORDING one,
+  // which needs nothing beyond BOOKING_READ: whoever takes the customer's money must be able to book
+  // it immediately, but rewriting what the ledger already says is admin territory. TENANT_ADMIN-only
+  // until explicitly granted (same treatment as BOOKING_REFUND — in no non-admin role default).
+  PAYMENT_MANAGE: "PAYMENT_MANAGE",
   CUSTOMER_READ: "CUSTOMER_READ", CUSTOMER_CREATE: "CUSTOMER_CREATE", CUSTOMER_UPDATE: "CUSTOMER_UPDATE", CUSTOMER_DELETE: "CUSTOMER_DELETE",
   QUOTATION_READ: "QUOTATION_READ", QUOTATION_CREATE: "QUOTATION_CREATE", QUOTATION_UPDATE: "QUOTATION_UPDATE", QUOTATION_DELETE: "QUOTATION_DELETE",
   VENDOR_READ: "VENDOR_READ", VENDOR_CREATE: "VENDOR_CREATE", VENDOR_UPDATE: "VENDOR_UPDATE", VENDOR_DELETE: "VENDOR_DELETE",

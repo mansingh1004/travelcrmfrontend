@@ -66,6 +66,22 @@ export const marketplaceService = {
     };
   },
 
+  /**
+   * POST /hotel-marketplace/hotels/import-all — BulkImportResultDto.
+   *
+   * Two modes: pass `publicIds` to import an explicit selection, or pass the current search filters
+   * to import everything matching them.
+   *
+   * ALWAYS resolves 200, even when some hotels failed — this is a partial-success report, not a
+   * pass/fail. A projection needs a real City in the tenant's own geography master, so importing a
+   * large catalog legitimately succeeds for some and returns "add this city first" for the rest.
+   * Call sites must render `failures` as a to-do list, and check `truncated` — the server caps each
+   * call, and ignoring it reads as "finished" when it is not.
+   */
+  importAllHotels: async ({ publicIds, q, city, countryCode, minStars } = {}) =>
+    body(await API.post(`${BASE}/hotels/import-all`,
+      clean({ publicIds, q, city, countryCode, minStars }), { timeout: 120000 })),
+
   /** GET /hotel-marketplace/hotels/{publicId} — MarketplaceHotelDetailDto (rooms + meal plans, no prices). */
   getHotel: async (publicId, config = {}) =>
     body(await API.get(`${BASE}/hotels/${publicId}`, config)),

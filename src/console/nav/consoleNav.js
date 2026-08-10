@@ -1,0 +1,204 @@
+// src/console/nav/consoleNav.js
+// ─────────────────────────────────────────────────────────────────────────────
+// Platform console nav registry. Same shape as the tenant app's (see
+// app/nav/navConfig.js) so both realms share one model, one palette and one set
+// of pin/recent mechanics — but the two lists never mix, because they are read
+// from different files under different storage namespaces.
+//
+// The console has no permission model to express: reaching /console at all means
+// holding a SuperAdmin session, so there are no `can()` gates here. The grouping
+// is the whole point — 17 flat rows in one undifferentiated column is a list you
+// re-read every time instead of a structure you learn.
+// ─────────────────────────────────────────────────────────────────────────────
+
+import {
+  ArrowUpCircle,
+  BedDouble,
+  Building2,
+  ClipboardCheck,
+  Coins,
+  CreditCard,
+  Gauge,
+  Handshake,
+  LayoutDashboard,
+  Megaphone,
+  Palette as PaletteIcon,
+  ScrollText,
+  Settings2,
+  ToggleLeft,
+  UserCog,
+  Users,
+  Wrench,
+} from "lucide-react";
+
+export const CONSOLE_NAV_NAMESPACE = "console";
+
+/** Seeds a fresh operator's pinned rail with the two queues that actually wait on them. */
+export const CONSOLE_DEFAULT_PINS = ["console.tenants", "console.upgrades"];
+
+export const CONSOLE_NAV_SECTIONS = [
+  {
+    id: "overview",
+    label: "Overview",
+    items: [
+      {
+        id: "console.home",
+        primary: true,
+        label: "Dashboard",
+        path: "/console",
+        Icon: LayoutDashboard,
+        // Exact-match only: without this every /console/* route would keep the
+        // dashboard lit, since the nav model treats a path as covering its subtree.
+        exact: true,
+        keywords: "home platform stats",
+      },
+    ],
+  },
+  {
+    id: "customers",
+    label: "Customers & Billing",
+    items: [
+      {
+        id: "console.tenants",
+        primary: true,
+        label: "Tenants",
+        path: "/console/tenants",
+        Icon: Building2,
+        keywords: "organizations agencies accounts",
+      },
+      {
+        id: "console.plans",
+        primary: true,
+        label: "Subscriptions",
+        path: "/console/plans",
+        Icon: CreditCard,
+        keywords: "plans pricing modules",
+      },
+      {
+        id: "console.upgrades",
+        primary: true,
+        label: "Subscription & Add-ons",
+        path: "/console/upgrade-requests",
+        Icon: ArrowUpCircle,
+        badge: "upgrades",
+        keywords: "upgrade requests approvals seats licenses",
+      },
+      {
+        id: "console.usage",
+        primary: true,
+        label: "Usage & Quotas",
+        path: "/console/usage",
+        Icon: Gauge,
+        keywords: "limits storage metering overage",
+      },
+    ],
+  },
+  {
+    id: "marketplace",
+    label: "Hotel Marketplace",
+    items: [
+      {
+        id: "console.hotelCatalog",
+        label: "Hotel Catalog",
+        path: "/console/hotel-catalog",
+        Icon: BedDouble,
+        keywords: "supply inventory rooms rates",
+      },
+      {
+        id: "console.hotelPartners",
+        label: "Hotel Partners",
+        path: "/console/hotel-partners",
+        Icon: Handshake,
+        keywords: "invite onboarding registration supplier property owner",
+      },
+      {
+        id: "console.hotelRequests",
+        label: "Hotel Requests",
+        path: "/console/hotel-requests",
+        Icon: ClipboardCheck,
+        // Its own badge, separate from "upgrades": a booking request is time-critical
+        // in a way a plan upgrade is not — a tenant is holding a customer while this
+        // sits unanswered.
+        badge: "hotelRequests",
+        keywords: "approval queue bookings",
+      },
+      {
+        id: "console.commissions",
+        label: "Platform Earnings",
+        path: "/console/hotel-commissions",
+        Icon: Coins,
+        // No badge: the earning ledger is a report, not a queue.
+        keywords: "commission ledger revenue",
+      },
+    ],
+  },
+  {
+    id: "access",
+    label: "Access",
+    items: [
+      {
+        id: "console.users",
+        primary: true,
+        label: "Users",
+        path: "/console/users",
+        Icon: Users,
+        keywords: "tenant staff impersonate",
+      },
+      {
+        id: "console.superadmins",
+        label: "SuperAdmins",
+        path: "/console/superadmins",
+        Icon: UserCog,
+        keywords: "operators mfa invite",
+      },
+    ],
+  },
+  {
+    id: "platform",
+    label: "Platform",
+    items: [
+      {
+        id: "console.flags",
+        label: "Feature Flags",
+        path: "/console/feature-flags",
+        Icon: ToggleLeft,
+        keywords: "modules entitlements toggles",
+      },
+      {
+        id: "console.config",
+        label: "Global Config",
+        path: "/console/config",
+        Icon: Settings2,
+        keywords: "settings maintenance",
+      },
+      {
+        id: "console.audit",
+        label: "Audit Log",
+        path: "/console/audit",
+        Icon: ScrollText,
+        keywords: "security history trail",
+      },
+      {
+        id: "console.announcements",
+        label: "Announcements",
+        path: "/console/announcements",
+        Icon: Megaphone,
+        keywords: "broadcast notice banner",
+      },
+      {
+        id: "console.palette",
+        label: "Design Tokens",
+        path: "/console/palette",
+        Icon: PaletteIcon,
+        keywords: "theme colours palette",
+      },
+      {
+        id: "console.ops",
+        label: "Ops / Danger",
+        path: "/console/ops",
+        Icon: Wrench,
+        keywords: "export purge hard delete danger zone",
+      },
+    ],
+  },
+];

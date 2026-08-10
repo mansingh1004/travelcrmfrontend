@@ -11,7 +11,7 @@ export function buildQuotationPayload({
   destinationId = null,
   title        = "Quotation",
   version      = "v1.0",
-  stage        = "Draft",
+  quotationStage = "Draft",
   templateStyle = "CLASSIC",   // public weblink template: "CLASSIC" | "MODERN"
 
   // Section `*Included` defaults ab sab FALSE hain (pehle flight/hotel/sightseeing/vehicle
@@ -33,6 +33,9 @@ export function buildQuotationPayload({
   hotelAmount   = 0,
   hotelNotes    = "",
   hotels        = [],
+  // Internal builder switch used only by the separate Quick Quote page. Legacy Create Quotation
+  // keeps producing its original hotel payload shape.
+  quickQuoteHotelMetadata = false,
 
   // Tab 3 — Sightseeing
   sightseeingIncluded = false,
@@ -78,7 +81,7 @@ export function buildQuotationPayload({
     destinationId,
     title,
     version,
-    stage,
+    quotationStage,
     templateStyle,
 
     // ── Flight ───────────────────────────────────────────────
@@ -122,6 +125,22 @@ export function buildQuotationPayload({
       amount   : Number(hotelAmount) || 0,
       notes    : hotelNotes,
       hotels   : hotels.map(h => ({
+        platformHotelPublicId: h.platformHotelPublicId || null,
+        platformRoomPublicId: h.platformRoomPublicId || null,
+        platformMealPlanPublicId: h.platformMealPlanPublicId || null,
+        ...(quickQuoteHotelMetadata ? {
+          hotelMasterPublicId  : h.hotelMasterPublicId   || null,
+          roomTypeMasterPublicId: h.roomTypeMasterPublicId || null,
+          mealPlanMasterPublicId: h.mealPlanMasterPublicId || null,
+          bedType    : h.bedType   || "",
+          occupancy  : h.occupancy == null ? null : Number(h.occupancy),
+          adults     : Number(h.adults) || 0,
+          children   : Number(h.children) || 0,
+          infants    : Number(h.infants) || 0,
+          extraBeds  : Number(h.extraBeds) || 0,
+          childAges  : Array.isArray(h.childAges) ? h.childAges.map(Number) : [],
+          rateSource : h.rateSource || null,
+        } : {}),
         name       : h.name      || "",
         city       : h.city      || "",
         checkIn    : h.checkIn   || "",
@@ -130,7 +149,9 @@ export function buildQuotationPayload({
         mealPlan   : h.mealPlan  || "",
         refundable : h.refundable ?? true,
         stars       : Number(h.stars)        || 0,
-        pricePerRoom: Number(h.pricePerRoom) || 0,
+        pricePerRoom: quickQuoteHotelMetadata
+          ? (h.pricePerRoom === "" || h.pricePerRoom == null ? null : Number(h.pricePerRoom))
+          : Number(h.pricePerRoom) || 0,
         rooms       : Number(h.rooms)        || 1,
         imagePath   : h.imagePath || "",
       })),

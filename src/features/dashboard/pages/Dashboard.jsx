@@ -1039,16 +1039,17 @@ export default function Dashboard() {
               </div>
             </SectionCard>
 
-            {/* Upcoming Trips */}
+            {/* Upcoming Trips — NOT WIRED (see the status-card note below). The badge and the
+                body were hard-coded, so this asserted "no bookings in the next 25 days" even for
+                a tenant departing tomorrow. Travel-date data exists at /reports/travel-dates. */}
             <SectionCard headerBg="bg-gradient-to-r from-green-500 to-emerald-600"
               headerIcon={<FaPlane className="w-4 h-4"/>}
               title="Upcoming Trips (25 Days)"
-              badge={0}
               delay={120}>
               <div className="p-8 flex flex-col items-center justify-center min-h-[200px] text-slate-400">
                 <FaPlane className="text-5xl mb-3 text-slate-200"/>
-                <p className="text-sm font-bold text-slate-500">No upcoming trips</p>
-                <p className="text-xs mt-1 text-slate-400">No bookings in the next 25 days</p>
+                <p className="text-sm font-bold text-slate-500">Not tracked yet</p>
+                <p className="text-xs mt-1 text-slate-400">Open Bookings to see departures</p>
                 <button onClick={()=>navigate("/Allbookings")}
                   className="mt-4 px-4 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-500
                     hover:border-green-300 hover:text-green-600 hover:bg-green-50 transition-all">
@@ -1058,23 +1059,28 @@ export default function Dashboard() {
             </SectionCard>
           </div>
 
-          {/* ── Row 6: 4 Status Cards ── */}
+          {/* ── Row 6: 4 Status Cards ──
+              NOT WIRED. These render from a literal array with no data source. They previously
+              showed a hard-coded count of 0 under "All payments received" / "All payments made" —
+              a false all-clear on the two numbers this screen exists to protect, shown on every
+              tenant every day regardless of the ledger. Until a source is wired they state that
+              they are not tracked rather than asserting a number. Real figures live on the
+              booking's Finance tab and in Accounting. */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             {[
-              {label:"Pending Completion (25d)", count:0, icon:<FiCheck/>,       bg:"bg-gradient-to-r from-blue-600 to-blue-700",    msg:"All completed"       },
-              {label:"Client Payments (25d)",    count:0, icon:<FiCreditCard/>,  bg:"bg-gradient-to-r from-amber-500 to-orange-500", msg:"All payments received"},
-              {label:"Vendor Payments (25d)",    count:0, icon:<FiDollarSign/>,  bg:"bg-gradient-to-r from-red-500 to-rose-500",     msg:"All payments made"   },
-              {label:"Get Reviews (15d)",        count:0, icon:<FiStar/>,        bg:"bg-gradient-to-r from-green-500 to-emerald-600",msg:"No recent completions"},
+              {label:"Pending Completion (25d)", icon:<FiCheck/>,       bg:"bg-gradient-to-r from-blue-600 to-blue-700"    },
+              {label:"Client Payments (25d)",    icon:<FiCreditCard/>,  bg:"bg-gradient-to-r from-amber-500 to-orange-500" },
+              {label:"Vendor Payments (25d)",    icon:<FiDollarSign/>,  bg:"bg-gradient-to-r from-red-500 to-rose-500"     },
+              {label:"Get Reviews (15d)",        icon:<FiStar/>,        bg:"bg-gradient-to-r from-green-500 to-emerald-600"},
             ].map(c=>(
               <div key={c.label} className="bg-white/80 backdrop-blur-md rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden fade-up">
                 <div className={`${c.bg} px-4 py-3 flex items-center gap-2`}>
                   <span className="text-white/60">{c.icon}</span>
                   <span className="text-white text-xs font-extrabold flex-1 leading-tight">{c.label}</span>
-                  <span className="bg-white/25 text-white text-[10px] font-extrabold px-2 py-0.5 rounded-full">{c.count}</span>
                 </div>
                 <div className="p-5 flex flex-col items-center min-h-[90px] justify-center gap-1.5 text-slate-400">
-                  <FiCheck className="text-3xl text-slate-200"/>
-                  <p className="text-xs font-medium">{c.msg}</p>
+                  <FiClock className="text-3xl text-slate-200"/>
+                  <p className="text-xs font-medium">Not tracked yet</p>
                 </div>
               </div>
             ))}

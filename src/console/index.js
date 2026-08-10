@@ -19,6 +19,7 @@ export { default as ConsoleAuditLog } from "./pages/AuditLog";
 export { default as ConsoleAnnouncements } from "./pages/Announcements";
 export { default as ConsoleOps } from "./pages/Ops";
 export { default as ConsolePlatformHotels } from "./pages/PlatformHotels";
+export { default as ConsoleHotelPartners } from "./pages/HotelPartners";
 export { default as ConsolePlatformHotelDetail } from "./pages/PlatformHotelDetail";
 export { default as ConsoleMarketplaceBookings } from "./pages/MarketplaceBookings";
 export { default as ConsoleMarketplaceCommissions } from "./pages/MarketplaceCommissions";

@@ -1,5 +1,5 @@
 // src/console/components/hotelCharts.jsx  (moved from the retired `features/hotels` module)
-// Recharts wrappers themed to the app (blue-600 family, soft grid, rounded tips).
+// Recharts wrappers themed to the app (accent family, soft grid, rounded tips).
 // Kept dependency-light: only the chart types the module actually uses.
 
 import {
@@ -18,10 +18,10 @@ const axisProps = {
 function TipBox({ active, payload, label, fmt }) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="rounded-xl border border-slate-100 bg-white/95 px-3 py-2 shadow-lg backdrop-blur">
-      {label != null && <p className="mb-1 text-[11px] font-bold uppercase tracking-wide text-slate-400">{label}</p>}
+    <div className="rounded-xl border border-surface-hover bg-surface/95 px-3 py-2 shadow-lg backdrop-blur">
+      {label != null && <p className="mb-1 text-[11px] font-bold uppercase tracking-wide text-muted">{label}</p>}
       {payload.map((p, i) => (
-        <p key={i} className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+        <p key={i} className="flex items-center gap-2 text-sm font-semibold text-body">
           <span className="h-2 w-2 rounded-full" style={{ background: p.color || p.fill }} />
           {p.name}: <span className="font-extrabold">{fmt ? fmt(p.value) : p.value}</span>
         </p>

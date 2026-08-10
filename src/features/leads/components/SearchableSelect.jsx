@@ -177,7 +177,8 @@ const ACCENTS = {
 
 const FOCUSABLE =
   'input:not([type="hidden"]):not([disabled]),select:not([disabled]),textarea:not([disabled]),' +
-  'button:not([disabled]),[tabindex]:not([tabindex="-1"])';
+  'button:not([disabled]):not([data-skip-enter="true"]),' +
+  '[tabindex]:not([tabindex="-1"]):not([data-skip-enter="true"])';
 
 const escapeRegExp = (text) => String(text).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 

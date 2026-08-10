@@ -529,7 +529,7 @@ export default function BookingsPage({
   const [page,     setPage]     = useState(1);
   const perPage = 10;
   const [meta,     setMeta]     = useState(null);   // server pagination block (standalone mode)
-  const [overview, setOverview] = useState(EMPTY);  // stat-card source (standalone mode, capped)
+  const [serverStats, setServerStats] = useState(null);  // GET /bookings/stats — tenant-wide, uncapped
   const [debouncedSearch, setDebouncedSearch] = useState("");  // settled search that hits the server
   // selection + modals
   const [selected,      setSelected]      = useState(new Set());
@@ -589,26 +589,40 @@ export default function BookingsPage({
     setBookings(propBookings); setLoading(propLoading);
   },[propBookings,propLoading,selfManaged,fetchBookings]);
 
-  // Separate overview fetch for the stat cards only (standalone). Capped at 500 — same as before;
-  // the searchable TABLE above is server-paged and uncapped.
+  // Stat cards come from the SERVER aggregate, not from rows on screen.
+  // This used to fetch getAll(0,500) and reduce over it, so past 500 bookings every headline
+  // figure — revenue, collections, refunds, profit — silently under-reported with no indication
+  // it had been truncated. GET /bookings/stats aggregates tenant-wide in the database.
   useEffect(()=>{
     if (!selfManaged) return;
-    bookingService.getAll(0,500)
-      .then(res=>{ const b=res.data; const raw=Array.isArray(b?.data)?b.data:Array.isArray(b)?b:[]; setOverview(raw.map(normalizeBooking)); })
-      .catch(()=>setOverview(EMPTY));
+    bookingService.getStats()
+      .then(res=>setServerStats(res.data?.data ?? res.data ?? null))
+      .catch(()=>setServerStats(null));
   },[selfManaged]);
 
-  /* stats — from the overview set in standalone mode (so the page size doesn't shrink the numbers),
-     from the provided list when embedded. */
-  const statsSource = selfManaged ? overview : bookings;
-  const stats = useMemo(()=>({
-    total:     statsSource.length,
-    confirmed: statsSource.filter(b=>b.status==="Confirmed").length,
-    revenue:   statsSource.reduce((s,b)=>s+(b.customerAmount||0),0),
-    net:       statsSource.reduce((s,b)=>s+(b.paid||0),0),
-    refunds:   statsSource.filter(b=>b.payStatus==="Refunded").reduce((s,b)=>s+(b.paid||0),0),
-    profit:    statsSource.reduce((s,b)=>s+(b.netProfit||0),0),
-  }),[statsSource]);
+  /* stats — server aggregate in standalone mode; the provided list when embedded (that list is
+     the caller's own scope, so reducing it there is correct). */
+  const stats = useMemo(()=>{
+    if (selfManaged) {
+      const s = serverStats;
+      return {
+        total:     s?.totalBookings     ?? 0,
+        confirmed: s?.confirmedBookings ?? 0,
+        revenue:   s?.totalRevenue      ?? 0,
+        net:       s?.totalCollected    ?? 0,
+        refunds:   s?.totalRefundAmount ?? 0,
+        profit:    s?.netProfit         ?? 0,
+      };
+    }
+    return {
+      total:     bookings.length,
+      confirmed: bookings.filter(b=>b.status==="Confirmed").length,
+      revenue:   bookings.reduce((s,b)=>s+(b.customerAmount||0),0),
+      net:       bookings.reduce((s,b)=>s+(b.paid||0),0),
+      refunds:   bookings.filter(b=>b.payStatus==="Refunded").reduce((s,b)=>s+(b.paid||0),0),
+      profit:    bookings.reduce((s,b)=>s+(b.netProfit||0),0),
+    };
+  },[selfManaged,serverStats,bookings]);
 
   /* Embedded mode still filters/sorts/paginates client-side over the provided list. In standalone
      mode the server already did all three, so `bookings` IS the current page. */
@@ -650,7 +664,7 @@ export default function BookingsPage({
   setExpenseBooking(booking);
 };
 const saveBookingExpenses = async (expenses) => {
-  if (!expenseBooking?.id) return;
+  if (!expenseBooking?.id) return false;
 
   setExpenseSaving(true);
 
@@ -666,13 +680,15 @@ const saveBookingExpenses = async (expenses) => {
 
     setExpenseBooking(null);
     refreshList?.();
+    return true;
   } catch (error) {
-    if (isAlreadyReported(error)) return;
-
-    showToast(
-      getErrorMessage(error, "Couldn't save booking expenses."),
-      "error"
-    );
+    if (!isAlreadyReported(error)) {
+      showToast(
+        getErrorMessage(error, "Couldn't save booking expenses."),
+        "error"
+      );
+    }
+    return false;
   } finally {
     setExpenseSaving(false);
   }
@@ -788,6 +804,7 @@ const saveBookingExpenses = async (expenses) => {
       {/* Booking Expense Modal */}
       {expenseBooking && (
         <BookingExpenseModal
+          key={expenseBooking.id}
           booking={expenseBooking}
           saving={expenseSaving}
           onClose={() => {
@@ -817,7 +834,9 @@ const saveBookingExpenses = async (expenses) => {
                 </p>
               </div>
             </div>
-            <button onClick={()=>window.location.href="/allleads"}
+            {/* navigate(), not window.location.href — a hard load re-downloaded every lazy chunk,
+                re-ran loadMyEntitlements, and tore down the SSE notification + lead-alert streams. */}
+            <button onClick={()=>navigate("/allleads")}
               className="flex items-center gap-2 px-5 py-2.5 rounded-xl
                 bg-gradient-to-r from-blue-600 to-indigo-500 hover:from-blue-700 hover:to-indigo-600
                 text-white text-sm font-bold shadow-md shadow-blue-200 hover:shadow-lg transition-all self-start sm:self-auto">

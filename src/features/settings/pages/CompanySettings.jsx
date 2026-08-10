@@ -379,7 +379,6 @@ export default function CompanySettings() {
               bg:"bg-teal-50 border-teal-200",
               title:"Need Help?",
               desc:"Contact support or check documentation for detailed guides.",
-              link: true,
             },
           ].map(b => (
             <div key={b.title}
@@ -388,12 +387,6 @@ export default function CompanySettings() {
               <div className="min-w-0">
                 <p className="text-xs font-extrabold text-slate-700 mb-0.5">{b.title}</p>
                 <p className="text-xs text-slate-500 leading-relaxed">{b.desc}</p>
-                {b.link && (
-                  <button onClick={() => navigate("/Support")}
-                    className="mt-1 text-xs font-bold text-teal-600 hover:underline flex items-center gap-1">
-                    View Docs <FiChevronRight className="w-3 h-3"/>
-                  </button>
-                )}
               </div>
             </div>
           ))}

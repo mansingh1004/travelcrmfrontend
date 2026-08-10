@@ -328,7 +328,7 @@ export default function NotificationSettings() {
                 <span className="hidden sm:inline">
                   <span className="hover:text-blue-600 cursor-pointer" onClick={() => navigate("/")}>Home</span>
                   <span className="mx-1 text-slate-300">/</span>
-                  <span className="hover:text-blue-600 cursor-pointer" onClick={() => navigate("/Settings")}>Settings</span>
+                  <span className="hover:text-blue-600 cursor-pointer" onClick={() => navigate("/CompanySettings")}>Settings</span>
                   <span className="mx-1 text-slate-300">/</span>
                   <span className="text-blue-600 font-bold">Notifications</span>
                 </span>

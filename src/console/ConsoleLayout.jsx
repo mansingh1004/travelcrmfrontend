@@ -1,10 +1,20 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Navigate, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { KeyRound, Loader2, LogOut, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { KeyRound, Loader2, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Search } from "lucide-react";
+
+import CommandPalette from "@shared/nav/CommandPalette";
+import LauncherSheet from "@shared/nav/AppLauncher";
+import { findActiveDestination, flattenDestinations, resolveSections } from "@shared/nav/navModel";
+import { usePins } from "@shared/nav/usePinnedNav";
 
 import ConsoleThemeProvider from "./theme/ConsoleThemeProvider";
 import ThemeToggle from "./theme/ThemeToggle";
 import ConsoleSidebar from "./ConsoleSidebar";
+import {
+  CONSOLE_DEFAULT_PINS,
+  CONSOLE_NAV_NAMESPACE,
+  CONSOLE_NAV_SECTIONS,
+} from "./nav/consoleNav";
 import ConsoleNotificationBell from "./components/ConsoleNotificationBell";
 import ChangePasswordModal from "./components/ChangePasswordModal";
 import ConsoleAPI, { unwrap } from "./api/consoleHttp";
@@ -26,9 +36,28 @@ export default function ConsoleLayout() {
   const nav = useNavigate();
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [launcherOpen, setLauncherOpen] = useState(false);
+  // Rect of whatever opened the launcher, so it hangs off that button rather than
+  // floating in the middle of the screen.
+  const [launcherAnchor, setLauncherAnchor] = useState(null);
   const [me, setMe] = useState(getConsoleIdentity());
   const [profileLoaded, setProfileLoaded] = useState(!isConsoleAuthed());
   const [changingPassword, setChangingPassword] = useState(false);
+
+  // The console's own search index — never the tenant app's. Static: unlike the
+  // tenant registry there are no permission gates to re-evaluate.
+  const consoleSections = useMemo(() => resolveSections(CONSOLE_NAV_SECTIONS), []);
+  const consoleDestinations = useMemo(
+    () => flattenDestinations(consoleSections),
+    [consoleSections],
+  );
+  const activeConsoleId = findActiveDestination(consoleDestinations, location.pathname)?.id;
+
+  // Same store the rail reads; the hook's event bus keeps the two mounts in sync,
+  // so starring a tile here lights the pin in the rail immediately.
+  const { isPinned, toggle: togglePin } = usePins(CONSOLE_NAV_NAMESPACE, CONSOLE_DEFAULT_PINS);
 
   const logout = useCallback(() => {
     clearConsoleSession();
@@ -67,6 +96,25 @@ export default function ConsoleLayout() {
       nav("/console", { replace: true });
     }
   }, [location.pathname, me?.setupComplete, nav, profileLoaded]);
+
+  // ⌘K / Ctrl+K opens the console palette; Escape closes the mobile drawer.
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen((v) => !v);
+      } else if (e.key === "Escape") {
+        setMobileNavOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // Any navigation closes the drawer — otherwise it covers the page just requested.
+  useEffect(() => {
+    setMobileNavOpen(false);
+  }, [location.pathname]);
 
   useEffect(() => {
     if (!isConsoleAuthed()) return undefined;
@@ -118,18 +166,56 @@ export default function ConsoleLayout() {
   return (
     <ConsoleThemeProvider>
       <div className="flex min-h-screen">
-        <ConsoleSidebar collapsed={collapsed} />
+        <ConsoleSidebar
+          collapsed={collapsed}
+          mobileOpen={mobileNavOpen}
+          onCloseMobile={() => setMobileNavOpen(false)}
+          onOpenLauncher={(el) => {
+            setLauncherAnchor(el?.getBoundingClientRect?.() ?? null);
+            setLauncherOpen(true);
+          }}
+        />
 
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="sticky top-0 z-20 flex h-14 items-center justify-between gap-3 border-b border-border bg-surface/95 px-4 backdrop-blur">
-            <button
-              type="button"
-              onClick={() => setCollapsed((c) => !c)}
-              title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-muted transition-colors hover:bg-surface-hover hover:text-body focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
-            >
-              {collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
-            </button>
+            <div className="flex min-w-0 items-center gap-2">
+              {/* Phones: open the drawer. The rail has no collapsed form there. */}
+              <button
+                type="button"
+                onClick={() => setMobileNavOpen(true)}
+                title="Open navigation"
+                aria-label="Open navigation"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-muted transition-colors hover:bg-surface-hover hover:text-body focus:outline-none focus-visible:ring-2 focus-visible:ring-focus sm:hidden"
+              >
+                <Menu size={18} />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setCollapsed((c) => !c)}
+                title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+                aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+                className="hidden h-9 w-9 items-center justify-center rounded-lg text-muted transition-colors hover:bg-surface-hover hover:text-body focus:outline-none focus-visible:ring-2 focus-visible:ring-focus sm:inline-flex"
+              >
+                {collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+              </button>
+
+              {/* Global console search. Duplicated in the rail on purpose — the rail
+                  is not on screen at all below `sm`, and this is the surface an
+                  operator reaches for first. */}
+              <button
+                type="button"
+                onClick={() => setPaletteOpen(true)}
+                className="ml-1 flex min-w-0 items-center gap-2 rounded-lg border border-border bg-surface-hover/40 px-2.5 py-1.5 text-xs text-muted transition-colors hover:border-border-strong hover:text-body sm:px-3"
+                aria-label="Search the console"
+              >
+                <Search size={14} className="shrink-0" />
+                <span className="hidden truncate md:block">Search tenants, plans, settings…</span>
+                <kbd className="hidden rounded border border-border px-1.5 py-0.5 font-sans text-[10px] font-semibold lg:block">
+                  Ctrl K
+                </kbd>
+              </button>
+            </div>
 
             <div className="flex items-center gap-3">
               <ConsoleNotificationBell />
@@ -162,6 +248,27 @@ export default function ConsoleLayout() {
           </main>
         </div>
       </div>
+
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        destinations={consoleDestinations}
+        onNavigate={(path) => nav(path)}
+        theme="console"
+        placeholder="Search tenants, plans, settings…"
+      />
+
+      <LauncherSheet
+        open={launcherOpen}
+        onClose={() => setLauncherOpen(false)}
+        sections={consoleSections}
+        isPinned={isPinned}
+        togglePin={togglePin}
+        activeId={activeConsoleId}
+        anchor={launcherAnchor}
+        theme="console"
+        title="All console areas"
+      />
 
       {changingPassword && (
         <ChangePasswordModal
