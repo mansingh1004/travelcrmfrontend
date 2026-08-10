@@ -956,7 +956,11 @@ if (style === "LUXURY")  return  <LuxuryWebView data={q} pdfUrl={`${API}/public/
       {/* ━━━━━ HERO ━━━━━ */}
       <div style={{ backgroundColor:"#000", color:"#fff", position:"relative", overflow:"hidden" }}>
         
+
       
+
+        
+
         {q.coverImageUrl && (
           <img src={q.coverImageUrl} alt="" style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"cover", opacity: 0.5 }} />
         )}
