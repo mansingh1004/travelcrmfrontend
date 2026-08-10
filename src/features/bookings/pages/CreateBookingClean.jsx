@@ -183,10 +183,24 @@ const initialForm = () => ({
  * Comparison is by identity so `null` and `false` stay distinct options.
  */
 function TriToggle({ label, value, onChange, options, hint }) {
+  // null is a real, selectable option ("Default"), so identity comparison is required —
+  // a truthiness test would light Default and "No" at the same time.
+  const isDefault = value === null || value === undefined;
   return (
     <div>
-      <span className="block text-[11px] font-semibold text-slate-600">{label}</span>
-      <div className="mt-1.5 inline-flex w-full rounded-lg border border-slate-200 bg-white p-0.5">
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-xs font-semibold text-slate-600">{label}</span>
+        {!isDefault && (
+          <button
+            type="button"
+            onClick={() => onChange(null)}
+            className="text-[11px] font-semibold text-slate-400 underline-offset-2 hover:text-blue-600 hover:underline"
+          >
+            Reset
+          </button>
+        )}
+      </div>
+      <div className="mt-2 flex w-full gap-1 rounded-xl border border-slate-200 bg-white p-1">
         {options.map((opt) => {
           const active = value === opt.value;
           return (
@@ -194,7 +208,8 @@ function TriToggle({ label, value, onChange, options, hint }) {
               key={String(opt.value)}
               type="button"
               onClick={() => onChange(opt.value)}
-              className={`flex-1 rounded-md px-2 py-1.5 text-[11px] font-bold transition-all ${
+              aria-pressed={active}
+              className={`min-w-0 flex-1 truncate rounded-lg px-2 py-2 text-xs font-bold transition-all ${
                 active
                   ? "bg-blue-600 text-white shadow-sm"
                   : "text-slate-500 hover:bg-slate-50 hover:text-slate-700"
@@ -205,7 +220,7 @@ function TriToggle({ label, value, onChange, options, hint }) {
           );
         })}
       </div>
-      {hint && <p className="mt-1 text-[10px] font-normal leading-snug text-slate-400">{hint}</p>}
+      {hint && <p className="mt-1.5 text-xs font-normal leading-relaxed text-slate-500">{hint}</p>}
     </div>
   );
 }
@@ -275,6 +290,11 @@ export default function BookingFormPage() {
        • the update payload, which must send money only when it actually changed — see handleSubmit. */
   const loadedRef = useRef({ travelDate: "", customerAmount: "", vendorPublicId: "", vendorCost: "", paidAmount: "" });
   const [bookingCode, setBookingCode] = useState("");
+  /* Where a lead-seeded Customer Amount came from, so the field can say so. Without it the clerk
+     sees a number they did not type and has no way to tell whether it is the quoted price or a
+     leftover — which is exactly when someone "corrects" a correct figure. Holds the seeded amount
+     too, so the note disappears the moment they edit it and it stops describing the box. */
+  const [amountOrigin, setAmountOrigin] = useState(null);
   const [leads, setLeads] = useState([]);
   const [assignees, setAssignees] = useState([]);
   const [vendors, setVendors] = useState([]);
@@ -426,6 +446,15 @@ export default function BookingFormPage() {
   const applyLead = useCallback((lead) => {
     if (!lead) return;
 
+    // getLeadById populates latestQuotation (LeadServiceImpl:482), so this is present on the
+    // lead-detail read this page uses — not just on the list.
+    const quotedTotal = lead.latestQuotation?.grandTotal;
+    setAmountOrigin(
+      quotedTotal != null
+        ? { amount: String(quotedTotal), version: lead.latestQuotation?.version || null }
+        : null
+    );
+
     const firstLeg = Array.isArray(lead.itinerary) ? lead.itinerary[0] : null;
     const destinationName = typeof firstLeg?.destination === "string"
       ? firstLeg.destination
@@ -488,7 +517,17 @@ export default function BookingFormPage() {
       specialAssistanceNotes: lead.specialAssistanceNotes || lead.assistanceNotes || current.specialAssistanceNotes,
       itinerary: itinerary || current.itinerary,
       tripNotes: lead.notes || current.tripNotes,
-      customerAmount: lead.budget != null ? String(lead.budget) : current.customerAmount,
+      /* Seeded from the LATEST QUOTATION, with budget only as a fallback.
+         Budget is what the customer said they might spend at enquiry time; the quotation's grand
+         total is what was actually put to them in writing, and it is the figure the booking should
+         be for. The convert-to-booking modal has carried the quotation all along (its placeholder
+         literally reads "Carried from quotation") — this path was the one still seeding budget, so
+         the same lead produced two different amounts depending on which button the agent pressed.
+         A lead that was never quoted still falls back to budget, which beats an empty box. */
+      customerAmount:
+        quotedTotal != null ? String(quotedTotal)
+          : lead.budget != null ? String(lead.budget)
+            : current.customerAmount,
       services: Array.isArray(lead.services)
         ? lead.services.map((item) => typeof item === "string" ? item : item.serviceType || item.name).filter(Boolean)
         : current.services,
@@ -1220,6 +1259,11 @@ export default function BookingFormPage() {
   // any leftover preview/previewState from a previous amount is ignored rather than reset.
   const previewActive = Number.isFinite(previewAmount) && previewAmount > 0;
 
+  // Does this booking say anything about tax of its own, or is it simply following the tenant?
+  // Drives the "Custom" chip, so a deviation is visible without reading three controls.
+  const taxOverridden =
+    form.applyGst != null || form.gstInclusive != null || form.applyTcs != null;
+
   // OLD — replaced in create-form redesign
   // const resetForm = () => {
   //   setForm(initialForm());
@@ -1620,6 +1664,16 @@ export default function BookingFormPage() {
                   <IndianRupee className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                   <input name="customerAmount" type="number" min="0" step="0.01" value={form.customerAmount} onChange={(event) => setField("customerAmount", event.target.value)} onBlur={() => blurField("customerAmount")} onWheel={(event) => event.currentTarget.blur()} placeholder="0.00" className={controlClass("customerAmount", true)} />
                 </div>
+                {/* Shown only while the box still holds exactly what was seeded — once the clerk
+                    types their own figure the note would be describing a number that is no longer
+                    there. */}
+                {amountOrigin && form.customerAmount === amountOrigin.amount && (
+                  <p className="mt-1.5 text-[11px] font-normal leading-relaxed text-slate-400">
+                    From the latest quotation
+                    {amountOrigin.version ? ` (${amountOrigin.version})` : ""} — change it if the
+                    agreed price differs.
+                  </p>
+                )}
               </Field>
               {/* Vendor gates Vendor Cost. The amount used to be asked for on its own and was
                   REQUIRED, so every booking carried a supplier figure with no payee — and the agent
@@ -1684,14 +1738,27 @@ export default function BookingFormPage() {
               {/* ── Tax for THIS booking ─────────────────────────────────────────────────────
                   Each control is tri-state and starts on "Default", which means the tenant's
                   Accounting Settings decide. Only touch one when this particular deal differs —
-                  if TCS is wrong on every booking, the fix is the tenant setting, not this. */}
-              <div className="sm:col-span-2 rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-3">
-                <p className="text-xs font-semibold text-slate-700">Tax for this booking</p>
-                <p className="mt-0.5 text-[11px] font-normal text-slate-400">
-                  Leave on Default to follow your Accounting Settings.
-                </p>
+                  if TCS is wrong on every booking, the fix is the tenant setting, not this.
 
-                <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                  Stacked one per row, NOT in columns. This panel is the narrow sticky money rail,
+                  so three 3-option controls side by side gave each button about 35px and the
+                  labels were unreadable. Full width per control is the only shape that fits. */}
+              <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-slate-700">Tax for this booking</p>
+                    <p className="mt-0.5 text-xs font-normal leading-relaxed text-slate-400">
+                      Leave on Default to follow your Accounting Settings.
+                    </p>
+                  </div>
+                  {taxOverridden && (
+                    <span className="shrink-0 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-700">
+                      Custom
+                    </span>
+                  )}
+                </div>
+
+                <div className="mt-4 space-y-4">
                   <TriToggle
                     label="Price entered is"
                     value={form.gstInclusive}
@@ -1703,7 +1770,7 @@ export default function BookingFormPage() {
                     ]}
                     hint={
                       form.gstInclusive === true
-                        ? "The amount above is the all-in price; the taxable value is derived from it."
+                        ? "Customer Amount above is the all-in price — the taxable value is worked back out of it."
                         : null
                     }
                   />
@@ -1726,13 +1793,19 @@ export default function BookingFormPage() {
                       { value: true,  label: "Yes" },
                       { value: false, label: "No" },
                     ]}
-                    hint={
-                      form.applyTcs === null
-                        ? "Domestic packages don't attract TCS — set your policy to Overseas only in Accounting Settings."
-                        : null
-                    }
                   />
                 </div>
+
+                {/* Standing advice about the tenant's POLICY, so it belongs to the block rather
+                    than to the TCS control — and it is only worth saying while that control is
+                    still inheriting the policy it is warning about. */}
+                {form.applyTcs === null && (
+                  <p className="mt-4 border-t border-slate-200 pt-3 text-xs font-normal leading-relaxed text-slate-500">
+                    Domestic packages don't attract TCS. If that is true of most of your bookings,
+                    set the policy to <span className="font-semibold">Overseas only</span> in
+                    Accounting Settings rather than overriding it here.
+                  </p>
+                )}
               </div>
             </div>
           </Panel>

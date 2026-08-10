@@ -39,11 +39,19 @@ import {
   unitRate,
 } from "@shared/lib/currency";
 import { toast } from "@shared/ui/toast";
+// The combobox Create Booking uses, through the leads barrel — app chrome already reaches
+// features that way (Layout, Navbar), and forking a second searchable select would be worse.
+import { SearchableSelect } from "@features/leads";
 
 import { useNav } from "../nav/NavProvider";
 
 const inputCls =
   "w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-semibold text-slate-800 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-50";
+
+/* One click from any amount. Same priority thinking as POPULAR_CURRENCIES: the dollar, the home
+   rupee, then the trips an Indian desk actually sells — Dubai, Thailand, Bali — and the
+   subcontinent. Anything not here is two keystrokes away in the picker. */
+const QUICK_TARGETS = ["USD", "INR", "AED", "THB", "IDR", "NPR", "LKR", "MVR", "BTN"];
 
 export default function CurrencyConverter() {
   const { converterOpen, converterSeed, closeConverter } = useNav();
@@ -136,12 +144,14 @@ function ConverterDialog({ seed, onClose }) {
   const effectiveRate = usingManual ? manualRate : unitRate(from, to, rates);
   const liveRate = unitRate(from, to, rates);
 
-  // Every code the provider knows, popular ones first — the parser's shortlist is
-  // deliberately narrower, but the dropdown should not hide a currency we HAVE.
+  // Every code the provider knows, priority ones first — the parser's shortlist is deliberately
+  // narrower, but the picker should not hide a currency we HAVE. The label carries the name so the
+  // ranked search matches "npr", "nepal" and "rupee" alike.
   const options = useMemo(() => {
-    const all = rates ? Object.keys(rates).sort() : [];
-    const top = [...new Set([HOME_CURRENCY, ...POPULAR_CURRENCIES])].filter((c) => all.includes(c));
-    return { top, rest: all.filter((c) => !top.includes(c)) };
+    const all = rates ? Object.keys(rates) : [];
+    const lead = [...new Set([...POPULAR_CURRENCIES, HOME_CURRENCY])].filter((c) => all.includes(c));
+    const rest = all.filter((c) => !lead.includes(c)).sort();
+    return [...lead, ...rest].map((code) => ({ value: code, label: `${code} — ${currencyName(code)}` }));
   }, [rates]);
 
   const copyResult = useCallback(() => {
@@ -196,7 +206,9 @@ function ConverterDialog({ seed, onClose }) {
         aria-modal="true"
         aria-label="Currency converter"
         onKeyDown={onKeyDown}
-        className="w-full max-w-md overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl shadow-slate-900/20"
+        /* NOT overflow-hidden any more: the currency picker opens a panel that has to escape this
+           box, and clipping it left the list unusable. The footer carries its own rounded-b. */
+        className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white shadow-2xl shadow-slate-900/20"
       >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
@@ -232,7 +244,7 @@ function ConverterDialog({ seed, onClose }) {
               inputMode="decimal"
               aria-label="Amount"
               placeholder="0"
-              className={`${inputCls} flex-1 text-base`}
+              className={`${inputCls} min-w-0 flex-1 text-sm`}
             />
             <CurrencySelect value={from} onChange={setFrom} options={options} label="From currency" />
           </div>
@@ -277,14 +289,15 @@ function ConverterDialog({ seed, onClose }) {
           {/* Quick targets — the everyday pairs, one click from any amount. */}
           {hasRates && (
             <div className="mt-3 flex flex-wrap gap-1.5">
-              {[HOME_CURRENCY, "USD", "EUR", "AED", "GBP", "THB", "SGD"]
+              {QUICK_TARGETS
                 .filter((c) => c !== to && rates[c])
-                .slice(0, 6)
+                .slice(0, 7)
                 .map((code) => (
                   <button
                     key={code}
                     type="button"
                     onClick={() => setTo(code)}
+                    title={currencyName(code)}
                     className="rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-bold text-slate-500 transition hover:border-blue-300 hover:bg-blue-50 hover:text-blue-600"
                   >
                     {code}
@@ -334,7 +347,7 @@ function ConverterDialog({ seed, onClose }) {
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between gap-3 border-t border-slate-100 bg-slate-50/70 px-4 py-2.5">
+        <div className="flex items-center justify-between gap-3 rounded-b-2xl border-t border-slate-100 bg-slate-50/70 px-4 py-2.5">
           <span className={`min-w-0 truncate text-[11px] font-medium ${freshness.tone}`}>
             {freshness.text}
           </span>
@@ -354,38 +367,39 @@ function ConverterDialog({ seed, onClose }) {
   );
 }
 
-/** Native select on purpose: free keyboard support, free mobile wheel, no dependency. */
+/**
+ * OLD — a native <select> with Common / All currencies optgroups, chosen for its free keyboard
+ * support. But a native select answers a keystroke by jumping to the next option starting with that
+ * letter and forgetting it a second later, so across ~160 codes finding NPR meant scrolling. This is
+ * the same combobox Create Booking uses: type "npr", "nepal" or "rupee" and the match is ranked,
+ * with ArrowUp/Down, Enter, Esc and Home/End all included.
+ */
 function CurrencySelect({ value, onChange, options, label }) {
-  const { top, rest } = options;
-  const known = top.includes(value) || rest.includes(value);
+  // Rates may not have loaded yet — never drop the current selection off the list.
+  const items = useMemo(
+    () =>
+      options.some((o) => o.value === value)
+        ? options
+        : [{ value, label: `${value} — ${currencyName(value)}` }, ...options],
+    [options, value],
+  );
 
   return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      aria-label={label}
-      className={`${inputCls} w-28 shrink-0 cursor-pointer sm:w-32`}
-    >
-      {/* Rates may not have loaded yet — never drop the current selection off the list. */}
-      {!known && <option value={value}>{value}</option>}
-      {top.length > 0 && (
-        <optgroup label="Common">
-          {top.map((code) => (
-            <option key={code} value={code} title={currencyName(code)}>
-              {code}
-            </option>
-          ))}
-        </optgroup>
-      )}
-      {rest.length > 0 && (
-        <optgroup label="All currencies">
-          {rest.map((code) => (
-            <option key={code} value={code} title={currencyName(code)}>
-              {code}
-            </option>
-          ))}
-        </optgroup>
-      )}
-    </select>
+    /* The width lives here so the row keeps the same two-column shape the <select> gave it, and
+       sm:w-60 is 240px on purpose — exactly the panel's own min-width, so the open list lines up
+       with the field instead of hanging past it (the dialog went to max-w-lg to buy that room).
+       Below sm there is no room for 240px, so right-0 pins the panel inside the dialog. Both are
+       done from the outside — nothing about the shared combobox changes. */
+    <div className="w-40 shrink-0 sm:w-60 [&>div>div]:left-auto [&>div>div]:right-0">
+      <SearchableSelect
+        options={items}
+        value={value}
+        onChange={onChange}
+        accent="blue"
+        name={label}
+        className="font-bold"
+        searchPlaceholder="Code or currency name…"
+      />
+    </div>
   );
 }

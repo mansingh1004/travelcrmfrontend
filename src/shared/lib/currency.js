@@ -83,10 +83,24 @@ export const CURRENCY_NAMES = {
   BRL: "Brazilian Real",
 };
 
-/** The chips in the converter and the first block of the dropdown. */
+/**
+ * The chips in the converter and the first block of the dropdown, in PRIORITY order — not
+ * alphabetical, and not "biggest world currency" order either.
+ *
+ * USD leads because it is the currency every other rate gets sanity-checked against and the one
+ * hotels and DMCs quote in. Then the home rupee, then the neighbours a desk sells all year
+ * (Nepal, Bhutan, Sri Lanka, Maldives) and the volume destinations — Dubai, Thailand, Bali,
+ * Singapore, Malaysia, Vietnam — before the long-haul classics. Everything the provider returns
+ * is still reachable in the dropdown's second block; this list only decides what is one tap away.
+ */
 export const POPULAR_CURRENCIES = [
-  "USD", "EUR", "AED", "GBP", "THB", "SGD", "AUD", "JPY", "CHF", "CAD",
-  "MYR", "IDR", "VND", "SAR", "QAR", "NPR", "LKR", "MVR", "MUR", "TRY",
+  "USD", "INR",
+  // Subcontinent — same trip planned twice a week.
+  "NPR", "BTN", "LKR", "MVR",
+  // The volume outbound: Gulf, South-East Asia, the Indian Ocean.
+  "AED", "THB", "IDR", "SGD", "MYR", "VND", "MUR", "SCR", "SAR", "QAR",
+  // Long haul.
+  "EUR", "GBP", "AUD", "JPY", "CHF", "CAD", "TRY", "AZN", "GEL", "UZS",
 ];
 
 /** The rupee is the desk's home currency, so it is what a single-sided query converts into. */
@@ -103,6 +117,9 @@ const ALIASES = {
   baht: "THB", riyal: "SAR", riyals: "SAR", ringgit: "MYR", rupiah: "IDR",
   yuan: "CNY", rmb: "CNY", won: "KRW", franc: "CHF", francs: "CHF",
   lira: "TRY", rand: "ZAR", dong: "VND", taka: "BDT", rufiyaa: "MVR", peso: "PHP",
+  // The neighbours. A bare "rupee" stays INR — that is the desk's own money and the safer default;
+  // these are the words someone types when they specifically mean the other one.
+  nrs: "NPR", nepali: "NPR", ngultrum: "BTN", lankan: "LKR",
 };
 
 /** Words that carry intent but no value — they must not count as "noise" in the gate below. */
