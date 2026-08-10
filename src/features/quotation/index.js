@@ -5,6 +5,18 @@
 
 export { default as CreateQuotation } from "./pages/Createquotation";
 export { default as QuickQuotation } from "./pages/QuickQuotation";
+// The Quick Quote builder, decomposed so the rapid lead form can host the same accordion inline and
+// create the lead and its quotation from one screen. One implementation, two hosts.
+export {
+  QuickQuoteSections,
+  initialModel as buildQuickQuoteModel,
+  quickQuoteTotals,
+  quickQuoteSteps,
+  quickQuoteCompletion,
+  quickQuotePayload,
+  syncQuickQuoteServices,
+  validateQuickQuote,
+} from "./pages/QuickQuotation";
 export { default as QuotationWebView, PublicQuotationPage } from "./pages/QuotationWebView";
 export { default as WeblinkAnalyticsModal } from "./components/WeblinkAnalyticsModal";
 export { quotationService } from "./api/quotationService";

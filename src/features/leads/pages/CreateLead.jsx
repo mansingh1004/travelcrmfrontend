@@ -793,15 +793,21 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   Accessibility,
   ArrowLeft,
+  BedDouble,
+  BookUser,
   CalendarDays,
+  Camera,
+  CarFront,
   Check,
   CheckCircle2,
   ChevronDown,
   CircleUserRound,
   Clock3,
+  Download,
   ExternalLink,
   Globe2,
   IndianRupee,
+  LayoutGrid,
   LoaderCircle,
   Mail,
   MapPin,
@@ -812,6 +818,10 @@ import {
   RotateCcw,
   Route,
   Search,
+  Share2,
+  ShieldCheck,
+  Ship,
+  Stamp,
   TrainFront,
   Trash2,
   TriangleAlert,
@@ -827,8 +837,23 @@ import QuickCityModal from "../../masters/components/QuickCityModal";
 // Cross-feature, through the barrel — customers owns "does this person already exist?" and the
 // lead form only asks the question.
 import { customerService } from "@features/customers";
+// Rapid mode prices the enquiry on this same screen. The accordion, its payload builder and its
+// validation all come from the Quick Quote page through the barrel, so there is exactly one
+// implementation of "what a quick quote is" no matter which screen the agent started on.
+import {
+  QuickQuoteSections,
+  QuotationStyleModal,
+  buildQuickQuoteModel,
+  quickQuotePayload,
+  quickQuoteTotals,
+  quotationService,
+  syncQuickQuoteServices,
+  validateQuickQuote,
+} from "@features/quotation";
 import { geographyService } from "@shared/api/geographyService";
 import { hasPermission, P } from "@shared/lib/access";
+import { usePdfDownload } from "@shared/hooks/usePdfDownload";
+import PdfDownloadLoader from "@shared/ui/PdfDownloadLoader";
 import { buildAdultPayload, deriveAdultBreakdown, getAdultBreakdownError } from "@shared/lib/adultBreakdown";
 import TravellerCountFields from "@shared/ui/TravellerCountFields";
 import { useToast } from "@shared/ui/toast";
@@ -857,17 +882,19 @@ const ASSISTANCE_TYPES = [
 ];
 
 // ids, not labels — the backend stores these lowercase keys and AllLeads colours off them.
+// `icon` / `tile` are presentation only and are read by the rapid-mode service cards. Full-details
+// mode and EditLead still render `label` through Chip and never touch them. readStickyServices()
+// only reads `id`, so the extra keys are inert everywhere else. The -700 icon foregrounds on amber
+// and cyan are deliberate: at -600 those two pastels fall under the 3:1 contrast floor for glyphs.
 const SERVICES = [
-  { id: "hotel", label: "Hotel" },
-   { id: "vehicle", label: "Vehicle" },
-   { id: "sightseeing", label: "Sightseeing" },
-  { id: "flight", label: "Flight" },
-  { id: "cruise", label: "Cruise" },
-  { id: "visa", label: "Visa" },
-  
- 
-  { id: "insurance", label: "Insurance" },
-  { id: "passport", label: "Passport" },
+  { id: "hotel", label: "Hotel", icon: BedDouble, tile: "bg-emerald-50 text-emerald-600" },
+  { id: "vehicle", label: "Vehicle", icon: CarFront, tile: "bg-amber-50 text-amber-700" },
+  { id: "sightseeing", label: "Sightseeing", icon: Camera, tile: "bg-violet-50 text-violet-600" },
+  { id: "flight", label: "Flight", icon: Plane, tile: "bg-blue-50 text-blue-600" },
+  { id: "cruise", label: "Cruise", icon: Ship, tile: "bg-cyan-50 text-cyan-700" },
+  { id: "visa", label: "Visa", icon: Stamp, tile: "bg-rose-50 text-rose-600" },
+  { id: "insurance", label: "Insurance", icon: ShieldCheck, tile: "bg-indigo-50 text-indigo-600" },
+  { id: "passport", label: "Passport", icon: BookUser, tile: "bg-orange-50 text-orange-600" },
 ];
 
 const SERVICE_ID_MAP = {
@@ -1101,6 +1128,44 @@ function Chip({ selected, onClick, children }) {
     >
       {selected && <Check className="h-3.5 w-3.5 shrink-0" />}
       <span className="truncate">{children}</span>
+    </button>
+  );
+}
+/* Service card — rapid mode only. A sibling of Chip, not a variant of it: Chip is an inline pill
+   whose leading tick SHIFTS the label, and it still serves the assistance-type row below, so giving
+   it two mutually-exclusive DOM trees would put that row one prop-default away from being redesigned.
+   This is the reference's "app card": centred pastel tile, centred label, tick in the top-right.
+   The tick is one node in BOTH states (transparent when off) so selecting causes no layout shift,
+   and the tile keeps its per-service colour when selected — colour encodes WHICH service, the blue
+   edge encodes THAT it is picked. */
+function ServiceCard({ icon: Icon, label, tile, selected, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={selected}
+      // The label can still ellipsize in the tightest band (one row of eight between the sm and lg
+      // breakpoints), so the full name stays available on hover and to assistive tech.
+      title={label}
+      className={`group relative flex flex-col items-center justify-center gap-1.5 rounded-xl border bg-white px-0.5 py-3 text-center transition focus:outline-none focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-100 sm:px-1 ${selected
+        ? "border-blue-500 ring-1 ring-blue-500"
+        : "border-slate-200 hover:border-slate-300"
+        }`}
+    >
+      <span
+        className={`absolute right-1.5 top-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full transition ${selected
+          ? "bg-blue-600 text-white"
+          : "border border-slate-200 bg-white text-transparent group-hover:border-slate-300"
+          }`}
+      >
+        <Check className="h-2 w-2" strokeWidth={3.5} />
+      </span>
+      <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${tile}`}>
+        <Icon className="h-4 w-4" />
+      </span>
+      <span className={`w-full truncate text-[9px] font-semibold leading-tight sm:text-[10px] ${selected ? "text-slate-900" : "text-slate-600"}`}>
+        {label}
+      </span>
     </button>
   );
 }
@@ -1729,7 +1794,7 @@ export function LeadFormPanels({
         <div className={`min-w-0 ${compactRail ? "lg:col-start-1" : "lg:col-span-2"}`}>
           <Panel
             icon={Route}
-            title="Trip & Itinerary"
+            title="Trip"
             description="Dates, travellers, departure and route in one place"
             action={
               <span className="inline-flex w-fit flex-wrap items-center gap-x-1 rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">
@@ -1990,6 +2055,55 @@ export function LeadFormPanels({
           </Panel>
         </div>
 
+        {/* ── Services — rapid mode only, and deliberately OUT of the right rail ────────────────
+            Ticking a service is the act of starting to fill it in (toggleService queues the section
+            to open below), so the picker earns main-column width and reads as a card grid instead of
+            a 2×4 list squeezed into a 300px rail. Full details and EditLead keep the rail's Chip
+            grid further down, untouched — only one of the two `services-group` nodes ever mounts,
+            so save()'s scrollIntoView still resolves. */}
+        {rapidEntry && (
+          <div className="min-w-0 lg:col-start-1">
+            <Panel
+              icon={LayoutGrid}
+              title="Services"
+              description="Tick what to price — each pick opens its section in the quote below"
+              action={(
+                <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-bold text-blue-700">
+                  {services.length} selected
+                </span>
+              )}
+            >
+              <div id="services-group">
+                {/* All eight on ONE row from sm up — the picker reads as a single strip of choices,
+                    not a block to work through. Phones fall back to 4-up; eight 40px cards would be
+                    unreadable at 375px. */}
+                <div className="grid grid-cols-4 gap-2 sm:grid-cols-8 sm:gap-1.5 lg:gap-2">
+                  {SERVICES.map((service) => (
+                    <ServiceCard
+                      key={service.id}
+                      icon={service.icon}
+                      label={service.label}
+                      tile={service.tile}
+                      selected={services.includes(service.id)}
+                      onClick={() => onToggleService(service.id)}
+                    />
+                  ))}
+                </div>
+                {errors.services && (
+                  <p
+                    id="services-error"
+                    role="alert"
+                    className="mt-3 flex items-center gap-1.5 rounded-lg border border-rose-100 bg-rose-50 px-2.5 py-2 text-[11px] font-bold text-rose-700"
+                  >
+                    <TriangleAlert className="h-3.5 w-3.5 shrink-0" />
+                    {errors.services.message}
+                  </p>
+                )}
+              </div>
+            </Panel>
+          </div>
+        )}
+
         {!rapidEntry && (
           <div className="min-w-0 lg:col-start-1">
             <RequirementsAssistancePanel
@@ -2198,7 +2312,10 @@ export function LeadFormPanels({
             </div>
           </Panel>
 
-          <Panel icon={Search} title="Services" description="What this quotation should include">
+          {/* Rail copy — full details and EditLead only. Rapid renders the card grid in the main
+              column instead (see above); the identical subtree behind a boolean is the cheapest
+              proof that nothing about full mode changed. */}
+          {!rapidEntry && <Panel icon={Search} title="Services" description="What this quotation should include">
             <div id="services-group">
               <div className="grid grid-cols-2 gap-2">
                 {SERVICES.map((service) => (
@@ -2214,7 +2331,7 @@ export function LeadFormPanels({
               {errors.services && <p className="mt-2 text-xs text-red-500">{errors.services.message}</p>}
             </div>
 
-          </Panel>
+          </Panel>}
           {rapidEntry && (
             <RequirementsAssistancePanel
               rapidEntry
@@ -2334,6 +2451,7 @@ export default function LeadFormPage() {
     () => hasPermission(P.QUOTATION_CREATE) && hasPermission(P.LEAD_READ),
     [],
   );
+  const canUpdateQuotation = useMemo(() => hasPermission(P.QUOTATION_UPDATE), []);
   const canUseCombinedContactLookup = useMemo(
     () => hasPermission(P.LEAD_READ) && hasPermission(P.CUSTOMER_READ),
     [],
@@ -2341,7 +2459,136 @@ export default function LeadFormPage() {
 
   const changeEntryMode = (nextRapidEntry) => {
     setRapidEntry(nextRapidEntry);
+    // Leaving rapid tears down the inline quote with it. Without this, `createdQuote` survived into
+    // full-details mode and relabelled its primary button "Update Quotation" — a button whose
+    // handler then bailed on the now-null model and did nothing at all. Coming back to rapid was
+    // just as broken: `quoteTouchedRef` stayed true, so the seeding effect refused to rebuild the
+    // model and the accordion never re-mounted.
+    if (!nextRapidEntry) resetInlineQuote();
   };
+
+  /* ── Rapid mode: price the enquiry without leaving this screen ───────────────────────────────
+     Rapid used to take the enquiry here and then NAVIGATE to /quick-quote to price it, so a single
+     phone call spanned two pages and a page load. The quotation accordion now renders below this
+     form: the model is seeded live from the trip details as they are typed, and one click writes the
+     lead and its quotation back to back. Full mode is untouched and still hands off to /quick-quote.
+
+     Only rapid, only create, only with QUOTATION_CREATE — everything above the Services panel keeps
+     working exactly as it did for every other combination. */
+  const quoteInline = !editing && rapidEntry && canCreateQuotation;
+  const [quoteModel, setQuoteModel] = useState(null);
+  const [createdQuote, setCreatedQuote] = useState(null);
+  const [quoteBusy, setQuoteBusy] = useState(false);
+  const [quoteStyleOpen, setQuoteStyleOpen] = useState(false);
+  const quoteSectionsRef = useRef(null);
+  // Auto-seeding stops the moment the agent touches the quote. Without this, typing one more
+  // itinerary stop would silently wipe the rooms and prices already entered below.
+  const quoteTouchedRef = useRef(false);
+  const [quoteTouched, setQuoteTouched] = useState(false);
+  /* Every path that starts a fresh enquiry — Clear, Save & New, Next enquiry, leaving rapid mode —
+     has to come through here. Missing any one of them left the PREVIOUS customer's rows, prices and
+     quotation id loaded against the new lead, so "Update Quotation" would overwrite the quote that
+     had just been sent to someone else. Declared before its callers so nothing can use a stale copy. */
+  const resetInlineQuote = useCallback(() => {
+    setCreatedQuote(null);
+    setQuoteModel(null);
+    quoteTouchedRef.current = false;
+    setQuoteTouched(false);
+  }, []);
+  const {
+    downloadPdf: runQuotePdfDownload,
+    isDownloading: quotePdfBusy,
+    progress: quotePdfProgress,
+    progressSupported: quotePdfProgressSupported,
+  } = usePdfDownload();
+
+  const customerNameValue = watch("customerName");
+  const travelDateValue = watch("travelDate");
+  const departCityValue = watch("departCity");
+  const adultsValue = watch("totalAdults");
+  const childrenValue = watch("children");
+  const infantsValue = watch("infants");
+  const roomsValue = watch("rooms");
+  const extraBedsValue = watch("extraBeds");
+
+  /* The lead record this form is ABOUT to save, in the shape buildQuickQuoteModel reads. Nothing is
+     fetched — that is the point: the quote is built before the lead exists. Half-filled itinerary
+     rows are dropped here because they are the form's own blank template, not real stops. */
+  const draftLeadKey = useMemo(() => JSON.stringify({
+    customerName: customerNameValue || "",
+    travelDate: travelDateValue || "",
+    departCity: departCityValue || "",
+    adults: toInt(adultsValue, 1),
+    totalAdults: toInt(adultsValue, 1),
+    children: toInt(childrenValue),
+    infants: toInt(infantsValue),
+    rooms: toInt(roomsValue, 1),
+    extraBeds: toInt(extraBedsValue),
+    services,
+    itinerary: itinerary
+      .filter((row) => String(row.destination || "").trim() && String(row.city || "").trim())
+      .map((row) => ({
+        destination: row.destination,
+        city: row.city,
+        nights: toInt(row.nights, 1),
+      })),
+    roomAllocations: [],
+  }), [customerNameValue, travelDateValue, departCityValue, adultsValue, childrenValue,
+    infantsValue, roomsValue, extraBedsValue, services, itinerary]);
+
+  // Serialised, not an object: the dependency has to compare by VALUE or every keystroke anywhere on
+  // the form would rebuild the model from a new object identity and reset the quote.
+  useEffect(() => {
+    if (!quoteInline) {
+      setQuoteModel(null);
+      return;
+    }
+    if (quoteTouchedRef.current) return;
+    setQuoteModel(buildQuickQuoteModel(JSON.parse(draftLeadKey)));
+  }, [quoteInline, draftLeadKey]);
+
+  /* A service ticked above must grow its section here even after the quote has been edited and
+     auto-seeding has stopped — otherwise adding Vehicle mid-call would silently do nothing.
+     syncQuickQuoteServices returns the SAME object when nothing changed, so this cannot loop. */
+  const servicesKey = services.join("|");
+  useEffect(() => {
+    if (!quoteInline || !quoteTouchedRef.current) return;
+    setQuoteModel((current) => syncQuickQuoteServices(current, servicesKey ? servicesKey.split("|") : []));
+  }, [quoteInline, servicesKey]);
+
+  // Open the section a just-ticked service created, once the model actually carries it.
+  const pendingQuoteRevealRef = useRef(null);
+  useEffect(() => {
+    const pending = pendingQuoteRevealRef.current;
+    if (!pending) return;
+    if (!quoteModel?.enabledCore?.includes(pending)) return;
+    pendingQuoteRevealRef.current = null;
+    quoteSectionsRef.current?.reveal(pending);
+  }, [quoteModel]);
+
+  /* Finishing a section just collapses it — no scrolling. The loop is tick a service → fill it →
+     done → tick the next one, and the page staying still is what makes that loop fast. */
+  const handleSectionDone = useCallback(() => {
+    quoteSectionsRef.current?.close();
+  }, []);
+
+  const updateQuoteModel = useCallback((updater) => {
+    if (!quoteTouchedRef.current) {
+      quoteTouchedRef.current = true;
+      setQuoteTouched(true);
+    }
+    setQuoteModel(updater);
+  }, []);
+
+  // Explicit re-seed. Offered only once the quote is dirty, because until then it is already live.
+  const resyncQuoteFromLead = () => {
+    quoteTouchedRef.current = false;
+    setQuoteTouched(false);
+    setQuoteModel(buildQuickQuoteModel(JSON.parse(draftLeadKey)));
+    showToast("Quotation re-seeded from the current trip details.", "success");
+  };
+
+  const quoteTotals = useMemo(() => quickQuoteTotals(quoteModel), [quoteModel]);
 
   useEffect(() => {
     if (!editing) phoneRef.current?.focus();
@@ -2605,7 +2852,15 @@ export default function LeadFormPage() {
   };
 
   const toggleService = (id) => {
-    setServices((list) => (list.includes(id) ? list.filter((s) => s !== id) : [...list, id]));
+    setServices((list) => {
+      const next = list.includes(id) ? list.filter((s) => s !== id) : [...list, id];
+      /* Ticking a service is the request to fill it in. Rather than making the agent tick, scroll and
+         then hunt for the matching section, the section this service just created is opened for them
+         — the effect below fires it once the model actually carries the service, because the model is
+         rebuilt from `services` and the section does not exist until it is. Untick opens nothing. */
+      if (quoteInline && !list.includes(id)) pendingQuoteRevealRef.current = id;
+      return next;
+    });
     clearErrors("services");
   };
 
@@ -2694,6 +2949,19 @@ export default function LeadFormPage() {
       showToast("Choose a destination and city so the quotation can be prefilled.", "error");
       document.getElementById("itinerary-group")?.scrollIntoView({ block: "center", behavior: "smooth" });
       return;
+    }
+
+    /* Rapid mode prices on this page, so the quotation is checked BEFORE the lead is written.
+       Creating the lead first and then failing on the quote would leave a half-done record behind
+       and force the agent to hunt for it in the list. The accordion is told which section to open
+       and which field to land on, so the cause is on screen, not in a toast. */
+    if (createQuotation && quoteInline) {
+      const problem = validateQuickQuote(quoteModel);
+      if (problem) {
+        if (problem.section) quoteSectionsRef.current?.reveal(problem.section, problem.field || null);
+        showToast(problem.message, "error");
+        return;
+      }
     }
 
     if (data.roomPlanEnabled) {
@@ -2787,6 +3055,37 @@ export default function LeadFormPage() {
           return;
         }
 
+        /* One page. In rapid mode the quotation the agent just built below is written straight
+           after the lead and the screen STAYS — no navigation, no reload, no losing the context of
+           the call. Full mode keeps the original two-step handoff to /quick-quote. */
+        if (quoteInline && quoteModel) {
+          try {
+            const response = await quotationService.createQuotation(
+              quickQuotePayload({ model: quoteModel, lead: created, leadId: leadPublicId }),
+            );
+            const body = response?.data?.data || response?.data || {};
+            const newQuotationId = body.publicId || body.id;
+            if (!newQuotationId) throw new Error("Quotation was saved but its ID was not returned.");
+            setCreatedQuote({
+              id: String(newQuotationId),
+              quoteNo: body.quoteNo == null ? "" : String(body.quoteNo),
+              leadPublicId: String(leadPublicId),
+              leadCode: created?.leadCode || "",
+              lead: created,
+            });
+            showToast(`${created?.leadCode || "Lead"} and its quotation are ready to send.`, "success");
+          } catch (error) {
+            // The lead IS saved — say so, so nobody re-enters it chasing the quotation error.
+            if (!isAlreadyReported(error)) {
+              showToast(
+                getErrorMessage(error, "Lead was created, but the quotation could not be saved."),
+                "error",
+              );
+            }
+          }
+          return;
+        }
+
         showToast(
           `${created?.leadCode || "Lead"} created successfully. Continue with the quotation.`,
           "success",
@@ -2808,6 +3107,8 @@ export default function LeadFormPage() {
         setItinerary([blankRow()]);
         setRoomAllocations(rebalanceRooms([], { rooms: 1, adults: 2, children: 0, infants: 0, extraBeds: 0 }));
         resetContactMatch();
+        // The quote belongs to the lead that was just written, not to the blank one now on screen.
+        resetInlineQuote();
         showToast(`${created?.leadCode || "Lead"} saved — next record ready.`, "success");
         window.scrollTo({ top: 0, behavior: "smooth" });
         window.setTimeout(() => phoneRef.current?.focus(), 0);
@@ -2824,6 +3125,11 @@ export default function LeadFormPage() {
   };
 
   const onFormKeyDown = (event) => {
+    /* The quotation accordion below has its own key map (Enter walks its fields, Alt+1…8 jumps
+       between its sections) and it sits INSIDE this form, so its keydown fires first and bubbles
+       here. Without this guard Alt+2 would jump a section and then switch the form to Full mode,
+       and Enter would move the caret twice. Anything the accordion handled is already done. */
+    if (event.defaultPrevented) return;
     if (!editing && event.altKey && !event.ctrlKey && !event.metaKey && event.key === "1") {
       event.preventDefault();
       changeEntryMode(true);
@@ -2839,6 +3145,9 @@ export default function LeadFormPage() {
     if (event.key !== "Enter") return;
     if (event.ctrlKey || event.metaKey) {
       event.preventDefault();
+      // Once the quotation exists the lead does too, so Ctrl+Enter has to UPDATE. Re-running the
+      // create path here wrote a second lead and a second quotation for the same customer.
+      if (createdQuote) { updateInlineQuote(); return; }
       const addAnother = !editing && rapidEntry && event.shiftKey; // batch-next exists only in Rapid Mode
       const createQuotation = !editing && !addAnother && rapidEntry && canCreateQuotation;
       handleSubmit((data) => save(data, { addAnother, createQuotation }), onInvalid)();
@@ -2860,7 +3169,89 @@ export default function LeadFormPage() {
     setItinerary([blankRow()]);
     setRoomAllocations(rebalanceRooms([], { rooms: 1, adults: 2, children: 0, infants: 0, extraBeds: 0 }));
     resetContactMatch();
+    resetInlineQuote();
     phoneRef.current?.focus();
+  };
+
+  /* ── Actions on the quotation this page just created ─────────────────────────────────────────
+     The quote is not finished when it is saved, it is finished when the customer has it — so the
+     share link and the PDF are offered right here rather than only on the standalone Quick Quote
+     page. All three reuse the same plumbing that page uses: same endpoint, same design picker,
+     same streaming download hook. */
+  const updateInlineQuote = async () => {
+    if (!createdQuote?.id || !quoteModel) return;
+    // QUOTATION_CREATE does not imply QUOTATION_UPDATE — the standalone page checks this before it
+    // PUTs, and so must this one, or the agent gets an interceptor 403 with no idea why.
+    if (!canUpdateQuotation) {
+      showToast("You can create quotations, but you do not have permission to update this one.", "error");
+      return;
+    }
+    const problem = validateQuickQuote(quoteModel);
+    if (problem) {
+      if (problem.section) quoteSectionsRef.current?.reveal(problem.section, problem.field || null);
+      showToast(problem.message, "error");
+      return;
+    }
+    setQuoteBusy(true);
+    try {
+      // includeLead:false — re-sending leadId asks the backend for a fresh lead snapshot, which
+      // would overwrite the customer/PAX context captured when the quotation was created.
+      await quotationService.updateQuotation(createdQuote.id, quickQuotePayload({
+        model: quoteModel,
+        lead: createdQuote.lead,
+        leadId: createdQuote.leadPublicId,
+        includeLead: false,
+      }));
+      showToast("Quotation updated.", "success");
+    } catch (error) {
+      if (!isAlreadyReported(error)) showToast(getErrorMessage(error, "Could not update the quotation."), "error");
+    } finally {
+      setQuoteBusy(false);
+    }
+  };
+
+  const copyQuoteShareLink = async () => {
+    if (!createdQuote?.id) return;
+    try {
+      const response = await quotationService.getShareLink(createdQuote.id);
+      const link = response?.data?.data?.shareUrl || response?.data?.shareUrl || "";
+      if (!link) throw new Error("The share link was not returned.");
+      try {
+        await navigator.clipboard.writeText(link);
+        showToast("Share link copied!", "success");
+      } catch {
+        // The clipboard API needs a secure context. Showing the URL still lets the agent copy it.
+        showToast(link, "success");
+      }
+    } catch (error) {
+      if (!isAlreadyReported(error)) showToast(getErrorMessage(error, "Failed to generate the share link."), "error");
+    }
+  };
+
+  const exportQuotePdfAs = async (style) => {
+    setQuoteStyleOpen(false);
+    if (!createdQuote?.id) return;
+    try {
+      // Readable business code in the file name — never the raw UUID when a quote number exists.
+      const code = createdQuote.quoteNo || String(createdQuote.id).slice(0, 8).toUpperCase();
+      await runQuotePdfDownload({
+        endpoint: `/quotations/${createdQuote.id}/pdf`,
+        params: style ? { style } : undefined,
+        fileName: `TravelCRM-Quotation-${code}.pdf`,
+      });
+      showToast("PDF downloaded successfully!", "success");
+    } catch (error) {
+      if (!isAlreadyReported(error)) showToast(getErrorMessage(error, "Failed to generate PDF."), "error");
+    }
+  };
+
+  // Back to a blank enquiry without a page load — the batch case this whole mode exists for.
+  // clearForm() already calls resetInlineQuote(), so the quote goes with it.
+  const startNextEnquiry = () => {
+    clearForm();
+    // NOT window.scrollTo — the app shell is h-screen/overflow-hidden and <main> is the scrollport,
+    // so scrolling the document is a no-op and the clerk was left at the bottom of the page.
+    formRef.current?.scrollIntoView({ block: "start", behavior: "smooth" });
   };
 
   if (loading) {
@@ -2969,6 +3360,11 @@ export default function LeadFormPage() {
     </p>
   ) : null;
 
+  // Filled slate-100 chips read as the old kit; a white chip with a 1px border is the flat rule.
+  const kbdCls = rapidEntry
+    ? "rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-bold text-slate-500"
+    : "rounded bg-slate-100 px-1";
+
   return (
     <form
       ref={formRef}
@@ -2978,8 +3374,16 @@ export default function LeadFormPage() {
       className="min-h-screen bg-slate-50"
       style={{ fontFamily: FONT }}
     >
-      <header className="border-b border-slate-200 bg-white/95 shadow-sm backdrop-blur">
-        <div className="mx-auto flex w-full max-w-[1400px] items-center justify-between gap-3 px-4 py-3">
+      {/* Rapid pins the header instead of the action bar. A bottom-sticky bar is a no-op on this
+          page — the app shell scrolls <main>, and this bar is its parent's last child, so it has
+          nowhere to travel — while the header is the FIRST child of a min-h-screen form and has the
+          whole form to stick through. Clear / Save & New / Create Quote ride along with it. */}
+      <header className={rapidEntry
+        ? "sticky top-0 z-30 border-b border-slate-200 bg-white"
+        : "border-b border-slate-200 bg-white/95 shadow-sm backdrop-blur"}>
+        <div className={rapidEntry
+          ? "mx-auto flex w-full max-w-[1400px] flex-wrap items-center justify-between gap-3 px-4 py-3.5"
+          : "mx-auto flex w-full max-w-[1400px] items-center justify-between gap-3 px-4 py-3"}>
           <div className="flex min-w-0 items-center gap-3">
             <button
               type="button"
@@ -2994,25 +3398,56 @@ export default function LeadFormPage() {
                 {editing ? `Edit Lead${leadCode ? ` · ${leadCode}` : ""}` : rapidEntry ? "Quick Quote" : "Create Lead"}
               </h1>
               <p className="hidden text-xs text-slate-500 sm:block">
-                <kbd className="rounded bg-slate-100 px-1">Enter</kbd> next field ·
-                <kbd className="ml-1 rounded bg-slate-100 px-1">Ctrl+Enter</kbd> {rapidEntry && !editing ? "create quote" : "save"}
+                <kbd className={kbdCls}>Enter</kbd> next field ·
+                <kbd className={`ml-1 ${kbdCls}`}>Ctrl+Enter</kbd> {rapidEntry && !editing ? "create quote" : "save"}
                 {!editing && (
                   <>
-                    {" · "}<kbd className="rounded bg-slate-100 px-1">Alt+1/2</kbd> rapid/full
+                    {" · "}<kbd className={kbdCls}>Alt+1/2</kbd> rapid/full
                   </>
                 )}
               </p>
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            <button type="button" onClick={editing ? () => navigate("/allleads") : clearForm} disabled={submitting} className="hidden items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50 sm:flex">
+            {/* The session counter and the mode toggle move up here in rapid — the blue banner that
+                used to carry them is dropped, so a batch clerk no longer re-reads onboarding copy
+                on every enquiry. Full details keeps the banner and its own toggle. */}
+            {rapidEntry && !editing && savedThisSession > 0 && (
+              <span className="hidden items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700 sm:inline-flex">
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                {savedThisSession} saved this session
+              </span>
+            )}
+            {rapidEntry && (
+              <div className="inline-flex w-fit shrink-0 rounded-lg border border-slate-200 bg-slate-50 p-0.5" role="group" aria-label="Lead entry mode">
+                <button
+                  type="button"
+                  onClick={() => changeEntryMode(true)}
+                  aria-pressed
+                  className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-bold text-white"
+                >
+                  Rapid
+                </button>
+                <button
+                  type="button"
+                  onClick={() => changeEntryMode(false)}
+                  aria-pressed={false}
+                  className="rounded-md px-3 py-1.5 text-xs font-bold text-slate-500 transition hover:text-slate-700"
+                >
+                  Full details
+                </button>
+              </div>
+            )}
+            <button type="button" onClick={editing ? () => navigate("/allleads") : clearForm} disabled={submitting} className={rapidEntry
+              ? "hidden items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50 sm:flex"
+              : "hidden items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50 sm:flex"}>
               <RotateCcw className="h-3.5 w-3.5" /> {editing ? "Cancel" : "Clear"}
             </button>
             {!editing && rapidEntry && <button
               type="button"
               onClick={handleSubmit((data) => save(data, { addAnother: true }), onInvalid)}
               disabled={submitting}
-              className="hidden items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100 disabled:opacity-60 sm:inline-flex"
+              className="hidden items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50 sm:inline-flex"
             >
               <Plus className="h-3.5 w-3.5" /> Save &amp; New
             </button>}
@@ -3020,16 +3455,20 @@ export default function LeadFormPage() {
               <>
                 <button
                   type="button"
-                  onClick={handleSubmit((data) => save(data, { createQuotation: true }), onInvalid)}
-                  disabled={submitting}
-                  className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60 sm:text-sm"
+                  // Same action as the accordion's last-section button — once the quotation exists
+                  // this becomes an update, so the two controls can never mean different things.
+                  onClick={createdQuote
+                    ? updateInlineQuote
+                    : handleSubmit((data) => save(data, { createQuotation: true }), onInvalid)}
+                  disabled={submitting || quoteBusy}
+                  className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60 sm:text-sm"
                 >
-                  {submitting ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
-                  {submitting ? "Creating..." : "Create Quote"}
+                  {(submitting || quoteBusy) ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
+                  {submitting ? "Creating..." : createdQuote ? "Update Quote" : "Create Quote"}
                 </button>
               </>
             ) : (!rapidEntry || editing) ? (
-              <button type="submit" disabled={submitting} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60 sm:text-sm">
+              <button type="submit" disabled={submitting} className={`inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-xs font-bold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60 sm:text-sm ${rapidEntry ? "transition" : "shadow-sm"}`}>
                 {submitting ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
                 {submitting ? "Saving..." : editing ? "Save Changes" : "Save Lead"}
               </button>
@@ -3038,7 +3477,18 @@ export default function LeadFormPage() {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-[1400px] space-y-5 px-4 py-4">
+      <main className={rapidEntry
+        ? "mx-auto w-full max-w-[1400px] space-y-4 px-4 py-5"
+        : "mx-auto w-full max-w-[1400px] space-y-5 px-4 py-4"}>
+
+        {rapidEntry && (
+          <p className="pt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">Enquiry details</p>
+        )}
+
+        {/* Full details keeps its banner — the mode toggle, the session counter and the intro copy
+            all still live here for that mode. Rapid moved the first two into the header and dropped
+            the third; see the header block above. */}
+        {!rapidEntry && (
         <div className="flex flex-col gap-3 rounded-xl border border-blue-100 bg-blue-50/70 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-start gap-3 sm:items-center">
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white shadow-sm">
@@ -3081,6 +3531,7 @@ export default function LeadFormPage() {
             </button>
           </div>
         </div>
+        )}
 
         <LeadFormPanels
           register={register}
@@ -3105,7 +3556,138 @@ export default function LeadFormPage() {
           showRoomPlanning={editing}
         />
 
-        <div className="flex flex-col-reverse gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+        {/* ── The quotation, on this same page ────────────────────────────────────────────────
+            Rapid mode only. Everything above is the lead form, unchanged; from here down the agent
+            prices the enquiry without a navigation. The sections are exactly the ones ticked in the
+            Services panel above — that panel is the only service picker, so the accordion renders
+            with showServices={false} rather than offering a second one. */}
+        {quoteInline && quoteModel && (
+          <section id="quick-quote-builder" className="space-y-3">
+            <p className="pt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">Quotation</p>
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4">
+              <div className="flex items-center gap-3">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
+                  <Zap className="h-4 w-4" />
+                </span>
+                <div>
+                  <p className="text-sm font-bold text-slate-900">Pricing</p>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    Seeded from the services and itinerary above. Open a section, fill it, press Next.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                {/* Duplicates the summary strip's subtotal on purpose: that one is the at-a-glance
+                    number at the top of a long page, this one sits at the point of edit. */}
+                <div className="text-right">
+                  <p className="text-[11px] font-semibold text-slate-500">Running subtotal</p>
+                  <p className="text-lg font-black leading-tight tabular-nums text-slate-900">
+                    ₹{quoteTotals.subtotal.toLocaleString("en-IN")}
+                  </p>
+                </div>
+                {quoteTouched && !createdQuote && (
+                  <button
+                    type="button"
+                    onClick={resyncQuoteFromLead}
+                    title="Rebuild the quotation from the trip details above — your entries below are replaced"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" /> Resync
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {services.length === 0 && (
+              <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
+                  <TriangleAlert className="h-4 w-4" />
+                </span>
+                <p className="text-xs text-slate-500">
+                  <span className="font-bold text-slate-800">No services ticked.</span>{" "}
+                  Pick one above and its section appears here.
+                </p>
+              </div>
+            )}
+
+            {/* No submitSlot here on purpose: with sections collapsing as they are finished there is
+                no "last" one to hang the submit off. Create Quick Quote lives in the sticky header
+                and in the action bar below, both reachable from any scroll position. */}
+            <QuickQuoteSections
+              ref={quoteSectionsRef}
+              model={quoteModel}
+              setModel={updateQuoteModel}
+              showServices={false}
+              onSectionDone={handleSectionDone}
+              // Without this the accordion swallowed Ctrl+Enter and the shortcut was dead for every
+              // field inside the quote — the one place an agent is most likely to press it.
+              onRequestSave={() => {
+                if (createdQuote) { updateInlineQuote(); return; }
+                handleSubmit((data) => save(data, { createQuotation: true }), onInvalid)();
+              }}
+            />
+
+            {createdQuote && (
+              /* White card + an emerald status pill, not an emerald card. Colour belongs to pills
+                 and icon tiles here; a tinted card plus four tinted buttons made the one real next
+                 action indistinguishable from the three secondary ones. */
+              <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white p-4">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
+                  <CheckCircle2 className="h-4 w-4" />
+                </span>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-bold text-slate-900">
+                      Quotation{createdQuote.quoteNo ? ` ${createdQuote.quoteNo}` : ""}
+                    </p>
+                    <span className="inline-flex shrink-0 items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700">
+                      Created
+                    </span>
+                  </div>
+                  {createdQuote.leadCode && (
+                    <p className="mt-0.5 text-xs text-slate-500">{createdQuote.leadCode}</p>
+                  )}
+                </div>
+                <div className="ml-auto flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={copyQuoteShareLink}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                  >
+                    <Share2 className="h-3.5 w-3.5" /> Share
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setQuoteStyleOpen(true)}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                  >
+                    <Download className="h-3.5 w-3.5" /> PDF
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => navigate(
+                      `/createquotation?leadId=${encodeURIComponent(createdQuote.leadPublicId)}&quotationId=${encodeURIComponent(createdQuote.id)}`,
+                    )}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" /> Full editor
+                  </button>
+                  <button
+                    type="button"
+                    onClick={startNextEnquiry}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-blue-700"
+                  >
+                    <Plus className="h-3.5 w-3.5" /> Next enquiry
+                  </button>
+                </div>
+              </div>
+            )}
+          </section>
+        )}
+
+        <div className={rapidEntry
+          ? "flex flex-col-reverse gap-3 rounded-xl border border-slate-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between"
+          : "flex flex-col-reverse gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between"}>
           <p className="text-xs text-slate-500">
             <span className="font-bold text-red-500">*</span> Required fields are marked.
             {!editing && rapidEntry
@@ -3113,14 +3695,16 @@ export default function LeadFormPage() {
               : ""}
           </p>
           <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={() => navigate("/allleads")} disabled={submitting} className="flex-1 rounded-lg border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50 sm:flex-none">
+            <button type="button" onClick={() => navigate("/allleads")} disabled={submitting} className={rapidEntry
+              ? "flex-1 rounded-lg border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50 sm:flex-none"
+              : "flex-1 rounded-lg border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50 sm:flex-none"}>
               Cancel
             </button>
             {!editing && rapidEntry && <button
               type="button"
               onClick={handleSubmit((data) => save(data, { addAnother: true }), onInvalid)}
               disabled={submitting}
-              className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-5 py-2.5 text-sm font-bold text-blue-700 hover:bg-blue-100 disabled:opacity-60 sm:flex-none"
+              className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50 sm:flex-none"
             >
               <Plus className="h-4 w-4" /> Save &amp; New
             </button>}
@@ -3128,25 +3712,38 @@ export default function LeadFormPage() {
             {!editing && canCreateQuotation && (
               <button
                 type="button"
-                onClick={handleSubmit(
-                  (data) =>
-                    save(data, {
-                      createQuotation: true,
-                    }),
-                  onInvalid,
-                )}
-                disabled={submitting}
-                className={`inline-flex flex-1 items-center justify-center gap-2 rounded-lg px-5 py-2.5 text-sm font-bold shadow-sm disabled:cursor-not-allowed disabled:opacity-60 sm:flex-none ${rapidEntry
-                  ? "bg-emerald-600 text-white hover:bg-emerald-700"
-                  : "border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"}`}
+                // In rapid mode this is the same action as the accordion's last-section button —
+                // once the quotation exists it becomes an update, so the two can never disagree
+                // about what pressing the primary control does.
+                // `quoteInline &&` matters: leaving rapid nulls the model, so a bare `createdQuote`
+                // test left full-details mode with an "Update Quotation" button that did nothing.
+                onClick={quoteInline && createdQuote
+                  ? updateInlineQuote
+                  : handleSubmit(
+                    (data) =>
+                      save(data, {
+                        createQuotation: true,
+                      }),
+                    onInvalid,
+                  )}
+                disabled={submitting || quoteBusy}
+                className={`inline-flex flex-1 items-center justify-center gap-2 rounded-lg px-5 py-2.5 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-60 sm:flex-none ${rapidEntry
+                  ? "bg-emerald-600 text-white transition hover:bg-emerald-700"
+                  : "border border-emerald-200 bg-emerald-50 text-emerald-700 shadow-sm hover:bg-emerald-100"}`}
               >
-                <Zap className="h-4 w-4" />
-                {rapidEntry ? "Create Quick Quote" : "Save & Create Quotation"}
+                {(submitting || quoteBusy)
+                  ? <LoaderCircle className="h-4 w-4 animate-spin" />
+                  : <Zap className="h-4 w-4" />}
+                {/* Same words as the header control, which fires the same handler — two names for
+                    one action reads as two different actions. */}
+                {quoteInline && createdQuote
+                  ? "Update Quote"
+                  : rapidEntry ? "Create Quote" : "Save & Create Quotation"}
               </button>
             )}
 
             {(editing || !rapidEntry) && (
-              <button type="submit" disabled={submitting} className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-blue-700 disabled:opacity-60 sm:flex-none">
+              <button type="submit" disabled={submitting} className={`inline-flex flex-1 items-center justify-center gap-2 rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-60 sm:flex-none ${rapidEntry ? "transition" : "shadow-sm"}`}>
                 {submitting ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
                 {submitting ? "Saving..." : editing ? "Save Changes" : "Save Lead"}
               </button>
@@ -3154,6 +3751,22 @@ export default function LeadFormPage() {
           </div>
         </div>
       </main>
+
+      {/* Quotation delivery, for the quote this page just created. Same dialog and same overlay the
+          Quick Quote page and the full builder use. */}
+      {quoteStyleOpen && createdQuote && (
+        <QuotationStyleModal
+          savedStyle={quoteModel?.templateStyle || "CLASSIC"}
+          onSelect={exportQuotePdfAs}
+          onClose={() => setQuoteStyleOpen(false)}
+        />
+      )}
+      <PdfDownloadLoader
+        open={quotePdfBusy}
+        documentType="Quotation"
+        progress={quotePdfProgress}
+        progressSupported={quotePdfProgressSupported}
+      />
     </form>
   );
 }

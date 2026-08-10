@@ -1529,6 +1529,9 @@ const OTHER_VENDOR = "__OTHER__";
 // Backend caps a batch at @Size(max = 50) — one row over rejects the whole submission.
 const MAX_EXPENSE_ROWS = 50;
 
+const EXPENSE_DRAFT_VERSION = 1;
+const EXPENSE_DRAFT_PREFIX = "travelcrm:booking-expense-draft";
+
 // Mirrors backend @Digits(integer = 10, fraction = 2) on amount/paidAmount.
 const TWO_DECIMALS = /^\d{1,10}(\.\d{1,2})?$/;
 
@@ -1598,6 +1601,112 @@ const createEmptyExpense = (booking) => {
   };
 };
 
+const getExpenseDraftKey = (booking) => {
+  const bookingId = booking?.id ?? booking?.publicId ?? booking?.bookingId;
+  if (!bookingId) return null;
+
+  try {
+    // Scope drafts to both the booking and signed-in user. Booking UUIDs isolate tenants, while
+    // the user component prevents a colleague on a shared browser from seeing another user's
+    // unfinished financial entry.
+    const userEmail = window.localStorage.getItem("userEmail")?.trim().toLowerCase();
+    if (!userEmail) return null;
+    return `${EXPENSE_DRAFT_PREFIX}:v${EXPENSE_DRAFT_VERSION}:${encodeURIComponent(userEmail)}:${bookingId}`;
+  } catch {
+    return null;
+  }
+};
+
+const normalizeDraftExpense = (stored, booking) => {
+  const normalized = createEmptyExpense(booking);
+  if (!stored || typeof stored !== "object" || Array.isArray(stored)) return normalized;
+
+  Object.keys(normalized).forEach((field) => {
+    if (field === "costTypeTouched") {
+      normalized[field] = stored[field] === true;
+    } else if (typeof stored[field] === "string") {
+      normalized[field] = stored[field];
+    }
+  });
+
+  if (!EXPENSE_CATEGORIES.includes(normalized.category)) {
+    normalized.category = getDefaultExpenseCategory(booking);
+  }
+  if (!COST_TYPES.some(({ value }) => value === normalized.costType)) {
+    normalized.costType = defaultCostType(normalized.category);
+    normalized.costTypeTouched = false;
+  }
+  if (!PAYMENT_STATUSES.some(({ value }) => value === normalized.paymentStatus)) {
+    normalized.paymentStatus = "CREDIT";
+  }
+  return normalized;
+};
+
+const loadExpenseDraft = (booking, draftKey) => {
+  const fallback = [createEmptyExpense(booking)];
+  if (!draftKey) return fallback;
+
+  try {
+    const raw = window.localStorage.getItem(draftKey);
+    if (!raw) return fallback;
+
+    const draft = JSON.parse(raw);
+    if (draft?.version !== EXPENSE_DRAFT_VERSION || !Array.isArray(draft.expenses)
+        || draft.expenses.length === 0) {
+      window.localStorage.removeItem(draftKey);
+      return fallback;
+    }
+
+    return draft.expenses
+      .slice(0, MAX_EXPENSE_ROWS)
+      .map((expense) => normalizeDraftExpense(expense, booking));
+  } catch {
+    // Corrupt JSON or unavailable storage must never stop the expense ledger from opening.
+    try {
+      window.localStorage.removeItem(draftKey);
+    } catch {
+      // Storage can be disabled by the browser; the modal still works without persistence.
+    }
+    return fallback;
+  }
+};
+
+const hasMeaningfulDraft = (expenses, booking) => {
+  if (!Array.isArray(expenses) || expenses.length === 0) return false;
+  if (expenses.length > 1) return true;
+
+  const empty = createEmptyExpense(booking);
+  return Object.keys(empty).some((field) => expenses[0]?.[field] !== empty[field]);
+};
+
+const persistExpenseDraft = (draftKey, booking, expenses) => {
+  if (!draftKey) return;
+
+  try {
+    if (!hasMeaningfulDraft(expenses, booking)) {
+      window.localStorage.removeItem(draftKey);
+      return;
+    }
+
+    window.localStorage.setItem(draftKey, JSON.stringify({
+      version: EXPENSE_DRAFT_VERSION,
+      savedAt: new Date().toISOString(),
+      expenses,
+    }));
+  } catch {
+    // localStorage is a recovery aid, not a reason to interrupt data entry (quota/private mode).
+  }
+};
+
+const clearExpenseDraft = (draftKey) => {
+  if (!draftKey) return;
+  try {
+    window.localStorage.removeItem(draftKey);
+  } catch {
+    // A successful server save must remain successful even if browser storage is unavailable.
+  }
+};
+
 const formatINR = (value) =>
   `₹${Number(value || 0).toLocaleString("en-IN", {
     minimumFractionDigits: 0,
@@ -1610,9 +1719,25 @@ export default function BookingExpenseModal({
   onClose,
   onSave,
 }) {
-  const [expenses, setExpenses] = useState(() => [createEmptyExpense(booking)]);
+  const draftKey = getExpenseDraftKey(booking);
+  const [expenses, setExpenses] = useState(() => loadExpenseDraft(booking, draftKey));
   const [errors, setErrors] = useState({});
   const [openIndex, setOpenIndex] = useState(0);
+  const draftCommittedRef = useRef(false);
+
+  // Persist every state transition synchronously. The cleanup covers every close path (header X,
+  // backdrop, footer button and parent navigation); the committed ref prevents that cleanup from
+  // resurrecting the just-cleared draft after a successful API save.
+  useEffect(() => {
+    if (!draftCommittedRef.current) {
+      persistExpenseDraft(draftKey, booking, expenses);
+    }
+    return () => {
+      if (!draftCommittedRef.current) {
+        persistExpenseDraft(draftKey, booking, expenses);
+      }
+    };
+  }, [booking, draftKey, expenses]);
 
   // Vendor master, for the payee dropdown. Loaded once per mount and shared by every row.
   //
@@ -1791,7 +1916,11 @@ export default function BookingExpenseModal({
       };
     });
 
-    await onSave?.(payload);
+    const saved = await onSave?.(payload);
+    if (saved === true) {
+      draftCommittedRef.current = true;
+      clearExpenseDraft(draftKey);
+    }
   };
 
   const handleBackdropClick = (event) => {
@@ -2259,6 +2388,11 @@ export default function BookingExpenseModal({
               color={totals.totalOutstanding > 0 ? "#dc2626" : "#15803d"}
               emphasize
             />
+            {draftKey && (
+              <span className="text-[10.5px] font-medium" style={{ color: "#64748b" }}>
+                Unsaved entries auto-save on this device
+              </span>
+            )}
           </div>
 
           <div className="flex gap-2">
@@ -2268,7 +2402,7 @@ export default function BookingExpenseModal({
               disabled={saving}
               className="eb-btn-secondary rounded-lg px-4 py-2 text-[12.5px] font-bold disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Cancel
+              Close
             </button>
             <button
               type="button"

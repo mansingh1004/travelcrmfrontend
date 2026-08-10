@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
   ArrowLeft,
@@ -10,6 +10,7 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleDollarSign,
+  Download,
   FileCheck2,
   Hotel,
   IndianRupee,
@@ -21,6 +22,7 @@ import {
   Plane,
   Plus,
   Search,
+  Share2,
   ShieldCheck,
   Ship,
   Sparkles,
@@ -36,7 +38,10 @@ import { hotelService, sightseeingService, vehicleService } from "@features/mast
 import { useToast } from "@shared/ui/toast";
 import { getErrorMessage, isAlreadyReported } from "@shared/api/apiError";
 import { hasPermission, P } from "@shared/lib/access";
+import { usePdfDownload } from "@shared/hooks/usePdfDownload";
+import PdfDownloadLoader from "@shared/ui/PdfDownloadLoader";
 import { quotationService } from "../api/quotationService";
+import QuotationStyleModal from "../components/QuotationStyleModal";
 import {
   AIRLINES,
   CABIN_CATS,
@@ -61,6 +66,12 @@ const FIXED_STEPS = [
 ];
 const SHORTCUT_STEPS = ["hotel", "flight", "sightseeing", "vehicle", "cruise", "addons", "terms", "pricing"];
 
+// The accordion's first section. It is NOT a member of `steps` on purpose: `steps` drives the
+// save-time validation jumps and the Alt+1…8 shortcuts, both of which are indexed against real
+// quotation sections. Services is prepended only where the ORDER matters (Prev/Next, Alt+←/→).
+const SERVICES_STEP = "services";
+const SERVICES_META = { id: SERVICES_STEP, label: "Services", icon: Sparkles, tone: "violet" };
+
 const TONES = {
   violet: "border-violet-200 bg-violet-50 text-violet-700",
   blue: "border-blue-200 bg-blue-50 text-blue-700",
@@ -70,6 +81,20 @@ const TONES = {
   rose: "border-rose-200 bg-rose-50 text-rose-700",
   amber: "border-amber-200 bg-amber-50 text-amber-700",
   indigo: "border-indigo-200 bg-indigo-50 text-indigo-700",
+};
+
+// Accordion icon tiles: soft pastel square, no border — the card's own 1px border already encloses
+// it. TONES is deliberately NOT reused: its other consumer is the Services chip, a button whose
+// selected state needs that border, so flattening TONES in place would silently break the chips.
+const TILE_TONES = {
+  violet: "bg-violet-50 text-violet-600",
+  blue: "bg-blue-50 text-blue-600",
+  emerald: "bg-emerald-50 text-emerald-600",
+  orange: "bg-orange-50 text-orange-700",
+  cyan: "bg-cyan-50 text-cyan-700",
+  rose: "bg-rose-50 text-rose-600",
+  amber: "bg-amber-50 text-amber-700",
+  indigo: "bg-indigo-50 text-indigo-600",
 };
 
 const controlClass =
@@ -106,13 +131,52 @@ const normalizedServices = (lead) =>
   (Array.isArray(lead?.services) ? lead.services : [])
     .map((service) => String(service).trim().toLowerCase());
 
-function initialModel(lead) {
+// Master-data loaders for the panels' comboboxes. Module scope, not useCallback inside the page:
+// they close over nothing, and both hosts of the builder (this page and the rapid lead form) need
+// the exact same lookups. A platform-synced hotel that its owner deactivated must not be sellable.
+const loadHotels = async (query, city) => {
+  const response = await hotelService.listHotels({ q: query || undefined, city: city || undefined, size: 20 });
+  return extractList(response)
+    .filter((hotel) => {
+      const platformOwned = hotel?.platformOwned === true || hotel?.origin === "PLATFORM_SYNC";
+      if (!platformOwned) return true;
+      return hotel?.syncStatus !== "SOURCE_INACTIVE" && hotel?.marketplaceBookable !== false;
+    })
+    .slice(0, 20);
+};
+
+const loadSightseeing = async (query, destination, city) => {
+  const response = destination && city
+    ? await sightseeingService.getSightseeingsByCity(destination, city)
+    : await sightseeingService.searchSightseeings(query || "");
+  const normalized = String(query || "").trim().toLowerCase();
+  return extractList(response)
+    .filter((item) => !normalized || [item.title, item.city, item.cityName]
+      .some((value) => String(value || "").toLowerCase().includes(normalized)))
+    .slice(0, 30);
+};
+
+const loadVehicles = async (query) => {
+  const response = query
+    ? await vehicleService.searchVehicles(query)
+    : await vehicleService.getAllVehicles();
+  return extractList(response).slice(0, 30);
+};
+
+/**
+ * Lead → a fully seeded quote model. Exported as buildQuickQuoteModel because the rapid lead form
+ * builds it from the record it is ABOUT to save, not one it has fetched — same shape, no lead id yet.
+ */
+export function initialModel(lead) {
   if (!lead) return null;
   const itinerary = (Array.isArray(lead.itinerary) ? lead.itinerary : [])
     .filter((stop) => stop && (stop.city || stop.destination));
   const services = normalizedServices(lead);
+  /* No forced fallback. This used to push "hotel" whenever the lead named no CORE service, which
+     turned a visa- or insurance-only enquiry into a quote that demanded hotel rooms before it would
+     save. Those services already arrive as add-on rows below, and a quote made of add-ons alone is
+     valid — see validateQuickQuote. */
   const enabledCore = CORE_SERVICES.map(({ id }) => id).filter((id) => services.includes(id));
-  if (enabledCore.length === 0) enabledCore.push("hotel");
 
   const adults = asNumber(lead.adults ?? lead.totalAdults, 1);
   const children = asNumber(lead.children);
@@ -292,13 +356,16 @@ function Select({ options, placeholder = "Select", ...props }) {
 
 function SectionCard({ title, icon: Icon, badge, action, children }) {
   return (
-    <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-      <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 bg-slate-50/70 px-4 py-3">
-        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white text-blue-600 shadow-sm ring-1 ring-slate-200">
+    // Flat on purpose: this card is always nested INSIDE an accordion section's white card, so a
+    // second shadow, a tinted header and a white-on-white ringed tile stacked three surfaces on top
+    // of each other. One inner border, one pastel tile, nothing else.
+    <section className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+      <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 px-4 py-3">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
           <Icon className="h-4 w-4" />
         </span>
-        <h2 className="text-sm font-extrabold text-slate-800">{title}</h2>
-        {badge && <span className="rounded-full bg-blue-50 px-2 py-1 text-[11px] font-bold text-blue-700">{badge}</span>}
+        <h2 className="text-sm font-bold text-slate-900">{title}</h2>
+        {badge && <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-bold text-blue-700">{badge}</span>}
         <div className="ml-auto">{action}</div>
       </div>
       <div className="p-4">{children}</div>
@@ -1092,7 +1159,9 @@ function AddonsPanel({ data, setData }) {
     rows: [...current.rows, { id: rowId(), serviceType: "", description: "", quantity: 1, pricePerUnit: 0, included: true }],
   }));
   return (
-    <SectionCard title="Add-on services" icon={PackagePlus} action={<button type="button" onClick={add} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white hover:bg-blue-700"><Plus className="h-3.5 w-3.5" /> Add</button>}>
+    // Dashed pastel, like every other panel's add-row control. A solid blue-600 fill made this the
+    // only "primary" inside a section body, and it sat inches from the section's real primary.
+    <SectionCard title="Add-on services" icon={PackagePlus} action={<button type="button" onClick={add} className="inline-flex items-center gap-2 rounded-lg border border-dashed border-blue-300 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100"><Plus className="h-3.5 w-3.5" /> Add</button>}>
       {data.rows.length === 0 ? (
         <button type="button" onClick={add} className="w-full rounded-xl border-2 border-dashed border-slate-200 py-8 text-sm font-bold text-slate-400 hover:border-blue-300 hover:text-blue-600">Add visa, insurance or another service</button>
       ) : (
@@ -1176,6 +1245,25 @@ const lines = (value) => String(value || "")
   .map((item) => item.trim())
   .filter(Boolean);
 
+// A row counts — in the running total AND in the saved quotation — only once it names the thing it
+// sells. initialModel() pre-builds a row for every enabled service and one sightseeing day per night,
+// while the completion checks below only require that ONE row of a section be filled. Untouched rows
+// were therefore submitted too and printed as blank cards on the customer's document. Filtering here
+// rather than only in buildData keeps the live subtotal equal to the amount that gets saved.
+// Hotels are absent on purpose: save() already blocks unless EVERY stay is complete.
+const ROW_HAS_CONTENT = {
+  flight: (row) => Boolean(row.airline || String(row.from || "").trim() || String(row.to || "").trim()),
+  sightseeing: (row) => Boolean(String(row.attraction || "").trim()),
+  vehicle: (row) => Boolean(String(row.model || "").trim() || String(row.type || "").trim()),
+  cruise: (row) => Boolean(String(row.name || "").trim()),
+  addons: (row) => Boolean(String(row.serviceType || "").trim()),
+};
+
+const filledRows = (section, rows) => {
+  const hasContent = ROW_HAS_CONTENT[section];
+  return hasContent ? (rows || []).filter(hasContent) : (rows || []);
+};
+
 const sectionTotal = {
   hotel: (rows) => rows.reduce((sum, stay) => {
     const nights = nightsBetween(stay.checkIn, stay.checkOut);
@@ -1192,6 +1280,629 @@ const sectionTotal = {
   addons: (rows) => rows.reduce((sum, row) => sum + asNumber(row.pricePerUnit) * Math.max(1, asNumber(row.quantity, 1)), 0),
 };
 
+/* ─── Derivations ─────────────────────────────────────────────────────────────────────────────
+   Pure functions, not hooks, because the builder now has two hosts — this page and the rapid lead
+   form — and both must compute the running total, the done-ticks and the section list identically.
+   One implementation is the only way that stays true. */
+
+export const quickQuoteTotals = (model) => {
+  if (!model) return { hotel: 0, flight: 0, sightseeing: 0, vehicle: 0, cruise: 0, addons: 0, subtotal: 0 };
+  const result = {
+    hotel: sectionTotal.hotel(model.hotel.rows),
+    flight: sectionTotal.flight(filledRows("flight", model.flight.rows)),
+    sightseeing: sectionTotal.sightseeing(filledRows("sightseeing", model.sightseeing.rows)),
+    vehicle: sectionTotal.vehicle(filledRows("vehicle", model.vehicle.rows)),
+    cruise: sectionTotal.cruise(filledRows("cruise", model.cruise.rows)),
+    addons: sectionTotal.addons(filledRows("addons", model.addons.rows)),
+  };
+  result.subtotal = model.enabledCore.reduce((sum, id) => sum + result[id], 0) + result.addons;
+  return result;
+};
+
+export const quickQuoteCompletion = (model) => {
+  if (!model) return {};
+  return {
+    hotel: model.hotel.rows.length > 0 && model.hotel.rows.every((stay) =>
+      stay.name.trim() && stay.roomLines.length > 0
+      && stay.roomLines.every((room) => room.roomType.trim() && asNumber(room.pricePerRoom) > 0)),
+    flight: model.flight.rows.some((row) => row.airline && row.from.trim() && row.to.trim()),
+    sightseeing: model.sightseeing.rows.some((row) => row.attraction.trim()),
+    vehicle: model.vehicle.rows.some((row) => row.model.trim()),
+    cruise: model.cruise.rows.some((row) => row.name.trim()),
+    addons: model.addons.rows.length === 0 || model.addons.rows.every((row) => row.serviceType.trim()),
+    terms: Boolean(model.terms.inclusions.trim() || model.terms.exclusions.trim()),
+    pricing: true,
+  };
+};
+
+/**
+ * Reconcile the quote's ticked services against a host-owned service list, leaving everything the
+ * agent has already filled in alone. The rapid lead form owns the ONLY services picker on its
+ * screen, so ticking one there has to grow a section here even after the quote has been edited and
+ * auto-seeding has stopped. Returns the same object when nothing changed, so calling it from an
+ * effect cannot loop.
+ */
+export const syncQuickQuoteServices = (model, serviceIds) => {
+  if (!model) return model;
+  const wanted = CORE_SERVICES
+    .map(({ id }) => id)
+    .filter((id) => (serviceIds || []).some((service) => String(service).trim().toLowerCase() === id));
+  const current = model.enabledCore;
+  if (current.length === wanted.length && current.every((id, index) => id === wanted[index])) return model;
+  return { ...model, enabledCore: wanted };
+};
+
+// Ticked services first, in CORE_SERVICES order, then the three that are always part of a quote.
+export const quickQuoteSteps = (model) => {
+  if (!model) return [];
+  if (model.enabledCore.length === 0) return FIXED_STEPS;
+  return [
+    ...CORE_SERVICES.filter(({ id }) => model.enabledCore.includes(id)),
+    ...FIXED_STEPS,
+  ];
+};
+
+const plural = (count, singular, pluralForm) =>
+  `${count} ${count === 1 ? singular : pluralForm || `${singular}s`}`;
+
+// One line of state per COLLAPSED section, so the agent can verify a section without reopening it —
+// that is the whole point of collapsing them. Counts run through filledRows(), the same filter the
+// running total and the saved payload use, so a header never advertises a row that will not be sent.
+const sectionSummary = (id, model) => {
+  if (!model) return "";
+  switch (id) {
+    case SERVICES_STEP: {
+      const chosen = CORE_SERVICES.filter(({ id: coreId }) => model.enabledCore.includes(coreId));
+      return chosen.length
+        ? chosen.map(({ label }) => label).join(" · ")
+        : "Nothing selected — pick at least one";
+    }
+    case "hotel": {
+      const named = model.hotel.rows.filter((stay) => String(stay.name || "").trim());
+      if (!named.length) return "No hotel chosen yet";
+      const rooms = named.reduce(
+        (sum, stay) => sum + (stay.roomLines || []).reduce((count, room) => count + Math.max(1, asNumber(room.rooms, 1)), 0),
+        0,
+      );
+      return `${plural(named.length, "hotel")} · ${plural(rooms, "room")}`;
+    }
+    case "flight": {
+      const rows = filledRows("flight", model.flight.rows);
+      return rows.length ? `${plural(rows.length, "flight")} · ${model.flight.journey}` : "No flight added yet";
+    }
+    case "sightseeing": {
+      const rows = filledRows("sightseeing", model.sightseeing.rows);
+      return rows.length
+        ? `${plural(rows.length, "activity", "activities")} over ${plural(model.sightseeing.rows.length, "day")}`
+        : `${plural(model.sightseeing.rows.length, "day")} planned · no activity yet`;
+    }
+    case "vehicle": {
+      const rows = filledRows("vehicle", model.vehicle.rows);
+      return rows.length ? plural(rows.length, "vehicle") : "No vehicle added yet";
+    }
+    case "cruise": {
+      const rows = filledRows("cruise", model.cruise.rows);
+      return rows.length ? plural(rows.length, "cruise") : "No cruise added yet";
+    }
+    case "addons": {
+      const rows = filledRows("addons", model.addons.rows);
+      return rows.length ? plural(rows.length, "add-on") : "Optional — nothing added";
+    }
+    case "terms": {
+      const included = lines(model.terms.inclusions).length;
+      const excluded = lines(model.terms.exclusions).length;
+      return included || excluded
+        ? `${plural(included, "inclusion")} · ${plural(excluded, "exclusion")}`
+        : "Inclusions and exclusions are empty";
+    }
+    case "pricing": {
+      const parts = [];
+      if (asNumber(model.pricing.discount) > 0) {
+        parts.push(`Discount ${model.pricing.discType === "%" ? `${model.pricing.discount}%` : `₹${asNumber(model.pricing.discount).toLocaleString("en-IN")}`}`);
+      }
+      if (asNumber(model.pricing.markup) > 0) parts.push(`Markup ₹${asNumber(model.pricing.markup).toLocaleString("en-IN")}`);
+      if (asNumber(model.pricing.tax) > 0) parts.push(`Tax ${model.pricing.tax}%`);
+      return parts.length ? parts.join(" · ") : "No discount, markup or tax";
+    }
+    default:
+      return "";
+  }
+};
+
+/**
+ * One collapsible section of the quick-quote accordion.
+ *
+ * The body stays MOUNTED when collapsed and is hidden with the `hidden` attribute instead of being
+ * unmounted. Two things depend on that: the Enter-to-next-field handler already scopes itself with
+ * `[data-quick-panel]:not([hidden])`, and the async comboboxes inside the panels keep their loaded
+ * options rather than refetching every time a section is reopened.
+ */
+function AccordionSection({
+  id, index, label, icon: Icon, tone, open, done, amount, summary, onToggle, children, footer,
+}) {
+  return (
+    <section
+      data-quick-section={id}
+      className={`scroll-mt-32 overflow-hidden rounded-xl border bg-white shadow-sm transition ${
+        open ? "border-slate-300" : "border-slate-200 hover:border-slate-300"
+      }`}
+    >
+      <h2 className="m-0">
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={open}
+          aria-controls={`qq-body-${id}`}
+          className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition hover:bg-slate-50 sm:px-5"
+        >
+          {/* The tile encodes WHICH section, never whether it is open — a filled slate-900 square on
+              open was the darkest thing on the page and fought the flat language. Open/closed is
+              carried by the chevron, the darker border and the visible body. */}
+          <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${TILE_TONES[tone] || "bg-slate-100 text-slate-600"}`}>
+            <Icon className="h-4 w-4" />
+          </span>
+
+          <span className="min-w-0 flex-1">
+            <span className="flex items-center gap-2">
+              <span className="truncate text-sm font-bold text-slate-900">
+                <span className="mr-0.5 text-[11px] font-bold tabular-nums text-slate-400">{index}.</span> {label}
+              </span>
+              {done && (
+                <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700">
+                  <Check className="h-3 w-3" /> Done
+                </span>
+              )}
+            </span>
+            {summary && <span className="mt-0.5 block truncate text-xs text-slate-500">{summary}</span>}
+          </span>
+
+          {amount != null && (
+            <span className="hidden shrink-0 text-sm font-bold tabular-nums text-slate-900 sm:block">
+              ₹{asNumber(amount).toLocaleString("en-IN")}
+            </span>
+          )}
+          <ChevronDown className={`ml-1 h-4 w-4 shrink-0 text-slate-400 transition-transform ${open ? "rotate-180" : ""}`} />
+        </button>
+      </h2>
+
+      <div
+        id={`qq-body-${id}`}
+        data-quick-panel={id}
+        hidden={!open}
+        className={`border-t border-slate-100 p-4 sm:p-5 ${open ? "" : "hidden"}`}
+      >
+        {children}
+        {footer && (
+          <div className="mt-5 flex items-center justify-between gap-2 border-t border-slate-100 pt-4">{footer}</div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/**
+ * The quotation builder itself — the accordion and nothing else.
+ *
+ * Extracted from the page so the rapid lead form can host the exact same sections inline: an agent
+ * taking a phone enquiry never leaves the intake screen to price it. The component is CONTROLLED on
+ * `model`/`setModel` (the host owns the data it is about to save) but owns which section is open,
+ * because that is pure UI. Hosts drive it imperatively through the ref:
+ *
+ *     sectionsRef.current?.reveal("hotel", "[data-hotel-selling-price]");
+ *
+ * `showServices` is the difference between the two hosts. Standalone, the accordion opens on its own
+ * Services step. Inside the lead form, the form already has a Services picker feeding the same lead
+ * record, so a second one would be two controls for one decision.
+ */
+export const QuickQuoteSections = forwardRef(function QuickQuoteSections({
+  model,
+  setModel,
+  showServices = true,
+  submitSlot = null,
+  onSectionDone = null,
+  onRequestSave,
+  className = "",
+}, ref) {
+  const steps = useMemo(() => quickQuoteSteps(model), [model]);
+  const totals = useMemo(() => quickQuoteTotals(model), [model]);
+  const completion = useMemo(() => quickQuoteCompletion(model), [model]);
+
+  const [openSection, setOpenSection] = useState(() => (showServices ? SERVICES_STEP : ""));
+
+  /* In the pick-driven host the service being worked on is hoisted to the TOP of the list, so the
+     open panel is always the first thing under the picker instead of drifting further down as more
+     services are ticked. Add-ons / Terms / Pricing keep their tail position — Pricing stays last,
+     because it reads the totals everything above it produces — and they are never hoisted. The
+     wizard host keeps a stable order: there Next walks the list, and a list that reorders under a
+     Next button is disorienting. */
+  const sections = useMemo(() => {
+    const head = showServices ? [SERVICES_META] : [];
+    const body = [...steps];
+    if (onSectionDone && openSection && !FIXED_STEPS.some(({ id }) => id === openSection)) {
+      const at = body.findIndex(({ id }) => id === openSection);
+      if (at > 0) body.unshift(...body.splice(at, 1));
+    }
+    return [...head, ...body];
+  }, [onSectionDone, openSection, showServices, steps]);
+  const sectionIds = useMemo(() => sections.map(({ id }) => id), [sections]);
+
+  // Every open goes through revealSection(), so scrolling and focusing live in ONE place instead of
+  // being re-implemented at each call site. `selector` lets a caller aim at a specific field (save()
+  // points at the offending price input); the tick makes a re-reveal of the ALREADY-open section fire
+  // the effect again, which is exactly what a validation failure on the current section needs.
+  const pendingFocusRef = useRef(null);
+  const [revealTick, setRevealTick] = useState(0);
+  const revealSection = useCallback((id, selector = null) => {
+    pendingFocusRef.current = selector;
+    setOpenSection(id);
+    setRevealTick((tick) => tick + 1);
+  }, []);
+
+  useImperativeHandle(ref, () => ({
+    reveal: revealSection,
+    close: () => setOpenSection(""),
+  }), [revealSection]);
+
+  // A service switched back off takes its section with it. If that was the open one, fall back to
+  // Services (or to nothing, when the host owns the service picker) rather than leaving a dead id.
+  useEffect(() => {
+    if (!model || !openSection || sectionIds.includes(openSection)) return;
+    setOpenSection(showServices ? SERVICES_STEP : "");
+  }, [model, openSection, sectionIds, showServices]);
+
+  // scrollIntoView (not window.scrollTo) because the app shell scrolls <main>, not the window — the
+  // `scroll-mt-24` on each section is what clears the sticky header. Focus runs with preventScroll so
+  // it cannot fight the smooth scroll that just started.
+  /* Opening a section does NOT move the page. Sections expand and collapse where they are; the
+     picker and the surrounding form stay exactly where the agent left them. The one exception is a
+     validation jump, which arrives with an explicit field selector — there the whole point is to put
+     the offending input on screen, so that case still scrolls.
+
+     `model` must NOT be a dependency here. It gets a new identity on every keystroke (setPart
+     spreads), so with it in the list this effect re-armed its 40 ms timer between characters and
+     kept yanking focus back to the section's first field mid-typing. revealTick already encodes
+     "a reveal was requested", which is the only thing this effect cares about. */
+  useEffect(() => {
+    if (revealTick === 0 || !openSection) return undefined;
+    const requestedField = pendingFocusRef.current;
+    pendingFocusRef.current = null;
+    const timer = window.setTimeout(() => {
+      if (requestedField) {
+        document.querySelector(`[data-quick-section="${openSection}"]`)
+          ?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+      document.querySelector(`[data-quick-panel="${openSection}"] ${requestedField || "[data-quick-field]"}`)
+        ?.focus({ preventScroll: true });
+    }, 40);
+    return () => window.clearTimeout(timer);
+  }, [openSection, revealTick]);
+
+  const setPart = useCallback((part, updater) => {
+    setModel((current) => {
+      if (!current) return current;
+      const nextPart = typeof updater === "function" ? updater(current[part]) : updater;
+      return { ...current, [part]: nextPart };
+    });
+  }, [setModel]);
+
+  /* Ticking a service IS the request to fill it in, so the section it just created opens straight
+     away — the agent picks Hotel and is already typing hotel rows, instead of picking, scrolling and
+     hunting. Unticking opens nothing; the fallback effect above handles the section going away.
+     enabledCore is rebuilt in CORE_SERVICES order so the sections never reshuffle by click order. */
+  const toggleService = (id) => {
+    const enabling = !model.enabledCore.includes(id);
+    setModel((current) => {
+      if (!current) return current;
+      const next = current.enabledCore.includes(id)
+        ? current.enabledCore.filter((item) => item !== id)
+        : [...current.enabledCore, id];
+      return { ...current, enabledCore: CORE_SERVICES.map((service) => service.id).filter((coreId) => next.includes(coreId)) };
+    });
+    if (enabling) revealSection(id);
+  };
+
+  const moveStep = useCallback((delta) => {
+    if (!sectionIds.length) return;
+    const index = Math.max(0, sectionIds.indexOf(openSection));
+    const nextIndex = Math.min(sectionIds.length - 1, Math.max(0, index + delta));
+    revealSection(sectionIds[nextIndex]);
+  }, [openSection, revealSection, sectionIds]);
+
+  const handleKeys = (event) => {
+    // Only claim Ctrl+Enter when this host actually has somewhere to send it. The accordion is
+    // mounted INSIDE the lead form, whose own handler saves on Ctrl+Enter — swallowing the key with
+    // no onRequestSave would make the shortcut silently dead everywhere inside the quote.
+    if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+      if (!onRequestSave) return;
+      event.preventDefault();
+      onRequestSave();
+      return;
+    }
+    if (event.altKey && (event.key === "ArrowRight" || event.key === "ArrowLeft")) {
+      event.preventDefault();
+      moveStep(event.key === "ArrowRight" ? 1 : -1);
+      return;
+    }
+    // Alt+0 is Services; Alt+1…8 stay pinned to the quotation sections, so the number a section
+    // answers to never shifts when Services is or is not part of this host's accordion.
+    // preventDefault runs for EVERY Alt+digit the accordion owns, hit or miss: the lead form reads
+    // Alt+1/Alt+2 as "switch entry mode", so letting an unmatched Alt+2 bubble would throw the agent
+    // out of rapid mode and unmount the quote they were building.
+    if (event.altKey && /^[0-8]$/.test(event.key)) {
+      event.preventDefault();
+      if (event.key === "0") {
+        if (showServices) revealSection(SERVICES_STEP);
+        return;
+      }
+      const shortcutId = SHORTCUT_STEPS[Number(event.key) - 1];
+      const target = steps.find(({ id }) => id === shortcutId);
+      if (target) revealSection(target.id);
+      return;
+    }
+    if (event.key !== "Enter" || event.shiftKey || event.target.tagName === "TEXTAREA" || event.defaultPrevented) return;
+    const fields = [...document.querySelectorAll('[data-quick-panel]:not([hidden]) [data-quick-field]:not([disabled])')]
+      .filter((field) => field.offsetParent !== null);
+    const index = fields.indexOf(event.target);
+    if (index >= 0 && fields[index + 1]) {
+      event.preventDefault();
+      fields[index + 1].focus();
+      fields[index + 1].select?.();
+    }
+  };
+
+  if (!model) return null;
+
+  // Every panel is MOUNTED for as long as its service is ticked — collapsing only hides it. The
+  // panels hold no state of their own (everything lives in `model`), so what this buys is that the
+  // async comboboxes keep their loaded options instead of refetching on every reopen.
+  const panelFor = (id) => {
+    switch (id) {
+      case SERVICES_STEP:
+        return (
+          <>
+            <p className="mb-3 text-xs font-semibold text-slate-500">
+              Pick what this quotation covers. Each ticked service becomes its own section below.
+              Add-ons, Terms and Pricing are always included.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {CORE_SERVICES.map(({ id: serviceId, label, icon: Icon, tone }) => {
+                const selected = model.enabledCore.includes(serviceId);
+                return (
+                  <button
+                    key={serviceId}
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => toggleService(serviceId)}
+                    className={`inline-flex items-center gap-2 rounded-lg border px-3.5 py-2.5 text-sm font-bold transition ${
+                      selected ? TONES[tone] : "border-slate-200 bg-white text-slate-400 hover:border-slate-300 hover:bg-slate-50"
+                    }`}
+                  >
+                    <Icon className="h-4 w-4" /> {label}
+                    {selected && <Check className="h-3.5 w-3.5" />}
+                  </button>
+                );
+              })}
+            </div>
+            {model.enabledCore.length === 0 && (
+              <div className="mt-3 flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
+                <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-amber-50 text-amber-600">
+                  <Check className="h-3.5 w-3.5" />
+                </span>
+                <p className="text-xs text-slate-500">Nothing selected yet — a quotation needs at least one service.</p>
+              </div>
+            )}
+          </>
+        );
+      case "hotel": return <HotelPanel data={model.hotel} setData={(updater) => setPart("hotel", updater)} loadHotels={loadHotels} />;
+      case "flight": return <FlightPanel data={model.flight} setData={(updater) => setPart("flight", updater)} />;
+      case "sightseeing": return <SightseeingPanel data={model.sightseeing} setData={(updater) => setPart("sightseeing", updater)} loadSightseeing={loadSightseeing} />;
+      case "vehicle": return <VehiclePanel data={model.vehicle} setData={(updater) => setPart("vehicle", updater)} loadVehicles={loadVehicles} />;
+      case "cruise": return <CruisePanel data={model.cruise} setData={(updater) => setPart("cruise", updater)} />;
+      case "addons": return <AddonsPanel data={model.addons} setData={(updater) => setPart("addons", updater)} />;
+      case "terms": return <TermsPanel data={model.terms} setData={(updater) => setPart("terms", updater)} />;
+      case "pricing": return <PricingPanel data={model.pricing} setData={(updater) => setPart("pricing", updater)} subtotal={totals.subtotal} />;
+      default: return null;
+    }
+  };
+
+  const lastIndex = sections.length - 1;
+
+  return (
+    <div className={`space-y-3 ${className}`} onKeyDown={handleKeys}>
+      {sections.map((meta, index) => (
+        <AccordionSection
+          key={meta.id}
+          id={meta.id}
+          index={index + 1}
+          label={meta.label}
+          icon={meta.icon}
+          tone={meta.tone}
+          open={openSection === meta.id}
+          done={meta.id === SERVICES_STEP ? model.enabledCore.length > 0 : Boolean(completion[meta.id])}
+          amount={meta.id === SERVICES_STEP ? null : asNumber(totals[meta.id])}
+          summary={sectionSummary(meta.id, model)}
+          onToggle={() => revealSection(openSection === meta.id ? "" : meta.id)}
+          footer={(
+            <>
+              {/* Previous only belongs to the wizard flow. In the pick-driven host the way back is
+                  the picker above, and a Prev that jumped to an unrelated section would fight it. */}
+              {onSectionDone ? (
+                <span className="text-xs text-slate-400">Finish this section, then pick the next service.</span>
+              ) : (
+                <button
+                  type="button"
+                  disabled={index === 0}
+                  onClick={() => moveStep(-1)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
+                >
+                  <ChevronLeft className="h-4 w-4" /> Previous
+                </button>
+              )}
+              <span className="text-[11px] font-bold tabular-nums text-slate-400">{index + 1} / {sections.length}</span>
+              {/* Two flows, one component. With onSectionDone the host is PICK-driven: finish a
+                  service, it collapses, you go tick the next one — the lead form works that way
+                  because its Services picker sits above the accordion and stays on screen. Without
+                  it the accordion is a wizard and Next walks to the following section, which is what
+                  the standalone page needs since its Services picker IS the first section. */}
+              {onSectionDone ? (
+                <button
+                  type="button"
+                  onClick={() => onSectionDone(meta.id)}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700"
+                >
+                  <Check className="h-4 w-4" /> Done
+                </button>
+              ) : index === lastIndex && submitSlot ? submitSlot : (
+                <button
+                  type="button"
+                  disabled={index === lastIndex}
+                  onClick={() => moveStep(1)}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:opacity-40"
+                >
+                  Next <ChevronRight className="h-4 w-4" />
+                </button>
+              )}
+            </>
+          )}
+        >
+          {panelFor(meta.id)}
+        </AccordionSection>
+      ))}
+    </div>
+  );
+});
+
+/**
+ * Form model → the CreateQuotationRequest the backend expects.
+ *
+ * Pure and exported for the same reason as the derivations above: two hosts, one payload. `includeLead`
+ * is false on update — sending leadId asks the backend to take a fresh lead snapshot, which would
+ * overwrite the customer/PAX context captured when the quote was created.
+ */
+export const quickQuotePayload = ({ model, lead, leadId, includeLead = true }) => {
+  if (!model) return null;
+  const totals = quickQuoteTotals(model);
+  const itineraryId = lead?.itinerary?.[0]?.publicId || lead?.itinerary?.[0]?.id || null;
+  return {
+    leadId: includeLead ? leadId : null,
+    destinationId: itineraryId,
+    title: model.title.trim(),
+    version: "v1.0",
+    quotationStage: "Draft",
+    templateStyle: model.templateStyle,
+    flightIncluded: model.enabledCore.includes("flight"),
+    flightTitle: model.flight.title,
+    flightAmount: totals.flight,
+    journey: model.flight.journey,
+    segments: filledRows("flight", model.flight.rows),
+    hotelIncluded: model.enabledCore.includes("hotel"),
+    hotelTitle: model.hotel.title,
+    hotelAmount: totals.hotel,
+    hotelNotes: model.hotel.notes,
+    quickQuoteHotelMetadata: true,
+    hotels: model.hotel.rows.flatMap((stay) => stay.roomLines.map((room) => ({
+      hotelMasterPublicId: stay.hotelMasterPublicId,
+      roomTypeMasterPublicId: room.roomTypeMasterPublicId,
+      mealPlanMasterPublicId: room.mealPlanMasterPublicId,
+      platformHotelPublicId: stay.platformHotelPublicId,
+      platformRoomPublicId: room.platformRoomPublicId,
+      platformMealPlanPublicId: room.platformMealPlanPublicId,
+      name: stay.name,
+      city: stay.city,
+      checkIn: stay.checkIn,
+      checkOut: stay.checkOut,
+      refundable: stay.refundable,
+      stars: stay.stars,
+      imagePath: room.imagePath || stay.imagePath,
+      roomType: room.roomType,
+      mealPlan: room.mealPlan,
+      bedType: room.bedType,
+      occupancy: room.occupancy,
+      adults: room.adults,
+      children: room.children,
+      infants: room.infants,
+      extraBeds: room.extraBeds,
+      childAges: room.childAges,
+      rateSource: room.rateSource,
+      pricePerRoom: room.pricePerRoom,
+      rooms: room.rooms,
+    }))),
+    sightseeingIncluded: model.enabledCore.includes("sightseeing"),
+    sightseeingTitle: model.sightseeing.title,
+    sightseeingAmount: totals.sightseeing,
+    sightseeingNotes: model.sightseeing.notes,
+    days: filledRows("sightseeing", model.sightseeing.rows).map((row) => ({
+      day: row.day,
+      date: row.date,
+      pricePerPax: row.pricePerPax,
+      pax: row.pax,
+      activities: [{
+        attraction: row.attraction,
+        startTime: row.startTime,
+        description: row.description,
+        meals: [],
+        transfer: row.transfer,
+        imagePath: row.imagePath,
+      }],
+    })),
+    vehicleIncluded: model.enabledCore.includes("vehicle"),
+    vehicleTitle: model.vehicle.title,
+    vehicleAmount: totals.vehicle,
+    vehicles: filledRows("vehicle", model.vehicle.rows),
+    cruiseIncluded: model.enabledCore.includes("cruise"),
+    cruiseTitle: model.cruise.title,
+    cruiseAmount: totals.cruise,
+    cruises: filledRows("cruise", model.cruise.rows),
+    addonIncluded: filledRows("addons", model.addons.rows).length > 0,
+    addonTitle: "Add-on Services",
+    addonAmount: totals.addons,
+    addons: filledRows("addons", model.addons.rows),
+    inclusions: lines(model.terms.inclusions),
+    exclusions: lines(model.terms.exclusions),
+    paymentPolicies: lines(model.terms.paymentPolicies),
+    cancellationPolicies: lines(model.terms.cancellationPolicies),
+    bookingTerms: lines(model.terms.bookingTerms),
+    discount: model.pricing.discount,
+    discType: model.pricing.discType,
+    tax: model.pricing.tax,
+    markup: model.pricing.markup,
+  };
+};
+
+/**
+ * Blocking checks shared by both hosts. Returns null when the quote is safe to save, otherwise the
+ * message plus the section (and optional field) the agent has to be taken to. Kept out of the
+ * components so neither host can drift into accepting a quote the other would reject.
+ */
+export const validateQuickQuote = (model) => {
+  if (!model) return { message: "Nothing to save yet.", section: null };
+  if (!model.title.trim()) return { message: "Enter a quotation title.", section: null, field: "[data-quick-title]" };
+  if (model.enabledCore.length === 0 && model.addons.rows.length === 0) {
+    return { message: "Select at least one service for this quotation.", section: SERVICES_STEP };
+  }
+  if (model.enabledCore.includes("hotel")
+    && model.hotel.rows.some((stay) => stay.roomLines.some((room) => asNumber(room.pricePerRoom) <= 0))) {
+    return {
+      message: "Enter your selling price for every selected hotel room.",
+      section: "hotel",
+      field: "[data-hotel-selling-price]",
+    };
+  }
+  const completion = quickQuoteCompletion(model);
+  const firstIncompleteCore = model.enabledCore.find((service) => !completion[service]);
+  if (firstIncompleteCore) {
+    const label = CORE_SERVICES.find(({ id }) => id === firstIncompleteCore)?.label || "Service";
+    return {
+      message: `Complete the main ${label.toLowerCase()} details before creating the quote.`,
+      section: firstIncompleteCore,
+    };
+  }
+  if (model.addons.rows.length > 0 && !completion.addons) {
+    return { message: "Choose a service type for every add-on row.", section: "addons" };
+  }
+  return null;
+};
+
 export default function QuickQuotation() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -1205,13 +1916,20 @@ export default function QuickQuotation() {
 
   const [lead, setLead] = useState(usableRoutedLead);
   const [model, setModel] = useState(() => initialModel(usableRoutedLead));
-  const [activeStep, setActiveStep] = useState(
-    () => normalizedServices(usableRoutedLead).find((service) => CORE_SERVICES.some(({ id }) => id === service)) || "hotel",
-  );
   const [quotationId, setQuotationId] = useState("");
+  const [quoteNo, setQuoteNo] = useState("");
+  const [stylePickOpen, setStylePickOpen] = useState(false);
   const [loading, setLoading] = useState(!usableRoutedLead && Boolean(leadId));
   const [saving, setSaving] = useState(false);
+  // The accordion owns which section is open; the page only needs to point it at a problem field.
+  const sectionsRef = useRef(null);
   const canUpdateQuotation = useMemo(() => hasPermission(P.QUOTATION_UPDATE), []);
+  const {
+    downloadPdf: runPdfDownload,
+    isDownloading: pdfBusy,
+    progress: pdfProgress,
+    progressSupported: pdfProgressSupported,
+  } = usePdfDownload();
 
   useEffect(() => {
     if (!quotationAtMount || !leadId) return;
@@ -1229,9 +1947,8 @@ export default function QuickQuotation() {
         if (!active) return;
         const data = response?.data?.data || response?.data || {};
         setLead(data);
-        const next = initialModel(data);
-        setModel(next);
-        setActiveStep(next?.enabledCore?.[0] || "hotel");
+        // Services stays open — the lead only SEEDS the ticked services, it does not confirm them.
+        setModel(initialModel(data));
       })
       .catch((error) => {
         if (!active || isAlreadyReported(error)) return;
@@ -1241,208 +1958,11 @@ export default function QuickQuotation() {
     return () => { active = false; };
   }, [leadId, quotationAtMount, showToast, usableRoutedLead]);
 
-  const loadHotels = useCallback(async (query, city) => {
-    const response = await hotelService.listHotels({ q: query || undefined, city: city || undefined, size: 20 });
-    return extractList(response)
-      .filter((hotel) => {
-        const platformOwned = hotel?.platformOwned === true || hotel?.origin === "PLATFORM_SYNC";
-        if (!platformOwned) return true;
-        return hotel?.syncStatus !== "SOURCE_INACTIVE" && hotel?.marketplaceBookable !== false;
-      })
-      .slice(0, 20);
-  }, []);
-
-  const loadSightseeing = useCallback(async (query, destination, city) => {
-    const response = destination && city
-      ? await sightseeingService.getSightseeingsByCity(destination, city)
-      : await sightseeingService.searchSightseeings(query || "");
-    const normalized = String(query || "").trim().toLowerCase();
-    return extractList(response)
-      .filter((item) => !normalized || [item.title, item.city, item.cityName]
-        .some((value) => String(value || "").toLowerCase().includes(normalized)))
-      .slice(0, 30);
-  }, []);
-
-  const loadVehicles = useCallback(async (query) => {
-    const response = query
-      ? await vehicleService.searchVehicles(query)
-      : await vehicleService.getAllVehicles();
-    return extractList(response).slice(0, 30);
-  }, []);
-
-  const setPart = useCallback((part, updater) => {
-    setModel((current) => {
-      if (!current) return current;
-      const nextPart = typeof updater === "function" ? updater(current[part]) : updater;
-      return { ...current, [part]: nextPart };
-    });
-  }, []);
-
-  const totals = useMemo(() => {
-    if (!model) return { hotel: 0, flight: 0, sightseeing: 0, vehicle: 0, cruise: 0, addons: 0, subtotal: 0 };
-    const result = {
-      hotel: sectionTotal.hotel(model.hotel.rows),
-      flight: sectionTotal.flight(model.flight.rows),
-      sightseeing: sectionTotal.sightseeing(model.sightseeing.rows),
-      vehicle: sectionTotal.vehicle(model.vehicle.rows),
-      cruise: sectionTotal.cruise(model.cruise.rows),
-      addons: sectionTotal.addons(model.addons.rows),
-    };
-    result.subtotal = model.enabledCore.reduce((sum, id) => sum + result[id], 0) + result.addons;
-    return result;
-  }, [model]);
-
-  const hasModel = Boolean(model);
-  const enabledCoreKey = model?.enabledCore.join("|") || "";
-  const steps = useMemo(() => {
-    if (!hasModel) return [];
-    if (!enabledCoreKey) return FIXED_STEPS;
-    const enabledCore = enabledCoreKey.split("|");
-    return [
-      ...CORE_SERVICES.filter(({ id }) => enabledCore.includes(id)),
-      ...FIXED_STEPS,
-    ];
-  }, [enabledCoreKey, hasModel]);
-
-  const completion = useMemo(() => {
-    if (!model) return {};
-    return {
-      hotel: model.hotel.rows.length > 0 && model.hotel.rows.every((stay) =>
-        stay.name.trim() && stay.roomLines.length > 0
-        && stay.roomLines.every((room) => room.roomType.trim() && asNumber(room.pricePerRoom) > 0)),
-      flight: model.flight.rows.some((row) => row.airline && row.from.trim() && row.to.trim()),
-      sightseeing: model.sightseeing.rows.some((row) => row.attraction.trim()),
-      vehicle: model.vehicle.rows.some((row) => row.model.trim()),
-      cruise: model.cruise.rows.some((row) => row.name.trim()),
-      addons: model.addons.rows.length === 0 || model.addons.rows.every((row) => row.serviceType.trim()),
-      terms: Boolean(model.terms.inclusions.trim() || model.terms.exclusions.trim()),
-      pricing: true,
-    };
-  }, [model]);
-
-  useEffect(() => {
-    if (!steps.some(({ id }) => id === activeStep)) return undefined;
-    const timer = window.setTimeout(() => {
-      document.querySelector(`[data-quick-panel="${activeStep}"] [data-quick-field]`)?.focus();
-    }, 30);
-    return () => window.clearTimeout(timer);
-  }, [activeStep, steps]);
-
-  const toggleService = (id) => {
-    const enabled = model?.enabledCore.includes(id);
-    if (enabled && activeStep === id) {
-      const remainingCore = model.enabledCore.filter((item) => item !== id);
-      setActiveStep(remainingCore[0] || "addons");
-    } else if (!enabled) {
-      setActiveStep(id);
-    }
-    setModel((current) => {
-      if (!current) return current;
-      const currentlyEnabled = current.enabledCore.includes(id);
-      const enabledCore = currentlyEnabled
-        ? current.enabledCore.filter((item) => item !== id)
-        : [...current.enabledCore, id];
-      return { ...current, enabledCore };
-    });
-  };
-
-  const buildData = useCallback(({ includeLead = true } = {}) => {
-    if (!model) return null;
-    const itineraryId = lead?.itinerary?.[0]?.publicId || lead?.itinerary?.[0]?.id || null;
-    return {
-      // Linking is create-only. Sending leadId on update asks the backend to take a fresh lead
-      // snapshot and can overwrite the customer/PAX context captured when this quote was created.
-      leadId: includeLead ? leadId : null,
-      destinationId: itineraryId,
-      title: model.title.trim(),
-      version: "v1.0",
-      quotationStage: "Draft",
-      templateStyle: model.templateStyle,
-      flightIncluded: model.enabledCore.includes("flight"),
-      flightTitle: model.flight.title,
-      flightAmount: totals.flight,
-      journey: model.flight.journey,
-      segments: model.flight.rows,
-      hotelIncluded: model.enabledCore.includes("hotel"),
-      hotelTitle: model.hotel.title,
-      hotelAmount: totals.hotel,
-      hotelNotes: model.hotel.notes,
-      quickQuoteHotelMetadata: true,
-      hotels: model.hotel.rows.flatMap((stay) => stay.roomLines.map((room) => ({
-        hotelMasterPublicId: stay.hotelMasterPublicId,
-        roomTypeMasterPublicId: room.roomTypeMasterPublicId,
-        mealPlanMasterPublicId: room.mealPlanMasterPublicId,
-        platformHotelPublicId: stay.platformHotelPublicId,
-        platformRoomPublicId: room.platformRoomPublicId,
-        platformMealPlanPublicId: room.platformMealPlanPublicId,
-        name: stay.name,
-        city: stay.city,
-        checkIn: stay.checkIn,
-        checkOut: stay.checkOut,
-        refundable: stay.refundable,
-        stars: stay.stars,
-        imagePath: room.imagePath || stay.imagePath,
-        roomType: room.roomType,
-        mealPlan: room.mealPlan,
-        bedType: room.bedType,
-        occupancy: room.occupancy,
-        adults: room.adults,
-        children: room.children,
-        infants: room.infants,
-        extraBeds: room.extraBeds,
-        childAges: room.childAges,
-        rateSource: room.rateSource,
-        pricePerRoom: room.pricePerRoom,
-        rooms: room.rooms,
-      }))),
-      sightseeingIncluded: model.enabledCore.includes("sightseeing"),
-      sightseeingTitle: model.sightseeing.title,
-      sightseeingAmount: totals.sightseeing,
-      sightseeingNotes: model.sightseeing.notes,
-      days: model.sightseeing.rows.map((row) => ({
-        day: row.day,
-        date: row.date,
-        pricePerPax: row.pricePerPax,
-        pax: row.pax,
-        activities: [{
-          attraction: row.attraction,
-          startTime: row.startTime,
-          description: row.description,
-          meals: [],
-          transfer: row.transfer,
-          imagePath: row.imagePath,
-        }],
-      })),
-      vehicleIncluded: model.enabledCore.includes("vehicle"),
-      vehicleTitle: model.vehicle.title,
-      vehicleAmount: totals.vehicle,
-      vehicles: model.vehicle.rows,
-      cruiseIncluded: model.enabledCore.includes("cruise"),
-      cruiseTitle: model.cruise.title,
-      cruiseAmount: totals.cruise,
-      cruises: model.cruise.rows,
-      addonIncluded: model.addons.rows.length > 0,
-      addonTitle: "Add-on Services",
-      addonAmount: totals.addons,
-      addons: model.addons.rows,
-      inclusions: lines(model.terms.inclusions),
-      exclusions: lines(model.terms.exclusions),
-      paymentPolicies: lines(model.terms.paymentPolicies),
-      cancellationPolicies: lines(model.terms.cancellationPolicies),
-      bookingTerms: lines(model.terms.bookingTerms),
-      discount: model.pricing.discount,
-      discType: model.pricing.discType,
-      tax: model.pricing.tax,
-      markup: model.pricing.markup,
-    };
-  }, [lead, leadId, model, totals]);
+  const totals = useMemo(() => quickQuoteTotals(model), [model]);
+  const steps = useMemo(() => quickQuoteSteps(model), [model]);
+  const completion = useMemo(() => quickQuoteCompletion(model), [model]);
 
   const save = useCallback(async () => {
-    if (!model?.title.trim()) {
-      showToast("Enter a quotation title.", "error");
-      document.querySelector('[data-quick-title]')?.focus();
-      return;
-    }
     if (!leadId) {
       showToast("Quick Quote must be linked to a lead.", "error");
       return;
@@ -1451,33 +1971,18 @@ export default function QuickQuotation() {
       showToast("You can create quotations, but you do not have permission to update this one.", "error");
       return;
     }
-    if (model.enabledCore.length === 0 && model.addons.rows.length === 0) {
-      showToast("Select at least one service for this quotation.", "error");
-      return;
-    }
-    const hotelMissingSellingPrice = model.enabledCore.includes("hotel")
-      && model.hotel.rows.some((stay) => stay.roomLines.some((room) => asNumber(room.pricePerRoom) <= 0));
-    if (hotelMissingSellingPrice) {
-      setActiveStep("hotel");
-      showToast("Enter your selling price for every selected hotel room.", "error");
-      window.setTimeout(() => document.querySelector('[data-quick-panel="hotel"] [data-hotel-selling-price]')?.focus(), 30);
-      return;
-    }
-    const firstIncompleteCore = model.enabledCore.find((service) => !completion[service]);
-    if (firstIncompleteCore) {
-      const label = CORE_SERVICES.find(({ id }) => id === firstIncompleteCore)?.label || "Service";
-      setActiveStep(firstIncompleteCore);
-      showToast(`Complete the main ${label.toLowerCase()} details before creating the quote.`, "error");
-      return;
-    }
-    if (model.addons.rows.length > 0 && !completion.addons) {
-      setActiveStep("addons");
-      showToast("Choose a service type for every add-on row.", "error");
+    // One shared rule set with the rapid lead form — see validateQuickQuote. The accordion is told
+    // which section to open and which field to land on, so the agent never has to hunt for the cause.
+    const problem = validateQuickQuote(model);
+    if (problem) {
+      if (problem.section) sectionsRef.current?.reveal(problem.section, problem.field || null);
+      else if (problem.field) document.querySelector(problem.field)?.focus();
+      showToast(problem.message, "error");
       return;
     }
     setSaving(true);
     try {
-      const payload = buildData({ includeLead: !quotationId });
+      const payload = quickQuotePayload({ model, lead, leadId, includeLead: !quotationId });
       if (quotationId) {
         await quotationService.updateQuotation(quotationId, payload);
         showToast("Quotation updated successfully.");
@@ -1487,6 +1992,7 @@ export default function QuickQuotation() {
         const newId = body.publicId || body.id;
         if (!newId) throw new Error("Quotation was saved but its ID was not returned.");
         setQuotationId(String(newId));
+        setQuoteNo(body.quoteNo == null ? "" : String(body.quoteNo));
         navigate(
           `/quick-quote?leadId=${encodeURIComponent(leadId)}&quotationId=${encodeURIComponent(String(newId))}`,
           { replace: true, state: { lead, quickQuote: true } },
@@ -1498,50 +2004,47 @@ export default function QuickQuotation() {
     } finally {
       setSaving(false);
     }
-  }, [buildData, canUpdateQuotation, completion, lead, leadId, model, navigate, quotationId, showToast]);
+  }, [canUpdateQuotation, lead, leadId, model, navigate, quotationId, showToast]);
 
-  const moveStep = useCallback((delta) => {
-    if (!steps.length) return;
-    const index = Math.max(0, steps.findIndex(({ id }) => id === activeStep));
-    const nextIndex = Math.min(steps.length - 1, Math.max(0, index + delta));
-    setActiveStep(steps[nextIndex].id);
-  }, [activeStep, steps]);
+  // Deliver. A quick quote is not finished when it is saved, it is finished when the customer has
+  // it — so the PDF and the share link live here rather than only in the full editor. Both reuse the
+  // builder's plumbing: the same design picker, the same streaming download hook, the same endpoint.
+  const exportPdfAs = useCallback(async (style) => {
+    setStylePickOpen(false);
+    try {
+      // Readable business code in the file name — never the raw UUID when a quote number exists.
+      const code = quoteNo || String(quotationId).slice(0, 8).toUpperCase();
+      await runPdfDownload({
+        endpoint: `/quotations/${quotationId}/pdf`,
+        params: style ? { style } : undefined,
+        fileName: `TravelCRM-Quotation-${code}.pdf`,
+      });
+      showToast("PDF downloaded successfully!");
+    } catch (error) {
+      // The hook rehydrates the Blob error envelope, so the server's real message shows.
+      if (!isAlreadyReported(error)) showToast(getErrorMessage(error, "Failed to generate PDF."), "error");
+    }
+  }, [quotationId, quoteNo, runPdfDownload, showToast]);
 
-  const handleKeys = (event) => {
-    if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
-      event.preventDefault();
-      save();
-      return;
-    }
-    if (event.altKey && (event.key === "ArrowRight" || event.key === "ArrowLeft")) {
-      event.preventDefault();
-      moveStep(event.key === "ArrowRight" ? 1 : -1);
-      return;
-    }
-    if (event.altKey && /^[1-8]$/.test(event.key)) {
-      const shortcutId = SHORTCUT_STEPS[Number(event.key) - 1];
-      const target = steps.find(({ id }) => id === shortcutId);
-      if (target) {
-        event.preventDefault();
-        setActiveStep(target.id);
+  const copyShareLink = useCallback(async () => {
+    try {
+      const response = await quotationService.getShareLink(quotationId);
+      const link = response?.data?.data?.shareUrl || response?.data?.shareUrl || "";
+      if (!link) throw new Error("The share link was not returned.");
+      try {
+        await navigator.clipboard.writeText(link);
+        showToast("Share link copied!");
+      } catch {
+        // The clipboard API needs a secure context (https or localhost). Showing the URL still
+        // lets the agent copy it by hand instead of dead-ending on a browser restriction.
+        showToast(link);
       }
-      return;
+    } catch (error) {
+      if (!isAlreadyReported(error)) {
+        showToast(getErrorMessage(error, "Failed to generate the share link."), "error");
+      }
     }
-    if (event.key !== "Enter" || event.shiftKey || event.target.tagName === "TEXTAREA" || event.defaultPrevented) return;
-    if (event.target.hasAttribute("data-quick-title")) {
-      event.preventDefault();
-      document.querySelector(`[data-quick-panel="${activeStep}"] [data-quick-field]`)?.focus();
-      return;
-    }
-    const fields = [...document.querySelectorAll('[data-quick-panel]:not([hidden]) [data-quick-field]:not([disabled])')]
-      .filter((field) => field.offsetParent !== null);
-    const index = fields.indexOf(event.target);
-    if (index >= 0 && fields[index + 1]) {
-      event.preventDefault();
-      fields[index + 1].focus();
-      fields[index + 1].select?.();
-    }
-  };
+  }, [quotationId, showToast]);
 
   if (!leadId) {
     return (
@@ -1564,26 +2067,35 @@ export default function QuickQuotation() {
     );
   }
 
-  const currentIndex = Math.max(0, steps.findIndex(({ id }) => id === activeStep));
   const destination = lead?.itinerary?.map((item) => item.city || item.destination).filter(Boolean).join(" → ");
   const adults = Math.max(1, asNumber(lead?.adults ?? lead?.totalAdults, 1));
   const children = Math.max(0, asNumber(lead?.children));
   const infants = Math.max(0, asNumber(lead?.infants));
-  const current = steps[currentIndex] || steps[0];
+  const doneCount = steps.filter(({ id }) => completion[id]).length;
+
+  // The submit control appears in the header AND as the last section's primary action; both must
+  // read identically, so the label and the disabled rule are derived once.
+  const submitDisabled = saving || (Boolean(quotationId) && !canUpdateQuotation);
+  const submitLabel = saving
+    ? (quotationId ? "Updating…" : "Creating…")
+    : quotationId
+      ? (canUpdateQuotation ? "Update Quote" : "Created")
+      : "Create Quote";
+  const SubmitIcon = saving ? LoaderCircle : quotationId ? Check : Zap;
 
   return (
-    <main className="min-h-screen bg-slate-50" onKeyDown={handleKeys} style={{ fontFamily: QUICK_QUOTE_FONT }}>
-      <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 shadow-sm backdrop-blur">
-        <div className="mx-auto max-w-[1600px] px-4 py-3 sm:px-6">
+    <main className="min-h-screen bg-slate-50" style={{ fontFamily: QUICK_QUOTE_FONT }}>
+      <header className="sticky top-0 z-30 border-b border-slate-200 bg-white">
+        <div className="mx-auto max-w-[1400px] px-4 py-3 sm:px-6">
           <div className="flex flex-wrap items-center gap-3">
             <button type="button" onClick={() => navigate(-1)} className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50" title="Back">
               <ArrowLeft className="h-4 w-4" />
             </button>
             <div>
               <div className="flex items-center gap-2">
-                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-600 text-white"><Zap className="h-4 w-4" /></span>
-                <h1 className="text-lg font-black text-slate-900">Quick Quote</h1>
-                <span className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-black tracking-wider text-amber-700">DRAFT</span>
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600"><Zap className="h-4 w-4" /></span>
+                <h1 className="text-lg font-bold text-slate-900">Quick Quote</h1>
+                <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-700">Draft</span>
               </div>
               <p className="mt-0.5 text-xs text-slate-500">{lead?.customerName || "Customer"} · {lead?.leadCode || "Lead"}</p>
             </div>
@@ -1593,6 +2105,17 @@ export default function QuickQuotation() {
               {destination && <span className="inline-flex max-w-sm items-center gap-1.5 truncate rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600"><MapPin className="h-3.5 w-3.5 shrink-0" /><span className="truncate">{destination}</span></span>}
             </div>
             <div className="ml-auto flex items-center gap-2">
+              {/* The running subtotal and the done-count used to live in a 220px left rail. The
+                  accordion replaced that rail, so they move here — otherwise the only always-visible
+                  number on a long single-column form would be gone. */}
+              <div className="mr-1 hidden text-right sm:block">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                  Subtotal · {doneCount}/{steps.length} done
+                </p>
+                <p className="text-base font-black leading-tight text-slate-900">
+                  ₹{totals.subtotal.toLocaleString("en-IN")}
+                </p>
+              </div>
               {quotationId && (
                 <button type="button" onClick={() => navigate("/createlead")} className="hidden items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2.5 text-xs font-bold text-blue-700 hover:bg-blue-100 sm:inline-flex">
                   <Plus className="h-3.5 w-3.5" /> Next quote
@@ -1603,9 +2126,29 @@ export default function QuickQuotation() {
                   Open full editor
                 </button>
               )}
-              <button type="button" disabled={saving || (Boolean(quotationId) && !canUpdateQuotation)} onClick={save} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-extrabold text-white shadow-sm hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60">
-                {saving ? <LoaderCircle className="h-4 w-4 animate-spin" /> : quotationId ? <Check className="h-4 w-4" /> : <Zap className="h-4 w-4" />}
-                {saving ? (quotationId ? "Updating…" : "Creating…") : quotationId ? (canUpdateQuotation ? "Update Quote" : "Created") : "Create Quote"}
+              {quotationId && (
+                <>
+                  <button
+                    type="button"
+                    onClick={copyShareLink}
+                    title="Copy the customer share link"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-50"
+                  >
+                    <Share2 className="h-3.5 w-3.5" /><span className="hidden sm:inline">Share</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStylePickOpen(true)}
+                    title="Download the quotation PDF"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-50"
+                  >
+                    <Download className="h-3.5 w-3.5" /><span className="hidden sm:inline">PDF</span>
+                  </button>
+                </>
+              )}
+              <button type="button" disabled={submitDisabled} onClick={save} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-extrabold text-white shadow-sm hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60">
+                <SubmitIcon className={`h-4 w-4 ${saving ? "animate-spin" : ""}`} />
+                {submitLabel}
                 <kbd className="hidden rounded bg-white/15 px-1.5 py-0.5 text-[10px] font-bold lg:inline">Ctrl ↵</kbd>
               </button>
             </div>
@@ -1613,78 +2156,70 @@ export default function QuickQuotation() {
         </div>
       </header>
 
-      <div className="mx-auto max-w-[1600px] px-4 py-4 sm:px-6">
-        <section className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="mr-1 inline-flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-wider text-slate-400"><Sparkles className="h-3.5 w-3.5" /> Quote services</span>
-            {CORE_SERVICES.map(({ id, label, icon: Icon, tone }) => {
-              const selected = model.enabledCore.includes(id);
-              return (
-                <button key={id} type="button" aria-pressed={selected} onClick={() => toggleService(id)} className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-bold transition ${selected ? TONES[tone] : "border-slate-200 bg-white text-slate-400 hover:bg-slate-50"}`}>
-                  <Icon className="h-3.5 w-3.5" /> {label} {selected && <Check className="h-3 w-3" />}
-                </button>
-              );
-            })}
-            <p className="ml-auto hidden text-[11px] font-semibold text-slate-400 lg:block">Enter next · Alt + ←/→ sections · Alt + 1…8 jump</p>
-          </div>
-        </section>
-
-        <div className="mt-4 grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
-          <aside className="min-w-0">
-            <nav className="flex gap-2 overflow-x-auto rounded-xl border border-slate-200 bg-white p-2 shadow-sm lg:sticky lg:top-24 lg:block lg:space-y-1 lg:overflow-visible" aria-label="Quotation sections">
-              {steps.map(({ id, label, icon: Icon, tone }, index) => {
-                const selected = id === activeStep;
-                return (
-                  <button key={id} type="button" onClick={() => setActiveStep(id)} className={`flex shrink-0 items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-bold transition lg:w-full ${selected ? "bg-slate-900 text-white shadow-sm" : "text-slate-600 hover:bg-slate-50"}`}>
-                    <span className={`flex h-7 w-7 items-center justify-center rounded-md border ${selected ? "border-white/10 bg-white/10 text-white" : TONES[tone]}`}><Icon className="h-3.5 w-3.5" /></span>
-                    <span className="whitespace-nowrap">{index + 1}. {label}</span>
-                    {completion[id] && <Check className={`ml-auto h-3.5 w-3.5 ${selected ? "text-emerald-300" : "text-emerald-500"}`} />}
-                  </button>
-                );
-              })}
-              <div className="hidden border-t border-slate-100 px-3 pt-3 lg:block">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Running subtotal</p>
-                <p className="mt-1 text-lg font-black text-slate-900">₹{totals.subtotal.toLocaleString("en-IN")}</p>
-              </div>
-            </nav>
-          </aside>
-
-          <form onSubmit={(event) => { event.preventDefault(); save(); }} className="min-w-0">
-            <section className="mb-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px] lg:items-end">
-                <Field label="Quotation title" required>
-                  <input data-quick-field data-quick-title value={model.title} onChange={(event) => setModel((currentModel) => ({ ...currentModel, title: event.target.value }))} className={`${controlClass} font-bold`} maxLength={200} />
-                </Field>
-                <div className="rounded-lg bg-blue-50 px-3 py-2.5 text-right">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-blue-500">{current?.label || "Section"} amount</p>
-                  <p className="text-base font-black text-blue-800">₹{asNumber(totals[activeStep]).toLocaleString("en-IN")}</p>
-                </div>
-              </div>
-            </section>
-
-            <div data-quick-panel={activeStep}>
-              {activeStep === "hotel" && <HotelPanel data={model.hotel} setData={(updater) => setPart("hotel", updater)} loadHotels={loadHotels} />}
-              {activeStep === "flight" && <FlightPanel data={model.flight} setData={(updater) => setPart("flight", updater)} />}
-              {activeStep === "sightseeing" && <SightseeingPanel data={model.sightseeing} setData={(updater) => setPart("sightseeing", updater)} loadSightseeing={loadSightseeing} />}
-              {activeStep === "vehicle" && <VehiclePanel data={model.vehicle} setData={(updater) => setPart("vehicle", updater)} loadVehicles={loadVehicles} />}
-              {activeStep === "cruise" && <CruisePanel data={model.cruise} setData={(updater) => setPart("cruise", updater)} />}
-              {activeStep === "addons" && <AddonsPanel data={model.addons} setData={(updater) => setPart("addons", updater)} />}
-              {activeStep === "terms" && <TermsPanel data={model.terms} setData={(updater) => setPart("terms", updater)} />}
-              {activeStep === "pricing" && <PricingPanel data={model.pricing} setData={(updater) => setPart("pricing", updater)} subtotal={totals.subtotal} />}
+      {/* One column, one open section. The old 220px rail is gone: with a single-open accordion the
+          section list IS the navigation, so a second copy of it beside the form was dead weight. */}
+      <div className="mx-auto max-w-[1400px] px-4 py-4 sm:px-6">
+        <form onSubmit={(event) => { event.preventDefault(); save(); }} className="min-w-0">
+          {/* Title belongs to the whole quotation, not to any one section, so it sits above the
+              accordion where it stays reachable no matter which section is open. */}
+          <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+              <Field label="Quotation title" required>
+                <input
+                  data-quick-title
+                  value={model.title}
+                  onChange={(event) => setModel((currentModel) => ({ ...currentModel, title: event.target.value }))}
+                  onKeyDown={(event) => {
+                    // Enter must not submit a 40-field quote from the title box. Move on instead.
+                    if (event.key !== "Enter") return;
+                    event.preventDefault();
+                    document.querySelector('[data-quick-panel]:not([hidden]) [data-quick-field]')?.focus();
+                  }}
+                  className={`${controlClass} font-bold`}
+                  maxLength={200}
+                />
+              </Field>
+              <p className="hidden pb-2.5 text-[11px] font-semibold text-slate-400 lg:block">
+                Enter next field · Alt + arrows sections · Alt + 0…8 jump
+              </p>
             </div>
+          </section>
 
-            <div className="mt-4 flex items-center justify-between rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-              <button type="button" disabled={currentIndex === 0} onClick={() => moveStep(-1)} className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-30"><ChevronLeft className="h-4 w-4" /> Previous</button>
-              <span className="text-xs font-bold text-slate-400">{currentIndex + 1} / {steps.length}</span>
-              {currentIndex < steps.length - 1 ? (
-                <button type="button" onClick={() => moveStep(1)} className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-4 py-2 text-sm font-bold text-white hover:bg-slate-800">Next <ChevronRight className="h-4 w-4" /></button>
-              ) : (
-                <button type="submit" disabled={saving || (Boolean(quotationId) && !canUpdateQuotation)} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60">{saving ? <LoaderCircle className="h-4 w-4 animate-spin" /> : quotationId ? <Check className="h-4 w-4" /> : <Zap className="h-4 w-4" />} {saving ? (quotationId ? "Updating…" : "Creating…") : quotationId ? (canUpdateQuotation ? "Update Quote" : "Created") : "Create Quote"}</button>
-              )}
-            </div>
-          </form>
-        </div>
+          <QuickQuoteSections
+            ref={sectionsRef}
+            className="mt-3"
+            model={model}
+            setModel={setModel}
+            onRequestSave={save}
+            submitSlot={(
+              <button
+                type="submit"
+                disabled={submitDisabled}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <SubmitIcon className={`h-4 w-4 ${saving ? "animate-spin" : ""}`} /> {submitLabel}
+              </button>
+            )}
+          />
+        </form>
       </div>
+
+      {/* Export PDF → pick a design. One-off: the quotation's own saved design is untouched. */}
+      {stylePickOpen && (
+        <QuotationStyleModal
+          savedStyle={model.templateStyle}
+          onSelect={exportPdfAs}
+          onClose={() => setStylePickOpen(false)}
+        />
+      )}
+
+      {/* Full-screen "preparing your PDF" overlay — shared with the leads list and the full builder. */}
+      <PdfDownloadLoader
+        open={pdfBusy}
+        documentType="Quotation"
+        progress={pdfProgress}
+        progressSupported={pdfProgressSupported}
+      />
     </main>
   );
 }

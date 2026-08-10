@@ -163,7 +163,7 @@ export default function ChangePassword() {
       showToast("Password changed successfully! You have been logged out of all other sessions. ✅");
       setCurrent(""); setNewPass(""); setConfirm("");
       setErrors({});
-      setTimeout(() => navigate("/Settings"), 2000);
+      setTimeout(() => navigate("/CompanySettings"), 2000);
     } catch (err) {
       showToast(
         err?.response?.data?.message || "Failed to change password. Please try again.",

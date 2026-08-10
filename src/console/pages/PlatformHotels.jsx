@@ -97,7 +97,7 @@ export default function PlatformHotels() {
       <GlassCard className="mb-5 p-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="relative w-full lg:max-w-sm">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
             <Input
               value={q}
               onChange={(e) => setQ(e.target.value)}
@@ -162,22 +162,22 @@ export default function PlatformHotels() {
                       {h.primaryImageUrl ? (
                         <img src={h.primaryImageUrl} alt="" className="h-10 w-14 rounded-lg object-cover" loading="lazy" />
                       ) : (
-                        <div className="flex h-10 w-14 items-center justify-center rounded-lg bg-slate-100">
-                          <Building2 className="h-4 w-4 text-slate-400" />
+                        <div className="flex h-10 w-14 items-center justify-center rounded-lg bg-surface-hover">
+                          <Building2 className="h-4 w-4 text-muted" />
                         </div>
                       )}
-                      <p className="font-bold text-slate-700">{h.name}</p>
+                      <p className="font-bold text-body">{h.name}</p>
                     </div>
                   </TableCell>
                   <TableCell>
-                    <span className="text-slate-600">
+                    <span className="text-body">
                       {[h.cityName, h.stateName, h.countryCode].filter(Boolean).join(", ")}
                     </span>
                   </TableCell>
                   <TableCell><StarRating value={h.rating ?? h.stars ?? 0} size={13} showValue /></TableCell>
                   <TableCell>{h.rooms?.length ?? "—"}</TableCell>
                   <TableCell>{h.linkedTenantCount ?? "—"}</TableCell>
-                  <TableCell className="text-slate-500">v{h.catalogVersion}</TableCell>
+                  <TableCell className="text-muted">v{h.catalogVersion}</TableCell>
                   <TableCell><CatalogStatusBadge value={h.status} /></TableCell>
                 </TableRow>
               ))}
@@ -202,7 +202,7 @@ export default function PlatformHotels() {
 
 /** The catalog has its own statuses, so it does not reuse the kit's HOTEL_STATUS map. */
 export function CatalogStatusBadge({ value }) {
-  const cfg = CATALOG_STATUS[value] ?? { label: value ?? "—", className: "bg-slate-100 text-slate-600" };
+  const cfg = CATALOG_STATUS[value] ?? { label: value ?? "—", className: "bg-surface-hover text-body" };
   return <span className={cn("inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold", cfg.className)}>{cfg.label}</span>;
 }
 
@@ -219,20 +219,20 @@ function HotelCard({ hotel: h, onOpen }) {
               className="h-44 w-full object-cover transition-transform duration-500 group-hover:scale-105"
             />
           ) : (
-            <div className="flex h-44 w-full items-center justify-center bg-slate-100">
-              <Building2 className="h-8 w-8 text-slate-300" />
+            <div className="flex h-44 w-full items-center justify-center bg-surface-hover">
+              <Building2 className="h-8 w-8 text-border-strong" />
             </div>
           )}
           <div className="absolute left-3 top-3"><CatalogStatusBadge value={h.status} /></div>
           {(h.rating || h.stars) && (
-            <div className="absolute right-3 top-3 rounded-full bg-white/90 px-2 py-1 backdrop-blur">
+            <div className="absolute right-3 top-3 rounded-full bg-surface/90 px-2 py-1 backdrop-blur">
               <StarRating value={h.rating ?? h.stars} size={12} showValue />
             </div>
           )}
         </div>
         <div className="p-4">
-          <h3 className="mb-1 truncate font-extrabold text-slate-800">{h.name}</h3>
-          <p className="mb-3 flex items-center gap-1 text-xs text-slate-400">
+          <h3 className="mb-1 truncate font-extrabold text-heading">{h.name}</h3>
+          <p className="mb-3 flex items-center gap-1 text-xs text-muted">
             <MapPin className="h-3.5 w-3.5" />
             {[h.cityName, h.countryCode].filter(Boolean).join(", ")} · v{h.catalogVersion}
           </p>
@@ -248,11 +248,11 @@ function HotelCard({ hotel: h, onOpen }) {
 
 function Metric({ icon: Icon, label, value }) {
   return (
-    <div className="rounded-xl bg-slate-50 py-2">
-      <div className="flex items-center justify-center gap-1 text-sm font-extrabold text-slate-700">
-        {Icon && <Icon className="h-3.5 w-3.5 text-blue-500" />}{value}
+    <div className="rounded-xl bg-surface-hover py-2">
+      <div className="flex items-center justify-center gap-1 text-sm font-extrabold text-body">
+        {Icon && <Icon className="h-3.5 w-3.5 text-focus" />}{value}
       </div>
-      <p className="mt-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">{label}</p>
+      <p className="mt-0.5 text-[10px] font-bold uppercase tracking-wide text-muted">{label}</p>
     </div>
   );
 }
@@ -322,7 +322,7 @@ function CreateHotelDialog({ onClose, onCreated }) {
                   onChange={(e) => setForm((f) => ({ ...f, countryCode: e.target.value.toUpperCase().slice(0, 3) }))}
                   placeholder="IN"
                 />
-                <p className="mt-1 text-[11px] text-slate-400">
+                <p className="mt-1 text-[11px] text-muted">
                   Tenants' geography is matched on this code when they import.
                 </p>
               </div>

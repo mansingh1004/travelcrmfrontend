@@ -1167,7 +1167,7 @@ export default function CompanyProfile() {
                   <span className="hidden sm:inline ml-3 text-xs">
                     <span className="hover:text-blue-600 cursor-pointer transition-colors" onClick={() => navigate("/")}>Home</span>
                     <span className="mx-1 text-slate-300">/</span>
-                    <span className="hover:text-blue-600 cursor-pointer transition-colors" onClick={() => navigate("/Settings")}>Settings</span>
+                    <span className="hover:text-blue-600 cursor-pointer transition-colors" onClick={() => navigate("/CompanySettings")}>Settings</span>
                     <span className="mx-1 text-slate-300">/</span>
                     <span className="text-blue-600 font-bold">Company Profile</span>
                   </span>

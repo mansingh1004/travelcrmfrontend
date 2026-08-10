@@ -1934,7 +1934,7 @@ const Leads = () => {
       onClick: () => setActiveTab('Active'),
     },
     {
-      key: 'lost', label: 'Lost', icon: X, gradient: 'from-slate-600 to-slate-700',
+      key: 'lost', label: 'Lost Leads', icon: X, gradient: 'from-slate-600 to-slate-700',
       value: summary?.lostLeads ?? null,
       caption: rollupDown ?? 'closed without a booking',
       loading: statsLoading && !summary,

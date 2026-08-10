@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import ScrollToTop from './ScrollToTop';
 import Layout from "./Layout";
 import PageLoader from "./PageLoader";
+import NotFound from "./NotFound";
 import RouteErrorBoundary from "./RouteErrorBoundary";
 import { hasPermission, isTenantAdmin, isSubAgent, isFleetOnly, P } from "@shared/lib/access";
 
@@ -17,7 +18,6 @@ const AllLeads = lazyPage(leads, "AllLeads");
 const CreateLead = lazyPage(leads, "CreateLead");
 const EditLead = lazyPage(leads, "EditLead");
 const AllLeadLogs = lazyPage(leads, "AllLeadLogs");
-const WhatsAppPanel = lazyPage(leads, "WhatsAppPanel");
 const LeadAlerts = lazyPage(leads, "LeadAlerts");
 
 const AdminLogin = lazyPage(() => import("@features/auth"), "AdminLogin");
@@ -118,9 +118,13 @@ const ConsoleAnnouncements = lazyPage(consoleFeature, "ConsoleAnnouncements");
 const ConsoleOps = lazyPage(consoleFeature, "ConsoleOps");
 const ConsoleSuperAdmins = lazyPage(consoleFeature, "ConsoleSuperAdmins");
 const ConsolePlatformHotels = lazyPage(consoleFeature, "ConsolePlatformHotels");
+const ConsoleHotelPartners = lazyPage(consoleFeature, "ConsoleHotelPartners");
 const ConsolePlatformHotelDetail = lazyPage(consoleFeature, "ConsolePlatformHotelDetail");
 const ConsoleMarketplaceBookings = lazyPage(consoleFeature, "ConsoleMarketplaceBookings");
 const ConsoleMarketplaceCommissions = lazyPage(consoleFeature, "ConsoleMarketplaceCommissions");
+
+const hotelPartner = () => import("@features/hotelpartner");
+const HotelPartnerRegister = lazyPage(hotelPartner, "HotelPartnerRegister");
 
 const portal = () => import("@features/portal");
 const PortalLogin = lazyPage(portal, "PortalLogin");
@@ -216,6 +220,13 @@ const AppRouter = () => {
             {/* Public quotation web view (no auth) — shareable /q/{publicId} link */}
             <Route path="/q/:publicId" element={<PublicQuotationPage />} />
 
+            {/* ── Hotel Partner self-registration — SEPARATE realm, no login ────
+            A hotel owner opens an emailed link; the token in the path IS the
+            credential and is re-verified server-side on every call. Must stay a
+            TOP-LEVEL route: anything nested under "/" renders <Layout/>, which
+            redirects an unauthenticated visitor to /login. */}
+            <Route path="/hotel-partner/register/:token" element={<HotelPartnerRegister />} />
+
             {/* ── Customer-facing Traveler Portal — SEPARATE realm ──────────────
             Own token ("travelerToken"), own OTP login, no staff chrome. The
             PortalLayout self-guards (no token → /portal/login). */}
@@ -250,6 +261,7 @@ const AppRouter = () => {
               <Route path="ops" element={<ConsoleOps />} />
               <Route path="superadmins" element={<ConsoleSuperAdmins />} />
               {/* Platform hotel catalog — the supply side. Owned here, not by any tenant. */}
+              <Route path="hotel-partners" element={<ConsoleHotelPartners />} />
               <Route path="hotel-catalog" element={<ConsolePlatformHotels />} />
               <Route path="hotel-catalog/:publicId" element={<ConsolePlatformHotelDetail />} />
               {/* The approval queue. Only a decision taken here can confirm a tenant's hotel. */}
@@ -275,7 +287,22 @@ const AppRouter = () => {
               aggregates leads, bookings and quotations, so for that tenant it is a screen whose
               every call 403s. isFleetOnly() fails CLOSED, so a CRM user with a cold cache still
               lands here. */}
-              <Route index element={isFleetOnly() ? <Navigate to="/fleet" replace /> : <Dashboard />} />
+              {/* Landing. Login navigates to "/", so this route — not "/Dashboard" — is what a
+              session actually lands on, and it must apply the SAME rules as the menu.
+
+              A sub-agent gets /allleads, not the Dashboard: the "/Dashboard" route below is
+              `Guard allow={!isSubAgent()}` and navConfig hides the row on the same key, but the
+              index route bypassed both, so a B2B partner landed on the tenant-wide dashboard every
+              login. It is a redirect and not a <Guard> because Guard's own fallback is "/" — which
+              from the index route would loop forever. Sub-agents hold LEAD_READ by default.  */}
+              <Route
+                index
+                element={
+                  isFleetOnly() ? <Navigate to="/fleet" replace />
+                    : isSubAgent() ? <Navigate to="/allleads" replace />
+                    : <Dashboard />
+                }
+              />
 
 
               <Route path="allleads" element={<AllLeads />} />
@@ -298,7 +325,6 @@ const AppRouter = () => {
               <Route path="Allbookings" element={<Allbookings />} />
               <Route path="CreateBooking" element={<Guard allow={hasPermission(P.BOOKING_CREATE)}><CreateBooking /></Guard>} />
               <Route path="CreateBooking/:leadId" element={<Guard allow={hasPermission(P.BOOKING_CREATE)}><CreateBooking /></Guard>} />
-              <Route path="masters/destinations" element={<Destinations />} />
               <Route path="masters/hotels" element={<Hotel />} />
               <Route path="masters/airlines" element={<Airline />} />
               <Route path="masters/cruises" element={<Cruise />} />
@@ -359,7 +385,10 @@ const AppRouter = () => {
               <Route path="/EditCustomer/:id" element={<EditCustomer />} />
               <Route path="/EditLead/:id" element={<EditLead />} />
               <Route path="/EditBooking/:id" element={<EditBooking />} />
-              <Route path="/WhatsAppPanel" element={<WhatsAppPanel />} />
+              {/* /WhatsAppPanel removed: WhatsAppPanel is a MODAL driven by a `lead` prop
+              (rendered from AllLeads). As a route it got lead === undefined and rendered
+              "Chat with Lead ()" with an empty wa.me link and an onClose that was not a
+              function. Nothing navigated to it. */}
 
               {/* ── Fleet / Vehicle Diary (guarded by FLEET_* permissions) ── */}
               <Route path="fleet" element={<Guard allow={hasPermission(P.FLEET_READ)}><FleetDashboard /></Guard>} />
@@ -396,7 +425,6 @@ const AppRouter = () => {
 
               {/* ── Marketing & Campaigns (guarded by MARKETING_* permissions; TENANT_ADMIN sees all) ── */}
               <Route path="marketing" element={<Guard allow={hasPermission(P.MARKETING_READ)}><MarketingDashboard /></Guard>} />
-              <Route path="marketing/dashboard" element={<Guard allow={hasPermission(P.MARKETING_READ)}><MarketingDashboard /></Guard>} />
               <Route path="marketing/segments" element={<Guard allow={hasPermission(P.MARKETING_READ)}><Segments /></Guard>} />
               <Route path="marketing/campaigns" element={<Guard allow={hasPermission(P.MARKETING_READ)}><Campaigns /></Guard>} />
               <Route path="marketing/drips" element={<Guard allow={hasPermission(P.MARKETING_READ)}><DripSequences /></Guard>} />
@@ -430,6 +458,11 @@ const AppRouter = () => {
               <Route path="/BookingServices/:id" element={<BookingServices />} />
               <Route path="/CustomerDetails/:id" element={<CustomerDetails />} />
               <Route path="/VendorDetails/:id" element={<VendorDetails />} />
+
+              {/* Catch-all — MUST stay last. Without it an unmatched URL matched no branch and
+              React Router rendered null: a bare white document with no chrome (RouteErrorBoundary
+              only catches throws, not non-matches). Inside <Layout/> so the rail and ⌘K survive. */}
+              <Route path="*" element={<NotFound />} />
 
             </Route>
 

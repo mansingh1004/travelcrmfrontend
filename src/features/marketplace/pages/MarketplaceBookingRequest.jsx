@@ -33,8 +33,9 @@ function validate(form, mode) {
   if (form.leadGuestEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.leadGuestEmail)) {
     e.leadGuestEmail = "Enter a valid email";
   }
-  if (!(form.rooms >= 1)) e.rooms = "At least one room";
-  if (!(form.adults >= 1)) e.adults = "At least one adult";
+  const occ = form.roomOccupancies ?? [];
+  if (occ.length < 1) e.rooms = "At least one room";
+  if (!occ.every((r) => r.adults >= 1)) e.adults = "Every room needs at least one adult";
 
   if (mode === "link") {
     if (!form.crmBooking) e.crmBooking = "Pick the booking to attach this to";
@@ -52,7 +53,9 @@ function validate(form, mode) {
 
 const BLANK = {
   checkIn: "", checkOut: "", roomPublicId: "", mealPlanPublicId: "",
-  rooms: 1, adults: 2, children: 0,
+  // Per-room occupancy. The flat rooms/adults/children the API also accepts are DERIVED from this
+  // at submit time, so there is one source of truth on the screen.
+  roomOccupancies: [{ adults: 2, children: 0 }],
   leadGuestName: "", leadGuestPhone: "", leadGuestEmail: "", specialRequests: "",
   crmBooking: null, customer: null,
   newCustomer: false, newCustomerName: "", newCustomerPhone: "", newCustomerEmail: "",
@@ -78,6 +81,28 @@ export function MarketplaceBookingRequest() {
   const { key: idempotencyKey, reset: resetKey } = useIdempotencyKey();
 
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
+
+  /* ── Per-room occupancy ─────────────────────────────────────
+     Totals are derived, never stored in form state, so the summary line and the submitted payload
+     can never drift from the rows on screen. */
+  const setOccupancy = (i, patch) =>
+    setForm((f) => ({
+      ...f,
+      roomOccupancies: f.roomOccupancies.map((r, k) => (k === i ? { ...r, ...patch } : r)),
+    }));
+  const addRoom = () =>
+    setForm((f) => ({
+      ...f,
+      // A second room almost always mirrors the first — copy it rather than reset to a default the
+      // user then has to re-enter.
+      roomOccupancies: [...f.roomOccupancies, { ...f.roomOccupancies[f.roomOccupancies.length - 1] }],
+    }));
+  const removeRoom = (i) =>
+    setForm((f) => ({ ...f, roomOccupancies: f.roomOccupancies.filter((_, k) => k !== i) }));
+
+  const totalRooms = form.roomOccupancies.length;
+  const totalAdults = form.roomOccupancies.reduce((n, r) => n + Number(r.adults || 0), 0);
+  const totalChildren = form.roomOccupancies.reduce((n, r) => n + Number(r.children || 0), 0);
 
   const ids = {
     checkIn: useFieldId("in"), checkOut: useFieldId("out"), room: useFieldId("room"),
@@ -139,9 +164,14 @@ export function MarketplaceBookingRequest() {
       mealPlanPublicId: form.mealPlanPublicId || undefined,
       checkIn: form.checkIn,
       checkOut: form.checkOut,
-      rooms: Number(form.rooms),
-      adults: Number(form.adults),
-      children: Number(form.children),
+      // Both shapes are sent: the breakdown is authoritative and the server recomputes the totals
+      // from it, but the totals keep older/other consumers of this payload working unchanged.
+      roomOccupancies: form.roomOccupancies.map((r) => ({
+        adults: Number(r.adults), children: Number(r.children),
+      })),
+      rooms: totalRooms,
+      adults: totalAdults,
+      children: totalChildren,
       leadGuestName: form.leadGuestName.trim(),
       leadGuestPhone: form.leadGuestPhone?.trim() || undefined,
       leadGuestEmail: form.leadGuestEmail?.trim() || undefined,
@@ -310,11 +340,45 @@ export function MarketplaceBookingRequest() {
             ))}
           </Select>
         </Row>
+        {/*
+          Occupancy is per ROOM, not three flat totals. "4 adults in 2 rooms" is ambiguous between
+          2+2 and 3+1, and the property has to resolve that by phone otherwise. The backend still
+          stores the totals — it derives them from these rows — so vouchers and the admin queue are
+          unchanged.
+        */}
         <Row label="Occupancy" error={errors.rooms || errors.adults}>
-          <div className="flex flex-wrap items-center gap-6">
-            <Field label="Rooms"><Stepper label="rooms" min={1} value={form.rooms} onChange={(v) => set({ rooms: v })} /></Field>
-            <Field label="Adults"><Stepper label="adults" min={1} value={form.adults} onChange={(v) => set({ adults: v })} /></Field>
-            <Field label="Children"><Stepper label="children" min={0} value={form.children} onChange={(v) => set({ children: v })} /></Field>
+          <div className="space-y-2">
+            {form.roomOccupancies.map((occ, i) => (
+              <div key={i}
+                className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-lg border border-slate-200 px-3 py-2">
+                <span className="w-16 shrink-0 text-xs font-bold text-slate-600">Room {i + 1}</span>
+                <Field label="Adults (12+ yrs)">
+                  <Stepper label={`adults in room ${i + 1}`} min={1} value={occ.adults}
+                    onChange={(v) => setOccupancy(i, { adults: v })} />
+                </Field>
+                <Field label="Children (0–12 yrs)">
+                  <Stepper label={`children in room ${i + 1}`} min={0} value={occ.children}
+                    onChange={(v) => setOccupancy(i, { children: v })} />
+                </Field>
+                {form.roomOccupancies.length > 1 && (
+                  <button type="button" onClick={() => removeRoom(i)}
+                    className="ml-auto text-xs font-semibold text-slate-400 hover:text-rose-600">
+                    Remove
+                  </button>
+                )}
+              </div>
+            ))}
+            <div className="flex items-center gap-3">
+              <button type="button" onClick={addRoom}
+                className="text-xs font-bold text-blue-600 hover:underline">
+                + Add room
+              </button>
+              <span className="text-xs text-slate-500">
+                {totalRooms} room{totalRooms === 1 ? "" : "s"} · {totalAdults} adult
+                {totalAdults === 1 ? "" : "s"}
+                {totalChildren > 0 ? ` · ${totalChildren} child${totalChildren === 1 ? "" : "ren"}` : ""}
+              </span>
+            </div>
           </div>
         </Row>
       </RowGroup>

@@ -8,7 +8,7 @@
 // Publish and unpublish are the only two actions here that change what every tenant on the platform
 // can buy, so both go through the SuperAdmin step-up MFA modal — the same treatment as a plan change.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   BedDouble, Building2, Check, Globe, MapPin, Pencil, Plus, Trash2, UtensilsCrossed, X as XIcon,
@@ -125,7 +125,7 @@ export default function PlatformHotelDetail() {
       {hotel.status === "ACTIVE" && (
         <GlassCard className="mb-5 flex items-center gap-3 p-4">
           <StarRating value={hotel.rating ?? hotel.stars ?? 0} size={15} showValue />
-          <span className="text-sm text-slate-500">
+          <span className="text-sm text-muted">
             Live in Platform Hotel — every entitled tenant can search and import it.
           </span>
         </GlassCard>
@@ -262,8 +262,8 @@ function IdentitySection({ hotel, onSaved }) {
           <ReadRow label="Guest contact" value={[hotel.phone, hotel.email].filter(Boolean).join(" · ")} />
           {hotel.overview && (
             <div className="md:col-span-2">
-              <p className="mb-1 text-[11px] font-extrabold uppercase tracking-wide text-slate-400">Overview</p>
-              <p className="text-sm leading-relaxed text-slate-600">{hotel.overview}</p>
+              <p className="mb-1 text-[11px] font-extrabold uppercase tracking-wide text-muted">Overview</p>
+              <p className="text-sm leading-relaxed text-body">{hotel.overview}</p>
             </div>
           )}
         </div>
@@ -306,16 +306,16 @@ function AmenitiesSection({ hotel, onSaved }) {
     <SectionCard title="Amenities" subtitle="Synced to every tenant copy" icon={Check}>
       <div className="mb-3 flex flex-wrap gap-2">
         {(hotel.amenities ?? []).length === 0 && (
-          <p className="text-sm text-slate-400">No amenities yet.</p>
+          <p className="text-sm text-muted">No amenities yet.</p>
         )}
         {(hotel.amenities ?? []).map((a) => (
-          <span key={a} className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1 text-[13px] font-bold text-blue-700">
+          <span key={a} className="inline-flex items-center gap-1.5 rounded-full bg-accent-soft px-3 py-1 text-[13px] font-bold text-accent-hover">
             {a}
             <button
               type="button"
               disabled={saving}
               onClick={() => persist((hotel.amenities ?? []).filter((x) => x !== a))}
-              className="text-blue-400 transition-colors hover:text-blue-700 disabled:opacity-50"
+              className="text-focus transition-colors hover:text-accent-hover disabled:opacity-50"
               aria-label={`Remove ${a}`}
             >
               <XIcon className="h-3.5 w-3.5" />
@@ -341,9 +341,57 @@ function AmenitiesSection({ hotel, onSaved }) {
 
 const EMPTY_ROOM = { name: "", maxAdults: "", maxChildren: "", maxOccupancy: "", bedType: "", size: "", description: "", active: true };
 
+/** ₹4,000 / $120 — compact enough to sit inside a table cell. */
+const netMoney = (amount, currency = "INR") => {
+  if (amount === null || amount === undefined) return "—";
+  const n = Number(amount).toLocaleString("en-IN", { maximumFractionDigits: 0 });
+  return currency === "INR" ? `₹${n}` : `${currency} ${n}`;
+};
+
+const OCCUPANCY_SHORT = {
+  SINGLE: "SGL", DOUBLE: "DBL", TRIPLE: "TPL",
+  EXTRA_BED: "EXB", CHILD_WITH_BED: "CWB", CHILD_NO_BED: "CNB",
+};
+
+/**
+ * The rates for one room, as `CP·DBL ₹4,000` chips.
+ *
+ * Rates arrive as a FLAT list on the hotel keyed by roomPublicId, not nested inside the room — the
+ * room DTO is the same type tenants receive, so nesting a supplier net rate there would leak it.
+ * Grouping is therefore the client's job.
+ */
+function RoomRates({ rates }) {
+  if (!rates?.length) {
+    return <span className="text-xs text-muted">No rate set</span>;
+  }
+  return (
+    <div className="flex flex-wrap gap-1">
+      {rates.map((r) => (
+        <span key={r.publicId}
+          title={[r.rateCode, r.refundable === false ? "Non-refundable" : r.refundable === true ? "Refundable" : null]
+            .filter(Boolean).join(" · ") || undefined}
+          className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold ${
+            r.active ? "bg-accent-soft text-accent-soft-text" : "bg-surface-hover text-muted"}`}>
+          <span className="opacity-70">{r.mealPlanCode}·{OCCUPANCY_SHORT[r.occupancyBasis] ?? r.occupancyBasis}</span>
+          {netMoney(r.netRate, r.currency)}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function RoomsSection({ hotel, onChanged }) {
   const { showToast } = useToast();
   const [editing, setEditing] = useState(null);   // {mode:'add'|'edit', row}
+
+  const ratesByRoom = useMemo(() => {
+    const m = new Map();
+    for (const r of hotel.rates ?? []) {
+      if (!m.has(r.roomPublicId)) m.set(r.roomPublicId, []);
+      m.get(r.roomPublicId).push(r);
+    }
+    return m;
+  }, [hotel.rates]);
 
   const remove = async (room) => {
     try {
@@ -357,8 +405,8 @@ function RoomsSection({ hotel, onChanged }) {
 
   return (
     <SectionCard
-      title="Rooms"
-      subtitle="Sellable room categories — no prices here by design"
+      title="Rooms & net rates"
+      subtitle="Net rates are what the platform pays the hotel — never shown to a tenant"
       icon={BedDouble}
       right={<Button size="sm" onClick={() => setEditing({ mode: "add", row: EMPTY_ROOM })}><Plus className="h-4 w-4" /> Add room</Button>}
       bodyClass="p-0"
@@ -373,6 +421,7 @@ function RoomsSection({ hotel, onChanged }) {
               <TableHead>Occupancy</TableHead>
               <TableHead>Bed</TableHead>
               <TableHead>Size</TableHead>
+              <TableHead>Net rates</TableHead>
               <TableHead>Status</TableHead>
               <TableHead />
             </TableRow>
@@ -380,15 +429,18 @@ function RoomsSection({ hotel, onChanged }) {
           <TableBody>
             {(hotel.rooms ?? []).map((r) => (
               <TableRow key={r.publicId}>
-                <TableCell className="font-bold text-slate-700">{r.name}</TableCell>
-                <TableCell className="text-slate-600">
+                <TableCell className="font-bold text-body">{r.name}</TableCell>
+                <TableCell className="text-body">
                   {[r.maxAdults != null ? `${r.maxAdults} adult${r.maxAdults === 1 ? "" : "s"}` : null,
                     r.maxChildren ? `${r.maxChildren} child${r.maxChildren === 1 ? "" : "ren"}` : null,
                     r.maxOccupancy != null ? `max ${r.maxOccupancy}` : null]
                     .filter(Boolean).join(" · ") || "—"}
                 </TableCell>
-                <TableCell className="text-slate-600">{r.bedType || "—"}</TableCell>
-                <TableCell className="text-slate-600">{r.size || "—"}</TableCell>
+                <TableCell className="text-body">{r.bedType || "—"}</TableCell>
+                <TableCell className="text-body">{r.size || "—"}</TableCell>
+                <TableCell>
+                  <RoomRates rates={ratesByRoom.get(r.publicId)} />
+                </TableCell>
                 <TableCell>
                   <Badge variant={r.active ? "green" : "slate"}>{r.active ? "Active" : "Inactive"}</Badge>
                 </TableCell>
@@ -482,7 +534,7 @@ function RoomDialog({ hotel, mode, initial, onClose, onSaved }) {
               <Field label="Size"><Input value={form.size} onChange={set("size")} placeholder="32 sqm" /></Field>
             </div>
             <Field label="Description"><Textarea rows={3} value={form.description} onChange={set("description")} /></Field>
-            <label className="flex items-center gap-2 text-sm font-semibold text-slate-600">
+            <label className="flex items-center gap-2 text-sm font-semibold text-body">
               <input type="checkbox" checked={form.active} onChange={(e) => setForm((f) => ({ ...f, active: e.target.checked }))} />
               Active — offered to tenants
             </label>
@@ -540,8 +592,8 @@ function MealPlansSection({ hotel, onChanged }) {
             {(hotel.mealPlans ?? []).map((m) => (
               <TableRow key={m.publicId}>
                 <TableCell><Badge variant="indigo">{m.code}</Badge></TableCell>
-                <TableCell className="font-bold text-slate-700">{m.name}</TableCell>
-                <TableCell className="text-slate-600">{m.description || "—"}</TableCell>
+                <TableCell className="font-bold text-body">{m.name}</TableCell>
+                <TableCell className="text-body">{m.description || "—"}</TableCell>
                 <TableCell><Badge variant={m.active ? "green" : "slate"}>{m.active ? "Active" : "Inactive"}</Badge></TableCell>
                 <TableCell>
                   <div className="flex justify-end gap-1">
@@ -625,7 +677,7 @@ function MealPlanDialog({ hotel, mode, initial, onClose, onSaved }) {
               <Input value={form.name} onChange={set("name")} placeholder="Breakfast" />
             </Field>
             <Field label="Description"><Textarea rows={3} value={form.description} onChange={set("description")} /></Field>
-            <label className="flex items-center gap-2 text-sm font-semibold text-slate-600">
+            <label className="flex items-center gap-2 text-sm font-semibold text-body">
               <input type="checkbox" checked={form.active} onChange={(e) => setForm((f) => ({ ...f, active: e.target.checked }))} />
               Active — offered to tenants
             </label>
@@ -688,16 +740,16 @@ function Field({ label, required, hint, className, children }) {
     <div className={className}>
       <Label required={required}>{label}</Label>
       {children}
-      {hint && <p className="mt-1 text-[11px] leading-relaxed text-slate-400">{hint}</p>}
+      {hint && <p className="mt-1 text-[11px] leading-relaxed text-muted">{hint}</p>}
     </div>
   );
 }
 
 function ReadRow({ label, value }) {
   return (
-    <div className="flex items-start justify-between gap-4 border-b border-slate-100 py-2 last:border-0">
-      <span className="text-[11px] font-extrabold uppercase tracking-wide text-slate-400">{label}</span>
-      <span className="text-right text-sm font-semibold text-slate-700">{value ?? "—"}</span>
+    <div className="flex items-start justify-between gap-4 border-b border-surface-hover py-2 last:border-0">
+      <span className="text-[11px] font-extrabold uppercase tracking-wide text-muted">{label}</span>
+      <span className="text-right text-sm font-semibold text-body">{value ?? "—"}</span>
     </div>
   );
 }

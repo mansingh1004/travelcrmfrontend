@@ -15,25 +15,25 @@ import { cn, GlassCard } from "./hotelUi";
 export function Gallery({ images = [], alt = "Hotel", className }) {
   const [active, setActive] = useState(0);
   if (!images.length) {
-    return <div className={cn("aspect-[16/9] w-full rounded-2xl bg-slate-100", className)} />;
+    return <div className={cn("aspect-[16/9] w-full rounded-2xl bg-surface-hover", className)} />;
   }
   const go = (d) => setActive((p) => (p + d + images.length) % images.length);
   return (
     <div className={cn("space-y-3", className)}>
-      <div className="group relative overflow-hidden rounded-2xl bg-slate-100 shadow-sm">
+      <div className="group relative overflow-hidden rounded-2xl bg-surface-hover shadow-sm">
         <img src={images[active]} alt={`${alt} ${active + 1}`} loading="lazy"
           className="aspect-[16/9] w-full object-cover transition-transform duration-500 group-hover:scale-105" />
         {images.length > 1 && (
           <>
             <button onClick={() => go(-1)} aria-label="Previous"
-              className="absolute left-3 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-white/85 text-slate-700 shadow-md transition-all hover:bg-white">
+              className="absolute left-3 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-surface/85 text-body shadow-md transition-all hover:bg-surface">
               <ChevronLeft className="h-5 w-5" />
             </button>
             <button onClick={() => go(1)} aria-label="Next"
-              className="absolute right-3 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-white/85 text-slate-700 shadow-md transition-all hover:bg-white">
+              className="absolute right-3 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-surface/85 text-body shadow-md transition-all hover:bg-surface">
               <ChevronRight className="h-5 w-5" />
             </button>
-            <div className="absolute bottom-3 right-3 rounded-full bg-slate-900/60 px-2.5 py-1 text-[11px] font-bold text-white backdrop-blur">
+            <div className="absolute bottom-3 right-3 rounded-full bg-heading/60 px-2.5 py-1 text-[11px] font-bold text-accent-text backdrop-blur">
               {active + 1} / {images.length}
             </div>
           </>
@@ -44,7 +44,7 @@ export function Gallery({ images = [], alt = "Hotel", className }) {
           {images.map((src, i) => (
             <button key={i} onClick={() => setActive(i)}
               className={cn("h-16 w-24 shrink-0 overflow-hidden rounded-xl border-2 transition-all",
-                i === active ? "border-blue-600 shadow-sm" : "border-transparent opacity-70 hover:opacity-100")}>
+                i === active ? "border-accent shadow-sm" : "border-transparent opacity-70 hover:opacity-100")}>
               <img src={src} alt={`thumb ${i + 1}`} loading="lazy" className="h-full w-full object-cover" />
             </button>
           ))}
@@ -82,8 +82,8 @@ export function Donut({ segments, size = 150, thickness = 16, center, centerLabe
         ))}
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="text-[26px] font-extrabold leading-none text-slate-800">{center}</span>
-        {centerLabel && <span className="mt-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">{centerLabel}</span>}
+        <span className="text-[26px] font-extrabold leading-none text-heading">{center}</span>
+        {centerLabel && <span className="mt-1 text-[10px] font-bold uppercase tracking-wide text-muted">{centerLabel}</span>}
       </div>
     </div>
   );
@@ -96,9 +96,9 @@ export function DonutLegend({ segments, className }) {
       {segments.map((s) => (
         <li key={s.key ?? s.label} className="flex items-center gap-2 text-sm">
           <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: s.color }} />
-          <span className="flex-1 font-medium text-slate-600">{s.label}</span>
-          <span className="font-extrabold text-slate-800">{s.value ?? 0}</span>
-          {total > 0 && <span className="w-10 text-right text-xs font-semibold text-slate-400">{Math.round(((s.value || 0) / total) * 100)}%</span>}
+          <span className="flex-1 font-medium text-body">{s.label}</span>
+          <span className="font-extrabold text-heading">{s.value ?? 0}</span>
+          {total > 0 && <span className="w-10 text-right text-xs font-semibold text-muted">{Math.round(((s.value || 0) / total) * 100)}%</span>}
         </li>
       ))}
     </ul>
@@ -109,8 +109,8 @@ export function DonutLegend({ segments, className }) {
    VERTICAL TIMELINE — booking lifecycle / guest journey
 ═════════════════════════════════════════════════════════════ */
 const TONE_DOT = {
-  blue: "bg-blue-500", green: "bg-green-500", amber: "bg-amber-500", red: "bg-red-500",
-  purple: "bg-purple-500", teal: "bg-teal-500", indigo: "bg-indigo-500", slate: "bg-slate-400",
+  blue: "bg-focus", green: "bg-green-500", amber: "bg-amber-500", red: "bg-red-500",
+  purple: "bg-purple-500", teal: "bg-teal-500", indigo: "bg-indigo-500", slate: "bg-muted",
 };
 export function Timeline({ steps = [], className }) {
   return (
@@ -119,15 +119,15 @@ export function Timeline({ steps = [], className }) {
         const done = s.done !== false;
         return (
           <li key={i} className="relative flex gap-4 pb-5 last:pb-0">
-            {i < steps.length - 1 && <span className="absolute left-[7px] top-4 h-full w-px bg-slate-200" />}
+            {i < steps.length - 1 && <span className="absolute left-[7px] top-4 h-full w-px bg-border" />}
             <span className={cn("relative z-10 mt-1 h-3.5 w-3.5 shrink-0 rounded-full ring-4 ring-white",
-              done ? (TONE_DOT[s.tone] || "bg-blue-500") : "bg-slate-300")} />
+              done ? (TONE_DOT[s.tone] || "bg-focus") : "bg-border-strong")} />
             <div className="min-w-0 flex-1">
               <div className="flex items-center justify-between gap-2">
-                <p className={cn("text-sm font-bold", done ? "text-slate-700" : "text-slate-400")}>{s.title}</p>
-                {s.time && <span className="shrink-0 text-[11px] font-semibold text-slate-400">{s.time}</span>}
+                <p className={cn("text-sm font-bold", done ? "text-body" : "text-muted")}>{s.title}</p>
+                {s.time && <span className="shrink-0 text-[11px] font-semibold text-muted">{s.time}</span>}
               </div>
-              {s.detail && <p className="mt-0.5 text-xs text-slate-400">{s.detail}</p>}
+              {s.detail && <p className="mt-0.5 text-xs text-muted">{s.detail}</p>}
             </div>
           </li>
         );
@@ -144,11 +144,11 @@ export function FlowChain({ steps = [], icons = false, className }) {
     <div className={cn("flex flex-wrap items-center gap-2", className)}>
       {steps.map((s, i) => (
         <div key={i} className="flex items-center gap-2">
-          <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[13px] font-bold text-slate-700 shadow-sm">
-            {icons && s.icon && <s.icon className="h-4 w-4 text-blue-600" />}
+          <div className="flex items-center gap-2 rounded-xl border border-border bg-surface px-3 py-2 text-[13px] font-bold text-body shadow-sm">
+            {icons && s.icon && <s.icon className="h-4 w-4 text-accent" />}
             {s.label ?? s}
           </div>
-          {i < steps.length - 1 && <ArrowRight className="h-4 w-4 shrink-0 text-slate-300" />}
+          {i < steps.length - 1 && <ArrowRight className="h-4 w-4 shrink-0 text-border-strong" />}
         </div>
       ))}
     </div>
@@ -170,18 +170,18 @@ export function ERDiagram({ className }) {
     <div className={cn("flex flex-wrap items-stretch gap-3", className)}>
       {entities.map((e, i) => (
         <div key={e.name} className="flex items-center gap-3">
-          <div className="w-40 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-            <div className="flex items-center gap-2 border-b border-slate-100 bg-blue-50/60 px-3 py-2">
-              <e.icon className="h-4 w-4 text-blue-600" />
-              <span className="text-sm font-extrabold text-slate-700">{e.name}</span>
+          <div className="w-40 overflow-hidden rounded-xl border border-border bg-surface shadow-sm">
+            <div className="flex items-center gap-2 border-b border-surface-hover bg-accent-soft/60 px-3 py-2">
+              <e.icon className="h-4 w-4 text-accent" />
+              <span className="text-sm font-extrabold text-body">{e.name}</span>
             </div>
             <ul className="px-3 py-2">
               {e.fields.map((f) => (
-                <li key={f} className="py-0.5 text-[11px] font-medium text-slate-500">{f}</li>
+                <li key={f} className="py-0.5 text-[11px] font-medium text-muted">{f}</li>
               ))}
             </ul>
           </div>
-          {i < entities.length - 1 && <ArrowRight className="h-5 w-5 shrink-0 text-slate-300" />}
+          {i < entities.length - 1 && <ArrowRight className="h-5 w-5 shrink-0 text-border-strong" />}
         </div>
       ))}
     </div>
@@ -192,7 +192,7 @@ export function ERDiagram({ className }) {
    AI INSIGHT CARD
 ═════════════════════════════════════════════════════════════ */
 const TONE_BG = {
-  blue: "from-blue-500 to-blue-700", green: "from-green-500 to-emerald-700",
+  blue: "from-focus to-accent-hover", green: "from-green-500 to-emerald-700",
   amber: "from-amber-500 to-orange-600", purple: "from-purple-500 to-violet-700",
   teal: "from-teal-500 to-cyan-700", red: "from-rose-500 to-red-700",
 };
@@ -201,13 +201,13 @@ export function InsightCard({ title, value, note, tone = "blue", trend }) {
   return (
     <GlassCard className="p-4">
       <div className="flex items-start justify-between gap-2">
-        <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">{title}</p>
-        <span className={cn("flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br text-white", TONE_BG[tone] || TONE_BG.blue)}>
+        <p className="text-[11px] font-bold uppercase tracking-wide text-muted">{title}</p>
+        <span className={cn("flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br text-accent-text", TONE_BG[tone] || TONE_BG.blue)}>
           <Trend className="h-3.5 w-3.5" />
         </span>
       </div>
-      <p className="mt-2 text-2xl font-extrabold text-slate-800">{value}</p>
-      {note && <p className="mt-0.5 text-xs text-slate-400">{note}</p>}
+      <p className="mt-2 text-2xl font-extrabold text-heading">{value}</p>
+      {note && <p className="mt-0.5 text-xs text-muted">{note}</p>}
     </GlassCard>
   );
 }
@@ -216,8 +216,8 @@ export function InsightCard({ title, value, note, tone = "blue", trend }) {
 export function InfoRow({ label, value, className }) {
   return (
     <div className={cn("flex items-start justify-between gap-3 py-2", className)}>
-      <span className="shrink-0 text-xs font-bold uppercase tracking-wide text-slate-400">{label}</span>
-      <span className="text-right text-sm font-semibold text-slate-700">{value ?? "—"}</span>
+      <span className="shrink-0 text-xs font-bold uppercase tracking-wide text-muted">{label}</span>
+      <span className="text-right text-sm font-semibold text-body">{value ?? "—"}</span>
     </div>
   );
 }

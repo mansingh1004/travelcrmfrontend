@@ -1,16 +1,17 @@
 
 import { memo, useState, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom"; 
+import { Link, useNavigate } from "react-router-dom";
 import {
-  Menu, Plane, Bell, User, ChevronDown, ChevronRight, CalendarPlus,
-  Settings, LogOut, HelpCircle, CheckCheck, Zap,
+  Menu, Plane, Bell, User, ChevronDown, ChevronRight,
+  LogOut, HelpCircle, CheckCheck, Search, Plus,
 } from "lucide-react";
+import { useNav } from "../nav/NavProvider";
 import { notificationService } from "@features/reminders";
 import BookingReminderBell from "./BookingReminderBell";
 import ReminderBell from "./ReminderBell";
 import { companyService } from "@features/settings";
 import { getErrorMessage } from "@shared/api/apiError";
-import { hasPermission, P } from "@shared/lib/access";
+import { clearMyEntitlements, clearMyPermissions, hasPermission, hasModule, P } from "@shared/lib/access";
 import { toast } from "@shared/ui/toast";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -83,11 +84,15 @@ function Breadcrumb({ items }) {
           <span key={i} className="flex items-center gap-1">
             {i > 0 && <ChevronRight size={11} className="text-slate-300 flex-shrink-0" />}
             {isLast ? (
-              <span className="text-slate-700 font-medium">{item.label}</span>
-            ) : (
-              <a href={item.href ?? "#"} className="text-slate-400 hover:text-slate-600 transition-colors">
+              <span className="text-slate-400 font-medium">{item.label}</span>
+            ) : item.href ? (
+              // A real client-side Link, not an <a>: an anchor here reloaded the whole
+              // SPA — losing every cached page chunk — just to move up one level.
+              <Link to={item.href} className="text-slate-400 hover:text-slate-600 transition-colors">
                 {item.label}
-              </a>
+              </Link>
+            ) : (
+              <span className="text-slate-400">{item.label}</span>
             )}
           </span>
         );
@@ -98,12 +103,53 @@ function Breadcrumb({ items }) {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
+const isMacPlatform =
+  typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || "");
+
+// Quick Create icon chips. Light surface, so the soft-bg / strong-fg pairing
+// rather than the rail's dark-surface ramp.
+const CREATE_TONE = {
+  violet: "bg-violet-100 text-violet-600",
+  cyan: "bg-cyan-100 text-cyan-600",
+  emerald: "bg-emerald-100 text-emerald-600",
+  teal: "bg-teal-100 text-teal-600",
+  orange: "bg-orange-100 text-orange-600",
+  amber: "bg-amber-100 text-amber-600",
+  rose: "bg-rose-100 text-rose-600",
+  sky: "bg-sky-100 text-sky-600",
+  pink: "bg-pink-100 text-pink-600",
+  slate: "bg-slate-100 text-slate-600",
+};
+
 const Navbar = memo(function Navbar({
-  toggleSidebar,
   appName     = "TravelCRM",
   breadcrumb,
 }) {
   const navigate = useNavigate();
+
+  // Nav state lives in NavProvider so the rail, the tab bar, the launcher and this
+  // header can never disagree about what is open.
+  const {
+    accountItems,
+    quickActions,
+    breadcrumb: autoBreadcrumb,
+    activeDestination,
+    setPaletteOpen,
+    openLauncher,
+  } = useNav();
+
+  // An explicit `breadcrumb` prop still wins — a page that knows something the
+  // registry cannot (a record's name, say) should be able to say so.
+  const crumbs = breadcrumb ?? autoBreadcrumb;
+
+  // Quick Create is now driven by the same gated registry the ⌘K palette uses, so
+  // every create form in the app is offered here — the hand-written version listed
+  // two of thirteen. `group` keeps the menu scannable at that length.
+  const createGroups = quickActions.reduce((acc, action) => {
+    const key = action.group || "Create";
+    (acc[key] ||= []).push(action);
+    return acc;
+  }, {});
 
   const [dropdownOpen,  setDropdownOpen]  = useState(false);
   const [notifOpen,     setNotifOpen]     = useState(false);
@@ -119,14 +165,18 @@ const Navbar = memo(function Navbar({
   // The bell is notifications-only: the badge is the server's unread-notification count and
   // nothing else. Reminders have their own surface and must never be added back in here.
   const badgeCount = unreadCount;
-  const canCreateBooking = hasPermission(P.BOOKING_CREATE);
-  const canCreateLead = hasPermission(P.LEAD_CREATE);
+  // (The old canCreateBooking / canCreateLead pair is gone: Quick Create now reads
+  //  its whole list — and its gates — from the nav registry.)
   const [company, setCompany] = useState(null);
+
+  // Account destinations come from the nav registry, so they are gated the same way
+  // as everything else (a sub-agent has no company profile or subscription page)
+  // and stay searchable from ⌘K. This menu is now their ONLY home — the rail drops
+  // them so it can stay a short list of work screens.
   const menuItems = [
-  { icon: User, label: "My Profile", path: "/CompanyProfile" },
-  { icon: Settings, label: "Settings", path: "/CompanySettings" },
-  { icon: HelpCircle, label: "Help & Support", path: "#" },
-];
+    ...accountItems.map((item) => ({ icon: item.Icon ?? User, label: item.label, path: item.path })),
+    { icon: HelpCircle, label: "Help & Support", path: "#" },
+  ];
 
   useEffect(() => {
     const loadCompany = () => {
@@ -250,16 +300,27 @@ const Navbar = memo(function Navbar({
     setUnreadCount(0);
   };
 
+  // referenceType → destination. Each entry is a function of the notification's
+  // referencePublicId, so a notification lands on the RECORD it is about instead of dumping the
+  // user at the top of an unfiltered list to find it by hand.
+  //
+  // Only types whose detail route genuinely accepts a UUID deep-link:
+  //   • LEAD     /EditLead/:id      — leadService is publicId-keyed throughout
+  //   • BOOKING  /BookingDetails/:id — bookingService: "a booking id is its publicId (UUID)"
+  //   • CUSTOMER /CustomerDetails/:id — CustomerController @PathVariable UUID id
+  // VENDOR deliberately stays a list link: VendorController's /{id} is a @PathVariable **Long**,
+  // so feeding it a referencePublicId would 400. Give Vendor a UUID lookup before changing this.
+  // REMINDER and TASK have no detail route at all yet.
   const NOTIF_ROUTE_MAP = {
-    LEAD: "/allleads",
-    BOOKING: "/Allbookings",
-    REMINDER: "/Reminders",
-    CUSTOMER: "/AllCustomers",
-    VENDOR: "/AllVendors",
+    LEAD: (ref) => (ref ? `/EditLead/${ref}` : "/allleads"),
+    BOOKING: (ref) => (ref ? `/BookingDetails/${ref}` : "/Allbookings"),
+    CUSTOMER: (ref) => (ref ? `/CustomerDetails/${ref}` : "/AllCustomers"),
+    VENDOR: () => "/AllVendors",
+    REMINDER: () => "/Reminders",
     // An unmapped referenceType makes the notification silently unclickable. Task notifications
     // have been published with referenceType "TASK" since the task module shipped, but the backend
     // enum did not list it, so they persisted as null and never reached this map at all.
-    TASK: "/tasks",
+    TASK: () => "/tasks",
   };
 
   const handleClickNotif = async (notif) => {
@@ -270,18 +331,23 @@ const Navbar = memo(function Navbar({
         // server-side and the count returned on refresh. `?? id` keeps it working if a payload
         // ever arrives without a publicId.
         await markNotificationReadById(notif.publicId ?? notif.id);
+        // Match on publicId. NotificationResponseDTO carries NO `id` field at all (it is
+        // documented backend-side as "publicId is the only identifier consumers get"), so
+        // `n.id === notif.id` was `undefined === undefined` — true for EVERY row. One click
+        // greyed the whole dropdown while the badge dropped by one, and reopening the bell
+        // silently reverted it.
         setNotifications((prev) =>
-          prev.map((n) => (n.id === notif.id ? { ...n, status: "READ" } : n))
+          prev.map((n) => (n.publicId === notif.publicId ? { ...n, status: "READ" } : n))
         );
         setUnreadCount((c) => Math.max(0, c - 1));
       } catch (err) {
         toast.error(getErrorMessage(err, "Couldn't mark that notification as read."));
       }
     }
-    const dest = NOTIF_ROUTE_MAP[notif.referenceType];
-    if (dest) {
+    const resolve = NOTIF_ROUTE_MAP[notif.referenceType];
+    if (resolve) {
       setNotifOpen(false);
-      navigate(dest);
+      navigate(resolve(notif.referencePublicId));
     }
   };
 
@@ -294,6 +360,12 @@ const Navbar = memo(function Navbar({
     // Must be cleared with the rest: a surviving userName shows the previous person's name in the
     // Navbar until the next login overwrites it.
     localStorage.removeItem("userName");
+    // This is now the ONLY sign-out in the shell (the rail's copy is gone), so it
+    // has to do the full clear the rail used to do. Leaving these behind means the
+    // next person on a shared browser renders against the previous user's cached
+    // permissions and module entitlements until their own fetch lands.
+    clearMyPermissions();
+    clearMyEntitlements();
     navigate("/login");
   };
 
@@ -302,23 +374,26 @@ const Navbar = memo(function Navbar({
   return (
     <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-3 sm:px-6 lg:px-8 w-full sticky top-0 z-40 shadow-sm transition-all duration-300">
 
-      {/* ── Left: toggle + logo + breadcrumb ─────────────────── */}
-      <div className="flex items-center gap-3 md:gap-5 min-w-0">
+      {/* ── Left: toggle + context (logo on mobile, page title on desktop) ───── */}
+      <div className="flex items-center gap-2 md:gap-4 min-w-0">
 
-        {/* Sidebar toggle - Visible everywhere so desktop mini-sidebar can expand */}
-        {toggleSidebar && (
-          <button
-            onClick={toggleSidebar}
-            className="p-2 -ml-2 rounded-xl text-slate-500 hover:text-slate-800 hover:bg-slate-100 active:scale-95 transition-all"
-            aria-label="Toggle sidebar"
-          >
-            <Menu size={20} />
-          </button>
-        )}
+        {/* The 3-line button opens "All apps". Collapsing the rail lives on the rail
+            itself (and ⌘B); opening the mobile drawer lives on the bottom tab bar —
+            so this one keeps a single, predictable job at every width. */}
+        <button
+          onClick={(e) => openLauncher(e.currentTarget)}
+          className="p-2 -ml-2 rounded-xl text-slate-500 hover:text-slate-800 hover:bg-slate-100 active:scale-95 transition-all"
+          aria-label="All apps"
+          title="All apps"
+        >
+          <Menu size={20} />
+        </button>
 
-        {/* Logo */}
-        <div className="flex items-center gap-2.5 flex-shrink-0">
-          <div className="w-8 h-8 md:w-9 md:h-9 rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center shadow-sm overflow-hidden ring-1 ring-slate-200">
+        {/* Logo — phones only. On desktop the sidebar already carries the brand, so
+            this space goes to the page title and the search box instead of showing
+            the same logo twice. */}
+        <div className="flex items-center gap-2.5 flex-shrink-0 md:hidden">
+          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center shadow-sm overflow-hidden ring-1 ring-slate-200">
             {company?.logoUrl ? (
               <img
                 src={company.logoUrl}
@@ -329,43 +404,57 @@ const Navbar = memo(function Navbar({
               <Plane size={15} className="text-white -rotate-45" />
             )}
           </div>
-          <span className="hidden sm:block font-extrabold text-slate-800 text-[15px] md:text-[16px] tracking-tight">
+          <span className="hidden sm:block font-extrabold text-slate-800 text-[15px] tracking-tight">
             {appName.replace("TravelCRM", "Travel")}
-            <span className="text-blue-600">
-              {appName === "TravelCRM" ? "CRM" : ""}
-            </span>
+            <span className="text-blue-600">{appName === "TravelCRM" ? "CRM" : ""}</span>
           </span>
         </div>
 
-        {/* Divider + breadcrumb (Hidden on mobile, visible on desktop lg:) */}
-        {breadcrumb && (
-          <>
-            <span className="hidden lg:block w-px h-5 bg-slate-200 flex-shrink-0 ml-1" />
-            <Breadcrumb items={breadcrumb} />
-          </>
-        )}
+        {/* Where you are — derived from the nav registry, so every screen gets one
+            without each page having to remember to pass it. */}
+        {/* Page title, with the module it belongs to underneath. Two levels, which
+            is exactly how deep the navigation goes — no invented hierarchy. */}
+        <div className="hidden min-w-0 md:block">
+          <p className="truncate text-[15px] font-bold leading-tight text-slate-800">
+            {activeDestination?.label ?? company?.name ?? appName}
+          </p>
+          {crumbs && <Breadcrumb items={crumbs} />}
+        </div>
+      </div>
+
+      {/* ── Middle: global search ─────────────────────────────────────────────
+          Opens the ⌘K palette rather than being a live input: one search surface,
+          one result ranking, and it works identically from the sidebar button, the
+          keyboard and here. */}
+      <div className="hidden flex-1 justify-center px-4 md:flex lg:px-8">
+        <button
+          type="button"
+          onClick={() => setPaletteOpen(true)}
+          className="flex w-full max-w-md items-center gap-2.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-400 transition-colors hover:border-slate-300 hover:bg-white"
+        >
+          <Search size={15} className="shrink-0" />
+          <span className="flex-1 truncate text-left">Search leads, customers, bookings…</span>
+          <kbd className="hidden rounded border border-slate-200 bg-white px-1.5 py-0.5 font-sans text-[10px] font-semibold text-slate-500 lg:block">
+            {isMacPlatform ? "⌘" : "Ctrl"} K
+          </kbd>
+        </button>
       </div>
 
       {/* ── Right: actions ────────────────────────────────────── */}
-      <div className="flex items-center gap-2 sm:gap-4">
+      <div className="flex items-center gap-2 sm:gap-3">
 
-        {/* Real Desktop Search Bar (Hidden on Mobile, Visible on Tablet/Desktop) */}
-        {/* <div className="hidden md:flex relative max-w-xs xl:max-w-sm mr-2">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input 
-            type="text" 
-            placeholder="Search..." 
-            className="w-full pl-9 pr-4 py-1.5 bg-slate-100 border-transparent rounded-lg text-sm focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all outline-none"
-          />
-        </div> */}
+        {/* Search — phones, where the middle bar is not rendered. */}
+        <button
+          type="button"
+          onClick={() => setPaletteOpen(true)}
+          className="md:hidden p-2 rounded-xl text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition"
+          aria-label="Search"
+        >
+          <Search size={19} />
+        </button>
 
-        {/* Mobile Search Icon (Hidden on Tablet/Desktop) */}
-        {/* <button className="md:hidden p-2 rounded-xl text-slate-500 hover:bg-slate-100 transition">
-          <Search size={18} />
-        </button> */}
-
-        {/* Fast-create menu: booking and Rapid Lead stay one click away without crowding the navbar. */}
-        {(canCreateBooking || canCreateLead) && (
+        {/* Quick Create — every create form the caller is allowed to open. */}
+        {quickActions.length > 0 && (
           <div className="relative">
             <button
               type="button"
@@ -374,63 +463,74 @@ const Navbar = memo(function Navbar({
                 setDropdownOpen(false);
                 setNotifOpen(false);
               }}
-              aria-label="Create booking or rapid lead"
+              aria-label="Quick create"
               aria-haspopup="menu"
               aria-expanded={createOpen}
               title="Quick Create"
-              className="flex items-center gap-2 rounded-lg border border-blue-100 bg-blue-50 px-2.5 py-1.5 text-xs font-semibold text-blue-600 transition-all hover:bg-blue-100 active:scale-95 sm:px-3"
+              className="flex items-center gap-2 rounded-lg bg-blue-600 px-2.5 py-1.5 text-xs font-semibold text-white shadow-sm transition-all hover:bg-blue-700 active:scale-95 sm:px-3"
             >
-              <CalendarPlus size={15} />
+              <Plus size={15} />
               <span className="hidden lg:block">Quick Create</span>
               <ChevronDown size={13} className={`hidden transition-transform sm:block ${createOpen ? "rotate-180" : ""}`} />
             </button>
 
             {createOpen && (
-              <div role="menu" className="absolute right-0 top-full z-50 mt-2 w-64 overflow-hidden rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl shadow-slate-200/60">
-                {canCreateBooking && (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => { setCreateOpen(false); navigate("/CreateBooking"); }}
-                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition hover:bg-blue-50"
-                  >
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-600">
-                      <CalendarPlus size={17} />
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block text-sm font-bold text-slate-800">Create Booking</span>
-                      <span className="block text-[11px] text-slate-500">Start a new confirmed trip</span>
-                    </span>
-                  </button>
-                )}
-                {canCreateLead && (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => { setCreateOpen(false); navigate("/createlead?mode=rapid"); }}
-                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition hover:bg-violet-50"
-                  >
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-100 text-violet-600">
-                      <Zap size={17} />
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block text-sm font-bold text-slate-800">New Enquiry · Rapid</span>
-                      <span className="block text-[11px] text-slate-500">Fast intake and quick quotation</span>
-                    </span>
-                  </button>
-                )}
+              <div
+                role="menu"
+                className="absolute right-0 top-full z-50 mt-2 max-h-[70vh] w-72 overflow-y-auto overscroll-contain rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl shadow-slate-200/60"
+              >
+                {Object.entries(createGroups).map(([group, actions]) => (
+                  <div key={group} className="pb-1 last:pb-0">
+                    <p className="px-3 pb-1 pt-2 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">
+                      {group}
+                    </p>
+                    {actions.map((action) => (
+                      <button
+                        key={action.id}
+                        type="button"
+                        role="menuitem"
+                        onClick={() => { setCreateOpen(false); action.run(); }}
+                        className="flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left transition hover:bg-slate-50"
+                      >
+                        <span
+                          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
+                            CREATE_TONE[action.tone] || CREATE_TONE.slate
+                          }`}
+                        >
+                          <action.Icon size={16} />
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block truncate text-[13px] font-bold text-slate-800">
+                            {action.label}
+                          </span>
+                          {action.sublabel && (
+                            <span className="block truncate text-[11px] text-slate-500">
+                              {action.sublabel}
+                            </span>
+                          )}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ))}
               </div>
             )}
           </div>
         )}
 
         {/* Booking reminders — deliberately NOT `hidden sm:flex` like the button above it, which
-            disappears below 640px. This has to stay reachable on phones. */}
-        <BookingReminderBell />
+            disappears below 640px. This has to stay reachable on phones.
+
+            GATED. Both bells fetch on mount with no permission check, so a user without the
+            permission (an accountant has no REMINDER_READ) or without the module got a 403 on
+            every page load — and authRealm toasts PERMISSION_DENIED / MODULE_NOT_ENABLED. The
+            bell's own .catch(() => 0) hid it from the badge but not from the interceptor.
+            Same gates the nav registry already applies to these destinations. */}
+        {hasPermission(P.BOOKING_READ) && hasModule("BOOKINGS") && <BookingReminderBell />}
 
         {/* General (lead / follow-up) reminders — separate from booking reminders above and
             from the notification bell below. Also not `hidden sm:flex`: stays usable on phones. */}
-        <ReminderBell />
+        {hasPermission(P.REMINDER_READ) && <ReminderBell />}
 
         {/* Bell */}
         <div className="relative">
@@ -482,7 +582,7 @@ const Navbar = memo(function Navbar({
                   </div>
                 ) : notifications.map((n) => (
                   <div
-                    key={n.id}
+                    key={n.publicId}
                     onClick={() => handleClickNotif(n)}
                     className={`px-4 py-3 cursor-pointer transition flex items-start gap-3
                       ${n.status === "UNREAD" ? "bg-blue-50/40 hover:bg-blue-50" : "hover:bg-slate-50"}`}
