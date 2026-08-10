@@ -270,7 +270,7 @@ export function initialModel(lead) {
           id: rowId(), roomNumber: allocation.roomNumber || allocationIndex + 1,
           roomCategoryPreference: allocation.roomCategoryPreference || "Any",
           bedPreference: allocation.bedPreference || "Any",
-          adults: asNumber(allocation.adults), children: asNumber(allocation.children),
+          adults: Math.max(1, asNumber(allocation.adults, 1)), children: Math.max(0, asNumber(allocation.children)),
           infants: asNumber(allocation.infants), extraBeds: asNumber(allocation.extraBeds),
           childAges: Array.isArray(allocation.childAges) ? allocation.childAges : [],
           roomType: "", roomTypeMasterPublicId: null, platformRoomPublicId: null, bedType: "", occupancy: null,
@@ -525,7 +525,43 @@ const findPreferredRoomType = (options, allocation) => {
     || null;
 };
 
-function QuickHotelRoomLine({ stay, line, onUpdate, onRoomType, onMealPlan }) {
+/** Compact keyboard-friendly counter for room occupancy. */
+function RoomOccupancyStepper({ label, value, min = 0, max = 20, onChange }) {
+  const count = Math.min(max, Math.max(min, asNumber(value, min)));
+  const setCount = (next) => onChange(Math.min(max, Math.max(min, next)));
+  const buttonClass =
+    "flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white " +
+    "text-base font-bold text-slate-500 transition hover:border-blue-300 hover:text-blue-600 " +
+    "focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 disabled:cursor-not-allowed disabled:opacity-40";
+
+  return (
+    <div className="inline-flex items-center gap-2" role="group" aria-label={label}>
+      <button
+        type="button"
+        className={buttonClass}
+        onClick={() => setCount(count - 1)}
+        disabled={count <= min}
+        aria-label={`Decrease ${label}`}
+      >
+        -
+      </button>
+      <span className="w-8 text-center text-sm font-extrabold tabular-nums text-slate-800">{count}</span>
+      <button
+        type="button"
+        className={buttonClass}
+        onClick={() => setCount(count + 1)}
+        disabled={count >= max}
+        aria-label={`Increase ${label}`}
+      >
+        +
+      </button>
+    </div>
+  );
+}
+
+function QuickHotelRoomLine({
+  stay, line, onUpdate, onRoomType, onMealPlan, onRemove, canRemove,
+}) {
   const selectedRoom = stay.roomTypeOptions.find((option) =>
     String(option.publicId || "") === String(line.roomTypeMasterPublicId || ""))
     || stay.roomTypeOptions.find((option) => option.name === line.roomType);
@@ -548,6 +584,39 @@ function QuickHotelRoomLine({ stay, line, onUpdate, onRoomType, onMealPlan }) {
         <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-violet-700 ring-1 ring-slate-200">
           {pax} PAX · {line.roomCategoryPreference || "Any room"}
         </span>
+      </div>
+
+      <div className="mb-3 grid gap-3 rounded-lg border border-slate-200 bg-white p-3 sm:grid-cols-2 lg:max-w-xl">
+        <Field label="Adult" hint="12+ yrs">
+          <div data-room-adults>
+            <RoomOccupancyStepper
+              label={`adults in room ${line.roomNumber}`}
+              min={1}
+              value={line.adults}
+              onChange={(adults) => onUpdate({ adults })}
+            />
+          </div>
+        </Field>
+        <Field label="Children" hint="0-12 yrs">
+          <RoomOccupancyStepper
+            label={`children in room ${line.roomNumber}`}
+            min={0}
+            value={line.children}
+            onChange={(children) => onUpdate({
+              children,
+              childAges: (line.childAges || []).slice(0, children),
+            })}
+          />
+        </Field>
+        {canRemove && (
+          <button
+            type="button"
+            onClick={onRemove}
+            className="text-left text-xs font-bold text-rose-600 hover:underline sm:col-span-2"
+          >
+            Remove Room {line.roomNumber}
+          </button>
+        )}
       </div>
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -771,6 +840,41 @@ function QuickHotelStays({ data, setData, loadHotels }) {
     });
   };
 
+  const addRoom = (stayId) => setData((current) => ({
+    ...current,
+    rows: current.rows.map((stay) => {
+      if (stay.id !== stayId) return stay;
+      const source = stay.roomLines[stay.roomLines.length - 1];
+      if (!source) return stay;
+      return {
+        ...stay,
+        // Match the tenant booking form: mirror the previous room so only differences need edits.
+        roomLines: [
+          ...stay.roomLines,
+          {
+            ...source,
+            id: rowId(),
+            roomNumber: stay.roomLines.length + 1,
+            childAges: [...(source.childAges || [])],
+          },
+        ],
+      };
+    }),
+  }));
+
+  const removeRoom = (stayId, roomId) => setData((current) => ({
+    ...current,
+    rows: current.rows.map((stay) => {
+      if (stay.id !== stayId || stay.roomLines.length <= 1) return stay;
+      return {
+        ...stay,
+        roomLines: stay.roomLines
+          .filter((room) => room.id !== roomId)
+          .map((room, index) => ({ ...room, roomNumber: index + 1 })),
+      };
+    }),
+  }));
+
   const addHotel = () => setData((current) => {
     const source = current.rows[current.rows.length - 1];
     return {
@@ -949,8 +1053,24 @@ function QuickHotelStays({ data, setData, loadHotels }) {
                 onUpdate={(patch) => updateRoom(stay.id, line.id, patch)}
                 onRoomType={(selectedKey) => chooseRoomType(stay, line, selectedKey)}
                 onMealPlan={(selectedKey) => chooseMealPlan(stay, line, selectedKey)}
+                onRemove={() => removeRoom(stay.id, line.id)}
+                canRemove={stay.roomLines.length > 1}
               />
             ))}
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => addRoom(stay.id)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-blue-300 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700 transition hover:bg-blue-100"
+              >
+                <Plus className="h-4 w-4" /> Add Room
+              </button>
+              <span className="text-xs font-semibold text-slate-500">
+                {stay.roomLines.length} room{stay.roomLines.length === 1 ? "" : "s"}
+                {" / "}{stay.roomLines.reduce((sum, room) => sum + asNumber(room.adults), 0)} adults
+                {" / "}{stay.roomLines.reduce((sum, room) => sum + asNumber(room.children), 0)} children
+              </span>
+            </div>
           </div>
         </SectionCard>
       ))}
@@ -1879,6 +1999,14 @@ export const validateQuickQuote = (model) => {
   if (!model.title.trim()) return { message: "Enter a quotation title.", section: null, field: "[data-quick-title]" };
   if (model.enabledCore.length === 0 && model.addons.rows.length === 0) {
     return { message: "Select at least one service for this quotation.", section: SERVICES_STEP };
+  }
+  if (model.enabledCore.includes("hotel")
+    && model.hotel.rows.some((stay) => stay.roomLines.some((room) => asNumber(room.adults) < 1))) {
+    return {
+      message: "Every hotel room needs at least one adult.",
+      section: "hotel",
+      field: "[data-room-adults]",
+    };
   }
   if (model.enabledCore.includes("hotel")
     && model.hotel.rows.some((stay) => stay.roomLines.some((room) => asNumber(room.pricePerRoom) <= 0))) {
