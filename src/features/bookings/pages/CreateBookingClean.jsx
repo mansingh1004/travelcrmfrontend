@@ -290,6 +290,11 @@ export default function BookingFormPage() {
        • the update payload, which must send money only when it actually changed — see handleSubmit. */
   const loadedRef = useRef({ travelDate: "", customerAmount: "", vendorPublicId: "", vendorCost: "", paidAmount: "" });
   const [bookingCode, setBookingCode] = useState("");
+  /* Where a lead-seeded Customer Amount came from, so the field can say so. Without it the clerk
+     sees a number they did not type and has no way to tell whether it is the quoted price or a
+     leftover — which is exactly when someone "corrects" a correct figure. Holds the seeded amount
+     too, so the note disappears the moment they edit it and it stops describing the box. */
+  const [amountOrigin, setAmountOrigin] = useState(null);
   const [leads, setLeads] = useState([]);
   const [assignees, setAssignees] = useState([]);
   const [vendors, setVendors] = useState([]);
@@ -441,6 +446,15 @@ export default function BookingFormPage() {
   const applyLead = useCallback((lead) => {
     if (!lead) return;
 
+    // getLeadById populates latestQuotation (LeadServiceImpl:482), so this is present on the
+    // lead-detail read this page uses — not just on the list.
+    const quotedTotal = lead.latestQuotation?.grandTotal;
+    setAmountOrigin(
+      quotedTotal != null
+        ? { amount: String(quotedTotal), version: lead.latestQuotation?.version || null }
+        : null
+    );
+
     const firstLeg = Array.isArray(lead.itinerary) ? lead.itinerary[0] : null;
     const destinationName = typeof firstLeg?.destination === "string"
       ? firstLeg.destination
@@ -503,7 +517,17 @@ export default function BookingFormPage() {
       specialAssistanceNotes: lead.specialAssistanceNotes || lead.assistanceNotes || current.specialAssistanceNotes,
       itinerary: itinerary || current.itinerary,
       tripNotes: lead.notes || current.tripNotes,
-      customerAmount: lead.budget != null ? String(lead.budget) : current.customerAmount,
+      /* Seeded from the LATEST QUOTATION, with budget only as a fallback.
+         Budget is what the customer said they might spend at enquiry time; the quotation's grand
+         total is what was actually put to them in writing, and it is the figure the booking should
+         be for. The convert-to-booking modal has carried the quotation all along (its placeholder
+         literally reads "Carried from quotation") — this path was the one still seeding budget, so
+         the same lead produced two different amounts depending on which button the agent pressed.
+         A lead that was never quoted still falls back to budget, which beats an empty box. */
+      customerAmount:
+        quotedTotal != null ? String(quotedTotal)
+          : lead.budget != null ? String(lead.budget)
+            : current.customerAmount,
       services: Array.isArray(lead.services)
         ? lead.services.map((item) => typeof item === "string" ? item : item.serviceType || item.name).filter(Boolean)
         : current.services,
@@ -1640,6 +1664,16 @@ export default function BookingFormPage() {
                   <IndianRupee className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                   <input name="customerAmount" type="number" min="0" step="0.01" value={form.customerAmount} onChange={(event) => setField("customerAmount", event.target.value)} onBlur={() => blurField("customerAmount")} onWheel={(event) => event.currentTarget.blur()} placeholder="0.00" className={controlClass("customerAmount", true)} />
                 </div>
+                {/* Shown only while the box still holds exactly what was seeded — once the clerk
+                    types their own figure the note would be describing a number that is no longer
+                    there. */}
+                {amountOrigin && form.customerAmount === amountOrigin.amount && (
+                  <p className="mt-1.5 text-[11px] font-normal leading-relaxed text-slate-400">
+                    From the latest quotation
+                    {amountOrigin.version ? ` (${amountOrigin.version})` : ""} — change it if the
+                    agreed price differs.
+                  </p>
+                )}
               </Field>
               {/* Vendor gates Vendor Cost. The amount used to be asked for on its own and was
                   REQUIRED, so every booking carried a supplier figure with no payee — and the agent
