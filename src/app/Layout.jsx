@@ -88,6 +88,7 @@ import NavProvider from '@app/nav/NavProvider';
 import AppCommandPalette from '@app/chrome/AppCommandPalette';
 import AppLauncher from '@app/chrome/AppLauncher';
 import MobileTabBar from '@app/chrome/MobileTabBar';
+import CurrencyConverter from '@app/chrome/CurrencyConverter';
 
 // Claim window. The PROVIDER wraps the whole chrome so the single SSE subscription lives above both
 // consumers — the always-mounted toast host and the leads page that mounts on navigation. Two
@@ -132,6 +133,11 @@ const Layout = () => {
           any page, from any trigger. */}
       <AppCommandPalette />
       <AppLauncher />
+
+      {/* Currency converter — Alt+C, or from ⌘K. Mounted here for the same reason
+          as the two above: a travel desk prices a trip from whatever screen it is
+          on, and a converter you have to navigate to is a converter nobody uses. */}
+      <CurrencyConverter />
 
        {/* Global reminder popup — visible on every authenticated CRM page.
            Gated on REMINDER_READ: it fetches on mount, on a 60s interval, on window focus AND on

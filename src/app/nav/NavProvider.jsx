@@ -7,6 +7,7 @@
 // It also holds the global hotkeys:
 //   ⌘K / Ctrl+K   open the command palette (works from inside a form field too)
 //   ⌘B / Ctrl+B   collapse / expand the desktop rail
+//   Alt+C         open the currency converter
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
@@ -54,6 +55,10 @@ export default function NavProvider({ children }) {
   // so nothing keeps a DOM node alive after the trigger unmounts.
   const [launcherAnchor, setLauncherAnchor] = useState(null);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  // Currency converter. `seed` is a parsed query handed over by the palette ("100 usd
+  // to inr"), so opening the full tool from a typed sum keeps the sum.
+  const [converterOpen, setConverterOpen] = useState(false);
+  const [converterSeed, setConverterSeed] = useState(null);
   // Default to the icon rail: it expands on hover and closes the moment the pointer
   // leaves, so the page keeps the width unless someone deliberately pins it open.
   const [railCollapsed, setRailCollapsed] = useRailCollapsed(NAV_NAMESPACE, true);
@@ -149,6 +154,22 @@ export default function NavProvider({ children }) {
     setLauncherOpen(true);
   }, []);
 
+  /**
+   * Open the converter, optionally seeded with `{ amount, from, to }`.
+   * Closes the palette: they are both centre-screen overlays, and stacking them
+   * leaves the palette's input holding focus above a dialog nobody can type into.
+   */
+  const openConverter = useCallback((seed = null) => {
+    setConverterSeed(seed);
+    setPaletteOpen(false);
+    setConverterOpen(true);
+  }, []);
+
+  const closeConverter = useCallback(() => {
+    setConverterOpen(false);
+    setConverterSeed(null);
+  }, []);
+
   const go = useCallback(
     (path) => {
       setLauncherOpen(false);
@@ -171,7 +192,18 @@ export default function NavProvider({ children }) {
       const mod = e.metaKey || e.ctrlKey;
       if (mod && e.key.toLowerCase() === "k") {
         e.preventDefault();
+        setConverterOpen(false);
         setPaletteOpen((v) => !v);
+        return;
+      }
+      // Alt+C — currency converter. NOT Ctrl/⌘+Shift+C (Chrome's inspect-element) and
+      // not a bare letter, which would fire while typing a customer's name.
+      // `e.code`, because on a Mac Option+C types "ç" and `e.key` would never be "c".
+      if (e.altKey && !e.ctrlKey && !e.metaKey && e.code === "KeyC") {
+        e.preventDefault();
+        setConverterSeed(null);
+        setPaletteOpen(false);
+        setConverterOpen((v) => !v);
         return;
       }
       if (mod && e.key.toLowerCase() === "b") {
@@ -215,6 +247,10 @@ export default function NavProvider({ children }) {
       setLauncherOpen,
       launcherAnchor,
       openLauncher,
+      converterOpen,
+      converterSeed,
+      openConverter,
+      closeConverter,
       mobileNavOpen,
       setMobileNavOpen,
       go,
@@ -240,6 +276,10 @@ export default function NavProvider({ children }) {
       launcherOpen,
       launcherAnchor,
       openLauncher,
+      converterOpen,
+      converterSeed,
+      openConverter,
+      closeConverter,
       mobileNavOpen,
       go,
     ],

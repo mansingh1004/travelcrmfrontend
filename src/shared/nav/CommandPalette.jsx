@@ -4,7 +4,10 @@
 // console) with two skins. It answers the "too many menu items" problem directly:
 // you never have to FIND a menu, you type where you want to go.
 //
-// Three groups, in the order a CRM user actually thinks:
+// Four groups, in the order a CRM user actually thinks:
+//   0. Convert   — typing "100 usd to inr" answers right here (opt-in per realm via
+//                  `enableCurrency`). A conversion is a question with one answer, so
+//                  it outranks every list below it.
 //   1. Records   — leads / customers / bookings (async; see globalSearchService.
 //                  The backend is not built yet, so this group is simply absent
 //                  until it is — no error, no empty box).
@@ -17,10 +20,20 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowRight, CornerDownLeft, Loader2, Search, X } from "lucide-react";
+import { ArrowLeftRight, ArrowRight, Coins, CornerDownLeft, Loader2, Search, X } from "lucide-react";
 
 import { searchDestinations } from "./navModel";
 import { searchRecords } from "../api/globalSearchService";
+import { cachedRates, getRates } from "../api/fxService";
+import {
+  convert,
+  formatMoney,
+  matchesConverterKeyword,
+  parseFxQuery,
+  plainAmount,
+  rateLine,
+} from "../lib/currency";
+import { toast } from "../ui/toast";
 
 const SKIN = {
   app: {
@@ -68,6 +81,8 @@ export default function CommandPalette({
   onNavigate,
   theme = "app",
   enableRecordSearch = false,
+  enableCurrency = false,
+  onOpenConverter,
   placeholder = "Search or jump to…",
 }) {
   const skin = SKIN[theme] || SKIN.app;
@@ -75,6 +90,10 @@ export default function CommandPalette({
   const [cursor, setCursor] = useState(0);
   const [records, setRecords] = useState(null);
   const [recordsLoading, setRecordsLoading] = useState(false);
+  // Rates are read from cache synchronously so the first keystroke already converts;
+  // the network only runs when a query actually looks like money.
+  const [fx, setFx] = useState(() => (enableCurrency ? cachedRates() : null));
+  const fxRequested = useRef(false);
 
   const inputRef = useRef(null);
   const listRef = useRef(null);
@@ -87,6 +106,7 @@ export default function CommandPalette({
     setQuery("");
     setCursor(0);
     setRecords(null);
+    fxRequested.current = false;   // a fresh open may re-check rates; getRates() still serves from cache
     const t = window.setTimeout(() => inputRef.current?.focus(), 0);
 
     // Lock the page behind the palette so a trackpad scroll doesn't move it.
@@ -137,10 +157,67 @@ export default function CommandPalette({
     };
   }, [query, open, enableRecordSearch]);
 
+  // ── Currency ───────────────────────────────────────────────────────────────
+  // Parsing is synchronous and pure (shared/lib/currency), so the answer appears on
+  // the keystroke that completes the query rather than after a round-trip.
+  const fxCodes = useMemo(() => (fx?.rates ? new Set(Object.keys(fx.rates)) : undefined), [fx]);
+  const fxQuery = useMemo(
+    () => (enableCurrency ? parseFxQuery(query, fxCodes) : null),
+    [enableCurrency, query, fxCodes],
+  );
+
+  // Fetch only once the user has typed something monetary — opening the palette to
+  // find a lead should not cost a rates request.
+  useEffect(() => {
+    if (!open || !enableCurrency || fxRequested.current) return;
+    if (!fxQuery && !matchesConverterKeyword(query)) return;
+    fxRequested.current = true;
+    getRates().then(setFx);
+  }, [open, enableCurrency, fxQuery, query]);
+
+  const fxRows = useMemo(() => {
+    if (!enableCurrency) return [];
+    const rows = [];
+
+    if (fxQuery) {
+      const value = convert(fxQuery.amount, fxQuery.from, fxQuery.to, fx?.rates);
+      if (value !== null) {
+        rows.push({
+          id: "fx.result",
+          kind: "fx",
+          Icon: ArrowLeftRight,
+          label: formatMoney(value, fxQuery.to),
+          sublabel: `${fxQuery.amount} ${fxQuery.from} → ${fxQuery.to} · ${rateLine(fxQuery.from, fxQuery.to, fx?.rates)}`,
+          copyValue: plainAmount(value),
+          shortcut: "copy",
+        });
+      }
+    }
+
+    if ((fxQuery || matchesConverterKeyword(query)) && onOpenConverter) {
+      rows.push({
+        id: "fx.open",
+        kind: "action",
+        Icon: Coins,
+        label: "Currency converter",
+        // Only when a sum was typed and we could not answer it — that is the one case
+        // the user needs told, because the converter will ask them for a rate.
+        sublabel: fxQuery && rows.length === 0 ? "Live rates unavailable — set your own rate" : undefined,
+        shortcut: "Alt C",
+        run: () => onOpenConverter(fxQuery),
+      });
+    }
+
+    return rows;
+  }, [enableCurrency, fxQuery, fx, query, onOpenConverter]);
+
   // ── Result groups ──────────────────────────────────────────────────────────
   const groups = useMemo(() => {
     const q = query.trim();
     const out = [];
+
+    // First: a conversion is a direct answer, not a list to choose from.
+    if (fxRows.length) out.push({ id: "fx", label: "Convert", rows: fxRows });
 
     if (q && Array.isArray(records) && records.length) {
       out.push({ id: "records", label: "Records", rows: records });
@@ -186,7 +263,7 @@ export default function CommandPalette({
     }
 
     return out.filter((g) => g.rows.length);
-  }, [query, records, destinations, actions, recents]);
+  }, [query, records, destinations, actions, recents, fxRows]);
 
   // Flatten for index-based keyboard traversal across group boundaries.
   const rows = useMemo(() => groups.flatMap((g) => g.rows), [groups]);
@@ -205,6 +282,19 @@ export default function CommandPalette({
     (row) => {
       if (!row) return;
       onClose?.();
+      if (row.kind === "fx") {
+        // The bare number, not the formatted string — this gets pasted into a price field.
+        const text = row.copyValue;
+        if (navigator.clipboard?.writeText) {
+          navigator.clipboard
+            .writeText(text)
+            .then(() => toast.success(`Copied ${text}`))
+            .catch(() => toast.info(text));
+        } else {
+          toast.info(text);   // no clipboard API outside a secure context
+        }
+        return;
+      }
       if (row.kind === "action") row.run?.();
       else if (row.path) onNavigate?.(row.path);
     },
@@ -342,6 +432,15 @@ export default function CommandPalette({
                         <span className={`hidden shrink-0 text-xs sm:block ${skin.meta}`}>
                           {row.parentLabel}
                         </span>
+                      )}
+                      {/* A row may advertise its own hotkey (the converter) or what Enter
+                          will do (copy) — the palette is where people learn shortcuts. */}
+                      {row.shortcut && (
+                        <kbd
+                          className={`hidden shrink-0 rounded border px-1.5 py-0.5 font-sans text-[10px] sm:block ${skin.kbd}`}
+                        >
+                          {row.shortcut}
+                        </kbd>
                       )}
                       {active && <CornerDownLeft size={13} className="shrink-0 opacity-60" />}
                     </button>
