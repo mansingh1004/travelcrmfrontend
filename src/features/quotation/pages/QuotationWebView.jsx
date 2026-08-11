@@ -583,7 +583,7 @@
 //         </div>
 //       )}
 
-//       {/* ━━━━━ PRICE BREAKDOWN ━━━━━ */}
+
 //       {(totals.subtotal != null || grand != null) && (
 //         <div style={{ maxWidth:1040, margin:"0 auto", padding:"64px 24px 0" }}>
 //           <SectionTitle sub="Transparent, no hidden costs">Price Breakdown</SectionTitle>
