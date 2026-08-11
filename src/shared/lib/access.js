@@ -67,6 +67,10 @@ export const P = {
   USER_READ: "USER_READ", USER_CREATE: "USER_CREATE", USER_UPDATE: "USER_UPDATE", USER_DELETE: "USER_DELETE",
   REPORT_VIEW: "REPORT_VIEW",
   SETTINGS_MANAGE: "SETTINGS_MANAGE",
+  // Communication. COMM_READ also gates the in-app Mailbox (features/mailbox) — reading the
+  // agency's own inbox is the same authority as reading its conversations, so it deliberately
+  // does NOT get a permission of its own.
+  COMM_READ: "COMM_READ",
   TRASH_VIEW: "TRASH_VIEW", TRASH_RESTORE: "TRASH_RESTORE", TRASH_DELETE: "TRASH_DELETE",
   FLEET_READ: "FLEET_READ", FLEET_CREATE: "FLEET_CREATE", FLEET_UPDATE: "FLEET_UPDATE", FLEET_DELETE: "FLEET_DELETE",
   // Fleet MONEY is a separate authority from fleet operations: a dispatcher records forty cost rows

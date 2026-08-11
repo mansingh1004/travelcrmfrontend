@@ -15,6 +15,7 @@ export { default as ConsoleUsers } from "./pages/Users";
 export { default as ConsoleSuperAdmins } from "./pages/SuperAdmins";
 export { default as ConsoleFeatureFlags } from "./pages/FeatureFlags";
 export { default as ConsoleGlobalConfig } from "./pages/GlobalConfig";
+export { default as ConsolePlatformEmail } from "./pages/PlatformEmail";
 export { default as ConsoleAuditLog } from "./pages/AuditLog";
 export { default as ConsoleAnnouncements } from "./pages/Announcements";
 export { default as ConsoleOps } from "./pages/Ops";

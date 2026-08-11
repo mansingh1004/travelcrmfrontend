@@ -48,6 +48,7 @@ import {
   Users,
   Zap,
   BellRing,
+  Inbox,
   CircleUser,
 } from "lucide-react";
 
@@ -110,6 +111,18 @@ export const NAV_SECTIONS = [
         tone: "fuchsia",
         keywords: "todo assignments follow up",
         can: () => hasPermission(P.TASK_READ) && hasModule("TASKS"),
+      },
+      {
+        id: "mailbox",
+        label: "Mailbox",
+        Icon: Inbox,
+        tone: "sky",
+        keywords: "email inbox sent mail gmail imap",
+        // Same authority as reading conversations — see the note on P.COMM_READ — and the same plan
+        // module, matching the ModuleAccessFilter rule for /api/mailbox. Without hasModule the row
+        // showed on a plan that excludes COMMUNICATION and every call behind it answered 403.
+        can: () => hasPermission(P.COMM_READ) && hasModule("COMMUNICATION"),
+        path: "/Mailbox",
       },
       {
         id: "reminders",
