@@ -27,6 +27,7 @@ import {
 import { upgradeRequestService } from "./api/upgradeRequestService";
 import { subAgentLicenseService } from "./api/subAgentLicenseService";
 import { marketplaceBookingService } from "./api/marketplaceBookingService";
+import { hotelNominationService } from "./api/marketplaceAdminService";
 
 // Static: unlike the tenant registry there are no permission gates to re-evaluate,
 // so this resolves once at module load rather than on every render.
@@ -45,6 +46,7 @@ export default function ConsoleSidebar({ collapsed, mobileOpen, onCloseMobile, o
   const { pathname } = useLocation();
   const [pendingUpgrades, setPendingUpgrades] = useState(0);
   const [pendingHotelRequests, setPendingHotelRequests] = useState(0);
+  const [openNominations, setOpenNominations] = useState(0);
 
   const { pins, toggle: togglePin } = usePins(CONSOLE_NAV_NAMESPACE, CONSOLE_DEFAULT_PINS);
   const pinned = useResolvedIds(pins, DESTINATIONS);
@@ -69,10 +71,13 @@ export default function ConsoleSidebar({ collapsed, mobileOpen, onCloseMobile, o
         subAgentLicenseService.pendingCount().catch(() => ({ count: 0 })),
         // Note: this one resolves to a NUMBER, not a {count} object like its siblings.
         marketplaceBookingService.pendingCount().catch(() => 0),
-      ]).then(([u, s, h]) => {
+        // Also a bare NUMBER, like its neighbour above.
+        hotelNominationService.openCount().catch(() => 0),
+      ]).then(([u, s, h, n]) => {
         if (!alive) return;
         setPendingUpgrades(Number(u?.count ?? 0) + Number(s?.count ?? 0));
         setPendingHotelRequests(Number(h ?? 0));
+        setOpenNominations(Number(n ?? 0));
       });
     refresh();
     window.addEventListener("focus", refresh);
@@ -85,6 +90,7 @@ export default function ConsoleSidebar({ collapsed, mobileOpen, onCloseMobile, o
   const badgeFor = (item) => {
     if (item.badge === "upgrades") return pendingUpgrades;
     if (item.badge === "hotelRequests") return pendingHotelRequests;
+    if (item.badge === "hotelNominations") return openNominations;
     return 0;
   };
 
