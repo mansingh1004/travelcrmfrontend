@@ -44,6 +44,25 @@ export function MarketplaceBookings() {
   const [awaitingCount, setAwaitingCount] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  /**
+   * What this tenant currently owes the platform, across every booking.
+   *
+   * Loaded once and swallows its own error, exactly like the awaiting badge: a credit endpoint that
+   * fails must not cost the user their list of bookings.
+   *
+   * Read from `/api/me/marketplace-credit`, which sits OUTSIDE the module gate on purpose — hiding
+   * what a tenant owes behind the add-on that just lapsed would be the worst possible moment to
+   * hide it.
+   */
+  const [credit, setCredit] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    marketplaceService.myCredit()
+      .then((c) => { if (alive) setCredit(c); })
+      .catch(() => { /* silent — the strip simply does not render */ });
+    return () => { alive = false; };
+  }, []);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -111,6 +130,8 @@ export function MarketplaceBookings() {
           </div>
         </Notice>
       )}
+
+      <CreditStrip credit={credit} />
 
       <Tabs options={tabs} value={status} onChange={changeStatus} className="mb-4" />
 
@@ -184,6 +205,68 @@ export function MarketplaceBookings() {
         onPage={setPage}
       />
     </Page>
+  );
+}
+
+/**
+ * The tenant's running balance with the platform.
+ *
+ * <h3>Why this is here at all</h3>
+ * The platform can now refuse to confirm a request that would take a tenant past their credit
+ * ceiling. A limit a tenant cannot see is a limit they will hit without warning, mid-booking, with
+ * a customer on the phone — so the number that governs the refusal has to be on the screen where
+ * they place the orders.
+ *
+ * <h3>Two shapes, because "no limit" is not "zero limit"</h3>
+ * `enforced:false` means the platform is not applying a ceiling to this tenant — the common case
+ * today, since a tenant with no configured row is deliberately not gated. Rendering a limit there
+ * would present a number as binding when nothing is enforcing it, so the strip shows the balance
+ * alone. Only when a ceiling is actually in force does it show headroom.
+ *
+ * Nothing renders at all when there is no balance and no ceiling: a debt-free tenant does not need
+ * a panel telling them so.
+ */
+function CreditStrip({ credit }) {
+  if (!credit) return null;
+
+  const outstanding = Number(credit.outstanding ?? 0);
+  const enforced = !!credit.enforced;
+  if (outstanding <= 0 && !enforced) return null;
+
+  const limit = Number(credit.creditLimit ?? 0);
+  const available = Number(credit.available ?? 0);
+  // "Nearly out of room" is worth a warning; "already out" is worth a strong one, because the next
+  // request will be refused rather than merely tight.
+  const tone = !enforced ? "info" : available <= 0 ? "warn" : available < limit * 0.15 ? "warn" : "info";
+
+  return (
+    <Notice tone={tone} className="mb-5">
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-1">
+        <span>
+          <span className="text-slate-500">Outstanding with the platform</span>{" "}
+          <span className="font-medium tabular-nums">{fmtMoney(outstanding, credit.currency)}</span>
+          {credit.unsettledBookings > 0 && (
+            <span className="text-slate-500">
+              {" "}across {credit.unsettledBookings} booking{credit.unsettledBookings === 1 ? "" : "s"}
+            </span>
+          )}
+        </span>
+
+        {enforced && (
+          <span>
+            <span className="text-slate-500">Available credit</span>{" "}
+            <span className="font-medium tabular-nums">{fmtMoney(available, credit.currency)}</span>
+            <span className="text-slate-500"> of {fmtMoney(limit, credit.currency)}</span>
+          </span>
+        )}
+      </div>
+      {enforced && available <= 0 && (
+        <p className="mt-1 text-slate-600">
+          New requests may be declined until some of this is settled. Talk to the platform if you
+          need the limit raised.
+        </p>
+      )}
+    </Notice>
   );
 }
 

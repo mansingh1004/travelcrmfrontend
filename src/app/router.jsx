@@ -123,6 +123,7 @@ const ConsoleHotelPartners = lazyPage(consoleFeature, "ConsoleHotelPartners");
 const ConsolePlatformHotelDetail = lazyPage(consoleFeature, "ConsolePlatformHotelDetail");
 const ConsoleMarketplaceBookings = lazyPage(consoleFeature, "ConsoleMarketplaceBookings");
 const ConsoleMarketplaceCommissions = lazyPage(consoleFeature, "ConsoleMarketplaceCommissions");
+const ConsoleMarketplaceOccupancy = lazyPage(consoleFeature, "ConsoleMarketplaceOccupancy");
 
 const hotelPartner = () => import("@features/hotelpartner");
 const HotelPartnerRegister = lazyPage(hotelPartner, "HotelPartnerRegister");
@@ -267,6 +268,11 @@ const AppRouter = () => {
               <Route path="hotel-catalog/:publicId" element={<ConsolePlatformHotelDetail />} />
               {/* The approval queue. Only a decision taken here can confirm a tenant's hotel. */}
               <Route path="hotel-requests" element={<ConsoleMarketplaceBookings />} />
+              {/*
+                What the platform has SOLD, night by night — not what is available. There is no
+                allotment to report on; this is the exposure the operator already carries.
+              */}
+              <Route path="hotel-occupancy" element={<ConsoleMarketplaceOccupancy />} />
               {/* The platform earning ledger — append-only, and SuperAdmin-only by construction. */}
               <Route path="hotel-commissions" element={<ConsoleMarketplaceCommissions />} />
               <Route path="palette" element={<ConsolePalette />} />

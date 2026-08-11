@@ -73,6 +73,60 @@ export function eventDayKey(ev) {
     : dateKey(d);
 }
 
+/**
+ * A multi-night stay, as one entry per night it occupies.
+ *
+ * <h3>Why this exists</h3>
+ * Every other calendar source is a POINT — a flight departs, a task is due, a payment falls due —
+ * and bucketing an event to one day is right for all of them. A hotel stay is a SPAN, and treating
+ * it as a point made the calendar unable to answer the question a day view is usually asked: a
+ * 10→14 August stay was a single mark on the 10th, so opening the 12th showed nothing even though
+ * the guest was in the hotel that night.
+ *
+ * The backend already returns the row on every day it spans (its query is an overlap, not a
+ * BETWEEN) and each event carries both `start` and `end`. This turns that one event into the
+ * per-night entries the day-bucketed grid needs.
+ *
+ * <h3>Check-out is exclusive</h3>
+ * A stay from the 10th to the 12th occupies the nights of the 10th and 11th and is GONE on the
+ * 12th — the same rule the whole booking stack uses. The loop therefore stops strictly before
+ * `end`. Getting this wrong shows a guest in a room they checked out of, which is exactly the sort
+ * of error nobody notices until a property is over-promised.
+ *
+ * @returns {Array<Object>} the event, marked up with `_night: {index, total, first, last}` so a
+ *          renderer can say "night 2 of 4" rather than repeating "Check-in" four times. A single
+ *          night, or an event with no usable `end`, returns the event untouched — callers must be
+ *          able to treat the result uniformly.
+ */
+export function expandStayNights(ev) {
+  if (!ev?.start || !ev?.end) return [ev];
+
+  const start = new Date(ev.start);
+  const end = new Date(ev.end);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return [ev];
+
+  // Compare at day granularity: these arrive as all-day instants, and an hours-level comparison
+  // would make a stay one night longer or shorter depending on the viewer's timezone.
+  const dayMs = 86400000;
+  const startDay = Math.floor(start.getTime() / dayMs);
+  const endDay = Math.floor(end.getTime() / dayMs);
+  const nights = endDay - startDay;
+  if (nights <= 1) return [ev];
+
+  const out = [];
+  for (let i = 0; i < nights; i += 1) {
+    const night = new Date((startDay + i) * dayMs);
+    out.push({
+      ...ev,
+      // A distinct id per night, or React reconciles four nights of the same stay as one row.
+      id: `${ev.id}:n${i}`,
+      start: night.toISOString(),
+      _night: { index: i + 1, total: nights, first: i === 0, last: i === nights - 1 },
+    });
+  }
+  return out;
+}
+
 export const isSameDay = (a, b) =>
   a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 

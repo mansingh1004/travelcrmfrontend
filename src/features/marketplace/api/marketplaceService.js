@@ -27,6 +27,12 @@ const BASE = "/hotel-marketplace";
  */
 const HISTORY_BASE = "/me/hotel-bookings";
 
+/**
+ * The tenant's own credit position. Also under `/api/me` rather than `BASE`, for the same reason
+ * as HISTORY_BASE: what a tenant OWES must not disappear when the add-on lapses.
+ */
+const CREDIT_BASE = "/me/marketplace-credit";
+
 /** `ApiResponse<T>` → `T`. Falls back to the raw body if a proxy ever answers without the envelope. */
 const body = (res) => res?.data?.data ?? res?.data ?? null;
 
@@ -48,15 +54,20 @@ export const marketplaceService = {
   /**
    * GET /hotel-marketplace/hotels — paged MarketplaceHotelSummaryDto.
    *
+   * @param {string} [stayDate] `YYYY-MM-DD`. Affects the `fromPricePerNight` on each row ONLY — a
+   *        commercial rule's validity window is matched against the stay, so a December search
+   *        priced at November's markup would be wrong. It is **not** an availability filter: this
+   *        release holds no allotment, so no date narrows the result set.
+   *
    * @returns {Promise<{items: Array, pagination: Object|null}>} `items` is always an array, so a
    *          call site never has to guard `.map` against a malformed body.
    */
   searchHotels: async (
-    { page = 0, size = 12, sortBy, sortDir, q, city, countryCode, minStars } = {},
+    { page = 0, size = 12, sortBy, sortDir, q, city, countryCode, minStars, stayDate } = {},
     config = {},
   ) => {
     const res = await API.get(`${BASE}/hotels`, {
-      params: clean({ page, size, sortBy, sortDir, q, city, countryCode, minStars }),
+      params: clean({ page, size, sortBy, sortDir, q, city, countryCode, minStars, stayDate }),
       ...config,
     });
     const rows = res?.data?.data;
@@ -82,9 +93,92 @@ export const marketplaceService = {
     body(await API.post(`${BASE}/hotels/import-all`,
       clean({ publicIds, q, city, countryCode, minStars }), { timeout: 120000 })),
 
-  /** GET /hotel-marketplace/hotels/{publicId} — MarketplaceHotelDetailDto (rooms + meal plans, no prices). */
-  getHotel: async (publicId, config = {}) =>
-    body(await API.get(`${BASE}/hotels/${publicId}`, config)),
+  /**
+   * GET /hotel-marketplace/hotels/{publicId} — MarketplaceHotelDetailDto.
+   *
+   * Each room now carries `indicativePayablePerNight`. That is a TENANT PAYABLE — the catalog rate
+   * already put through the platform's commercial rule — and the hotel's net rate is not on this
+   * response and cannot be derived from it.
+   *
+   * @param {string} [stayDate] `YYYY-MM-DD`, same meaning as on `searchHotels`.
+   */
+  getHotel: async (publicId, stayDate, config = {}) =>
+    body(await API.get(`${BASE}/hotels/${publicId}`, { params: clean({ stayDate }), ...config })),
+
+  // ── Pricing ─────────────────────────────────────────────────────────────
+
+  /**
+   * POST /hotel-marketplace/quote — IndicativePriceDto for one specific stay.
+   *
+   * The answer to "what will this cost me?" BEFORE the tenant fills in guest details. Until this
+   * existed the payable first appeared at SuperAdmin approval, hours later, so a tenant could not
+   * quote their own customer without guessing.
+   *
+   * **Indicative, and the UI must say so.** This release is ON_REQUEST — no rate calendar, no
+   * allotment — so the platform is not bound by it; the SuperAdmin confirms the real amount with
+   * the property, and any change still goes through the revision round-trip the tenant must accept.
+   * The response carries `note` with that sentence already written, so render it rather than
+   * inventing per-screen wording.
+   *
+   * `available:false` means the hotel has no rate card — a normal state for a newly onboarded
+   * property. Render "Price on request"; **never render it as zero**, which a tenant could quote.
+   */
+  quote: async ({ hotelPublicId, roomPublicId, mealPlanPublicId, checkIn, checkOut,
+                  rooms = 1, adults = 2, children = 0 } = {}, config = {}) =>
+    body(await API.post(`${BASE}/quote`, clean({
+      hotelPublicId, roomPublicId, mealPlanPublicId, checkIn, checkOut, rooms, adults, children,
+    }), config)),
+
+  // ── Nominating a hotel for the catalog ──────────────────────────────────
+
+  /**
+   * POST /hotel-marketplace/nominations — "we work with this hotel, put it on the platform".
+   *
+   * Pass `sourceHotelPublicId` (one of the tenant's OWN hotel-master rows) and the server copies
+   * name, city, country and address off it — so suggesting a hotel they already work with is one
+   * click plus an email address. `contactEmail` is required either way: accepting the nomination
+   * sends the property a partner invitation, and there is nowhere to send it otherwise.
+   *
+   * Re-submitting a hotel that already has an OPEN nomination returns the existing one rather than
+   * erroring, so a double-click is not a duplicate.
+   */
+  submitNomination: async (payload) =>
+    body(await API.post(`${BASE}/nominations`, payload)),
+
+  /** GET /hotel-marketplace/nominations — this tenant's own suggestions, newest first. */
+  listNominations: async ({ page = 0, size = 25 } = {}, config = {}) => {
+    const res = await API.get(`${BASE}/nominations`, { params: clean({ page, size }), ...config });
+    const rows = res?.data?.data;
+    return {
+      items: Array.isArray(rows) ? rows : [],
+      pagination: res?.data?.pagination ?? null,
+    };
+  },
+
+  /**
+   * POST /hotel-marketplace/nominations/{publicId}/withdraw — pull a suggestion.
+   *
+   * Only while it is still open; a decided one 409s. `reason` is a QUERY param, not a body.
+   */
+  withdrawNomination: async (publicId, reason) =>
+    body(await API.post(`${BASE}/nominations/${publicId}/withdraw`, null, {
+      params: clean({ reason }),
+    })),
+
+  // ── What this tenant owes the platform ──────────────────────────────────
+
+  /**
+   * GET /me/marketplace-credit — TenantCreditDto.
+   *
+   * Under `/api/me`, NOT `BASE`, and for the same reason the voucher is: a debt has to stay
+   * readable after the add-on lapses. Hiding what a tenant owes behind the subscription that
+   * lapsed would be the worst possible moment to hide it.
+   *
+   * `enforced:false` means no ceiling is being applied to this tenant — render the balance, but do
+   * not present a limit as though it were binding.
+   */
+  myCredit: async (config = {}) =>
+    body(await API.get(CREDIT_BASE, config)),
 
   /**
    * POST /hotel-marketplace/hotels/{publicId}/import — HotelImportResultDto.
