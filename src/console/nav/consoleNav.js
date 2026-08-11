@@ -23,12 +23,14 @@ import {
   Handshake,
   LayoutDashboard,
   Megaphone,
+  Percent,
   Palette as PaletteIcon,
   ScrollText,
   Settings2,
   ToggleLeft,
   UserCog,
   Users,
+  Wallet,
   Wrench,
 } from "lucide-react";
 
@@ -132,6 +134,21 @@ export const CONSOLE_NAV_SECTIONS = [
         // Sits directly under Hotel Requests because it is what an operator opens WHILE deciding
         // one — "how many of this property's rooms do I already hold that week".
         keywords: "occupancy rooms nights stays calendar allotment availability",
+      },
+      {
+        id: "console.hotelPricing",
+        label: "Pricing Rules",
+        path: "/console/hotel-pricing",
+        Icon: Percent,
+        // ⚠ The platform's own margin structure. No tenant counterpart exists or may exist.
+        keywords: "markup commission margin commercial rule rate",
+      },
+      {
+        id: "console.hotelCredit",
+        label: "Tenant Credit",
+        path: "/console/hotel-credit",
+        Icon: Wallet,
+        keywords: "outstanding limit owed settlement payment balance",
       },
       {
         id: "console.commissions",
