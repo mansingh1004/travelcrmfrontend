@@ -109,6 +109,19 @@ export const CONSOLE_NAV_SECTIONS = [
         keywords: "supply inventory rooms rates",
       },
       {
+        id: "console.hotelNominations",
+        label: "Hotel Nominations",
+        path: "/console/hotel-nominations",
+        Icon: Handshake,
+        // Its own badge, and it earns one: a nomination is a tenant waiting on the
+        // platform, and until this screen existed it was invisible entirely — the
+        // table, the API and the console client were all written, with no page.
+        // Listed BEFORE partners because that is the order of the flow: a nomination
+        // becomes an invite becomes a registration.
+        badge: "hotelNominations",
+        keywords: "proposed suggested property tenant request catalog",
+      },
+      {
         id: "console.hotelPartners",
         label: "Hotel Partners",
         path: "/console/hotel-partners",

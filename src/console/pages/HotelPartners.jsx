@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import {
-  BedDouble, Check, Copy, Loader2, Mail, MapPin, Plus, RefreshCw, Send, Star, Trash2, X,
+  BedDouble, Check, Copy, ExternalLink, Loader2, Mail, MapPin, Plus, RefreshCw, Send, Star, Trash2, X,
 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { toast } from "@shared/ui/toast";
 import { getErrorMessage } from "@shared/api/apiError";
 import { hotelPartnerService, INVITE_STATUS, REG_STATUS } from "../api/hotelPartnerService";
@@ -316,6 +317,7 @@ function InviteDialog({ onClose, onDone }) {
 
 /** Slide-over review, mirroring the Hotel Requests decision panel: one mode open at a time. */
 function ReviewPanel({ publicId, onClose, onDecided }) {
+  const navigate = useNavigate();
   const [reg, setReg] = useState(null);
   const [dups, setDups] = useState([]);
   const [mode, setMode] = useState("");
@@ -448,6 +450,25 @@ function ReviewPanel({ publicId, onClose, onDecided }) {
             </Section>
 
             {error && <p className="rounded-lg bg-hue-rose-soft px-3 py-2 text-sm text-hue-rose">{error}</p>}
+
+            {/* Where the trail used to end. The registration said APPROVED and nothing more; the
+                catalog hotel it became lived on another screen with no link, so "is this property
+                actually live?" was answered by searching the catalog for the name and hoping it was
+                unique. The id has existed on the entity all along as promotion's idempotency guard —
+                it was simply never exposed. */}
+            {reg?.promotedPlatformHotelPublicId && (
+              <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-surface-hover/50 px-3 py-2.5">
+                <span className="text-sm text-body">
+                  Live in the catalog as a platform hotel.
+                </span>
+                <button
+                  onClick={() => navigate(`/console/hotel-catalog/${reg.promotedPlatformHotelPublicId}`)}
+                  className="ml-auto inline-flex items-center gap-1.5 text-sm font-bold text-accent hover:underline"
+                >
+                  Open the hotel <ExternalLink size={13} />
+                </button>
+              </div>
+            )}
 
             {decidable && (
               <div className="space-y-3 border-t border-border pt-4">

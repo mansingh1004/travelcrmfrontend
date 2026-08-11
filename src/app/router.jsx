@@ -122,6 +122,7 @@ const ConsoleOps = lazyPage(consoleFeature, "ConsoleOps");
 const ConsoleSuperAdmins = lazyPage(consoleFeature, "ConsoleSuperAdmins");
 const ConsolePlatformHotels = lazyPage(consoleFeature, "ConsolePlatformHotels");
 const ConsoleHotelPartners = lazyPage(consoleFeature, "ConsoleHotelPartners");
+const ConsoleHotelNominations = lazyPage(consoleFeature, "ConsoleHotelNominations");
 const ConsolePlatformHotelDetail = lazyPage(consoleFeature, "ConsolePlatformHotelDetail");
 const ConsoleMarketplaceBookings = lazyPage(consoleFeature, "ConsoleMarketplaceBookings");
 const ConsoleMarketplaceCommissions = lazyPage(consoleFeature, "ConsoleMarketplaceCommissions");
@@ -269,6 +270,7 @@ const AppRouter = () => {
               <Route path="superadmins" element={<ConsoleSuperAdmins />} />
               {/* Platform hotel catalog — the supply side. Owned here, not by any tenant. */}
               <Route path="hotel-partners" element={<ConsoleHotelPartners />} />
+              <Route path="hotel-nominations" element={<ConsoleHotelNominations />} />
               <Route path="hotel-catalog" element={<ConsolePlatformHotels />} />
               <Route path="hotel-catalog/:publicId" element={<ConsolePlatformHotelDetail />} />
               {/* The approval queue. Only a decision taken here can confirm a tenant's hotel. */}
