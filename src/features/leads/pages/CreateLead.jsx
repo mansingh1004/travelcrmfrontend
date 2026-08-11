@@ -793,6 +793,7 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   Accessibility,
   ArrowLeft,
+  ArrowRight,
   BedDouble,
   BookUser,
   CalendarDays,
@@ -809,6 +810,7 @@ import {
   IndianRupee,
   LayoutGrid,
   LoaderCircle,
+  Lock,
   Mail,
   MapPin,
   MapPinned,
@@ -886,9 +888,13 @@ const ASSISTANCE_TYPES = [
 // mode and EditLead still render `label` through Chip and never touch them. readStickyServices()
 // only reads `id`, so the extra keys are inert everywhere else. The -700 icon foregrounds on amber
 // and cyan are deliberate: at -600 those two pastels fall under the 3:1 contrast floor for glyphs.
+// Vehicle leads and is the default tick: it is the service almost every enquiry here starts from,
+// so it earns the first card and the seeded section. CORE_SERVICES in QuickQuotation.jsx carries the
+// same order — the quote's sections are built from THAT list, and a picker whose first card opened
+// the second section would read as a bug.
 const SERVICES = [
-  { id: "hotel", label: "Hotel", icon: BedDouble, tile: "bg-emerald-50 text-emerald-600" },
   { id: "vehicle", label: "Vehicle", icon: CarFront, tile: "bg-amber-50 text-amber-700" },
+  { id: "hotel", label: "Hotel", icon: BedDouble, tile: "bg-emerald-50 text-emerald-600" },
   { id: "sightseeing", label: "Sightseeing", icon: Camera, tile: "bg-violet-50 text-violet-600" },
   { id: "flight", label: "Flight", icon: Plane, tile: "bg-blue-50 text-blue-600" },
   { id: "cruise", label: "Cruise", icon: Ship, tile: "bg-cyan-50 text-cyan-700" },
@@ -995,14 +1001,16 @@ const readStickyServices = () => {
     const selected = Array.isArray(stored.services)
       ? stored.services.filter((id) => validIds.has(id))
       : [];
-    return selected.length > 0 ? selected : ["hotel"];
-  } catch { return ["hotel"]; }
+    // Vehicle is the default tick on a cold form. Sticky still wins once this session has saved a
+    // lead — the agent's own last selection is a better guess than any constant.
+    return selected.length > 0 ? selected : ["vehicle"];
+  } catch { return ["vehicle"]; }
 };
 const writeSticky = (values, services) => {
   try {
     const slice = {};
     STICKY_FIELDS.forEach((key) => { if (values[key]) slice[key] = values[key]; });
-    slice.services = Array.isArray(services) && services.length > 0 ? services : ["hotel"];
+    slice.services = Array.isArray(services) && services.length > 0 ? services : ["vehicle"];
     sessionStorage.setItem(STICKY_KEY, JSON.stringify(slice));
   } catch { /* private mode — sticky is a convenience, never a requirement */ }
 };
@@ -1030,6 +1038,15 @@ export const blankDefaults = () => ({
 
 let nextRowId = 1;
 export const blankRow = () => ({ id: nextRowId++, destinationId: "", destination: "", cityId: "", city: "", nights: 2 });
+
+/* Rapid mode is a CHAIN — itinerary → services → quotation — and this is the first link's latch.
+   A stop counts only when BOTH destination and city are set, which is deliberately the same test
+   draftLeadKey uses to drop half-filled rows before seeding the quote and the same pair the backend
+   binds @NotBlank on. So a stop that unlocks the next step is always one the quotation can price;
+   the gate can never open onto a section the seeder will then ignore. */
+const hasCompleteStop = (rows) => (rows || []).some(
+  (row) => String(row?.destination || "").trim() && String(row?.city || "").trim(),
+);
 
 const ROOM_CATEGORY_OPTIONS = ["Any", "Standard", "Deluxe", "Premium", "Suite", "Family Room", "Villa"];
 const BED_PREFERENCE_OPTIONS = ["Any", "King", "Queen", "Twin", "Double", "Single", "Bunk"];
@@ -1077,23 +1094,138 @@ const controlBase =
 const control = (invalid, icon) =>
   `${controlBase} ${icon ? "pl-9 pr-3" : "px-3"} ${invalid ? "border-red-300 focus:border-red-400 focus:ring-red-100" : "border-slate-200"}`;
 
-function Panel({ icon: Icon, title, description, action, children }) {
+/* `collapsible` folds the panel to its header alone. Distinct from the SummaryRow fold below, and
+   the distinction is the whole point: SummaryRow retires a step the agent has FINISHED, this one
+   parks a step the agent may never need to open at all (assistance is an exception; lead setup
+   arrives prefilled). A finished step must not be re-openable in place — an unfinished-but-parked
+   one must be, and it keeps its own identity while closed.
+
+   Two rules make a collapsed panel safe to leave collapsed:
+   • The body UNMOUNTS, but `register()` runs on the children the PARENT builds, so every rule is
+     still live and every value survives (shouldUnregister defaults to false). Folding hides an
+     input; it never drops a field.
+   • `forceOpen` therefore has to exist: a failed submit must not leave the offending field
+     unmounted, or onInvalid scrolls to nothing. One-way on purpose — it opens the panel and then
+     lets go, so the agent can close it again without the error re-slamming it open. */
+function Panel({
+  icon: Icon,
+  title,
+  description,
+  action,
+  collapsible = false,
+  defaultOpen = true,
+  forceOpen = false,
+  summary = null,
+  children,
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  /* Rising edge, adjusted during render rather than in an effect — React re-runs this component
+     before committing, so the panel is never painted closed over a field that just failed. An
+     effect would paint the closed state first and then cascade a second render, and
+     `expanded = open || forceOpen` would go the other way: it would hold the panel open and make
+     the header toggle look broken until the error cleared. */
+  const [forcedAt, setForcedAt] = useState(forceOpen);
+  if (forceOpen !== forcedAt) {
+    setForcedAt(forceOpen);
+    if (forceOpen) setOpen(true);
+  }
+  const expanded = !collapsible || open;
+  // Collapsed, the summary is the only thing left saying what is inside — so it wins over the
+  // description, which describes how to fill the panel in rather than what it currently holds.
+  const subtitle = expanded ? description : (summary || description);
+
+  const head = (
+    <>
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
+        <Icon className="h-4 w-4" />
+      </span>
+      <div className="min-w-0">
+        <h2 className="text-sm font-bold text-slate-800">{title}</h2>
+        {subtitle && <p className="mt-0.5 truncate text-xs text-slate-500">{subtitle}</p>}
+      </div>
+      {collapsible && (
+        <ChevronDown
+          className={`ml-auto h-4 w-4 shrink-0 text-slate-400 transition-transform ${expanded ? "rotate-180" : ""}`}
+        />
+      )}
+    </>
+  );
+
   return (
     <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
-      <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-        <div className="flex min-w-0 items-center gap-3">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
-            <Icon className="h-4 w-4" />
-          </span>
-          <div className="min-w-0">
-            <h2 className="text-sm font-bold text-slate-800">{title}</h2>
-            {description && <p className="mt-0.5 text-xs text-slate-500">{description}</p>}
-          </div>
-        </div>
+      <div
+        className={`flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5 ${expanded ? "border-b border-slate-100" : ""}`}
+      >
+        {collapsible ? (
+          // data-skip-enter: Enter walks the form field to field (see FOCUSABLE); a header toggle is
+          // not a step in that walk.
+          <button
+            type="button"
+            data-skip-enter="true"
+            aria-expanded={expanded}
+            onClick={() => setOpen((value) => !value)}
+            className="flex min-w-0 flex-1 items-center gap-3 text-left"
+          >
+            {head}
+          </button>
+        ) : (
+          <div className="flex min-w-0 items-center gap-3">{head}</div>
+        )}
         {action}
       </div>
-      <div className="p-4 sm:p-5">{children}</div>
+      {expanded && <div className="p-4 sm:p-5">{children}</div>}
     </section>
+  );
+}
+/* A step the agent cannot start yet — the muted stand-in for a Panel whose turn has not come.
+   It stays on the page rather than the section simply vanishing: the form's shape then never
+   changes underneath the agent, the next thing to do is named where it will appear, and nobody has
+   to wonder where the quotation went. Dashed + slate on purpose — a locked step is not an error. */
+function LockedStep({ title, hint, badge = null }) {
+  return (
+    <section
+      aria-disabled="true"
+      className="flex flex-wrap items-center gap-3 rounded-xl border border-dashed border-slate-200 bg-white/60 px-4 py-3.5 sm:px-5"
+    >
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-400">
+        <Lock className="h-4 w-4" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <h2 className="text-sm font-bold text-slate-500">{title}</h2>
+        <p className="mt-0.5 text-xs text-slate-400">{hint}</p>
+      </div>
+      {badge && (
+        <span className="inline-flex shrink-0 items-center rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-bold text-slate-500">
+          {badge}
+        </span>
+      )}
+    </section>
+  );
+}
+/* A finished step, folded to one line. Deliberately not a collapsed <Panel>: a panel that can be
+   half-open invites the agent to work inside it, and the whole point of folding is that this step is
+   done. Edit unfolds the real thing. */
+function SummaryRow({ icon: Icon, title, detail, onEdit }) {
+  return (
+    <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+        <Icon className="h-4 w-4" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{title}</p>
+        <p className="mt-0.5 truncate text-sm font-bold text-slate-800">{detail}</p>
+      </div>
+      {/* Called with no arguments on purpose — the page's unfold helper takes an optional scroll
+          target, and handing it a click event would have it query the DOM for one. */}
+      <button
+        type="button"
+        data-skip-enter="true"
+        onClick={() => onEdit?.()}
+        className="shrink-0 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-600 transition hover:bg-slate-50"
+      >
+        Edit
+      </button>
+    </div>
   );
 }
 function Field({ id, label, required, optional, error, hint, children }) {
@@ -1180,7 +1312,14 @@ function RequirementsAssistancePanel({
   setValue,
   getValues,
   totalTravellers,
+  summary,
 }) {
+  /* Open on arrival in BOTH modes now. Rapid used to fold this on mount, which optimised for the
+     common case at the cost of the one that matters: an exception nobody sees is an exception nobody
+     records. It only earns rail space while the enquiry is being taken — once the itinerary is
+     confirmed the whole panel retires to a SummaryRow with the other two, so being open costs
+     nothing past the point where it stops being relevant. */
+
   return (
     <Panel
       icon={Accessibility}
@@ -1188,6 +1327,12 @@ function RequirementsAssistancePanel({
       description={rapidEntry
         ? "Only open this exception when a traveller needs operational support"
         : "Trip preferences and traveller support in one place"}
+      collapsible
+      defaultOpen
+      summary={summary}
+      forceOpen={Boolean(
+        errors.specialAssistanceTypes || errors.assistancePassengerCount || errors.specialAssistanceNotes,
+      )}
     >
       <div className={rapidEntry ? "space-y-4" : "grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]"}>
         {!rapidEntry && (
@@ -1328,6 +1473,17 @@ export function LeadFormPanels({
   compactRail = false,
   rapidEntry = false,
   showRoomPlanning = false,
+  /* Progressive disclosure, rapid CREATE with QUOTATION_CREATE only: Customer → Trip → Itinerary is
+     one step, and it hands over to Services only when the agent says it is done. Off everywhere else
+     — full details shows everything at once by definition, and edit must never lock a field on a
+     record that already exists (a saved lead may legitimately carry no itinerary at all).
+     The page owns the two flags because a failed submit has to be able to force the fold open. */
+  stepFlow = false,
+  itineraryConfirmed = false,
+  itineraryConfirmable = false,
+  onConfirmItinerary = null,
+  enquiryCollapsed = false,
+  onExpandEnquiry = null,
 }) {
   const { withCurrent: sourceOptionsFor, loading: sourcesLoading, error: sourcesError } = useLeadSources();
 
@@ -1355,10 +1511,55 @@ export function LeadFormPanels({
   const totalAdults = toInt(watch("totalAdults"));
   const totalTravellers = totalAdults + toInt(watch("children")) + toInt(watch("infants"));
   const needsOriginCity = services.includes("flight") || services.includes("vehicle");
+  // The latch, not the data: Services waits for the agent's explicit continue, so adding a stop
+  // later never yanks the picker (and the priced quote under it) back off the screen.
+  const servicesLocked = stepFlow && !itineraryConfirmed;
+  const foldEnquiry = stepFlow && enquiryCollapsed;
+
+  /* What the two folded rows say. Read straight off the same watches the panels use, so a summary
+     can never describe a value the form no longer holds — and computed unconditionally because
+     hooks cannot be. Every field here is already subscribed above for other reasons. */
+  const childCount = toInt(watch("children"));
+  const infantCount = toInt(watch("infants"));
+  const roomCount = toInt(watch("rooms")) || 1;
+  const customerSummary = [
+    watch("customerName") || "Unnamed customer",
+    watch("phone"),
+    `${totalAdults}A${childCount ? ` ${childCount}C` : ""}${infantCount ? ` ${infantCount}I` : ""}`,
+    `${roomCount} ${roomCount === 1 ? "room" : "rooms"}`,
+  ].filter(Boolean).join(" · ");
+  const summaryNights = itinerary.reduce((sum, row) => sum + toInt(row.nights), 0);
+  const tripSummary = [
+    itinerary.map((row) => row.city || row.destination).filter(Boolean).join(" → "),
+    summaryNights > 0 ? `${summaryNights}N / ${summaryNights + 1}D` : "",
+    watch("travelDate"),
+  ].filter(Boolean).join(" · ") || "No stops added";
   const leadSourceValue = watch("leadSource") || "";
   const leadSourceLabel = sourceOptionsFor(leadSourceValue)
     .find((option) => String(option.value) === String(leadSourceValue))?.label || leadSourceValue;
   const assignedUserValue = watch("assignedUserId") || "";
+  /* Lead Setup's folded line. Source first because it is the only one of the three the form cannot
+     prefill, and the owner label falls back to nothing rather than to the raw id — a numeric id in
+     a summary is worse than no owner shown at all. */
+  const leadSetupSummary = [
+    leadSourceLabel ? `Source: ${leadSourceLabel}` : "Source not set",
+    users.find((user) => String(user.value) === String(assignedUserValue))?.label,
+  ].filter(Boolean).join(" · ");
+  /* Customer Profile's folded line. Budget leads because it is the only field on the panel the
+     quotation below reacts to; the rest are recorded, not priced. An untouched panel says so
+     explicitly — an empty string would fall through to the description and read as "not filled in
+     yet" on a panel where filling nothing in is the normal outcome. */
+  const customerProfileSummary = [
+    watch("budget") ? `Budget ₹${Number(watch("budget")).toLocaleString("en-IN")}` : "",
+    watch("followUpDate") ? `Follow-up ${watch("followUpDate")}` : "",
+    watch("preferredCommunication"),
+  ].filter(Boolean).join(" · ") || "Optional — nothing added";
+  /* Lifted out of RequirementsAssistancePanel because the folded rail needs the same line the panel
+     shows when collapsed, and two copies of "what does this panel currently say" is exactly how a
+     summary starts lying about the form. */
+  const assistanceSummary = assistanceRequired
+    ? (assistanceTypes.length > 0 ? assistanceTypes.join(", ") : "Required — no type chosen yet")
+    : "None";
 
   /* specialAssistanceTypes is written with setValue from the chip row, so it has no rendered input
      to hang rules off — it has to be registered explicitly or it is never validated at all, and the
@@ -1607,7 +1808,19 @@ export function LeadFormPanels({
   return (
     <>
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,7fr)_minmax(300px,3fr)] lg:items-start">
+      {/* ── 1 + 2 folded · what the enquiry says, in two lines ─────────────────────────────────
+          Not a third rendering of these fields — just their values, so there is nothing here that
+          can drift out of step with the panels below. Either the panels are mounted or these rows
+          are; never both, so no id or `name` is ever duplicated in the document. */}
+      {foldEnquiry && (
+        <div className="min-w-0 space-y-3 lg:col-start-1">
+          <SummaryRow icon={CircleUserRound} title="Customer" detail={customerSummary} onEdit={onExpandEnquiry} />
+          <SummaryRow icon={Route} title="Trip" detail={tripSummary} onEdit={onExpandEnquiry} />
+        </div>
+      )}
+
       {/* ── 1 · Customer ──────────────────────────────────────────────────────────────────────── */}
+      {!foldEnquiry && (
       <div className={`min-w-0 ${compactRail ? "lg:col-start-1" : "lg:col-span-2"}`}>
       <Panel
         icon={CircleUserRound}
@@ -1789,8 +2002,10 @@ export function LeadFormPanels({
 
           </Panel>
         </div>
+        )}
 
         {/* ── 2 · Trip ──────────────────────────────────────────────────────────────────────────── */}
+        {!foldEnquiry && (
         <div className={`min-w-0 ${compactRail ? "lg:col-start-1" : "lg:col-span-2"}`}>
           <Panel
             icon={Route}
@@ -1915,7 +2130,14 @@ export function LeadFormPanels({
                   </span>
                   <div className="min-w-0">
                     <h3 className="text-sm font-bold text-slate-800">Itinerary</h3>
-                    <p className="mt-0.5 text-xs text-slate-500">Optional — leave blank if the route is not decided yet</p>
+                    {/* Optional on the RECORD, required by the rapid flow: the picker and the quote
+                        below both hang off a real stop, so rapid says so instead of inviting the
+                        agent to skip the one thing that unlocks the rest of the page. */}
+                    <p className="mt-0.5 text-xs text-slate-500">
+                      {stepFlow
+                        ? "Add at least one stop — the services picker unlocks from here"
+                        : "Optional — leave blank if the route is not decided yet"}
+                    </p>
                   </div>
                 </div>
               <button
@@ -2051,9 +2273,33 @@ export function LeadFormPanels({
               </span>
               <span>Enter moves on · Shift+Enter adds the next stop.</span>
             </div>
+
+            {/* The hand-off. Nothing on this form can infer "all stops are in" — there is always room
+                for one more — so the agent says it, once, and the chain moves on. Disabled rather
+                than hidden while a row is half-filled: the reason it cannot be pressed belongs next
+                to the button, not in a toast three steps later. */}
+            {stepFlow && !itineraryConfirmed && (
+              <div className="mt-4 flex flex-col gap-2.5 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-xs text-slate-500">
+                  {itineraryConfirmable
+                    ? "Add every stop first — continuing opens the services picker and folds this section away."
+                    : "Each stop needs a destination and a city."}
+                </p>
+                <button
+                  type="button"
+                  data-skip-enter="true"
+                  disabled={!itineraryConfirmable}
+                  onClick={() => onConfirmItinerary?.()}
+                  className="inline-flex w-fit shrink-0 items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400"
+                >
+                  Done — continue <ArrowRight className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
             </div>
           </Panel>
         </div>
+        )}
 
         {/* ── Services — rapid mode only, and deliberately OUT of the right rail ────────────────
             Ticking a service is the act of starting to fill it in (toggleService queues the section
@@ -2061,7 +2307,21 @@ export function LeadFormPanels({
             a 2×4 list squeezed into a 300px rail. Full details and EditLead keep the rail's Chip
             grid further down, untouched — only one of the two `services-group` nodes ever mounts,
             so save()'s scrollIntoView still resolves. */}
-        {rapidEntry && (
+        {rapidEntry && servicesLocked && (
+          /* Locked, not absent, and the count still shows: sticky pre-ticks Hotel from the previous
+             enquiry, so a stub that said nothing would read as "your services were dropped". */
+          <div className="min-w-0 lg:col-start-1">
+            <LockedStep
+              title="Services"
+              hint={itineraryConfirmable
+                ? "Press “Done — continue” under the itinerary to pick services."
+                : "Add your itinerary stops above, then continue."}
+              badge={services.length > 0 ? `${services.length} pre-selected` : null}
+            />
+          </div>
+        )}
+
+        {rapidEntry && !servicesLocked && (
           <div className="min-w-0 lg:col-start-1">
             <Panel
               icon={LayoutGrid}
@@ -2116,15 +2376,41 @@ export function LeadFormPanels({
               setValue={setValue}
               getValues={getValues}
               totalTravellers={totalTravellers}
+              summary={assistanceSummary}
             />
           </div>
         )}
 
         <aside className={`min-w-0 ${compactRail ? "space-y-4 lg:sticky lg:top-[72px] lg:col-start-2 lg:row-start-1 lg:row-span-3" : "space-y-5 lg:col-start-2 lg:row-start-3"}`}>
-          {!rapidEntry && <Panel
+          {/* ── The rail, folded · the same retirement Customer and Trip get ──────────────────────
+              Three panels in, three lines out, on the SAME `foldEnquiry` flag rather than one of
+              their own. That is the point: Edit here and Edit on the Customer row have to restore
+              the same screen, and a second flag is how one of them ends up restoring half of it.
+              Either the rows are mounted or the panels are — never both, so no input is ever in the
+              document twice. */}
+          {foldEnquiry && (
+            <>
+              <SummaryRow icon={CircleUserRound} title="Customer Profile" detail={customerProfileSummary} onEdit={onExpandEnquiry} />
+              <SummaryRow icon={UserCheck} title="Lead Setup" detail={leadSetupSummary} onEdit={onExpandEnquiry} />
+              <SummaryRow icon={Accessibility} title="Special Assistance" detail={assistanceSummary} onEdit={onExpandEnquiry} />
+            </>
+          )}
+
+          {/* Rapid gets the same panel full details has. Birthday, anniversary, budget and the
+              follow-up date are all things the customer says once, on the call — leaving them out
+              of the fast path meant reopening the lead afterwards to type them in, which is slower
+              than the panel it was meant to save. It differs from full details in one way only:
+              rapid lets the agent hand-fold it, because it shares the rail with two other panels. */}
+          {!foldEnquiry && <Panel
             icon={CircleUserRound}
             title="Customer Profile"
             description="Optional personal and contact details"
+            collapsible={rapidEntry}
+            defaultOpen
+            summary={customerProfileSummary}
+            /* Budget is the one field here that can fail validation, and onInvalid cannot scroll to
+               an unmounted input. */
+            forceOpen={Boolean(errors.budget)}
           >
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
@@ -2170,10 +2456,18 @@ export function LeadFormPanels({
             </div>
           </Panel>}
 
-          <Panel
+          {!foldEnquiry && <Panel
             icon={UserCheck}
             title="Lead Setup"
             description={rapidEntry ? "Only source needs attention; stage and owner are prefilled" : "Source, stage and ownership"}
+            collapsible
+            /* Open on arrival in both modes now. Rapid prefills stage and owner but NOT the source,
+               and a prefill nobody saw is a prefill nobody checked — the panel owning the one field
+               the form cannot fill in has to be visible while the enquiry is being taken. It retires
+               to its SummaryRow on "Done — continue", so being open costs nothing afterwards. */
+            defaultOpen
+            summary={leadSetupSummary}
+            forceOpen={Boolean(errors.leadSource || errors.leadType || errors.leadStage || errors.assignedUserId)}
           >
             <div className={compactRail ? "space-y-3" : "space-y-4"}>
               <Field
@@ -2310,7 +2604,7 @@ export function LeadFormPanels({
                 </div>
               </Field>}
             </div>
-          </Panel>
+          </Panel>}
 
           {/* Rail copy — full details and EditLead only. Rapid renders the card grid in the main
               column instead (see above); the identical subtree behind a boolean is the cheapest
@@ -2332,7 +2626,7 @@ export function LeadFormPanels({
             </div>
 
           </Panel>}
-          {rapidEntry && (
+          {rapidEntry && !foldEnquiry && (
             <RequirementsAssistancePanel
               rapidEntry
               register={register}
@@ -2343,6 +2637,7 @@ export function LeadFormPanels({
               setValue={setValue}
               getValues={getValues}
               totalTravellers={totalTravellers}
+              summary={assistanceSummary}
             />
           )}
         </aside>
@@ -2386,6 +2681,10 @@ export default function LeadFormPage() {
 
   const [services, setServices] = useState(() => (editing ? [] : readStickyServices()));
   const [itinerary, setItinerary] = useState(() => [blankRow()]);
+  /* The rapid chain's first latch, read by the Services gate below, by the quotation gate under it
+     and by save(). One derivation for all three, so the page can never lock a step it is about to
+     demand — the classic dead end where "Select at least one service" points at a locked picker. */
+  const itineraryReady = useMemo(() => hasCompleteStop(itinerary), [itinerary]);
   const [roomAllocations, setRoomAllocations] = useState(() => rebalanceRooms([], {
     rooms: 1, adults: 2, children: 0, infants: 0, extraBeds: 0,
   }));
@@ -2476,6 +2775,52 @@ export default function LeadFormPage() {
      Only rapid, only create, only with QUOTATION_CREATE — everything above the Services panel keeps
      working exactly as it did for every other combination. */
   const quoteInline = !editing && rapidEntry && canCreateQuotation;
+  /* The step chain — itinerary → services → quotation — exists to feed the quote, so it is scoped to
+     exactly the agents who get a quote: same condition as quoteInline, deliberately not a looser
+     one. Without QUOTATION_CREATE there is no pricing block to protect, and gating Services there
+     would only add a lock to a form that has nothing behind it. Full details and edit are untouched
+     for the same reason: neither locks anything today, and neither should start. */
+  const stepFlow = quoteInline;
+  /* The agent's explicit "I am done adding stops". Nothing infers this — the form can always take
+     one more stop, so a rule like "every row is filled" would open Services after the first one and
+     then slam it shut the moment Add Stop appended a blank row, tearing a half-priced quotation off
+     the screen mid-call. Latched on purpose: once continued, adding a sixth stop never re-locks. */
+  const [itineraryConfirmed, setItineraryConfirmed] = useState(false);
+  /* Steps 1-2 of the form (Customer, Trip) fold into summary rows once the agent continues, so the
+     screen belongs to whichever step is actually being worked on. ONE flag for both panels, not one
+     each: every path that has to force them back open — a failed submit, a manual scroll target
+     inside a folded panel — then has a single thing to flip and cannot half-restore the form. */
+  const [enquiryCollapsed, setEnquiryCollapsed] = useState(false);
+  /* Confirm is offered only when the itinerary is actually shippable: at least one real stop and no
+     row carrying half a pair. Letting it through on a half-filled row would just move the same
+     rejection to the save, three steps later, with the offending row folded out of sight by then. */
+  const itineraryConfirmable = useMemo(() => itineraryReady && !itinerary.some(
+    (row) => Boolean(String(row.destination || "").trim()) !== Boolean(String(row.city || "").trim()),
+  ), [itinerary, itineraryReady]);
+
+  /* Both halves of the latch fire together: the picker unlocks and the enquiry folds, so the screen
+     belongs to the step that just became actionable. Scrolled, not focused — the service cards are
+     buttons, and landing focus on the first one would make a stray Enter tick it. */
+  const confirmItinerary = useCallback(() => {
+    setItineraryConfirmed(true);
+    setEnquiryCollapsed(true);
+    window.setTimeout(() => {
+      document.getElementById("services-group")?.scrollIntoView({ block: "center", behavior: "smooth" });
+    }, 0);
+  }, []);
+
+  /* The one way back into a folded field. A collapsed panel is UNMOUNTED, so focus() and
+     scrollIntoView() on anything inside it are silent no-ops — which is precisely how a submit
+     button comes to read as dead. Unfold, let React commit, then aim. */
+  const revealEnquiry = useCallback((selector = null) => {
+    setEnquiryCollapsed(false);
+    if (!selector) return;
+    window.setTimeout(() => {
+      const node = document.querySelector(selector);
+      node?.scrollIntoView?.({ block: "center", behavior: "smooth" });
+    }, 0);
+  }, []);
+
   const [quoteModel, setQuoteModel] = useState(null);
   const [createdQuote, setCreatedQuote] = useState(null);
   const [quoteBusy, setQuoteBusy] = useState(false);
@@ -2494,6 +2839,12 @@ export default function LeadFormPage() {
     setQuoteModel(null);
     quoteTouchedRef.current = false;
     setQuoteTouched(false);
+    // The step chain resets with the quote, not separately — every one of those paths already routes
+    // through here, so there is no fifth place to forget. A blank enquiry that kept the latch would
+    // show Services unlocked over an empty itinerary, and one that kept the fold would open on two
+    // summary rows describing the customer who just left.
+    setItineraryConfirmed(false);
+    setEnquiryCollapsed(false);
   }, []);
   const {
     downloadPdf: runQuotePdfDownload,
@@ -2556,14 +2907,20 @@ export default function LeadFormPage() {
     setQuoteModel((current) => syncQuickQuoteServices(current, servicesKey ? servicesKey.split("|") : []));
   }, [quoteInline, servicesKey]);
 
-  // Open the section a just-ticked service created, once the model actually carries it.
+  /* Open the section a just-ticked service created, once the model actually carries it.
+     `focus` is the difference between the two places a service can be ticked from. From the picker
+     above, the new section appears directly underneath it — both are already on screen, so opening
+     it must NOT move the page (see the reveal effect in QuickQuoteSections). From the "Also need"
+     strip inside the accordion, the new section is hoisted to the TOP of the accordion, i.e. above
+     the viewport the agent is looking at, so that one has to be scrolled to. Passing a field
+     selector is what asks reveal() to scroll, and it lands the cursor in the first field too. */
   const pendingQuoteRevealRef = useRef(null);
   useEffect(() => {
     const pending = pendingQuoteRevealRef.current;
     if (!pending) return;
-    if (!quoteModel?.enabledCore?.includes(pending)) return;
+    if (!quoteModel?.enabledCore?.includes(pending.id)) return;
     pendingQuoteRevealRef.current = null;
-    quoteSectionsRef.current?.reveal(pending);
+    quoteSectionsRef.current?.reveal(pending.id, pending.focus ? "[data-quick-field]" : null);
   }, [quoteModel]);
 
   /* Finishing a section just collapses it — no scrolling. The loop is tick a service → fill it →
@@ -2832,6 +3189,42 @@ export default function LeadFormPage() {
     return () => { active = false; window.clearTimeout(timer); setCheckingContact(false); };
   }, [editing, phone, email, probeContact, prefillFromCustomer]);
 
+  /* ── Arrived from a customer profile: /createlead?customerId=<publicId> ──────────────────
+     The profile's "New enquiry" buttons used to navigate here with nothing attached, so the clerk
+     re-keyed the phone number of the person they were looking at one second earlier.
+
+     Unlike the debounced probe above this one DOES write the phone: that guard exists because the
+     caret is in the phone field while the clerk types, and here nobody has typed anything. It runs
+     once, only on create, and stamps lastPrefilledCustomer so the probe that fires straight after
+     (the phone it just wrote is a valid number) recognises the same customer and stays quiet. */
+  useEffect(() => {
+    if (editing) return undefined;
+    const customerPublicId = searchParams.get("customerId");
+    if (!customerPublicId) return undefined;
+
+    let active = true;
+    customerService.getById(customerPublicId)
+      .then((response) => {
+        if (!active) return;
+        const customer = response?.data?.data ?? response?.data;
+        if (!customer) return;
+
+        if (customer.phone) {
+          setValue("phone", customer.phone, { shouldDirty: true, shouldValidate: false });
+        }
+        const written = prefillFromCustomer(customer, { overwrite: true });
+        setAutoFilled(written);
+        setContactMatch({ lead: null, customer });
+        lastPrefilledCustomer.current = customer.customerId || "";
+      })
+      // Silent: the deep link is a convenience. A stale or unreachable id must leave a usable blank
+      // form, not an error the clerk has to dismiss before typing.
+      .catch(() => {});
+
+    return () => { active = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing, searchParams, prefillFromCustomer, setValue]);
+
   /* Clearing the strip has to clear the "already prefilled this one" ref too, or the next record for
      the SAME customer would show the card with no prefill and look broken. */
   const resetContactMatch = () => {
@@ -2851,18 +3244,23 @@ export default function LeadFormPage() {
     );
   };
 
-  const toggleService = (id) => {
+  /* `fromQuote` marks a tick that came from the "Also need" strip inside the accordion rather than
+     from the Services picker above — the only difference is whether revealing the new section is
+     allowed to scroll. See the reveal effect. */
+  const toggleService = (id, { fromQuote = false } = {}) => {
     setServices((list) => {
       const next = list.includes(id) ? list.filter((s) => s !== id) : [...list, id];
       /* Ticking a service is the request to fill it in. Rather than making the agent tick, scroll and
          then hunt for the matching section, the section this service just created is opened for them
          — the effect below fires it once the model actually carries the service, because the model is
          rebuilt from `services` and the section does not exist until it is. Untick opens nothing. */
-      if (quoteInline && !list.includes(id)) pendingQuoteRevealRef.current = id;
+      if (quoteInline && !list.includes(id)) pendingQuoteRevealRef.current = { id, focus: fromQuote };
       return next;
     });
     clearErrors("services");
   };
+  // Handed to the accordion so a service can be added without leaving the panel being filled in.
+  const addServiceFromQuote = (id) => toggleService(id, { fromQuote: true });
 
   const addRow = () => setItinerary((rows) => [...rows, blankRow()]);
   const removeRow = (rowId) =>
@@ -2900,14 +3298,28 @@ export default function LeadFormPage() {
   const onInvalid = (formErrors) => {
     const first = Object.keys(formErrors || {})[0];
     if (!first) return;
-    const root = formRef.current;
-    // The visible control first: assignedUserId's registered input is type="hidden" and cannot take
-    // focus or be scrolled to, but its Field wrapper carries the id.
-    const node = root?.querySelector(`[name="${first}"]:not([type="hidden"])`)
-      || document.getElementById(first)
-      || root?.querySelector(`[name="${first}"]`);
-    node?.focus?.();
-    (node?.closest?.("div") || node)?.scrollIntoView?.({ block: "center", behavior: "smooth" });
+    const aim = () => {
+      const root = formRef.current;
+      // The visible control first: assignedUserId's registered input is type="hidden" and cannot take
+      // focus or be scrolled to, but its Field wrapper carries the id.
+      const node = root?.querySelector(`[name="${first}"]:not([type="hidden"])`)
+        || document.getElementById(first)
+        || root?.querySelector(`[name="${first}"]`);
+      node?.focus?.();
+      (node?.closest?.("div") || node)?.scrollIntoView?.({ block: "center", behavior: "smooth" });
+    };
+    /* Phone, name and travel date all live in the panels that fold once the itinerary is confirmed,
+       and folded means unmounted — the lookup above would find nothing and this handler would go
+       back to doing exactly what it was written to stop. RHF keeps the values through the unmount
+       (shouldUnregister defaults to false), so the rule that failed is real; only its input is
+       missing. Unfold, let React commit, then aim. */
+    /* Deferred unconditionally, not just for the enquiry fold: Lead Setup and Special Assistance
+       open themselves off `errors` (Panel's forceOpen), and React has not committed that render
+       when this runs — aiming synchronously would query the DOM one frame too early and find the
+       collapsed panel's body still missing, which is the exact failure this handler exists to
+       prevent. One tick costs nothing on the path that was already open. */
+    if (enquiryCollapsed) setEnquiryCollapsed(false);
+    window.setTimeout(aim, 0);
     showToast(formErrors[first]?.message || "Please fix the highlighted fields.", "error");
   };
 
@@ -2920,13 +3332,11 @@ export default function LeadFormPage() {
       createQuotation = false,
     } = {},
   ) => {
-    if (services.length === 0) {
-      // Inline, beside the picker — the old form raised this as a toast, which interrupts and then
-      // disappears, leaving nothing next to the control that caused it.
-      setError("services", { type: "manual", message: "Select at least one service." });
-      document.getElementById("services-group")?.scrollIntoView({ block: "center", behavior: "smooth" });
-      return;
-    }
+    /* Checked in the order the rapid chain presents them — itinerary, then services, then the quote.
+       The services rule used to run first, which now dead-ends: with the picker locked until a stop
+       exists, "Select at least one service" would scroll to a control the agent cannot operate. The
+       full-details form has no gate, so the reorder costs it nothing — the same two rules, still
+       both enforced, just named in the order the page asks for them. */
 
     /* An itinerary row with only ONE of destination/city cannot go to the server — the backend binds
        both @NotBlank and one bad row rejects the whole lead — and must not be dropped silently
@@ -2940,14 +3350,42 @@ export default function LeadFormPage() {
         `Itinerary stop ${incompleteRow + 1}: choose both a destination and a city, or clear the row.`,
         "error",
       );
-      document.getElementById("itinerary-group")?.scrollIntoView({ block: "center", behavior: "smooth" });
+      // Through revealEnquiry, not a bare scroll: #itinerary-group lives inside the Trip panel, which
+      // is folded away by this point in the flow.
+      revealEnquiry("#itinerary-group");
       return;
     }
 
-    if (createQuotation && !itinerary.some((row) =>
-      String(row.destination || "").trim() && String(row.city || "").trim())) {
-      showToast("Choose a destination and city so the quotation can be prefilled.", "error");
-      document.getElementById("itinerary-group")?.scrollIntoView({ block: "center", behavior: "smooth" });
+    /* Rapid create gates Services on a real stop, so the itinerary is required there for EVERY save
+       path, not just the one that also writes a quotation — otherwise Save & New would demand
+       services the agent was never allowed to tick. `createQuotation` keeps its own clause for the
+       cases the gate does not cover (full details, and edit-in-rapid where nothing is locked). */
+    if ((stepFlow || createQuotation) && !itineraryReady) {
+      showToast(
+        stepFlow
+          ? "Add an itinerary stop — destination and city — to unlock services and pricing."
+          : "Choose a destination and city so the quotation can be prefilled.",
+        "error",
+      );
+      revealEnquiry("#itinerary-group");
+      return;
+    }
+
+    /* Pressing the header's Create Quote before continuing. Without this the run would reach
+       validateQuickQuote below, fail on an unpriced section and then ask the accordion — which is
+       not mounted yet — to reveal it: a toast pointing at nothing. Say what the next step actually
+       is instead. Sticky pre-ticks a service, so services.length alone would not have caught it. */
+    if (stepFlow && !itineraryConfirmed) {
+      showToast("Press “Done — continue” under the itinerary to pick services and price them.", "error");
+      revealEnquiry("#itinerary-group");
+      return;
+    }
+
+    if (services.length === 0) {
+      // Inline, beside the picker — the old form raised this as a toast, which interrupts and then
+      // disappears, leaving nothing next to the control that caused it.
+      setError("services", { type: "manual", message: "Select at least one service." });
+      document.getElementById("services-group")?.scrollIntoView({ block: "center", behavior: "smooth" });
       return;
     }
 
@@ -3170,7 +3608,11 @@ export default function LeadFormPage() {
     setRoomAllocations(rebalanceRooms([], { rooms: 1, adults: 2, children: 0, infants: 0, extraBeds: 0 }));
     resetContactMatch();
     resetInlineQuote();
-    phoneRef.current?.focus();
+    /* Deferred, unlike before: clearing from a folded enquiry means the Phone input is not in the
+       document yet — resetInlineQuote only just asked for the unfold, and phoneRef is null until
+       React commits it. A synchronous focus() here was a silent no-op and the batch loop lost its
+       cursor. The Save & New path has always done it this way. */
+    window.setTimeout(() => phoneRef.current?.focus(), 0);
   };
 
   /* ── Actions on the quotation this page just created ─────────────────────────────────────────
@@ -3554,14 +3996,39 @@ export default function LeadFormPage() {
           compactRail
           rapidEntry={rapidEntry}
           showRoomPlanning={editing}
+          stepFlow={stepFlow}
+          itineraryConfirmed={itineraryConfirmed}
+          itineraryConfirmable={itineraryConfirmable}
+          onConfirmItinerary={confirmItinerary}
+          enquiryCollapsed={enquiryCollapsed}
+          onExpandEnquiry={revealEnquiry}
         />
 
         {/* ── The quotation, on this same page ────────────────────────────────────────────────
             Rapid mode only. Everything above is the lead form, unchanged; from here down the agent
             prices the enquiry without a navigation. The sections are exactly the ones ticked in the
-            Services panel above — that panel is the only service picker, so the accordion renders
-            with showServices={false} rather than offering a second one. */}
-        {quoteInline && quoteModel && (
+            Services panel above, so the accordion renders with showServices={false} rather than
+            offering a second full picker — but it does get onAddService, so a service can be ADDED
+            from inside the section being filled in without scrolling back up to that panel.
+
+            Last link of the chain: the builder appears only once there is something to price — a
+            real itinerary stop AND at least one ticked service. Before that it is a locked stub, not
+            an empty accordion. Sticky pre-ticks Hotel from the previous enquiry, so services.length
+            alone would have opened the whole pricing block on a blank form, which is the thing the
+            chain exists to prevent; itineraryReady is what actually holds it shut. */}
+        {quoteInline && !(quoteModel && itineraryConfirmed && services.length > 0) && (
+          <section className="space-y-3">
+            <p className="pt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">Quotation</p>
+            <LockedStep
+              title="Pricing"
+              hint={itineraryConfirmed
+                ? "Tick a service above and its section opens here, seeded from the trip details."
+                : "Finish the itinerary and continue — services come first."}
+            />
+          </section>
+        )}
+
+        {quoteInline && quoteModel && itineraryConfirmed && services.length > 0 && (
           <section id="quick-quote-builder" className="space-y-3">
             <p className="pt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">Quotation</p>
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4">
@@ -3598,6 +4065,10 @@ export default function LeadFormPage() {
               </div>
             </div>
 
+            {/* The "No services ticked" notice that used to sit here is gone, not moved: this block
+                only mounts when services.length > 0, so it was unreachable. Its job — telling the
+                agent what to do next — is the locked stub's now, and the stub says it BEFORE the
+                pricing header rather than underneath it.
             {services.length === 0 && (
               <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
@@ -3605,10 +4076,11 @@ export default function LeadFormPage() {
                 </span>
                 <p className="text-xs text-slate-500">
                   <span className="font-bold text-slate-800">No services ticked.</span>{" "}
-                  Pick one above and its section appears here.
+                  Pick one — from the panel above or the strip below — and its section appears here.
                 </p>
               </div>
             )}
+            */}
 
             {/* No submitSlot here on purpose: with sections collapsing as they are finished there is
                 no "last" one to hang the submit off. Create Quick Quote lives in the sticky header
@@ -3619,6 +4091,9 @@ export default function LeadFormPage() {
               setModel={updateQuoteModel}
               showServices={false}
               onSectionDone={handleSectionDone}
+              // The picker above stays the one place a service is UNticked; this only adds, from
+              // inside whichever section the agent is currently filling in.
+              onAddService={addServiceFromQuote}
               // Without this the accordion swallowed Ctrl+Enter and the shortcut was dead for every
               // field inside the quote — the one place an agent is most likely to press it.
               onRequestSave={() => {

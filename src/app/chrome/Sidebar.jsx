@@ -67,9 +67,10 @@ export default function Sidebar() {
     setMobileNavOpen,
   } = useNav();
 
-  // Groups the user has opened by hand. The group owning the current route is
-  // always open on top of this.
-  const [openGroups, setOpenGroups] = useState(() => new Set());
+  // Accordion: exactly ONE group open at a time — opening Bookings closes Leads.
+  // Held as a single id (`null` = all closed) rather than a Set, so "two groups
+  // open" is not a state this rail can be in at all.
+  const [openGroupId, setOpenGroupId] = useState(() => activeTrail.itemId ?? null);
 
   // Hover-to-open. The rail rests as a 68px icon strip and widens while the
   // pointer is over it, closing again as soon as it leaves — unless it has been
@@ -117,15 +118,27 @@ export default function Sidebar() {
     hoverTimer.current = window.setTimeout(() => setHovered(false), 140);
   };
 
-  const toggleGroup = (id) =>
-    setOpenGroups((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+  // The group owning the current route opens itself — but as a SEED, not an
+  // override. The old rail OR-ed `activeTrail.itemId` into the open test, which
+  // pinned the active group open forever: sitting on a booking page and opening
+  // Leads left both expanded, because nothing could ever close Bookings.
+  //
+  // Adjusted during render rather than in an effect (React's documented
+  // "changing state when a prop changes" pattern): an effect would paint one
+  // frame with the previous route's group still expanded before correcting it.
+  // Normalised to null first — comparing a raw `undefined` against a stored
+  // `null` would never settle, and this runs on every render.
+  const trailItemId = activeTrail.itemId ?? null;
+  const [seededTrail, setSeededTrail] = useState(trailItemId);
+  if (trailItemId !== seededTrail) {
+    setSeededTrail(trailItemId);
+    setOpenGroupId(trailItemId);
+  }
 
-  const isGroupOpen = (item) => activeTrail.itemId === item.id || openGroups.has(item.id);
+  // Clicking the open group collapses it; clicking any other one replaces it.
+  const toggleGroup = (id) => setOpenGroupId((prev) => (prev === id ? null : id));
+
+  const isGroupOpen = (item) => openGroupId === item.id;
 
   const closeOnMobile = () => {
     if (window.innerWidth < 768) setMobileNavOpen(false);

@@ -2,10 +2,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // GLOBAL RECORD SEARCH — the navbar / ⌘K search box.
 //
-// STATUS: the backend endpoint is NOT built yet. This module is the single place
-// the frontend will need to touch when it is, and until then it fails SILENTLY:
-// the palette simply shows no "Records" group. Nothing else in the app depends
-// on it.
+// STATUS: LIVE. The backend endpoint exists (backend `search/` module —
+// SearchController + one RecordSearchProvider per type). This module stays the
+// single place the frontend touches for it, and it still fails SILENTLY on any
+// error: the palette simply shows no "Records" group. Nothing else in the app
+// depends on it.
 //
 // Deliberately a bare `fetch`, not the shared axios client — same idiom as
 // notificationService. A search box fires on almost every keystroke, and routing
@@ -29,7 +30,20 @@
 // this box must never become a way to see a record the caller cannot open.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const BASE = "/api/search";
+// Base URL, resolved the same way the three axios clients resolve theirs.
+//
+// This MUST honour VITE_API_URL. Production is split-origin — the SPA is served from
+// mytripsafar.com and the API lives on api.mytripsafar.com — and the SPA's nginx has no
+// /api location at all (`location /` falls through to index.html). A relative
+// `fetch("/api/search")` therefore returns the SPA's HTML with a 200, `res.json()`
+// throws, and the Records group silently never appears. It works in dev only because
+// Vite proxies /api to :8080, which is exactly why the bug would not be noticed.
+//
+// The fallback is the RELATIVE "/api" rather than the axios clients' absolute
+// http://localhost:8080/api: with the var unset (dev) the proxy handles it with no CORS
+// preflight on a box that fires on almost every keystroke.
+const API_ROOT = (import.meta.env.VITE_API_URL || "/api").replace(/\/+$/, "");
+const BASE = `${API_ROOT}/search`;
 
 // Once the endpoint answers 404/501 we stop asking for the rest of the session.
 // Without this, every keystroke on every page fires a request that cannot succeed.
