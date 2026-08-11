@@ -11,14 +11,14 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Building2, Check, Link2, Plus } from "lucide-react";
+import { Building2, Check, Link2, Loader2, Plus } from "lucide-react";
 import { customerService } from "@features/customers";
 import { bookingService } from "@features/bookings";
 import { marketplaceService } from "../api/marketplaceService";
 import {
   BackLink, Button, Card, Combobox, Empty, Hint, Input, Loading, Notice, NumberInput, Page,
   PageHeader, Row, RowGroup, SectionLabel, Select, Stepper, Textarea, Chip,
-  errMsg, fmtDate, isAlreadyReported, nightsBetween, todayISO, useFieldId, useHotkeys,
+  errMsg, fmtDate, fmtMoney, isAlreadyReported, nightsBetween, todayISO, useFieldId, useHotkeys,
   useIdempotencyKey, useToast,
 } from "../components/marketplaceUi";
 
@@ -127,6 +127,59 @@ export function MarketplaceBookingRequest() {
   }, [publicId, showToast]);
 
   const nights = nightsBetween(form.checkIn, form.checkOut);
+
+  /**
+   * Live indicative price, re-fetched as the stay changes.
+   *
+   * <p>This is the reason the form is usable at all. Before it existed the tenant learned the
+   * payable when a SuperAdmin approved — hours later — so they either quoted their own customer
+   * from a guess or waited. Now they see a number while they are still on the phone.</p>
+   *
+   * <p><b>Never blocks the form.</b> A quote failure sets `unavailable` and nothing else: the
+   * request is still submittable, because ON_REQUEST is the actual product and a hotel with no rate
+   * card is a normal, bookable hotel. Toasting here would also be wrong — the shared interceptor
+   * already handles the statuses worth shouting about, and a price probe firing on every keystroke
+   * must not be able to spam.</p>
+   *
+   * <p>The 400ms debounce plus the `alive` latch is the standard guard against a stale answer
+   * overwriting a fresher one: the stepper changes rooms faster than a round trip completes, and
+   * responses are not guaranteed to arrive in order.</p>
+   */
+  const [quote, setQuote] = useState(null);
+  const [quoting, setQuoting] = useState(false);
+
+  useEffect(() => {
+    // Nothing to price until the stay is a real one. Clearing rather than keeping the last figure
+    // matters: a stale price beside edited dates is worse than no price.
+    if (!form.checkIn || !form.checkOut || nights <= 0) {
+      setQuote(null);
+      return undefined;
+    }
+    let alive = true;
+    setQuoting(true);
+    const t = setTimeout(async () => {
+      try {
+        const q = await marketplaceService.quote({
+          hotelPublicId: publicId,
+          roomPublicId: form.roomPublicId || undefined,
+          mealPlanPublicId: form.mealPlanPublicId || undefined,
+          checkIn: form.checkIn,
+          checkOut: form.checkOut,
+          rooms: totalRooms,
+          adults: totalAdults,
+          children: totalChildren,
+        });
+        if (alive) setQuote(q);
+      } catch {
+        // Silent by design — see the note above.
+        if (alive) setQuote({ available: false });
+      } finally {
+        if (alive) setQuoting(false);
+      }
+    }, 400);
+    return () => { alive = false; clearTimeout(t); };
+  }, [publicId, form.checkIn, form.checkOut, form.roomPublicId, form.mealPlanPublicId,
+      totalRooms, totalAdults, totalChildren, nights]);
 
   const searchCustomers = useCallback(async (term, signal) => {
     const res = await customerService.list({ q: term, size: 8 }, { signal });
@@ -383,6 +436,9 @@ export function MarketplaceBookingRequest() {
         </Row>
       </RowGroup>
 
+      <QuotePanel quote={quote} quoting={quoting} nights={nights} rooms={totalRooms}
+                  hasChildren={totalChildren > 0} />
+
       <SectionLabel className="mt-8">Lead guest</SectionLabel>
       <RowGroup>
         <Row label="Name" required htmlFor={ids.guest} error={errors.leadGuestName}>
@@ -535,6 +591,82 @@ function Field({ label, children }) {
     <div className="flex flex-col gap-1">
       <span className="text-[11px] text-slate-400">{label}</span>
       {children}
+    </div>
+  );
+}
+
+/**
+ * What this stay would cost the tenant, live, while they are still filling the form in.
+ *
+ * <h3>Three states, and none of them blocks the request</h3>
+ * Loading, priced, and "on request". The last is not an error: a catalog hotel with no rate card is
+ * a perfectly bookable hotel in an ON_REQUEST marketplace, and the platform will quote it after
+ * speaking to the property. Presenting it as a failure would teach tenants not to trust the screen.
+ *
+ * <h3>Why the caveat is not optional</h3>
+ * The figure is indicative — no rate calendar, no allotment — so the platform is NOT bound by it.
+ * `note` arrives from the server with that sentence already written so the three surfaces that show
+ * a price cannot drift into three different promises. This renders the server's wording and falls
+ * back to its own only if the field is missing.
+ *
+ * <h3>The child-charges line</h3>
+ * Child pricing is per-property and age-banded; the quote deliberately does not guess it. Saying so
+ * costs one line and stops a tenant quoting a family package short.
+ */
+function QuotePanel({ quote, quoting, nights, rooms, hasChildren }) {
+  if (nights <= 0) return null;
+
+  if (quoting && !quote) {
+    return (
+      <div className="mt-4 flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-[13px] text-slate-500">
+        <Loader2 className="h-3.5 w-3.5 animate-spin" /> Checking price…
+      </div>
+    );
+  }
+  if (!quote) return null;
+
+  if (!quote.available) {
+    return (
+      <Notice tone="info" className="mt-4">
+        {quote.note || "This hotel is quoted on request. Submit a request and we will confirm the "
+          + "price with the property."}
+      </Notice>
+    );
+  }
+
+  return (
+    <div className="mt-4 rounded-lg border border-slate-200 bg-white">
+      <div className="flex items-baseline justify-between gap-4 px-4 py-3">
+        <div className="min-w-0">
+          <p className="text-[11px] uppercase tracking-wide text-slate-400">Estimated payable</p>
+          <p className="text-[13px] text-slate-500">
+            {rooms} room{rooms === 1 ? "" : "s"} · {nights} night{nights === 1 ? "" : "s"}
+            {quote.roomName ? ` · ${quote.roomName}` : ""}
+            {quote.mealPlanName ? ` · ${quote.mealPlanName}` : ""}
+          </p>
+        </div>
+        <div className="shrink-0 text-right">
+          <span className="text-lg font-semibold text-slate-900">
+            {fmtMoney(quote.tenantPayable, quote.currency || "INR")}
+          </span>
+          {quote.payablePerRoomNight != null && (
+            <span className="block text-[11px] text-slate-400">
+              {fmtMoney(quote.payablePerRoomNight, quote.currency || "INR")} per room-night
+            </span>
+          )}
+          {quoting && (
+            <span className="mt-0.5 inline-flex items-center gap-1 text-[11px] text-slate-400">
+              <Loader2 className="h-3 w-3 animate-spin" /> updating
+            </span>
+          )}
+        </div>
+      </div>
+      <p className="border-t border-slate-100 px-4 py-2.5 text-[11px] leading-relaxed text-slate-500">
+        {quote.note}
+        {(hasChildren || quote.excludesChildCharges) && (
+          <> Charges for children are set by the property and are not included here.</>
+        )}
+      </p>
     </div>
   );
 }

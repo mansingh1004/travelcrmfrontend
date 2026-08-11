@@ -374,6 +374,40 @@ export function MarketplaceBookingDetail() {
             </span>
           </Row>
         )}
+
+        {/*
+          Settlement, shown only once there is something to settle. A REQUESTED row has no agreed
+          price, so "Pending · ₹0 outstanding" there would be noise describing a debt that does not
+          exist yet.
+
+          `amountOutstanding` is SERVER-DERIVED, not `tenantPayable − amountPaid`: after a settled
+          cancellation the tenant owes the retained charge, not the original payable, and computing
+          it here would chase them for a room they did not use.
+        */}
+        {b.paymentStatus && b.tenantPayable != null && (
+          <Row
+            label="Settlement"
+            hint={
+              b.lastPaymentAt
+                ? `Last payment recorded ${fmtDate(b.lastPaymentAt)}`
+                : "Recorded by the platform when payment is received."
+            }
+          >
+            <span className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+              <PaymentChip status={b.paymentStatus} />
+              {Number(b.amountPaid) > 0 && (
+                <span className="text-[13px] tabular-nums text-slate-500">
+                  {fmtMoney(b.amountPaid, b.currency)} paid
+                </span>
+              )}
+              {Number(b.amountOutstanding) > 0 && (
+                <span className="text-[13px] tabular-nums text-slate-900">
+                  · {fmtMoney(b.amountOutstanding, b.currency)} outstanding
+                </span>
+              )}
+            </span>
+          </Row>
+        )}
       </RowGroup>
 
       {/* ── Voucher ─────────────────────────────────────────────────────── */}
@@ -605,6 +639,31 @@ export function MarketplaceBookingDetail() {
         />
       </Modal>
     </Page>
+  );
+}
+
+/**
+ * Where this booking stands on what the tenant owes the platform.
+ *
+ * Deliberately separate from the booking's own status and from the voucher's: a hotel does not
+ * release a confirmed room because an invoice is unpaid, and an unpaid invoice does not stop being
+ * owed because the booking was cancelled. Three independent facts, three independent labels.
+ *
+ * WRITTEN_OFF reads as "not collected", never as "paid" — the platform did not receive that money,
+ * and a tenant seeing "Paid" against an amount nobody sent would be told something untrue.
+ */
+function PaymentChip({ status }) {
+  const map = {
+    PENDING: ["Payment pending", "bg-amber-50 text-amber-700 ring-amber-200"],
+    PART_PAID: ["Part paid", "bg-blue-50 text-blue-700 ring-blue-200"],
+    PAID: ["Paid", "bg-emerald-50 text-emerald-700 ring-emerald-200"],
+    WRITTEN_OFF: ["Not collected", "bg-slate-100 text-slate-600 ring-slate-200"],
+  };
+  const [label, tone] = map[status] ?? [status, "bg-slate-100 text-slate-600 ring-slate-200"];
+  return (
+    <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium ring-1 ring-inset ${tone}`}>
+      {label}
+    </span>
   );
 }
 

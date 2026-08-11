@@ -3,9 +3,13 @@
 // Read-only detail of one catalog hotel, plus the two things a tenant may do with it: import a copy
 // into its own Hotel Master, and send a booking request to the platform.
 //
-// No prices are rendered anywhere, because the catalog carries none — rooms and meal plans are
-// descriptive, and rates live on a dated calendar this release does not ship. The amount a tenant
-// will owe is set by the platform at approval time.
+// Rooms now carry an INDICATIVE per-night payable. That figure is the catalog's rate card already
+// put through the platform's commercial rule — it is what the TENANT would owe, never what the
+// platform pays the hotel, and the net rate is neither on this response nor derivable from it.
+//
+// It stays indicative because this release is ON_REQUEST: there is no rate calendar and no
+// allotment, so the platform is not bound by it and the real amount is agreed with the property at
+// approval. The list-level notice says so; do not render a per-night figure without it.
 
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -16,7 +20,7 @@ import { hasPermission, P } from "@shared/lib/access";
 import { marketplaceService } from "../api/marketplaceService";
 import {
   BackLink, Button, Card, Empty, Loading, Notice, Page, PageHeader, SectionLabel,
-  errMsg, useToast,
+  errMsg, fmtMoney, useToast,
 } from "../components/marketplaceUi";
 
 export function MarketplaceHotel() {
@@ -81,6 +85,13 @@ export function MarketplaceHotel() {
   }
 
   const location = [hotel.cityName, hotel.stateName, hotel.countryCode].filter(Boolean).join(", ");
+
+  // Only show the "indicative" caveat when there is actually a figure to qualify. A hotel with no
+  // rate card shows no prices, and a standing disclaimer about prices that are not on screen is
+  // noise the reader has to decode.
+  const hasAnyRoomPrice = (hotel.rooms ?? []).some(
+    (r) => r.indicativePayablePerNight !== null && r.indicativePayablePerNight !== undefined,
+  );
 
   return (
     <Page>
@@ -166,21 +177,38 @@ export function MarketplaceHotel() {
         ) : (
           <ul className="divide-y divide-slate-100">
             {hotel.rooms.map((r) => (
-              <li key={r.publicId} className="px-4 py-3">
-                <p className="text-sm font-medium text-slate-900">{r.name}</p>
-                <p className="mt-0.5 text-[13px] text-slate-500">
-                  {[
-                    r.maxOccupancy != null ? `Sleeps ${r.maxOccupancy}` : null,
-                    r.bedType || null,
-                    r.size || null,
-                  ].filter(Boolean).join(" · ") || "—"}
-                </p>
-                {r.description && <p className="mt-1 text-[13px] text-slate-500">{r.description}</p>}
+              <li key={r.publicId} className="flex items-start justify-between gap-4 px-4 py-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-slate-900">{r.name}</p>
+                  <p className="mt-0.5 text-[13px] text-slate-500">
+                    {[
+                      r.maxOccupancy != null ? `Sleeps ${r.maxOccupancy}` : null,
+                      r.bedType || null,
+                      r.size || null,
+                    ].filter(Boolean).join(" · ") || "—"}
+                  </p>
+                  {r.description && <p className="mt-1 text-[13px] text-slate-500">{r.description}</p>}
+                </div>
+                <RoomPrice value={r.indicativePayablePerNight} />
               </li>
             ))}
           </ul>
         )}
       </Card>
+
+      {/*
+        One caveat for the whole room list, rather than one per row. It is the same sentence the
+        quote endpoint returns in `note`, and it has to be here too: a per-night figure with no
+        qualifier reads as a rate the platform is bound by, and this release is ON_REQUEST — the
+        real amount is agreed with the property at approval.
+      */}
+      {hasAnyRoomPrice && (
+        <Notice tone="info" className="-mt-6 mb-8">
+          Indicative prices, for one room for one night. The final amount is confirmed with the
+          property when your request is approved, and you will be asked to accept any change before
+          it applies.
+        </Notice>
+      )}
 
       {(hotel.mealPlans ?? []).length > 0 && (
         <>
@@ -215,6 +243,26 @@ export function MarketplaceHotel() {
         </>
       )}
     </Page>
+  );
+}
+
+/**
+ * Indicative payable for one night of one room.
+ *
+ * Renders nothing at all when the catalog has no rate for the room — as opposed to the search
+ * card's "On request", because here the absence sits beside rooms that DO have a price and an
+ * explicit label per row would be noise. The list-level notice covers it.
+ *
+ * Never renders 0 for a missing price: the server omits the field rather than sending zero, so the
+ * null check is on the field's presence, not on truthiness.
+ */
+function RoomPrice({ value }) {
+  if (value === null || value === undefined) return null;
+  return (
+    <span className="shrink-0 text-right leading-tight">
+      <span className="block text-sm font-semibold text-slate-900">{fmtMoney(value)}</span>
+      <span className="text-[11px] text-slate-400">per night</span>
+    </span>
   );
 }
 
