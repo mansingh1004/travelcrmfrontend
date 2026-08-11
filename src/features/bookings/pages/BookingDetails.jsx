@@ -22,7 +22,7 @@ import CancelBookingModal from "../components/CancelBookingModal";
 import BookingExpenseModal from "../components/BookingExpenseModal";
 import BookingVariationModal from "../components/BookingVariationModal";
 import BookingAttentionBar from "../components/BookingAttentionBar";
-import BookingTabs from "../components/BookingTabs";
+import BookingTabs from "@shared/ui/Tabs";
 import BookingActivityTimeline from "../components/BookingActivityTimeline";
 // Cross-feature reads go through the barrels, never a deep import.
 import { quotationService } from "@features/quotation";
@@ -1631,7 +1631,8 @@ export default function BookingDetails() {
           <div className="space-y-5 min-w-0">
 
             {/* Tab bar */}
-            <BookingTabs tabs={TABS} activeKey={tab} loadingKey={sectionLoading} onChange={setTab}/>
+            <BookingTabs tabs={TABS} activeKey={tab} loadingKey={sectionLoading} onChange={setTab}
+              label="Booking sections"/>
 
             {/* ══ OVERVIEW ══ */}
             {tab === "overview" && (
