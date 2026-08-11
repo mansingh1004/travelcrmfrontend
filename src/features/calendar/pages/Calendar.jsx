@@ -573,7 +573,7 @@ import AddEventModal from "../components/AddEventModal";
 import TaskBoard from "../components/TaskBoard";
 import {
   SOURCE_ORDER, SOURCE_META, metaFor, metaKeyFor, PRIORITY_META, MONTHS, WEEKDAYS,
-  monthMatrix, gridWindow, addMonths, isSameDay, dateKey, eventDayKey, fmtMoney, fmtTime, fmtDayLabel,
+  monthMatrix, gridWindow, addMonths, isSameDay, dateKey, eventDayKey, expandStayNights, fmtMoney, fmtTime, fmtDayLabel,
 } from "../lib/calendarUi";
 
 /* ── Small presentational pieces ─────────────────────────────────────────────── */
@@ -593,6 +593,16 @@ function EventChip({ ev, onClick }) {
         <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${meta.dot}`} />
         {!ev.allDay && ev.start && <span className="shrink-0 tabular-nums opacity-70">{fmtTime(ev.start)}</span>}
         <span className="truncate">{ev.title}</span>
+        {/*
+          A stay now appears on every night it spans, so without this each of them would read
+          "Check-in" — telling the user a guest arrived four days running. The marker says which
+          night of the stay this is; the first one is left unmarked because that one IS the arrival.
+        */}
+        {ev._night && !ev._night.first && (
+          <span className="ml-auto shrink-0 tabular-nums text-[10px] opacity-70">
+            {ev._night.index}/{ev._night.total}
+          </span>
+        )}
       </button>
 
       {/* Dynamic Colored Tooltip */}
@@ -600,6 +610,13 @@ function EventChip({ ev, onClick }) {
         {/* Tooltip box uses ${meta.chip} to match the event color */}
         <div className={`whitespace-normal rounded-lg px-3 py-2 text-center text-xs font-bold leading-relaxed shadow-xl ring-1 ${meta.chip}`}>
           {ev.title}
+          {ev._night && (
+            <span className="mt-1 block text-[10px] font-medium opacity-80">
+              {ev._night.first
+                ? `Check-in · night 1 of ${ev._night.total}`
+                : `Night ${ev._night.index} of ${ev._night.total}`}
+            </span>
+          )}
           {ev.subtitle && <span className="mt-1 block text-[10px] font-medium opacity-80">{ev.subtitle}</span>}
         </div>
         {/* Arrow uses border-t-current to automatically match text color */}
@@ -779,10 +796,17 @@ export default function Calendar() {
   const eventsByDay = useMemo(() => {
     const map = new Map();
     for (const ev of filtered) {
-      const k = eventDayKey(ev);
-      if (!k) continue;
-      if (!map.has(k)) map.set(k, []);
-      map.get(k).push(ev);
+      // A hotel stay is a SPAN, not a point: it occupies every night between check-in and
+      // check-out, and the day view has to show the guest on each of them. Every other source is
+      // genuinely a single moment and passes through untouched — expandStayNights returns
+      // `[ev]` unless there is a real multi-night range to expand.
+      const parts = ev.source === "HOTEL_CHECKIN" ? expandStayNights(ev) : [ev];
+      for (const part of parts) {
+        const k = eventDayKey(part);
+        if (!k) continue;
+        if (!map.has(k)) map.set(k, []);
+        map.get(k).push(part);
+      }
     }
     for (const list of map.values()) {
       list.sort((a, b) => (a.allDay === b.allDay ? new Date(a.start) - new Date(b.start) : a.allDay ? -1 : 1));
