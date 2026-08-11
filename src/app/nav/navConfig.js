@@ -656,25 +656,20 @@ export const ACCOUNT_SECTION = {
 export function buildQuickActions(navigate) {
   return [
     // ── Sales ────────────────────────────────────────────────────────────────
-    {
-      id: "action.lead.rapid",
-      group: "Sales",
-      label: "New enquiry · Rapid",
-      sublabel: "Fast intake and quick quotation",
-      Icon: Zap,
-      tone: "violet",
-      keywords: "create lead enquiry add fast",
-      can: () => hasPermission(P.LEAD_CREATE) && hasModule("LEADS"),
-      run: () => navigate("/createlead?mode=rapid"),
-    },
+    /* One row, not two. These used to be "New enquiry · Rapid" (?mode=rapid) and "New lead — the
+       full enquiry form", because /createlead had two modes. The full-details mode is retired and
+       every field it owned now lives in the rapid form, so a second entry point would open the
+       identical screen — and a palette that lists the same destination twice teaches the operator
+       that one of the two must be doing something else. `keywords` carries the retired wording so
+       searching "full" or "rapid" still lands here. */
     {
       id: "action.lead",
       group: "Sales",
-      label: "New lead",
-      sublabel: "The full enquiry form",
-      Icon: Users,
-      tone: "cyan",
-      keywords: "create enquiry add prospect",
+      label: "New enquiry",
+      sublabel: "Fast intake and quick quotation",
+      Icon: Zap,
+      tone: "violet",
+      keywords: "create lead enquiry add fast rapid full prospect quote",
       can: () => hasPermission(P.LEAD_CREATE) && hasModule("LEADS"),
       run: () => navigate("/createlead"),
     },
