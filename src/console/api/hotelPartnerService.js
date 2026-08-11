@@ -21,6 +21,21 @@ export const hotelPartnerService = {
 
   revokeInvite: (publicId) => ConsoleAPI.delete(`${BASE}/invites/${publicId}`).then(unwrap),
 
+  /**
+   * One partner's whole history: `{ contactName, contactEmail, events[], messages[], mailboxError }`.
+   *
+   * `messages` is real correspondence read live from the platform mailbox — envelopes only, both
+   * folders, oldest first. It is found by ADDRESS, not by threading headers: the platform mailbox is
+   * Gmail by default and Gmail rewrites the Message-ID of everything sent through it, so a stored
+   * outbound id would match no reply and the timeline would show "no correspondence" for a partner
+   * mid-conversation.
+   *
+   * `mailboxError` is a soft failure — an unconfigured or unreachable mailbox. The events half is
+   * still populated, so render the timeline and note the mail is missing rather than erroring out.
+   */
+  timeline: (publicId) =>
+    ConsoleAPI.get(`${BASE}/invites/${publicId}/timeline`).then(unwrap),
+
   listRegistrations: ({ status, page = 0, size = 25 } = {}) =>
     ConsoleAPI.get(`${BASE}/registrations`, { params: { status: status || undefined, page, size } })
       .then((res) => ({ rows: res?.data?.data ?? [], pagination: res?.data?.pagination })),
