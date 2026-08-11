@@ -16,7 +16,7 @@ import {
 import { marketplaceService } from "../api/marketplaceService";
 import {
   Button, Card, Empty, Hint, Input, Page, PageHeader, Pager, Select,
-  errMsg, useHotkeys, useToast,
+  errMsg, fmtMoney, useHotkeys, useToast,
 } from "../components/marketplaceUi";
 
 const PAGE_SIZE = 12;
@@ -252,9 +252,12 @@ function HotelCard({ hotel: h, busy, onOpen, onImport }) {
             <MapPin className="h-3.5 w-3.5 shrink-0 text-slate-400" />
             <span className="truncate">{[h.cityName, h.stateName, h.countryCode].filter(Boolean).join(", ")}</span>
           </p>
-          <p className="mt-1.5 text-[11px] text-slate-400">
-            {h.roomCount ?? 0} room type{h.roomCount === 1 ? "" : "s"}
-          </p>
+          <div className="mt-1.5 flex items-end justify-between gap-2">
+            <p className="text-[11px] text-slate-400">
+              {h.roomCount ?? 0} room type{h.roomCount === 1 ? "" : "s"}
+            </p>
+            <FromPrice value={h.fromPricePerNight} currency={h.currency} />
+          </div>
         </div>
       </button>
 
@@ -271,6 +274,33 @@ function HotelCard({ hotel: h, busy, onOpen, onImport }) {
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * "From ₹X / night" on a catalog card.
+ *
+ * <p>The figure is a TENANT PAYABLE — the catalog rate already through the platform's commercial
+ * rule. The hotel's net rate is not on this response and cannot be recovered from it.
+ *
+ * <p><b>A missing price renders "On request", never ₹0.</b> A hotel with no rate card in the
+ * catalog genuinely has no price, and a zero here is a number a tenant could quote to a customer
+ * and then be held to. The server omits the field entirely in that case rather than sending 0,
+ * which is why this tests for null rather than falsiness — a genuinely free night would still
+ * render as a price.
+ */
+function FromPrice({ value, currency }) {
+  if (value === null || value === undefined) {
+    return <span className="shrink-0 text-[11px] text-slate-400">On request</span>;
+  }
+  return (
+    <span className="shrink-0 text-right leading-tight">
+      <span className="block text-[10px] uppercase tracking-wide text-slate-400">from</span>
+      <span className="text-[13px] font-semibold text-slate-900">
+        {fmtMoney(value, currency || "INR")}
+      </span>
+      <span className="text-[11px] text-slate-400"> /night</span>
+    </span>
   );
 }
 
