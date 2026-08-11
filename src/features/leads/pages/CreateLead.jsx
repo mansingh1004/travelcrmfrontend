@@ -1916,10 +1916,14 @@ export function LeadFormPanels({
                    record a male/female split or an extra bed without switching modes first. Both
                    are back for everyone; the counters are one row either way. */
               />
+              {/* The blue Total Travellers strip is retired. TravellerCountFields' own first box is
+                  now labelled "Total Travellers" and, once the breakdown is open, is the derived
+                  total — so this was the same number a second time, two inches lower and in a
+                  different colour. `totalTravellers` is still computed above; the assistance panel's
+                  passenger-count rule validates against it.
               <div className="mt-3 flex items-center justify-between rounded-lg border border-blue-100 bg-blue-50 px-3 py-2.5">
-                <span className="text-xs font-bold uppercase tracking-wide text-blue-600">Total Travellers</span>
-                <span className="text-lg font-extrabold leading-none text-blue-800">{totalTravellers}</span>
-              </div>
+                <span …>Total Travellers</span><span …>{totalTravellers}</span>
+              </div> */}
 
               {showRoomPlanning && (
                 <div id="room-allocation-group" className="mt-4 border-t border-slate-100 pt-4">
