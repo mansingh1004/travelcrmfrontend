@@ -234,8 +234,9 @@ export default function FastTravelDetails({ form, setField, errors = {}, onBlurF
         )}
 
         <div className="border-t border-slate-100 pt-4">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500">Travellers & Rooms</h3>
+          {/* Same removal as the lead form's: TravellerCountFields now labels its own "Travellers"
+              and "Rooms" groups, so this heading repeated them one line above. */}
+          <div className="mb-2 flex justify-end">
             <p className="text-[11px] text-slate-400">Click a number and type to replace it</p>
           </div>
           <TravellerCountFields

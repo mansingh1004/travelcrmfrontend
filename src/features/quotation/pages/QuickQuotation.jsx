@@ -31,6 +31,7 @@ import {
   Sparkles,
   Star,
   Trash2,
+  TriangleAlert,
   Users,
   X,
   Zap,
@@ -38,6 +39,8 @@ import {
 
 import { leadService } from "@features/leads";
 import { hotelService, sightseeingService, vehicleService } from "@features/masters";
+// Relative, not through the feature's own barrel — this file IS part of the quotation feature.
+import { templateService } from "../api/templateService";
 import { useToast } from "@shared/ui/toast";
 import { getErrorMessage, isAlreadyReported } from "@shared/api/apiError";
 import { hasPermission, P } from "@shared/lib/access";
@@ -170,12 +173,56 @@ const loadVehicles = async (query) => {
   return extractList(response).slice(0, 30);
 };
 
+/* ── Sticky quote defaults ────────────────────────────────────────────────────────────────────
+   The lead form already learned this lesson (CreateLead.jsx's leadEntry:sticky): on a screen worked
+   50-100 times a day, the fields an agent sets IDENTICALLY every time are pure retyping. For a
+   quotation those are the commercial habits — markup, tax rate, discount type — and the boilerplate
+   inclusions/exclusions paragraph, which is agency policy, not deal terms.
+
+   Deliberately NOT sticky: the discount AMOUNT (that is negotiated per deal, and carrying the last
+   customer's discount into the next quote is a money bug, not a convenience) and anything derived
+   from the lead.
+
+   sessionStorage, not local: it dies with the tab and never leaks between staff on a shared machine
+   — same reasoning as the lead form's. Written only after a quotation actually saves, so a
+   half-built model the agent abandoned never becomes the next quote's defaults. */
+const QUOTE_STICKY_KEY = "quickQuote:sticky";
+
+const readQuoteSticky = () => {
+  try {
+    const stored = JSON.parse(sessionStorage.getItem(QUOTE_STICKY_KEY) || "{}");
+    return stored && typeof stored === "object" ? stored : {};
+  } catch { return {}; }
+};
+
+/**
+ * Remember this quotation's commercial defaults for the next one. Called by BOTH hosts after a
+ * successful create — the rapid lead form and the standalone builder — because an agent batching
+ * enquiries moves between them and a default that only half the app remembers is worse than none.
+ */
+export const rememberQuickQuoteDefaults = (model) => {
+  if (!model) return;
+  try {
+    sessionStorage.setItem(QUOTE_STICKY_KEY, JSON.stringify({
+      discType: model.pricing?.discType,
+      tax: model.pricing?.tax,
+      markup: model.pricing?.markup,
+      inclusions: model.terms?.inclusions,
+      exclusions: model.terms?.exclusions,
+      paymentPolicies: model.terms?.paymentPolicies,
+      cancellationPolicies: model.terms?.cancellationPolicies,
+      bookingTerms: model.terms?.bookingTerms,
+    }));
+  } catch { /* private mode — sticky is a convenience, never a requirement */ }
+};
+
 /**
  * Lead → a fully seeded quote model. Exported as buildQuickQuoteModel because the rapid lead form
  * builds it from the record it is ABOUT to save, not one it has fetched — same shape, no lead id yet.
  */
 export function initialModel(lead) {
   if (!lead) return null;
+  const sticky = readQuoteSticky();
   const itinerary = (Array.isArray(lead.itinerary) ? lead.itinerary : [])
     .filter((stop) => stop && (stop.city || stop.destination));
   const services = normalizedServices(lead);
@@ -228,6 +275,37 @@ export function initialModel(lead) {
       });
     }
   });
+  /* ── The departure day — what made this "4 Nights / 5 Days" produce 4 days ───────────────────
+     The loop above emits one row per NIGHT, so Σ nights rows: a 4N trip got Day 1-4 and the day the
+     customer actually flies home was missing from the itinerary entirely.
+
+     The full quotation flow has always been right, and this mirrors it rather than inventing a
+     second rule: Createquotation.jsx builds `max(nights,1)` day-map entries per stop and then, when
+     `totalNights > 0`, appends ONE final departure day pinned to the LAST city (Createquotation.jsx
+     "Nights available hain to final N+1 departure day add karo"), which SightseeingTab's
+     buildItineraryDay() renders pre-filled as "Departure from <city>" at ₹0. Same shape here, so
+     both flows now yield N+1 for every night/day combination — not just 4N/5D.
+
+     Pre-filled, not blank, and that is deliberate: ROW_HAS_CONTENT.sightseeing keys off `attraction`,
+     so a blank departure row would be silently dropped from both the running total and the saved
+     quotation — i.e. the bug again, one layer down. pricePerPax stays 0, so it adds nothing to the
+     subtotal. The PDF templates need no change: all three iterate `q.sightseeing.days` and this is
+     simply one more day. */
+  const totalNights = stays.reduce((sum, stay) => sum + stay.nights, 0);
+  if (stays.length > 0 && totalNights > 0) {
+    sightseeingDays.push({
+      id: rowId(),
+      day: day++,
+      city: lastStay.city,
+      destination: lastStay.destination,
+      date: addDays(travelDate, sightseeingDays.length),
+      isDepartureDay: true,
+      attraction: lastStay.city ? `Departure from ${lastStay.city}` : "Departure",
+      description: lastStay.city ? `Check-out and departure from ${lastStay.city}.` : "Check-out and departure.",
+      startTime: "", transfer: "Private", imagePath: "", pricePerPax: 0, pax: totalPax,
+    });
+  }
+
   if (sightseeingDays.length === 0) {
     sightseeingDays.push({
       id: rowId(), day: 1, city: firstStay.city, destination: firstStay.destination,
@@ -352,19 +430,30 @@ export function initialModel(lead) {
         description: "", quantity: 1, pricePerUnit: 0, included: true,
       })),
     },
+    /* Sticky wins over the constant, but only where the agent actually saved something — `??` and
+       `||` rather than a blind spread, so a cleared field falls back to the sensible default instead
+       of to blank. Inclusions keep their service-aware derivation when nothing is remembered: those
+       lines are built from THIS quote's ticked services and a remembered list cannot know them. */
     terms: {
-      inclusions: [
+      inclusions: sticky.inclusions || [
         enabledCore.includes("hotel") ? "Accommodation as specified" : "",
         enabledCore.includes("sightseeing") ? "Sightseeing as per itinerary" : "",
         enabledCore.includes("vehicle") ? "Transfers as specified" : "",
         enabledCore.includes("flight") ? "Flights as specified" : "",
       ].filter(Boolean).join("\n"),
-      exclusions: "Personal expenses\nAnything not mentioned in inclusions",
-      paymentPolicies: "",
-      cancellationPolicies: "",
-      bookingTerms: "Rates and availability are subject to confirmation.",
+      exclusions: sticky.exclusions || "Personal expenses\nAnything not mentioned in inclusions",
+      paymentPolicies: sticky.paymentPolicies || "",
+      cancellationPolicies: sticky.cancellationPolicies || "",
+      bookingTerms: sticky.bookingTerms || "Rates and availability are subject to confirmation.",
     },
-    pricing: { discount: 0, discType: "Fixed", tax: 0, markup: 0 },
+    // discount stays 0 — see the note on QUOTE_STICKY_KEY: carrying a negotiated discount into the
+    // next customer's quote is a money bug wearing a convenience costume.
+    pricing: {
+      discount: 0,
+      discType: sticky.discType || "Fixed",
+      tax: sticky.tax ?? 0,
+      markup: sticky.markup ?? 0,
+    },
   };
 }
 
@@ -396,12 +485,16 @@ function Select({ options, placeholder = "Select", ...props }) {
   );
 }
 
-function SectionCard({ title, icon: Icon, badge, action, children }) {
+/* `addScope` marks this card as the target Shift+Enter should add INTO. Only the hotel panel needs
+   it: its "Add room type" button repeats per stay, so an unscoped lookup would always find the first
+   hotel's button and quietly add a room to the wrong stay. Every other panel has one trailing add
+   button and falls back to the panel-level lookup. */
+function SectionCard({ title, icon: Icon, badge, action, addScope = false, children }) {
   return (
     // Flat on purpose: this card is always nested INSIDE an accordion section's white card, so a
     // second shadow, a tinted header and a white-on-white ringed tile stacked three surfaces on top
     // of each other. One inner border, one pastel tile, nothing else.
-    <section className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+    <section data-quick-addscope={addScope ? "true" : undefined} className="overflow-hidden rounded-lg border border-slate-200 bg-white">
       <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 px-4 py-3">
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
           <Icon className="h-4 w-4" />
@@ -429,7 +522,35 @@ function IconButton({ label, danger = false, ...props }) {
   );
 }
 
-function AsyncCombobox({ value, onValueChange, onSelect, loadOptions, getLabel, getSublabel, getBadge, getImage, placeholder }) {
+/* Master-lookup cache, module scope so it outlives every row, panel and section switch.
+   Keyed by the caller's own cacheKey (which encodes WHICH loader and its scope — the hotel one is
+   per-city, the sightseeing one per destination+city) plus the typed query, so two rows in different
+   cities can never read each other's results.
+
+   30s TTL: long enough that walking back to a field, or adding a second room in the same city, is
+   instant; short enough that a hotel added in Masters during the same call still shows up. Bounded
+   at 60 entries — an agent working one enquiry touches a handful of scopes, and an unbounded Map on
+   a screen that lives for a whole shift is a leak.
+
+   The point is not the request count. It is that focusing a field that ALREADY has a value used to
+   put a spinner over it 250ms later and re-render the list under the agent's cursor. */
+const LOOKUP_TTL_MS = 30_000;
+const LOOKUP_CACHE_MAX = 60;
+const lookupCache = new Map();
+
+const readLookupCache = (key) => {
+  const hit = lookupCache.get(key);
+  if (!hit) return null;
+  if (Date.now() - hit.at > LOOKUP_TTL_MS) { lookupCache.delete(key); return null; }
+  return hit.rows;
+};
+
+const writeLookupCache = (key, rows) => {
+  lookupCache.set(key, { at: Date.now(), rows });
+  while (lookupCache.size > LOOKUP_CACHE_MAX) lookupCache.delete(lookupCache.keys().next().value);
+};
+
+function AsyncCombobox({ value, onValueChange, onSelect, loadOptions, cacheKey, getLabel, getSublabel, getBadge, getImage, placeholder }) {
   const [focused, setFocused] = useState(false);
   const [loading, setLoading] = useState(false);
   const [options, setOptions] = useState([]);
@@ -442,23 +563,39 @@ function AsyncCombobox({ value, onValueChange, onSelect, loadOptions, getLabel, 
 
   useEffect(() => {
     if (!focused) return undefined;
+    const query = String(value || "").trim();
+    const key = `${cacheKey || "default"}::${query}`;
+
+    // Cache hit paints synchronously — no debounce, no spinner, no list rebuilding under the cursor.
+    const cached = readLookupCache(key);
+    if (cached) {
+      setOptions(cached);
+      setHighlight(0);
+      setLoading(false);
+      return undefined;
+    }
+
     let active = true;
     const timer = window.setTimeout(async () => {
       setLoading(true);
       try {
-        const rows = await loaderRef.current(String(value || "").trim());
+        const rows = await loaderRef.current(query);
+        const list = Array.isArray(rows) ? rows : [];
+        writeLookupCache(key, list);
         if (active) {
-          setOptions(Array.isArray(rows) ? rows : []);
+          setOptions(list);
           setHighlight(0);
         }
       } catch {
+        // Deliberately NOT cached: a failed lookup must be retried on the next focus, not remembered
+        // as "this city has no hotels" for the next 30 seconds.
         if (active) setOptions([]);
       } finally {
         if (active) setLoading(false);
       }
     }, 250);
     return () => { active = false; window.clearTimeout(timer); };
-  }, [focused, value]);
+  }, [focused, value, cacheKey]);
 
   const pick = (option) => {
     onSelect(option);
@@ -541,6 +678,15 @@ function AsyncCombobox({ value, onValueChange, onSelect, loadOptions, getLabel, 
     </div>
   );
 }
+
+/* Every focusable field of the OPEN panel, in document order. Three keyboard behaviours read this
+   list — Enter walks it, Shift+Enter uses its length to find the row it just created, and the reveal
+   effect focuses its head — so it is one function rather than three copies of the selector. Hidden
+   panels are excluded by [hidden]; offsetParent filters what is merely collapsed inside a visible
+   one (a departure-mode block, a folded room plan). */
+const visibleQuickFields = () =>
+  [...document.querySelectorAll('[data-quick-panel]:not([hidden]) [data-quick-field]:not([disabled])')]
+    .filter((field) => field.offsetParent !== null);
 
 const masterOptionKey = (option, fallback = "") => String(
   option?.publicId || option?.roomTypeId || option?.mealPlanId || option?.id || fallback,
@@ -686,9 +832,10 @@ function QuickHotelRoomLine({
       </div>
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        {/* Optional, like the full flow. A stay whose room category is still undecided is a normal
+            thing to quote; forcing a value here only taught agents to pick "Standard" and mean it. */}
         <Field
           label="Room type"
-          required
           hint={stay.hotelMasterPublicId && stay.roomTypeOptions.length === 0
             ? "No room types added in Hotel Master"
             : undefined}
@@ -743,17 +890,19 @@ function QuickHotelRoomLine({
         {/* The hint does the multiplication out loud. One line now stands for up to N rooms, and the
             failure this invites is an agent typing the whole party's budget into a per-room-per-night
             box and never noticing it got multiplied by 9 × the nights. */}
+        {/* Optional too — but a blank price is the one omission with a visible money consequence, so
+            it warns in amber instead of being silently accepted. Warn, don't block: the save gate
+            that used to live here is documented in validateQuickQuote. */}
         <Field
           label="Your selling price / room / night (₹)"
-          required
           hint={lineTotal > 0
             ? `₹${asNumber(line.pricePerRoom).toLocaleString("en-IN")} × ${roomQty} room${roomQty === 1 ? "" : "s"} × ${lineNights} night${lineNights === 1 ? "" : "s"} = ₹${lineTotal.toLocaleString("en-IN")}`
-            : "This is the price shown to the customer"}
+            : <span className="font-semibold text-amber-600">Optional — left blank, this room adds ₹0 to the quote.</span>}
         >
           <Input
             data-hotel-selling-price
             type="number"
-            min="1"
+            min="0"
             value={line.pricePerRoom}
             placeholder="Enter your price"
             onFocus={(event) => event.target.select()}
@@ -995,6 +1144,7 @@ function QuickHotelStays({ data, setData, loadHotels }) {
       {data.rows.map((stay, index) => (
         <SectionCard
           key={stay.id}
+          addScope
           title={`Stay ${index + 1}`}
           icon={BedDouble}
           badge={[
@@ -1022,6 +1172,7 @@ function QuickHotelStays({ data, setData, loadHotels }) {
                 onValueChange={(name) => clearHotel(stay.id, name)}
                 onSelect={(hotel) => chooseHotel(stay, hotel)}
                 loadOptions={(query) => loadHotels(query, stay.city)}
+                cacheKey={`hotel:${stay.city || ""}`}
                 getLabel={(hotel) => hotel.name || "Hotel"}
                 getImage={(hotel) => hotel.imagePath || hotel.imageUrl
                   || (hotel.roomTypes || []).flatMap((room) => room?.images || []).find(Boolean)
@@ -1139,6 +1290,7 @@ function QuickHotelStays({ data, setData, loadHotels }) {
               <button
                 type="button"
                 onClick={() => addRoom(stay.id)}
+                data-quick-add
                 className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-blue-300 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700 transition hover:bg-blue-100"
               >
                 <Plus className="h-4 w-4" /> Add room type
@@ -1155,7 +1307,7 @@ function QuickHotelStays({ data, setData, loadHotels }) {
           </div>
         </SectionCard>
       ))}
-      <button type="button" onClick={addHotel} className="inline-flex items-center gap-2 rounded-lg border border-dashed border-blue-300 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100">
+      <button type="button" onClick={addHotel} data-quick-add className="inline-flex items-center gap-2 rounded-lg border border-dashed border-blue-300 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100">
         <Plus className="h-4 w-4" /> Add hotel
       </button>
     </div>
@@ -1199,7 +1351,7 @@ function FlightPanel({ data, setData }) {
           </div>
         </SectionCard>
       ))}
-      <button type="button" onClick={() => setData((current) => ({ ...current, rows: [...current.rows, blank()] }))} className="inline-flex items-center gap-2 rounded-lg border border-dashed border-blue-300 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100">
+      <button type="button" onClick={() => setData((current) => ({ ...current, rows: [...current.rows, blank()] }))} data-quick-add className="inline-flex items-center gap-2 rounded-lg border border-dashed border-blue-300 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100">
         <Plus className="h-4 w-4" /> Add flight
       </button>
     </div>
@@ -1211,10 +1363,62 @@ function SightseeingPanel({ data, setData, loadSightseeing }) {
     ...current,
     rows: current.rows.map((row) => row.id === id ? { ...row, ...patch } : row),
   }));
+
+  /* Sightseeing is the longest section on this screen: it is one card PER DAY, so a 5-day trip means
+     five price boxes, and in practice an agency quotes one per-person day rate across the whole
+     itinerary. Typing it five times is the single most repetitive act in the builder.
+
+     Departure days are skipped — they are not sold, and stamping a rate on one would quietly add a
+     day's revenue the customer was never quoted for. `pax` is left alone: it is seeded from the
+     lead's party size and is already right. */
+  const [bulkPrice, setBulkPrice] = useState("");
+  const sellableDays = data.rows.filter((row) => !row.isDepartureDay).length;
+  const applyBulkPrice = () => {
+    const price = asNumber(bulkPrice);
+    setData((current) => ({
+      ...current,
+      rows: current.rows.map((row) => (row.isDepartureDay ? row : { ...row, pricePerPax: price })),
+    }));
+  };
+
   return (
     <div className="space-y-4">
+      {sellableDays > 1 && (
+        <div className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-slate-50/70 px-4 py-3">
+          <div className="min-w-0">
+            <Field label="Same price / pax for every day (₹)" hint={`Applies to all ${sellableDays} sellable days — the departure day stays at ₹0.`}>
+              <Input
+                type="number"
+                min="0"
+                value={bulkPrice}
+                placeholder="e.g. 1500"
+                onFocus={(event) => event.target.select()}
+                onChange={(event) => setBulkPrice(event.target.value)}
+                // Enter would otherwise walk to the next field and leave the value unapplied — the
+                // one place on this screen where Enter means "do it" rather than "move on".
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter" || event.shiftKey) return;
+                  event.preventDefault();
+                  applyBulkPrice();
+                }}
+              />
+            </Field>
+          </div>
+          <button
+            type="button"
+            data-skip-enter="true"
+            onClick={applyBulkPrice}
+            disabled={String(bulkPrice).trim() === ""}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs font-bold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <Check className="h-3.5 w-3.5" /> Apply to all days
+          </button>
+        </div>
+      )}
       {data.rows.map((row, index) => (
-        <SectionCard key={row.id} title={`Day ${row.day || index + 1}`} icon={MapPin} badge={[row.city, row.date].filter(Boolean).join(" · ")} action={data.rows.length > 1 ? <IconButton label="Remove activity" danger onClick={() => setData((current) => ({ ...current, rows: current.rows.filter((item) => item.id !== row.id) }))}><Trash2 className="h-4 w-4" /></IconButton> : null}>
+        // The departure day says so in its title. It is pre-filled and priced at 0, and without the
+        // label it reads as an activity the agent forgot to price.
+        <SectionCard key={row.id} title={row.isDepartureDay ? `Day ${row.day || index + 1} · Departure` : `Day ${row.day || index + 1}`} icon={MapPin} badge={[row.city, row.date].filter(Boolean).join(" · ")} action={data.rows.length > 1 ? <IconButton label="Remove activity" danger onClick={() => setData((current) => ({ ...current, rows: current.rows.filter((item) => item.id !== row.id) }))}><Trash2 className="h-4 w-4" /></IconButton> : null}>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <div className="md:col-span-2">
               <Field label="Attraction / activity" required>
@@ -1229,6 +1433,7 @@ function SightseeingPanel({ data, setData, loadSightseeing }) {
                     city: item.city || item.cityName || row.city,
                   })}
                   loadOptions={(query) => loadSightseeing(query, row.destination, row.city)}
+                  cacheKey={`sightseeing:${row.destination || ""}:${row.city || ""}`}
                   getLabel={(item) => item.title || "Activity"}
                   getImage={(item) => item.imagePath || item.imageUrl || ""}
                   getSublabel={(item) => [item.city || item.cityName, item.estimatedHours ? `${item.estimatedHours}h` : ""].filter(Boolean).join(" · ")}
@@ -1256,7 +1461,11 @@ function SightseeingPanel({ data, setData, loadSightseeing }) {
           )}
         </SectionCard>
       ))}
-      <button type="button" onClick={() => setData((current) => ({ ...current, rows: [...current.rows, { ...current.rows[current.rows.length - 1], id: rowId(), day: current.rows.length + 1, attraction: "", description: "", imagePath: "", pricePerPax: 0 }] }))} className="inline-flex items-center gap-2 rounded-lg border border-dashed border-blue-300 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100">
+      {/* The new row is cloned off the last one for its city/destination/pax, and the last one is now
+          usually the DEPARTURE day — so `isDepartureDay` is stripped explicitly. Left in, every added
+          day would inherit the flag, drop out of the completion and summary counts above, and the
+          agent's real activities would stop registering. */}
+      <button type="button" onClick={() => setData((current) => ({ ...current, rows: [...current.rows, { ...current.rows[current.rows.length - 1], id: rowId(), day: current.rows.length + 1, isDepartureDay: false, attraction: "", description: "", imagePath: "", pricePerPax: 0 }] }))} data-quick-add className="inline-flex items-center gap-2 rounded-lg border border-dashed border-blue-300 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100">
         <Plus className="h-4 w-4" /> Add activity
       </button>
     </div>
@@ -1285,6 +1494,7 @@ function VehiclePanel({ data, setData, loadVehicles }) {
                     imagePath: vehicle.imagePath || vehicle.image || "",
                   })}
                   loadOptions={loadVehicles}
+                  cacheKey="vehicle"
                   getLabel={(vehicle) => vehicle.name || "Vehicle"}
                   getImage={(vehicle) => vehicle.imagePath || vehicle.image || vehicle.imageUrl || ""}
                   getSublabel={(vehicle) => [vehicle.type, vehicle.capacity ? `${vehicle.capacity} seats` : ""].filter(Boolean).join(" · ")}
@@ -1314,7 +1524,7 @@ function VehiclePanel({ data, setData, loadVehicles }) {
           )}
         </SectionCard>
       ))}
-      <button type="button" onClick={() => setData((current) => ({ ...current, rows: [...current.rows, { ...current.rows[current.rows.length - 1], id: rowId(), type: "", model: "", imagePath: "", capacity: null, pricePerVehicle: 0 }] }))} className="inline-flex items-center gap-2 rounded-lg border border-dashed border-blue-300 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100">
+      <button type="button" onClick={() => setData((current) => ({ ...current, rows: [...current.rows, { ...current.rows[current.rows.length - 1], id: rowId(), type: "", model: "", imagePath: "", capacity: null, pricePerVehicle: 0 }] }))} data-quick-add className="inline-flex items-center gap-2 rounded-lg border border-dashed border-blue-300 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100">
         <Plus className="h-4 w-4" /> Add vehicle
       </button>
     </div>
@@ -1343,7 +1553,7 @@ function CruisePanel({ data, setData }) {
           </div>
         </SectionCard>
       ))}
-      <button type="button" onClick={() => setData((current) => ({ ...current, rows: [...current.rows, { ...current.rows[current.rows.length - 1], id: rowId(), name: "", pricePerPax: 0 }] }))} className="inline-flex items-center gap-2 rounded-lg border border-dashed border-blue-300 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100">
+      <button type="button" onClick={() => setData((current) => ({ ...current, rows: [...current.rows, { ...current.rows[current.rows.length - 1], id: rowId(), name: "", pricePerPax: 0 }] }))} data-quick-add className="inline-flex items-center gap-2 rounded-lg border border-dashed border-blue-300 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100">
         <Plus className="h-4 w-4" /> Add cruise
       </button>
     </div>
@@ -1362,7 +1572,7 @@ function AddonsPanel({ data, setData }) {
   return (
     // Dashed pastel, like every other panel's add-row control. A solid blue-600 fill made this the
     // only "primary" inside a section body, and it sat inches from the section's real primary.
-    <SectionCard title="Add-on services" icon={PackagePlus} action={<button type="button" onClick={add} className="inline-flex items-center gap-2 rounded-lg border border-dashed border-blue-300 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100"><Plus className="h-3.5 w-3.5" /> Add</button>}>
+    <SectionCard title="Add-on services" icon={PackagePlus} action={<button type="button" onClick={add} data-quick-add className="inline-flex items-center gap-2 rounded-lg border border-dashed border-blue-300 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100"><Plus className="h-3.5 w-3.5" /> Add</button>}>
       {data.rows.length === 0 ? (
         <button type="button" onClick={add} className="w-full rounded-xl border-2 border-dashed border-slate-200 py-8 text-sm font-bold text-slate-400 hover:border-blue-300 hover:text-blue-600">Add visa, insurance or another service</button>
       ) : (
@@ -1390,8 +1600,102 @@ function TermsPanel({ data, setData }) {
     ["cancellationPolicies", "Cancellation policy"],
     ["bookingTerms", "Booking terms"],
   ];
+
+  /* Pull the inclusions/exclusions off a saved package template. The agency has already written
+     these once per package; retyping them per quote is the second-biggest block of repeat typing on
+     this screen after the day rates.
+
+     Deliberately NOT templateService.apply(): that endpoint clones the template into a whole NEW
+     draft quotation server-side, which would throw away the model the agent is standing in. This
+     reads the template and copies two text fields into the model in place.
+
+     Only inclusions and exclusions — those are the only two a QuotationTemplateResponse carries. The
+     other three boxes below keep whatever is in them (and are already remembered session-to-session
+     by rememberQuickQuoteDefaults), so picking a template can never blank a policy the agent typed.
+
+     Loaded lazily on first open of the picker, not on mount: Terms is a section many quotes never
+     touch, and a list request per quotation for a feature used occasionally is the exact round trip
+     this pass is trying to remove. */
+  const [templates, setTemplates] = useState(null);
+  const [templatesBusy, setTemplatesBusy] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  const openPicker = async () => {
+    setPickerOpen((open) => !open);
+    if (templates || templatesBusy) return;
+    setTemplatesBusy(true);
+    try {
+      const { items } = await templateService.list({ active: true, size: 50 });
+      setTemplates(Array.isArray(items) ? items : []);
+    } catch {
+      // Silent, and empty rather than null so it is not retried on every toggle: the panel is fully
+      // usable by typing. A toast here would interrupt an agent who opened the picker out of
+      // curiosity mid-call.
+      setTemplates([]);
+    } finally {
+      setTemplatesBusy(false);
+    }
+  };
+
+  const applyTemplateTerms = (template) => {
+    const asText = (value) => (Array.isArray(value) ? value.filter(Boolean).join("\n") : String(value || ""));
+    setData((current) => ({
+      ...current,
+      inclusions: asText(template.inclusions) || current.inclusions,
+      exclusions: asText(template.exclusions) || current.exclusions,
+    }));
+    setPickerOpen(false);
+  };
+
   return (
-    <SectionCard title="Inclusions, exclusions & terms" icon={FileCheck2}>
+    <SectionCard
+      title="Inclusions, exclusions & terms"
+      icon={FileCheck2}
+      action={(
+        <button
+          type="button"
+          data-skip-enter="true"
+          onClick={openPicker}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-50"
+        >
+          {templatesBusy ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : <FileCheck2 className="h-3.5 w-3.5" />}
+          Use a package template
+        </button>
+      )}
+    >
+      {pickerOpen && (
+        <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+          {templatesBusy ? (
+            <p className="text-xs font-semibold text-slate-500">Loading templates…</p>
+          ) : (templates || []).length === 0 ? (
+            <p className="text-xs font-semibold text-slate-500">
+              No active package templates yet. Save a finished quotation as a template and it will appear here.
+            </p>
+          ) : (
+            <>
+              <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                Copies inclusions &amp; exclusions only — your policies below are left as they are
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {templates.map((template) => (
+                  <button
+                    key={template.id}
+                    type="button"
+                    data-skip-enter="true"
+                    onClick={() => applyTemplateTerms(template)}
+                    className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 transition hover:border-blue-300 hover:bg-blue-50"
+                  >
+                    <span className="truncate">{template.name || "Untitled template"}</span>
+                    {template.durationNights != null && (
+                      <span className="shrink-0 text-[10px] font-bold text-slate-400">{template.durationNights}N</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
       <div className="grid gap-4 lg:grid-cols-2">
         {fields.map(([key, label], index) => (
           <Field key={key} label={label} hint="One item per line">
@@ -1409,12 +1713,22 @@ function TermsPanel({ data, setData }) {
   );
 }
 
+/* Discount → markup → tax, in one place. This used to live inside PricingPanel alone; the zero-total
+   guard in validateQuickQuote needs the very same number, and a rule that rejects a quote using a
+   second copy of the arithmetic is a rule that will eventually disagree with the figure the agent is
+   looking at. Takes the pricing slice and the already-computed subtotal so it stays a pure function
+   of what the panel renders. */
+const priceBreakdown = (pricing, subtotal) => {
+  const base = asNumber(subtotal);
+  const discount = pricing?.discType === "%"
+    ? base * asNumber(pricing?.discount) / 100
+    : asNumber(pricing?.discount);
+  const beforeTax = Math.max(0, base - discount + asNumber(pricing?.markup));
+  return { discount, beforeTax, grandTotal: beforeTax + beforeTax * asNumber(pricing?.tax) / 100 };
+};
+
 function PricingPanel({ data, setData, subtotal }) {
-  const discount = data.discType === "%"
-    ? subtotal * asNumber(data.discount) / 100
-    : asNumber(data.discount);
-  const beforeTax = Math.max(0, subtotal - discount + asNumber(data.markup));
-  const grandTotal = beforeTax + beforeTax * asNumber(data.tax) / 100;
+  const { discount, grandTotal } = priceBreakdown(data, subtotal);
   return (
     <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
       <SectionCard title="Pricing adjustments" icon={IndianRupee}>
@@ -1500,14 +1814,29 @@ export const quickQuoteTotals = (model) => {
   return result;
 };
 
+/* What the customer is actually asked to pay — the same number PricingPanel prints as "Final
+   quotation". Exported because the zero-total guard and the panel must never disagree. */
+export const quickQuoteGrandTotal = (model) =>
+  model ? priceBreakdown(model.pricing, quickQuoteTotals(model).subtotal).grandTotal : 0;
+
 export const quickQuoteCompletion = (model) => {
   if (!model) return {};
   return {
+    /* Only the hotel NAME and the fact that a stay has room lines. Room type and selling price used
+       to be part of this test — `room.roomType.trim() && asNumber(room.pricePerRoom) > 0` — which is
+       what made them mandatory: a false here trips validateQuickQuote's firstIncompleteCore gate with
+       "Complete the main hotel details". The full quotation flow never required either
+       (Createquotation.jsx's only save rule is a non-empty title; HotelTab defaults them to "" and 0),
+       so Quick Quote was stricter than the flow it replicates. The name stays required because a
+       nameless stay prints as a blank hotel card on the customer's PDF. */
     hotel: model.hotel.rows.length > 0 && model.hotel.rows.every((stay) =>
-      stay.name.trim() && stay.roomLines.length > 0
-      && stay.roomLines.every((room) => room.roomType.trim() && asNumber(room.pricePerRoom) > 0)),
+      stay.name.trim() && stay.roomLines.length > 0),
     flight: model.flight.rows.some((row) => row.airline && row.from.trim() && row.to.trim()),
-    sightseeing: model.sightseeing.rows.some((row) => row.attraction.trim()),
+    /* Departure days do not count. initialModel() pre-fills the final day with "Departure from
+       <city>", so a bare `.some(row => row.attraction.trim())` would report the section complete on
+       an itinerary with no actual sightseeing in it — and validateQuickQuote's firstIncompleteCore
+       gate would wave through a ticked Sightseeing service the agent never filled in. */
+    sightseeing: model.sightseeing.rows.some((row) => !row.isDepartureDay && row.attraction.trim()),
     vehicle: model.vehicle.rows.some((row) => row.model.trim()),
     cruise: model.cruise.rows.some((row) => row.name.trim()),
     addons: model.addons.rows.length === 0 || model.addons.rows.every((row) => row.serviceType.trim()),
@@ -1572,7 +1901,10 @@ const sectionSummary = (id, model) => {
       return rows.length ? `${plural(rows.length, "flight")} · ${model.flight.journey}` : "No flight added yet";
     }
     case "sightseeing": {
-      const rows = filledRows("sightseeing", model.sightseeing.rows);
+      // Activities exclude the pre-filled departure day; the day COUNT still includes it, because
+      // "5 days" is what the customer was sold. Counting it as an activity would make a blank
+      // section read "1 activity over 5 days".
+      const rows = filledRows("sightseeing", model.sightseeing.rows).filter((row) => !row.isDepartureDay);
       return rows.length
         ? `${plural(rows.length, "activity", "activities")} over ${plural(model.sightseeing.rows.length, "day")}`
         : `${plural(model.sightseeing.rows.length, "day")} planned · no activity yet`;
@@ -1661,7 +1993,7 @@ function NextServiceStrip({ enabledCore, onAdd, tail = false }) {
  * options rather than refetching every time a section is reopened.
  */
 function AccordionSection({
-  id, index, label, icon: Icon, tone, open, done, amount, summary, onToggle, children, footer,
+  id, index, label, icon: Icon, tone, open, done, problemCount = 0, amount, summary, onToggle, children, footer,
 }) {
   return (
     <section
@@ -1690,6 +2022,15 @@ function AccordionSection({
               <span className="truncate text-sm font-bold text-slate-900">
                 <span className="mr-0.5 text-[11px] font-bold tabular-nums text-slate-400">{index}.</span> {label}
               </span>
+              {/* A section can be BOTH done and blocking — "at least 1 room" fails on a stay whose
+                  hotel is named and priced — so the problem badge is not an else-branch of Done. It
+                  comes first because it is the actionable one. */}
+              {problemCount > 0 && (
+                <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-bold text-rose-700">
+                  <TriangleAlert className="h-3 w-3" />
+                  {problemCount === 1 ? "Needs attention" : `${problemCount} to fix`}
+                </span>
+              )}
               {done && (
                 <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700">
                   <Check className="h-3 w-3" /> Done
@@ -1757,6 +2098,27 @@ export const QuickQuoteSections = forwardRef(function QuickQuoteSections({
   const totals = useMemo(() => quickQuoteTotals(model), [model]);
   const completion = useMemo(() => quickQuoteCompletion(model), [model]);
 
+  /* Problems are collected always, DISPLAYED only after a save has been attempted — a form that
+     marks itself red before the agent has typed anything is noise, and noise is what makes real
+     errors get scrolled past. Hosts flip this via ref.showProblems() in their failure branch.
+
+     It never has to be turned off: `problems` is recomputed from the model on every render, so a
+     fixed section drops out of the list and its banner disappears as the agent types. That is the
+     behaviour the old single-toast flow could not have — the message was gone before the fix. */
+  const [problemsShown, setProblemsShown] = useState(false);
+  const problems = useMemo(
+    () => (problemsShown ? quickQuoteProblems(model) : []),
+    [problemsShown, model],
+  );
+  const problemsBySection = useMemo(() => {
+    const map = {};
+    problems.forEach((problem) => {
+      if (!problem.section) return;   // title lives in the host's header, not in a panel
+      (map[problem.section] ||= []).push(problem.message);
+    });
+    return map;
+  }, [problems]);
+
   const [openSection, setOpenSection] = useState(() => (showServices ? SERVICES_STEP : ""));
 
   /* In the pick-driven host the service being worked on is hoisted to the TOP of the list, so the
@@ -1791,6 +2153,10 @@ export const QuickQuoteSections = forwardRef(function QuickQuoteSections({
   useImperativeHandle(ref, () => ({
     reveal: revealSection,
     close: () => setOpenSection(""),
+    /* Explicit, rather than piggy-backing on reveal(): reveal is also how a newly ticked service
+       gets opened, and turning the whole accordion red because the agent picked "Cruise" would
+       punish them for making progress. Only a failed save calls this. */
+    showProblems: () => setProblemsShown(true),
   }), [revealSection]);
 
   // A service switched back off takes its section with it. If that was the open one, fall back to
@@ -1889,9 +2255,48 @@ export const QuickQuoteSections = forwardRef(function QuickQuoteSections({
       if (target) revealSection(target.id);
       return;
     }
+    /* Esc collapses the open section. The only thing Esc did before was close a combobox dropdown
+       (AsyncCombobox stops that one with stopPropagation-by-preventDefault), so pressing it anywhere
+       else did nothing — and the agent had to reach for the mouse to fold a finished section away.
+       Guarded on defaultPrevented so a dropdown Esc still means "close the dropdown", not "close the
+       whole section underneath it". */
+    if (event.key === "Escape" && !event.defaultPrevented) {
+      if (!openSection) return;
+      event.preventDefault();
+      setOpenSection("");
+      return;
+    }
+
+    /* Shift+Enter appends a row to the section being worked on, then lands the caret in it — the
+       same idiom the rapid lead form uses for "add the next itinerary stop". Adding a hotel, a day
+       or a vehicle was the last thing on this screen that REQUIRED the mouse.
+
+       Scoped, not global: "Add room type" repeats once per stay, so an unscoped lookup would always
+       find the first hotel's button and add a room to the wrong stay. The nearest [data-quick-addscope]
+       ancestor wins; every other panel has one trailing button and falls through to the panel.
+
+       The new row's first field is found by COUNT, not by guessing at DOM shape: rows render before
+       the trailing add button, so the first field that did not exist a moment ago sits exactly at the
+       old field count. Deferred a tick because React has not committed the new row yet. */
+    if (event.key === "Enter" && event.shiftKey && !event.ctrlKey && !event.metaKey && !event.defaultPrevented) {
+      const scope = event.target.closest?.("[data-quick-addscope]")
+        || document.querySelector("[data-quick-panel]:not([hidden])");
+      const addButton = scope?.querySelector("[data-quick-add]");
+      if (!addButton) return;
+      event.preventDefault();
+      const before = visibleQuickFields().length;
+      addButton.click();
+      window.setTimeout(() => {
+        const after = visibleQuickFields();
+        const target = after[before] || after[after.length - 1];
+        target?.focus();
+        target?.select?.();
+      }, 0);
+      return;
+    }
+
     if (event.key !== "Enter" || event.shiftKey || event.target.tagName === "TEXTAREA" || event.defaultPrevented) return;
-    const fields = [...document.querySelectorAll('[data-quick-panel]:not([hidden]) [data-quick-field]:not([disabled])')]
-      .filter((field) => field.offsetParent !== null);
+    const fields = visibleQuickFields();
     const index = fields.indexOf(event.target);
     if (index >= 0 && fields[index + 1]) {
       event.preventDefault();
@@ -1968,6 +2373,9 @@ export const QuickQuoteSections = forwardRef(function QuickQuoteSections({
           icon={meta.icon}
           tone={meta.tone}
           open={openSection === meta.id}
+          // A collapsed section must still say it is the reason the save failed — otherwise the
+          // agent opens six panels looking for the red one.
+          problemCount={(problemsBySection[meta.id] || []).length}
           done={meta.id === SERVICES_STEP ? model.enabledCore.length > 0 : Boolean(completion[meta.id])}
           amount={meta.id === SERVICES_STEP ? null : asNumber(totals[meta.id])}
           summary={sectionSummary(meta.id, model)}
@@ -2017,6 +2425,24 @@ export const QuickQuoteSections = forwardRef(function QuickQuoteSections({
             </>
           )}
         >
+          {/* Every problem this section has, at the TOP of its body — the first thing under the
+              header the agent just opened, and beside the fields it is about rather than in a toast
+              that has already faded by the time they look. Self-clearing: `problems` recomputes from
+              the model, so the banner goes as the fix is typed. role="alert" so a screen reader
+              hears it when a failed save reveals the section. */}
+          {(problemsBySection[meta.id] || []).length > 0 && (
+            <ul
+              role="alert"
+              className="mb-3 space-y-1 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2.5"
+            >
+              {problemsBySection[meta.id].map((message) => (
+                <li key={message} className="flex items-start gap-1.5 text-[11px] font-bold text-rose-700">
+                  <TriangleAlert className="mt-px h-3.5 w-3.5 shrink-0" />
+                  {message}
+                </li>
+              ))}
+            </ul>
+          )}
           {panelFor(meta.id)}
           {/* Inside every real section, so it is on screen wherever the agent is working. Panels stay
               mounted when collapsed, so this is in the DOM many times but visible only for the open
@@ -2079,7 +2505,12 @@ export const quickQuotePayload = ({ model, lead, leadId, includeLead = true }) =
       refundable: stay.refundable,
       stars: stay.stars,
       imagePath: room.imagePath || stay.imagePath,
-      roomType: room.roomType,
+      /* Blank → null, not "". Both are now reachable because room type is optional, and null is the
+         value the PDF templates are written against: quotation-premium renders
+         `fmt.orElse(h.roomType, 'To be confirmed')` and quotation-modern hides its chip on
+         `h.roomType != null`. An empty string would satisfy neither and print a blank cell. No
+         template changes — the templates already handle null correctly. */
+      roomType: String(room.roomType || "").trim() || null,
       mealPlan: room.mealPlan,
       bedType: room.bedType,
       occupancy: room.occupancy,
@@ -2089,7 +2520,12 @@ export const quickQuotePayload = ({ model, lead, leadId, includeLead = true }) =
       extraBeds: room.extraBeds,
       childAges: room.childAges,
       rateSource: room.rateSource,
-      pricePerRoom: room.pricePerRoom,
+      /* Was passed through raw. That was safe only while validation guaranteed a positive number;
+         with the price optional the blank case is now reachable and `""` would hit a BigDecimal
+         deserializer. Sent as null instead — the column is nullable, computeTotals reads section
+         amounts (not this), and quotation-premium's rate line is guarded by `h.pricePerRoom != null`,
+         so a blank price simply omits the line rather than printing "₹ 0". */
+      pricePerRoom: String(room.pricePerRoom ?? "").trim() === "" ? null : asNumber(room.pricePerRoom),
       // Normalised, not passed through: the qty box holds a string, and "" would reach the server as
       // a room count of nothing on a line the page has already priced as one room.
       rooms: Math.max(1, asNumber(room.rooms, 1)),
@@ -2141,19 +2577,31 @@ export const quickQuotePayload = ({ model, lead, leadId, includeLead = true }) =
  * message plus the section (and optional field) the agent has to be taken to. Kept out of the
  * components so neither host can drift into accepting a quote the other would reject.
  */
-export const validateQuickQuote = (model) => {
-  if (!model) return { message: "Nothing to save yet.", section: null };
-  if (!model.title.trim()) return { message: "Enter a quotation title.", section: null, field: "[data-quick-title]" };
+/**
+ * EVERY problem with this model, in the order the accordion presents them.
+ *
+ * This used to be a chain of early returns that surfaced exactly ONE problem per save attempt, as a
+ * toast. A quote with an unpriced hotel, a blank add-on and no title therefore took three save
+ * attempts to diagnose, each one announcing a single sentence that then faded — and the agent was
+ * typing while it faded. Collecting them means the accordion can mark every offending section at
+ * once and print each message beside the field it is about (see `problems` in QuickQuoteSections).
+ *
+ * `validateQuickQuote` below still returns just the first, so both hosts' save paths are unchanged:
+ * they keep blocking on the first problem and scrolling to it. The list is the display channel, the
+ * first item is still the gate.
+ */
+export const quickQuoteProblems = (model) => {
+  if (!model) return [{ message: "Nothing to save yet.", section: null }];
+  const problems = [];
+  const push = (message, section, field) => problems.push({ message, section, field });
+
+  if (!model.title.trim()) push("Enter a quotation title.", null, "[data-quick-title]");
   if (model.enabledCore.length === 0 && model.addons.rows.length === 0) {
-    return { message: "Select at least one service for this quotation.", section: SERVICES_STEP };
+    push("Select at least one service for this quotation.", SERVICES_STEP);
   }
   if (model.enabledCore.includes("hotel")
     && model.hotel.rows.some((stay) => stay.roomLines.some((room) => asNumber(room.adults) < 1))) {
-    return {
-      message: "Every hotel room needs at least one adult.",
-      section: "hotel",
-      field: "[data-room-adults]",
-    };
+    push("Every hotel room needs at least one adult.", "hotel", "[data-room-adults]");
   }
   /* A line stands for N rooms now, and the qty box is typeable — so it can be cleared or zeroed.
      The totals clamp with Math.max(1, …) and would happily price a "0" line as one room, quietly
@@ -2161,34 +2609,56 @@ export const validateQuickQuote = (model) => {
      belongs with, rather than clamped silently on the way out. */
   if (model.enabledCore.includes("hotel")
     && model.hotel.rows.some((stay) => stay.roomLines.some((room) => asNumber(room.rooms, 0) < 1))) {
-    return {
-      message: "Every room type needs at least 1 room.",
-      section: "hotel",
-      field: "[data-room-qty]",
-    };
+    push("Every room type needs at least 1 room.", "hotel", "[data-room-qty]");
   }
-  if (model.enabledCore.includes("hotel")
-    && model.hotel.rows.some((stay) => stay.roomLines.some((room) => asNumber(room.pricePerRoom) <= 0))) {
-    return {
-      message: "Enter your selling price for every selected hotel room.",
-      section: "hotel",
-      field: "[data-hotel-selling-price]",
-    };
-  }
+  /* The selling-price gate is gone on purpose. It read:
+
+       if (… rows.some((stay) => stay.roomLines.some((room) => asNumber(room.pricePerRoom) <= 0)))
+         return { message: "Enter your selling price for every selected hotel room.", … };
+
+     An agent quoting a room whose rate is still being negotiated had to invent a number to get past
+     it. A blank price is now simply ₹0: asNumber() coerces "" to 0, sectionTotal.hotel multiplies
+     that out to zero, and the backend stores the client-computed hotelAmount — there is no profit
+     engine at quotation stage (netProfit lives on Booking), so nothing downstream divides by it or
+     reads it as a cost. The room line still shows an amber "adds ₹0" hint next to the field.
+
+     The two rules ABOVE this stay, and the distinction matters: adults ≥ 1 and rooms ≥ 1 guard the
+     MULTIPLICATION — a 0-room line prices as one room and silently disagrees with what the agent is
+     looking at. A 0 price disagrees with nothing. */
   const completion = quickQuoteCompletion(model);
-  const firstIncompleteCore = model.enabledCore.find((service) => !completion[service]);
-  if (firstIncompleteCore) {
-    const label = CORE_SERVICES.find(({ id }) => id === firstIncompleteCore)?.label || "Service";
-    return {
-      message: `Complete the main ${label.toLowerCase()} details before creating the quote.`,
-      section: firstIncompleteCore,
-    };
-  }
+  // EVERY incomplete section, not just the first — that was the single biggest reason a save took
+  // three attempts: fix the hotel, save, learn about the vehicle, save, learn about the cruise.
+  model.enabledCore.filter((service) => !completion[service]).forEach((service) => {
+    const label = CORE_SERVICES.find(({ id }) => id === service)?.label || "Service";
+    push(`Complete the main ${label.toLowerCase()} details before creating the quote.`, service);
+  });
   if (model.addons.rows.length > 0 && !completion.addons) {
-    return { message: "Choose a service type for every add-on row.", section: "addons" };
+    push("Choose a service type for every add-on row.", "addons");
   }
-  return null;
+  /* ── The one money rule, and it is deliberately the LAST one ─────────────────────────────────
+     Individual prices are optional now — a room, an activity or a vehicle may legitimately be
+     quoted at 0 while a rate is still being negotiated. What must never leave the building is a
+     quotation that asks the customer for nothing at all: it reads as a free holiday, and it is
+     indistinguishable from a save that silently lost its prices.
+
+     Checked last on purpose. The total is a consequence of every section above it, so raising it
+     before the section that is actually empty would point the agent at Pricing when the real
+     problem is an unpriced hotel. It is also checked against the SAME priceBreakdown() the panel
+     renders, so the rule and the figure on screen can never disagree — a markup-only quote
+     (subtotal 0, markup ₹5,000) is valid and passes.
+
+     Mirrored on the server in QuotationServiceImpl — this one is the fast, in-context half. */
+  if (quickQuoteGrandTotal(model) <= 0) {
+    push("This quotation totals ₹0 — add at least one price before creating it.", "pricing");
+  }
+  return problems;
 };
+
+/**
+ * The FIRST problem, or null. Unchanged contract — both hosts still gate their save on this and
+ * scroll to the section it names.
+ */
+export const validateQuickQuote = (model) => quickQuoteProblems(model)[0] || null;
 
 export default function QuickQuotation() {
   const navigate = useNavigate();
@@ -2262,6 +2732,9 @@ export default function QuickQuotation() {
     // which section to open and which field to land on, so the agent never has to hunt for the cause.
     const problem = validateQuickQuote(model);
     if (problem) {
+      // Mark every offending section, then scroll to the first. The toast stays for the ONE case the
+      // accordion cannot show inline — a missing title, which lives in this page's header.
+      sectionsRef.current?.showProblems();
       if (problem.section) sectionsRef.current?.reveal(problem.section, problem.field || null);
       else if (problem.field) document.querySelector(problem.field)?.focus();
       showToast(problem.message, "error");
@@ -2280,6 +2753,9 @@ export default function QuickQuotation() {
         if (!newId) throw new Error("Quotation was saved but its ID was not returned.");
         setQuotationId(String(newId));
         setQuoteNo(body.quoteNo == null ? "" : String(body.quoteNo));
+        // Only after the server accepted it — an abandoned draft must not become the next quote's
+        // defaults. Same call in the rapid lead form's inline-quote path.
+        rememberQuickQuoteDefaults(model);
         navigate(
           `/quick-quote?leadId=${encodeURIComponent(leadId)}&quotationId=${encodeURIComponent(String(newId))}`,
           { replace: true, state: { lead, quickQuote: true } },
