@@ -4,7 +4,12 @@
 // quotationService are consumed by leads and the public /q/ route.
 
 export { default as CreateQuotation } from "./pages/Createquotation";
-export { default as QuickQuotation } from "./pages/QuickQuotation";
+// The standalone Quick Quote PAGE is retired — no route reaches it, and it is gone from the nav and
+// from Quick Create. Pricing happens inside the rapid lead form instead, which captures the enquiry
+// and prices it in one pass rather than handing off to a second screen with nothing selected.
+//
+// QuickQuotation.jsx itself STAYS, and must: the builder below is decomposed out of it and CreateLead
+// hosts that inline. Deleting the file to "finish" the removal would take the rapid form with it.
 // The Quick Quote builder, decomposed so the rapid lead form can host the same accordion inline and
 // create the lead and its quotation from one screen. One implementation, two hosts.
 export {

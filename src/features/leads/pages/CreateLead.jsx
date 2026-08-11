@@ -3530,7 +3530,7 @@ export default function LeadFormPage() {
         );
 
         navigate(
-          `/quick-quote?leadId=${encodeURIComponent(String(leadPublicId))}`,
+          `/createquotation?leadId=${encodeURIComponent(String(leadPublicId))}`,
           { state: { lead: created, quickQuote: true } },
         );
 
@@ -3775,7 +3775,7 @@ export default function LeadFormPage() {
           <button
             type="button"
             onClick={() => navigate(
-              `/quick-quote?leadId=${encodeURIComponent(String(duplicate.publicId || duplicate.id))}`,
+              `/createquotation?leadId=${encodeURIComponent(String(duplicate.publicId || duplicate.id))}`,
               { state: { lead: duplicate, quickQuote: true } },
             )}
             className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-700"

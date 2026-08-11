@@ -416,6 +416,9 @@ function DecisionPanel({
 }) {
   const [supplierTotal, setSupplierTotal] = useState(row.supplierTotal ?? "");
   const [tenantPayable, setTenantPayable] = useState(row.tenantPayable ?? row.quotedTenantPayable ?? "");
+  // Never sticky across rows: an override is a decision about ONE booking's exposure, and a
+  // checkbox that stayed ticked would silently apply it to the next tenant in the queue.
+  const [overrideCredit, setOverrideCredit] = useState(false);
   const [confirmationNumber, setConfirmationNumber] = useState(row.supplierConfirmationNumber ?? "");
   const [cancellationTerms, setCancellationTerms] = useState(row.cancellationTerms ?? "");
   const [internalNotes, setInternalNotes] = useState(row.internalNotes ?? "");
@@ -707,6 +710,35 @@ function DecisionPanel({
                               onChange={(e) => setInternalNotes(e.target.value)} />
                   </Labelled>
 
+                  {/*
+                    The credit ceiling.
+
+                    The server refuses an approval that would take a tenant past their marketplace
+                    credit limit, with a 409 naming the figures. Without this checkbox that refusal
+                    is a dead end: the operator would have to leave, get the limit raised or the
+                    payments recorded, and come back — mid-call, with a hotel holding a room.
+
+                    Deliberately UNCHECKED by default and worded as a decision, not a retry. The
+                    point of the gate is not to prevent the platform carrying risk — sometimes
+                    carrying it is right — but to make sure somebody chose to. Ticking it is audited
+                    as MARKETPLACE_CREDIT_OVERRIDE; leaving it alone is the normal path.
+                  */}
+                  <label className="flex items-start gap-2 rounded-lg border border-border bg-surface-hover px-3 py-2">
+                    <input
+                      type="checkbox"
+                      checked={overrideCredit}
+                      onChange={(e) => setOverrideCredit(e.target.checked)}
+                      className="mt-0.5 h-3.5 w-3.5 shrink-0 accent-current"
+                    />
+                    <span className="text-[11px] leading-relaxed text-body">
+                      <span className="font-semibold">Confirm past the tenant's credit limit</span>
+                      <span className="block text-muted">
+                        Only needed if the approval is refused for credit. The platform carries the
+                        exposure, and the override is recorded against your account.
+                      </span>
+                    </span>
+                  </label>
+
                   <button
                     disabled={!marginOk || busy}
                     onClick={() =>
@@ -716,6 +748,7 @@ function DecisionPanel({
                         supplierConfirmationNumber: confirmationNumber.trim() || undefined,
                         cancellationTermsSnapshot: cancellationTerms.trim() || undefined,
                         internalNotes: internalNotes.trim() || undefined,
+                        overrideCreditLimit: overrideCredit || undefined,
                       })
                     }
                     className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-50"
