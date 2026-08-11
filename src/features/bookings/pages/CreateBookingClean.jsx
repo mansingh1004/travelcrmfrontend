@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   ArrowLeft,
   BadgeIndianRupee,
@@ -274,6 +274,8 @@ function Field({ label, required, optional, error, children }) {
 export default function BookingFormPage() {
   const navigate = useNavigate();
   const { leadId: routeLeadId, id: routeBookingId } = useParams();
+  // ?customerId= — set when the clerk started from a customer profile. See the seed effect below.
+  const [searchParams] = useSearchParams();
   const editing = Boolean(routeBookingId);
   const { showToast } = useToast();
 
@@ -736,6 +738,49 @@ export default function BookingFormPage() {
       .finally(() => { if (active) setLoadingLead(false); });
     return () => { active = false; };
   }, [applyLead, editing, routeLeadId, showToast]);
+
+  /* ── Arrived from a customer profile: /CreateBooking?customerId=<publicId> ──────────────────
+     The profile's "New booking" buttons used to land here on an empty form, so the clerk retyped
+     the phone number of the customer they were looking at and waited for the lookup to find them
+     again.
+
+     Skipped when a lead is in the route: a lead conversion already carries its own customer, and
+     letting both seed the form would make which one wins depend on which request returned first.
+
+     Sets customerMode to "existing" directly rather than routing through searchCustomer, because
+     we have the customer by publicId — going back through a phone search would be a second
+     round-trip that can only find the same row, or fail on a formatting difference. */
+  useEffect(() => {
+    if (editing || routeLeadId) return undefined;
+    const customerPublicId = searchParams.get("customerId");
+    if (!customerPublicId) return undefined;
+
+    let active = true;
+    customerService.getById(customerPublicId)
+      .then((response) => {
+        if (!active) return;
+        const customer = unwrap(response);
+        if (!customer) return;
+
+        setSelectedCustomer(customer);
+        setCustomerMode("existing");
+        setSyncCustomer(false);
+        setForm((current) => ({
+          ...current,
+          customerPhone: customer.phone || current.customerPhone,
+          customerName: customer.name || current.customerName,
+          customerEmail: customer.email || current.customerEmail,
+          customerCity: customer.city || current.customerCity,
+          birthday: dateInput(customer.birthday || current.birthday),
+          anniversary: dateInput(customer.anniversary || current.anniversary),
+        }));
+      })
+      // Silent, like the lead-seed path's sibling cases: a stale deep link must leave a usable
+      // blank form rather than an error to dismiss before typing.
+      .catch(() => {});
+
+    return () => { active = false; };
+  }, [editing, routeLeadId, searchParams]);
 
   const handleLeadChange = async (leadPublicId) => {
     setField("leadPublicId", leadPublicId);

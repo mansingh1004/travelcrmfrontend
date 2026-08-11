@@ -16,7 +16,10 @@ import {
   IndianRupee,
   ListChecks,
   LoaderCircle,
-  Map,
+  // Aliased, not imported bare: a lucide icon called `Map` shadows the global Map constructor for
+  // the whole module, and `new Map()` then throws "Map is not a constructor" at runtime — with a
+  // clean build, because nothing about it is a type error.
+  Map as MapIcon,
   MapPin,
   PackagePlus,
   Plane,
@@ -51,11 +54,15 @@ import {
   TRANSFER,
 } from "../Constants";
 
+/* Order matters and is load-bearing: enabledCore, quickQuoteSteps and the Alt+1…8 jumps are all
+   rebuilt from THIS list, which is what stops the sections reshuffling by click order. Vehicle leads
+   because the rapid lead form's picker leads with it and pre-ticks it — the two lists have to agree
+   or the first card would open the second section. */
 const CORE_SERVICES = [
+  { id: "vehicle", label: "Vehicle", icon: Car, tone: "orange" },
   { id: "hotel", label: "Hotel", icon: Hotel, tone: "violet" },
   { id: "flight", label: "Flight", icon: Plane, tone: "blue" },
-  { id: "sightseeing", label: "Sightseeing", icon: Map, tone: "emerald" },
-  { id: "vehicle", label: "Vehicle", icon: Car, tone: "orange" },
+  { id: "sightseeing", label: "Sightseeing", icon: MapIcon, tone: "emerald" },
   { id: "cruise", label: "Cruise", icon: Ship, tone: "cyan" },
 ];
 
@@ -254,6 +261,39 @@ export function initialModel(lead) {
       childAges: [],
     }));
 
+  /* Nine rooms used to arrive as nine identical room lines, each demanding its own room type, meal
+     plan and price — the agent typed the same Deluxe row nine times. Rooms of the SAME SHAPE now
+     collapse into ONE line carrying a `rooms` count, which the totals already multiply by
+     (sectionTotal.hotel) and the payload already carries (`rooms: room.rooms`), so only the seeding
+     was ever the problem.
+     Grouped rather than flattened to a single line on purpose: a room-wise plan the agent actually
+     filled in — say 7 doubles and 2 triples — still prices as two lines. Collapsing those would drop
+     the extra pax silently and under-quote the trip, which is worse than the retyping this fixes.
+     The key is every field that can change what one room costs: category, bed, who is in it, extra
+     beds, and the child ages a hotel's child policy reads. Ages are sorted because [8,5] and [5,8]
+     are the same room to price, and an unsorted key would split them into two lines. */
+  const roomShapeKey = (allocation) => JSON.stringify([
+    allocation.roomCategoryPreference || "Any",
+    allocation.bedPreference || "Any",
+    Math.max(1, asNumber(allocation.adults, 1)),
+    Math.max(0, asNumber(allocation.children)),
+    asNumber(allocation.infants),
+    asNumber(allocation.extraBeds),
+    [...(Array.isArray(allocation.childAges) ? allocation.childAges : [])].map(String).sort(),
+  ]);
+  const roomGroups = [];
+  const roomGroupIndex = new Map();
+  roomAllocations.forEach((allocation) => {
+    const key = roomShapeKey(allocation);
+    const at = roomGroupIndex.get(key);
+    if (at != null) {
+      roomGroups[at].rooms += 1;
+      return;
+    }
+    roomGroupIndex.set(key, roomGroups.length);
+    roomGroups.push({ allocation, rooms: 1 });
+  });
+
   return {
     title: [lead.customerName, destination, nights ? `${nights}N` : ""].filter(Boolean).join(" – ") || "Quotation",
     templateStyle: "CLASSIC",
@@ -266,8 +306,10 @@ export function initialModel(lead) {
         refundable: true, stars: 0, imagePath: "", hotelMasterPublicId: null,
         platformHotelPublicId: null, hotelOrigin: null, platformOwned: false, syncStatus: null,
         roomTypeOptions: [], mealPlanOptions: [],
-        roomLines: roomAllocations.map((allocation, allocationIndex) => ({
-          id: rowId(), roomNumber: allocation.roomNumber || allocationIndex + 1,
+        /* roomNumber is now the LINE's index, not a physical room — nine rooms on one line still
+           number 1. It survives only as a stable label and as what removeRoom() renumbers. */
+        roomLines: roomGroups.map(({ allocation, rooms: roomQty }, groupIndex) => ({
+          id: rowId(), roomNumber: groupIndex + 1,
           roomCategoryPreference: allocation.roomCategoryPreference || "Any",
           bedPreference: allocation.bedPreference || "Any",
           adults: Math.max(1, asNumber(allocation.adults, 1)), children: Math.max(0, asNumber(allocation.children)),
@@ -275,7 +317,7 @@ export function initialModel(lead) {
           childAges: Array.isArray(allocation.childAges) ? allocation.childAges : [],
           roomType: "", roomTypeMasterPublicId: null, platformRoomPublicId: null, bedType: "", occupancy: null,
           mealPlan: "", mealPlanMasterPublicId: null, platformMealPlanPublicId: null, pricePerRoom: "",
-          masterBaseRate: null, rateSource: "MISSING", imagePath: "", rooms: 1,
+          masterBaseRate: null, rateSource: "MISSING", imagePath: "", rooms: roomQty,
         })),
       })),
     },
@@ -571,35 +613,46 @@ function QuickHotelRoomLine({
   const selectedRoomKey = selectedRoom ? masterOptionKey(selectedRoom) : "";
   const selectedMealKey = selectedMeal ? masterOptionKey(selectedMeal) : "";
   const pax = asNumber(line.adults) + asNumber(line.children) + asNumber(line.infants);
+  /* A line is now a room TYPE with a count, not one physical room, so every number on it has to say
+     which of the two it means. Occupancy is per room; PAX and the price are shown both ways. */
+  const roomQty = Math.max(1, asNumber(line.rooms, 1));
+  /* Deliberately NOT Math.max(1, …) — sectionTotal.hotel multiplies by the raw night count, so a
+     same-day check-in/out really does total zero. A hint that quietly rounded 0 nights up to 1 would
+     be the only place on the page disagreeing with the grand total. */
+  const lineNights = nightsBetween(stay.checkIn, stay.checkOut);
+  const lineTotal = asNumber(line.pricePerRoom) * roomQty * lineNights;
   return (
     <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div>
-          <p className="text-xs font-extrabold text-slate-700">Room {line.roomNumber}</p>
+          <p className="text-xs font-extrabold text-slate-700">
+            Room type {line.roomNumber}
+            {roomQty > 1 && <span className="ml-1.5 font-bold text-blue-600">× {roomQty} rooms</span>}
+          </p>
           <p className="mt-0.5 text-[11px] text-slate-400">
-            {asNumber(line.adults)} adults · {asNumber(line.children)} children · {asNumber(line.infants)} infants
+            Per room: {asNumber(line.adults)} adults · {asNumber(line.children)} children · {asNumber(line.infants)} infants
             {line.extraBeds ? ` · ${line.extraBeds} extra bed` : ""}
           </p>
         </div>
         <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-violet-700 ring-1 ring-slate-200">
-          {pax} PAX · {line.roomCategoryPreference || "Any room"}
+          {pax} PAX/room{roomQty > 1 ? ` · ${pax * roomQty} total` : ""} · {line.roomCategoryPreference || "Any room"}
         </span>
       </div>
 
-      <div className="mb-3 grid gap-3 rounded-lg border border-slate-200 bg-white p-3 sm:grid-cols-2 lg:max-w-xl">
-        <Field label="Adult" hint="12+ yrs">
+      <div className="mb-3 grid gap-3 rounded-lg border border-slate-200 bg-white p-3 sm:grid-cols-3 lg:max-w-2xl">
+        <Field label="Adult" hint="12+ yrs, per room">
           <div data-room-adults>
             <RoomOccupancyStepper
-              label={`adults in room ${line.roomNumber}`}
+              label={`adults in room type ${line.roomNumber}`}
               min={1}
               value={line.adults}
               onChange={(adults) => onUpdate({ adults })}
             />
           </div>
         </Field>
-        <Field label="Children" hint="0-12 yrs">
+        <Field label="Children" hint="0-12 yrs, per room">
           <RoomOccupancyStepper
-            label={`children in room ${line.roomNumber}`}
+            label={`children in room type ${line.roomNumber}`}
             min={0}
             value={line.children}
             onChange={(children) => onUpdate({
@@ -608,13 +661,26 @@ function QuickHotelRoomLine({
             })}
           />
         </Field>
+        {/* Typed, not stepped: this arrives pre-filled from the lead (9 rooms is the case that
+            prompted the whole change), and correcting it to 12 should not cost twelve clicks. */}
+        <Field label="Rooms" hint="Same type & occupancy">
+          <Input
+            data-room-qty
+            type="number"
+            min="1"
+            value={line.rooms}
+            placeholder="1"
+            onFocus={(event) => event.target.select()}
+            onChange={(event) => onUpdate({ rooms: event.target.value })}
+          />
+        </Field>
         {canRemove && (
           <button
             type="button"
             onClick={onRemove}
-            className="text-left text-xs font-bold text-rose-600 hover:underline sm:col-span-2"
+            className="text-left text-xs font-bold text-rose-600 hover:underline sm:col-span-3"
           >
-            Remove Room {line.roomNumber}
+            Remove room type {line.roomNumber}
           </button>
         )}
       </div>
@@ -674,7 +740,16 @@ function QuickHotelRoomLine({
           </div>
         </Field>
 
-        <Field label="Your selling price / room / night (₹)" required hint="This is the price shown to the customer">
+        {/* The hint does the multiplication out loud. One line now stands for up to N rooms, and the
+            failure this invites is an agent typing the whole party's budget into a per-room-per-night
+            box and never noticing it got multiplied by 9 × the nights. */}
+        <Field
+          label="Your selling price / room / night (₹)"
+          required
+          hint={lineTotal > 0
+            ? `₹${asNumber(line.pricePerRoom).toLocaleString("en-IN")} × ${roomQty} room${roomQty === 1 ? "" : "s"} × ${lineNights} night${lineNights === 1 ? "" : "s"} = ₹${lineTotal.toLocaleString("en-IN")}`
+            : "This is the price shown to the customer"}
+        >
           <Input
             data-hotel-selling-price
             type="number"
@@ -856,6 +931,9 @@ function QuickHotelStays({ data, setData, loadHotels }) {
             id: rowId(),
             roomNumber: stay.roomLines.length + 1,
             childAges: [...(source.childAges || [])],
+            /* NOT inherited from the source line. Splitting 9 Deluxe into 6 Deluxe + 3 Suite starts
+               by adding a type, and copying the 9 across would silently quote 18 rooms. */
+            rooms: 1,
           },
         ],
       };
@@ -1063,12 +1141,15 @@ function QuickHotelStays({ data, setData, loadHotels }) {
                 onClick={() => addRoom(stay.id)}
                 className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-blue-300 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700 transition hover:bg-blue-100"
               >
-                <Plus className="h-4 w-4" /> Add Room
+                <Plus className="h-4 w-4" /> Add room type
               </button>
+              {/* Counts the ROOMS, not the lines, and weights the pax by each line's quantity — the
+                  numbers here are what the agent reads back to the customer, so they have to be the
+                  party, not the shape of the form. */}
               <span className="text-xs font-semibold text-slate-500">
-                {stay.roomLines.length} room{stay.roomLines.length === 1 ? "" : "s"}
-                {" / "}{stay.roomLines.reduce((sum, room) => sum + asNumber(room.adults), 0)} adults
-                {" / "}{stay.roomLines.reduce((sum, room) => sum + asNumber(room.children), 0)} children
+                {stay.roomLines.reduce((sum, room) => sum + Math.max(1, asNumber(room.rooms, 1)), 0)} rooms
+                {" / "}{stay.roomLines.reduce((sum, room) => sum + asNumber(room.adults) * Math.max(1, asNumber(room.rooms, 1)), 0)} adults
+                {" / "}{stay.roomLines.reduce((sum, room) => sum + asNumber(room.children) * Math.max(1, asNumber(room.rooms, 1)), 0)} children
               </span>
             </div>
           </div>
@@ -1529,6 +1610,48 @@ const sectionSummary = (id, model) => {
   }
 };
 
+/* "Also need…" — the add-a-service control, rendered where the agent already is.
+   The pick-driven host's only service picker sits ABOVE the accordion, so an agent who had just
+   finished a long Hotel panel had to scroll back up past the whole panel to tick Vehicle and then
+   find its section again. This puts the still-unticked services at the foot of the panel being
+   worked on, so "hotel done, now the car" is one click from where the cursor already is.
+
+   Add-only on purpose. Unticking a service throws away everything typed into its section, and that
+   is a deliberate decision belonging to the picker above — not to a one-click chip sitting directly
+   under the field the agent just left. The chips also stay visually OFF (dashed slate, pastel tile
+   only on the icon) rather than borrowing the Services step's selected TONES look: these are things
+   not yet in the quote, and colouring them like the picked ones would say the opposite. */
+function NextServiceStrip({ enabledCore, onAdd, tail = false }) {
+  const remaining = CORE_SERVICES.filter(({ id }) => !enabledCore.includes(id));
+  if (remaining.length === 0) return null;
+  return (
+    <div
+      className={tail
+        ? "flex flex-wrap items-center gap-2 rounded-xl border border-dashed border-slate-300 bg-white px-4 py-3"
+        : "mt-5 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-4"}
+    >
+      <span className="text-xs font-semibold text-slate-500">
+        {!tail ? "Also need" : enabledCore.length > 0 ? "Add another service" : "Add a service to price"}
+      </span>
+      {remaining.map(({ id, label, icon: Icon, tone }) => (
+        <button
+          key={id}
+          type="button"
+          onClick={() => onAdd(id)}
+          title={`Add ${label} to this quotation`}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-slate-300 bg-white py-1.5 pl-1.5 pr-2.5 text-xs font-bold text-slate-600 transition hover:border-solid hover:border-slate-400 hover:bg-slate-50 focus:outline-none focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-100"
+        >
+          <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded ${TILE_TONES[tone] || "bg-slate-100 text-slate-600"}`}>
+            <Icon className="h-3 w-3" />
+          </span>
+          <Plus className="h-3 w-3 text-slate-400" />
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /**
  * One collapsible section of the quick-quote accordion.
  *
@@ -1613,6 +1736,12 @@ function AccordionSection({
  * `showServices` is the difference between the two hosts. Standalone, the accordion opens on its own
  * Services step. Inside the lead form, the form already has a Services picker feeding the same lead
  * record, so a second one would be two controls for one decision.
+ *
+ * `onAddService` is how that host stays usable anyway. The lead's `services` array is the source of
+ * truth there — `enabledCore` is only a projection of it — so the accordion must not tick a service
+ * into the model itself: the lead would be saved without the service the quotation prices. The strip
+ * therefore hands the id back to the host, which toggles the lead field and lets the existing sync
+ * grow the section.
  */
 export const QuickQuoteSections = forwardRef(function QuickQuoteSections({
   model,
@@ -1620,6 +1749,7 @@ export const QuickQuoteSections = forwardRef(function QuickQuoteSections({
   showServices = true,
   submitSlot = null,
   onSectionDone = null,
+  onAddService = null,
   onRequestSave,
   className = "",
 }, ref) {
@@ -1847,7 +1977,9 @@ export const QuickQuoteSections = forwardRef(function QuickQuoteSections({
               {/* Previous only belongs to the wizard flow. In the pick-driven host the way back is
                   the picker above, and a Prev that jumped to an unrelated section would fight it. */}
               {onSectionDone ? (
-                <span className="text-xs text-slate-400">Finish this section, then pick the next service.</span>
+                <span className="text-xs text-slate-400">
+                  {onAddService ? "Done collapses this section." : "Finish this section, then pick the next service."}
+                </span>
               ) : (
                 <button
                   type="button"
@@ -1886,8 +2018,21 @@ export const QuickQuoteSections = forwardRef(function QuickQuoteSections({
           )}
         >
           {panelFor(meta.id)}
+          {/* Inside every real section, so it is on screen wherever the agent is working. Panels stay
+              mounted when collapsed, so this is in the DOM many times but visible only for the open
+              one — which is why the tail copy below is gated on nothing being open rather than being
+              rendered unconditionally. */}
+          {onAddService && meta.id !== SERVICES_STEP && (
+            <NextServiceStrip enabledCore={model.enabledCore} onAdd={onAddService} />
+          )}
         </AccordionSection>
       ))}
+
+      {/* Everything collapsed — after Done there is no panel footer to carry the strip, and the
+          picker above is a full screen away again. */}
+      {onAddService && !openSection && (
+        <NextServiceStrip enabledCore={model.enabledCore} onAdd={onAddService} tail />
+      )}
     </div>
   );
 });
@@ -1945,7 +2090,9 @@ export const quickQuotePayload = ({ model, lead, leadId, includeLead = true }) =
       childAges: room.childAges,
       rateSource: room.rateSource,
       pricePerRoom: room.pricePerRoom,
-      rooms: room.rooms,
+      // Normalised, not passed through: the qty box holds a string, and "" would reach the server as
+      // a room count of nothing on a line the page has already priced as one room.
+      rooms: Math.max(1, asNumber(room.rooms, 1)),
     }))),
     sightseeingIncluded: model.enabledCore.includes("sightseeing"),
     sightseeingTitle: model.sightseeing.title,
@@ -2006,6 +2153,18 @@ export const validateQuickQuote = (model) => {
       message: "Every hotel room needs at least one adult.",
       section: "hotel",
       field: "[data-room-adults]",
+    };
+  }
+  /* A line stands for N rooms now, and the qty box is typeable — so it can be cleared or zeroed.
+     The totals clamp with Math.max(1, …) and would happily price a "0" line as one room, quietly
+     disagreeing with what the agent is looking at. Rejected here instead, next to the two rules it
+     belongs with, rather than clamped silently on the way out. */
+  if (model.enabledCore.includes("hotel")
+    && model.hotel.rows.some((stay) => stay.roomLines.some((room) => asNumber(room.rooms, 0) < 1))) {
+    return {
+      message: "Every room type needs at least 1 room.",
+      section: "hotel",
+      field: "[data-room-qty]",
     };
   }
   if (model.enabledCore.includes("hotel")

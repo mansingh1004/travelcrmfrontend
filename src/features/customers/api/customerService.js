@@ -140,39 +140,92 @@ const customerService = {
   delete: (id) =>
     API.delete(`/customers/${id}`),
 
-  /* ── GET CUSTOMERS BY STATUS ────────────────────────────────
-     GET /api/customers/filter?status=Active
+  /* ── FILTER BY status / type / tier (UNPAGED) ───────────────
+     GET /api/customers/filter?status=&type=&tier=
      Response: CustomerResponseDTO[]
-  ──────────────────────────────────────────────────────────── */
-  filterByStatus: (status) =>
-    API.get("/customers/filter", {
-      params: { status },
-    }),
 
-  /* ── GET CUSTOMERS BY TYPE ──────────────────────────────────
-     GET /api/customers/filter?type=VIP
-     Response: CustomerResponseDTO[]
+     The list screen does NOT use this — it passes the same three params to `list`
+     above so the narrowing happens in the query that pages. Kept as one method
+     rather than the three single-param wrappers it used to be (filterByStatus /
+     filterByType / filterByTier), which had no callers anywhere in the tree.
   ──────────────────────────────────────────────────────────── */
-  filterByType: (type) =>
+  filter: ({ status, type, tier } = {}) =>
     API.get("/customers/filter", {
-      params: { type },
-    }),
-
-  /* ── GET CUSTOMERS BY TIER ──────────────────────────────────
-     GET /api/customers/filter?tier=Platinum
-     Response: CustomerResponseDTO[]
-  ──────────────────────────────────────────────────────────── */
-  filterByTier: (tier) =>
-    API.get("/customers/filter", {
-      params: { tier },
+      params: {
+        status: status || undefined,
+        type: type || undefined,
+        tier: tier || undefined,
+      },
     }),
 
   /* ── GET CUSTOMER BOOKING HISTORY ───────────────────────────
      GET /api/customers/:id/bookings
-     Response: BookingResponseDTO[]
+     Response: CustomerBookingResponse[]  → { id, code, dest, date, amt, status }
   ──────────────────────────────────────────────────────────── */
   getBookingHistory: (id) =>
     API.get(`/customers/${id}/bookings`),
+
+  /* ═══════════════════════════════════════════════════════════
+     CUSTOMER 360 PROFILE
+     One eager summary + one call per tab, fetched on first open.
+
+     The split is the contract, not an implementation detail: the profile used to
+     open with two requests and eagerly pull a booking list the landing tab never
+     showed. Now the page makes exactly ONE call on mount (getSummary) and each
+     tab pays for itself. Do not "helpfully" prefetch these — that undoes it.
+  ═══════════════════════════════════════════════════════════ */
+
+  /* Header + money strip + alert rail + every tab's count badge.
+     GET /api/customers/:id/summary → CustomerSummaryResponse
+
+     NOTE the money fields are NOT the list's `spent`:
+       • spent        = SUM(customerAmount) over live bookings — matches the finance dashboard.
+       • totalBilled  = SUM(totalPayable)   — tax-inclusive, what the customer actually owes.
+     Showing one and labelling it the other is what made the old KPI misleading. */
+  getSummary: (id) =>
+    API.get(`/customers/${id}/summary`),
+
+  /* Enquiries raised by this customer, each with its quotation count.
+     GET /api/customers/:id/leads → CustomerLeadRow[]
+     Requires LEAD_READ in addition to CUSTOMER_READ. */
+  getLeads: (id) =>
+    API.get(`/customers/${id}/leads`),
+
+  /* Quotations built for this customer, reached through their enquiries.
+     GET /api/customers/:id/quotations → QuotationSummaryDto[]
+
+     Rows carry `leadId` (the lead's publicId) because Quotation has no customer
+     column at all — the path is always customer → leads → quotations. Requires
+     QUOTATION_READ. */
+  getQuotations: (id) =>
+    API.get(`/customers/${id}/quotations`),
+
+  /* Merged activity timeline — agent notes plus booking/payment milestones.
+     GET /api/customers/:id/timeline?limit= → CustomerTimelineEntry[]
+     Server bounds limit to 500. */
+  getTimeline: (id, limit = 100) =>
+    API.get(`/customers/${id}/timeline`, { params: { limit } }),
+
+  /* Payment ledger + invoices + cancellations, in one response.
+     GET /api/customers/:id/money → { payments, invoices, cancellations }
+
+     Gated harder than the rest of the profile (PAYMENT_MANAGE / BOOKING_PROFIT_READ /
+     CRM_FULL), so a 403 here is expected for ordinary agents — render the tab as
+     locked rather than as an error. */
+  getMoney: (id) =>
+    API.get(`/customers/${id}/money`),
+
+  /* Portal account state + uploaded-document metadata (no file bytes).
+     GET /api/customers/:id/documents → CustomerDocumentsResponse */
+  getDocuments: (id) =>
+    API.get(`/customers/${id}/documents`),
+
+  /* Campaign sends and drip enrolments aimed at this customer.
+     GET /api/customers/:id/marketing → { campaigns, drips }
+     Requires MARKETING_READ. Birthday/anniversary sends are NOT here — the backend
+     writes no row for them. */
+  getMarketing: (id) =>
+    API.get(`/customers/${id}/marketing`),
 
   /* ── GET CUSTOMER STATS SUMMARY ─────────────────────────────
      GET /api/customers/stats
