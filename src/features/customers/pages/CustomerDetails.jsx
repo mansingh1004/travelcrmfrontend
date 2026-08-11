@@ -57,7 +57,7 @@ const unwrap = (response) => response?.data?.data ?? response?.data;
 const TAB_ICON = "h-4 w-4";
 
 /**
- * Tab order follows the page's own alerting, not a guess about what people want.
+
  *
  * AlertRail raises exactly two actionable alerts and they deep-link to Documents and MONEY —
  * never to Enquiries. The band above ends on Outstanding, and the drill-down for that figure is
