@@ -237,6 +237,7 @@ export default function EmailConfiguration() {
     password:     "",
     fromEmail:    "",
     fromName:     "",
+    signature:    "",
   });
   const [showPass,     setShowPass]    = useState(false);
   const [errs,         setErrs]        = useState({});
@@ -262,6 +263,7 @@ export default function EmailConfiguration() {
           password:   d.passwordSet ? "••••••••" : "",
           fromEmail:  d.fromEmail  || "",
           fromName:   d.fromName   || "",
+          signature:  d.signature  || "",
         }));
         setIsConfigured(!!d.configured);
       })
@@ -532,6 +534,23 @@ export default function EmailConfiguration() {
                     </div>
                     <FieldError msg={errs.fromName}/>
                   </div>
+                </div>
+
+                {/* Signature — full width on purpose. Three or four lines squeezed into half a
+                    column is something nobody proofreads before it goes out on every reply. */}
+                <div>
+                  <FieldLabel label="Email Signature"/>
+                  <textarea
+                    value={form.signature}
+                    onChange={e => set("signature", e.target.value)}
+                    rows={4}
+                    placeholder={"Priya Sharma\nWanderVista Holidays\n+91 00000 00000"}
+                    className={inputCls(null) + " resize-y leading-relaxed"}
+                  />
+                  <p className="mt-1.5 text-xs text-slate-400">
+                    Added to the Mailbox composer when you write a message — you can edit or remove
+                    it on any individual email. It is not attached automatically on send.
+                  </p>
                 </div>
 
                 {/* Info note */}

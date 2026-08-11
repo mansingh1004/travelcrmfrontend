@@ -23,14 +23,17 @@ export const platformMailService = {
   sendTest: (recipient) =>
     ConsoleAPI.post(`${BASE}/test`, { recipient }).then(unwrap),
 
-  /** folder is "INBOX" or "SENT". Returns the PagedApiResponse envelope's data array. */
-  listMessages: ({ folder = "INBOX", page = 0, size = 25 } = {}) =>
-    ConsoleAPI.get(`${BASE}/messages`, { params: { folder, page, size } }).then(
-      (res) => ({
-        messages: res?.data?.data ?? [],
-        meta: res?.data?.pagination ?? res?.data?.meta ?? null,
-      })
-    ),
+  /**
+   * folder is "INBOX" or "SENT". `q` narrows on the IMAP SERVER (From, To, Subject or Body), so it
+   * reaches mail well past the fetched page — omitted when blank so an empty box lists normally.
+   */
+  listMessages: ({ folder = "INBOX", page = 0, size = 25, q = "" } = {}) =>
+    ConsoleAPI.get(`${BASE}/messages`, {
+      params: { folder, page, size, ...(q?.trim() ? { q: q.trim() } : {}) },
+    }).then((res) => ({
+      messages: res?.data?.data ?? [],
+      meta: res?.data?.pagination ?? res?.data?.meta ?? null,
+    })),
 
   getMessage: (uid, folder = "INBOX") =>
     ConsoleAPI.get(`${BASE}/messages/${uid}`, { params: { folder } }).then(unwrap),
@@ -41,9 +44,12 @@ export const platformMailService = {
    * No `from` — same rule as the settings form: the server sends as the SMTP username, because
    * Gmail rejects mail whose From is not the account it authenticated as. A field here would be a
    * choice the server then silently overrides.
+   *
+   * `cc` and `bcc` ride on the SAME message as `to`. The server used to send a separate copy per
+   * recipient, which quietly turned a multi-address To into Bcc.
    */
-  sendMessage: ({ to, subject, body }) =>
-    ConsoleAPI.post(`${BASE}/messages`, { to, subject, body }).then(unwrap),
+  sendMessage: ({ to, cc, bcc, subject, body }) =>
+    ConsoleAPI.post(`${BASE}/messages`, { to, cc, bcc, subject, body }).then(unwrap),
 
   /**
    * One attachment's bytes, as a Blob. `index` is its position in attachmentNames — the server

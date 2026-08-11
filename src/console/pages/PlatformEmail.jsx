@@ -9,7 +9,7 @@
 // from the console's semantic tokens, never raw slate/blue.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Loader2, Mail, Inbox, Send, Save, ShieldCheck, AlertTriangle, CheckCircle2,
   RefreshCw, Paperclip, ChevronLeft, Server, Search, X, PenSquare, Reply,
@@ -104,6 +104,17 @@ export default function PlatformEmail() {
   // sixth of the viewport a mail client cannot spare.
   const [tab, setTab] = useState("INBOX");
   const [toast, setToast] = useState(null);
+  /* Held at the page, not inside MailboxTab, because Settings edits it and Compose reads it — and
+     MailboxTab is remounted (key={tab}) on every folder switch, so anything it fetched itself would
+     be refetched on each switch and still be stale the moment Settings saved. Failure is silent: a
+     missing signature is a composer that starts empty, not an error worth a toast. */
+  const [signature, setSignature] = useState("");
+
+  useEffect(() => {
+    platformMailService.getSettings()
+      .then((s) => setSignature(s?.signature || ""))
+      .catch(() => {});
+  }, []);
 
   const showToast = useCallback((type, msg) => {
     setToast({ type, msg });
@@ -139,10 +150,10 @@ export default function PlatformEmail() {
 
       {tab === "settings" ? (
         <div className="min-h-0 flex-1 overflow-y-auto pt-4">
-          <SettingsTab showToast={showToast} />
+          <SettingsTab showToast={showToast} onSignatureChange={setSignature} />
         </div>
       ) : (
-        <MailboxTab key={tab} folder={tab} showToast={showToast} />
+        <MailboxTab key={tab} folder={tab} showToast={showToast} signature={signature} />
       )}
 
       {toast && (
@@ -161,7 +172,7 @@ export default function PlatformEmail() {
 
 /* ────────────────────────────── Settings ────────────────────────────── */
 
-function SettingsTab({ showToast }) {
+function SettingsTab({ showToast, onSignatureChange }) {
   const [form, setForm] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -182,6 +193,7 @@ function SettingsTab({ showToast }) {
         ssl: !!s.ssl,
         fromName: s.fromName || "",
         enabled: s.enabled !== false,
+        signature: s.signature || "",
         passwordSet: !!s.passwordSet,
         source: s.source || "ENVIRONMENT",
       });
@@ -210,11 +222,15 @@ function SettingsTab({ showToast }) {
           ssl: !!form.ssl,
           fromName: form.fromName,
           enabled: !!form.enabled,
+          signature: form.signature ?? "",
         },
         mfaCode
       );
       setMfaOpen(false);
       showToast("success", "Platform email settings saved");
+      // Push it up so the composer picks it up without a page reload — the two tabs live in one
+      // screen and an operator who edits the signature then hits Compose expects to see it.
+      onSignatureChange?.(form.signature ?? "");
       load();
     } catch (e) {
       setMfaError(errText(e, "Save failed"));
@@ -286,6 +302,21 @@ function SettingsTab({ showToast }) {
             <input className={inputCls} value={form.fromName}
               onChange={(e) => set("fromName", e.target.value)} placeholder="Veto Tech IT" />
           </Field>
+          {/* Full width — a signature is three or four lines and half a column truncates it into
+              something nobody can proofread before it goes out on every partner invite reply. */}
+          <div className="sm:col-span-2">
+            <Field
+              label="Signature"
+              hint="Seeded into the composer when you write a message. You can edit or delete it per message."
+            >
+              <textarea
+                className={`${inputCls} min-h-[5.5rem] resize-y font-sans leading-relaxed`}
+                value={form.signature}
+                onChange={(e) => set("signature", e.target.value)}
+                placeholder={"Veto Tech IT\nPartner Support\n+91 00000 00000"}
+              />
+            </Field>
+          </div>
           <div className="flex flex-col justify-end gap-2 pb-1">
             <Check label="Implicit SSL (port 465)" checked={form.ssl} onChange={(v) => set("ssl", v)} />
             <Check label="Platform email enabled" checked={form.enabled} onChange={(v) => set("enabled", v)} />
@@ -340,13 +371,16 @@ function SettingsTab({ showToast }) {
 
 /* ────────────────────────────── Mailbox ────────────────────────────── */
 
-function MailboxTab({ folder, showToast }) {
+function MailboxTab({ folder, showToast, signature = "" }) {
   const [rows, setRows] = useState([]);
   const [meta, setMeta] = useState(null);
   const [page, setPage] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  /* `query` is what is typed; `search` is what the server was asked for. Separate because each run
+     is an IMAP SEARCH against the provider — search-as-you-type would be a request per keystroke. */
   const [query, setQuery] = useState("");
+  const [search, setSearch] = useState("");
 
   const [cursor, setCursor] = useState(0);
   const [openUid, setOpenUid] = useState(null);
@@ -365,7 +399,12 @@ function MailboxTab({ folder, showToast }) {
     setLoading(true);
     setError("");
     try {
-      const { messages, meta: m } = await platformMailService.listMessages({ folder, page, size: 50 });
+      const { messages, meta: m } = await platformMailService.listMessages({
+        folder,
+        page,
+        size: 50,
+        q: search,
+      });
       setRows(messages);
       setMeta(m);
       setCursor(0);
@@ -376,17 +415,16 @@ function MailboxTab({ folder, showToast }) {
     } finally {
       setLoading(false);
     }
-  }, [folder, page]);
+  }, [folder, page, search]);
 
   useEffect(() => { load(); }, [load]);
 
-  const visible = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter((m) =>
-      [m.subject, m.from, m.to].filter(Boolean).some((v) => v.toLowerCase().includes(q))
-    );
-  }, [rows, query]);
+  /* The server narrowed it. This was a client-side filter over the 50 fetched rows, which meant the
+     box answered "nothing matches" for every message older than the current page. */
+  const visible = rows;
+
+  const runSearch = useCallback(() => { setPage(0); setSearch(query.trim()); }, [query]);
+  const clearSearch = useCallback(() => { setQuery(""); setPage(0); setSearch(""); }, []);
 
   const openMessage = useCallback(async (row) => {
     if (!row) return;
@@ -394,7 +432,13 @@ function MailboxTab({ folder, showToast }) {
     setOpenUid(row.uid);
     setOpening(true);
     try {
-      setMessage(await platformMailService.getMessage(row.uid, folder));
+      const full = await platformMailService.getMessage(row.uid, folder);
+      setMessage(full);
+      /* The fetch marked it \Seen server-side, so the row behind it is already stale. Patch it from
+         the response rather than re-listing — a refetch is a second IMAP connection for one flag. */
+      if (full?.seen) {
+        setRows((current) => current.map((r) => (r.uid === row.uid ? { ...r, seen: true } : r)));
+      }
     } catch (e) {
       setOpenUid(null);
       showToast("error", errText(e, "Could not open that message"));
@@ -403,11 +447,19 @@ function MailboxTab({ folder, showToast }) {
     }
   }, [folder, showToast]);
 
+  /* The signature goes IN the textarea rather than being appended on send, so the operator sees and
+     can trim exactly what goes out. `-- ` is the RFC 3676 delimiter mail clients use to collapse a
+     signature when quoting — the reason one does not stack three deep down a thread. */
+  const withSignature = useCallback(
+    (body = "") => (signature ? `${body}\n\n-- \n${signature}` : body),
+    [signature]
+  );
+
   const startCompose = useCallback((prefill = {}) => {
     setOpenUid(null);
     setMessage(null);
-    setDraft({ to: "", subject: "", body: "", ...prefill });
-  }, []);
+    setDraft({ to: "", cc: "", bcc: "", subject: "", body: withSignature(""), ...prefill });
+  }, [withSignature]);
 
   /* Reply prefills from the message on screen and quotes it underneath — the quote is why this is a
      button and not just "compose with the address filled in". `Re:` is only added once, so replying
@@ -420,12 +472,13 @@ function MailboxTab({ folder, showToast }) {
       .split("\n")
       .map((line) => `> ${line}`)
       .join("\n");
+    // Signature above the quote, where a reply is actually read.
     startCompose({
       to: addr,
       subject,
-      body: `\n\nOn ${fmtFull(m.sentAt)}, ${displayName(m.from)} wrote:\n${quoted}`,
+      body: `${withSignature("")}\n\nOn ${fmtFull(m.sentAt)}, ${displayName(m.from)} wrote:\n${quoted}`,
     });
-  }, [startCompose]);
+  }, [startCompose, withSignature]);
 
   useEffect(() => {
     const onKey = (e) => {
@@ -476,15 +529,21 @@ function MailboxTab({ folder, showToast }) {
         </span>
         <div className="relative ml-auto">
           <Search size={12} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" />
+          {/* Enter searches, Escape clears. Not search-as-you-type — one IMAP SEARCH per keystroke
+              is how the platform account gets throttled by the provider. */}
           <input
             ref={searchRef}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Filter this page…"
+            onKeyDown={(e) => {
+              if (e.key === "Enter") { e.preventDefault(); runSearch(); }
+              if (e.key === "Escape") { e.preventDefault(); clearSearch(); e.target.blur(); }
+            }}
+            placeholder="Search mailbox — press Enter"
             className={`${inputCls} w-52 pl-7 pr-6`}
           />
-          {query && (
-            <button onClick={() => setQuery("")}
+          {(query || search) && (
+            <button onClick={clearSearch} title="Clear search"
               className="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-heading">
               <X size={11} />
             </button>
@@ -519,7 +578,7 @@ function MailboxTab({ folder, showToast }) {
           ) : visible.length === 0 ? (
             <Centered>
               <p className="text-[13px] text-muted">
-                {query ? "Nothing on this page matches." : "Nothing here."}
+                {search ? `No messages match “${search}”.` : "Nothing here."}
               </p>
             </Centered>
           ) : (
@@ -562,6 +621,7 @@ function MailboxTab({ folder, showToast }) {
               draft={draft}
               setDraft={setDraft}
               showToast={showToast}
+              signature={signature}
               onSent={() => {
                 setDraft(null);
                 // Sent mail belongs in Sent — reload so it is there rather than making the agent
@@ -655,8 +715,12 @@ function MailboxTab({ folder, showToast }) {
 /* There is no From field, and that is the same decision the settings form makes: the server sends as
    the SMTP username because Gmail rejects mail whose From is not the account it authenticated as.
    Showing an editable From here would be offering a choice the server then overrides. */
-function ComposePane({ draft, setDraft, showToast, onSent }) {
+function ComposePane({ draft, setDraft, showToast, signature = "", onSent }) {
   const [sending, setSending] = useState(false);
+  /* Cc and Bcc stay folded away until asked for — three address rows on every compose is two rows of
+     nothing for the reply that is most of what gets written here. Opens itself when a draft arrives
+     already carrying either, so a prefill cannot drop copies silently. */
+  const [showCopies, setShowCopies] = useState(Boolean(draft.cc || draft.bcc));
   const toRef = useRef(null);
 
   // Land the caret in whichever field is still empty — To on a fresh compose, the body on a reply,
@@ -668,11 +732,20 @@ function ComposePane({ draft, setDraft, showToast, onSent }) {
 
   const set = (k, v) => setDraft((d) => ({ ...d, [k]: v }));
 
-  const recipients = String(draft.to || "")
-    .split(/[,;]/)
-    .map((s) => s.trim())
-    .filter(Boolean);
-  const badAddress = recipients.find((a) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(a));
+  const split = (v) => String(v || "").split(/[,;]/).map((s) => s.trim()).filter(Boolean);
+  const VALID = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  const recipients = split(draft.to);
+  const ccList = split(draft.cc);
+  const bccList = split(draft.bcc);
+  // Names the field as well as the address — with three rows on screen, "x is not valid" is a hunt.
+  const badAddress =
+    [["To", recipients], ["Cc", ccList], ["Bcc", bccList]]
+      .map(([field, list]) => {
+        const bad = list.find((a) => !VALID.test(a));
+        return bad ? `${bad} (${field})` : null;
+      })
+      .find(Boolean) || null;
   const canSend = recipients.length > 0 && !badAddress && draft.subject.trim() && !sending;
 
   const send = async () => {
@@ -681,10 +754,18 @@ function ComposePane({ draft, setDraft, showToast, onSent }) {
     try {
       await platformMailService.sendMessage({
         to: recipients.join(","),
+        cc: ccList.join(","),
+        bcc: bccList.join(","),
         subject: draft.subject.trim(),
         body: draft.body,
       });
-      showToast("success", `Sent to ${recipients.join(", ")}`);
+      // Bcc is counted, never listed back — a toast on a shared console screen is the one place a
+      // blind copy stops being blind.
+      const copies = [
+        ccList.length ? `${ccList.length} cc` : null,
+        bccList.length ? `${bccList.length} bcc` : null,
+      ].filter(Boolean).join(", ");
+      showToast("success", `Sent to ${recipients.join(", ")}${copies ? ` (${copies})` : ""}`);
       onSent();
     } catch (e) {
       // Inline is wrong here — the draft stays on screen and the agent needs the reason next to the
@@ -696,7 +777,11 @@ function ComposePane({ draft, setDraft, showToast, onSent }) {
   };
 
   const discard = () => {
-    const typed = draft.to || draft.subject || draft.body.trim();
+    /* A body holding only the prefilled signature is untouched, not a draft — without subtracting it
+       every empty compose would ask "Discard this draft?" on the way out. */
+    const seeded = signature ? `\n\n-- \n${signature}` : "";
+    const written = draft.body === seeded ? "" : draft.body.trim();
+    const typed = draft.to || draft.cc || draft.bcc || draft.subject || written;
     if (typed && !window.confirm("Discard this draft?")) return;
     setDraft(null);
   };
@@ -733,7 +818,40 @@ function ComposePane({ draft, setDraft, showToast, onSent }) {
             placeholder="someone@example.com — comma-separate for several"
             className="min-w-0 flex-1 bg-transparent text-[13px] text-heading placeholder:text-muted focus:outline-none"
           />
+          {!showCopies && (
+            <button
+              type="button"
+              onClick={() => setShowCopies(true)}
+              className="shrink-0 text-[11px] font-semibold text-muted transition hover:text-heading"
+            >
+              Cc / Bcc
+            </button>
+          )}
         </label>
+
+        {showCopies && (
+          <>
+            <label className="flex items-baseline gap-3 border-b border-border py-2">
+              <span className="w-16 shrink-0 text-[12px] font-semibold text-muted">Cc</span>
+              <input
+                value={draft.cc || ""}
+                onChange={(e) => set("cc", e.target.value)}
+                placeholder="Everyone here can see each other"
+                className="min-w-0 flex-1 bg-transparent text-[13px] text-heading placeholder:text-muted focus:outline-none"
+              />
+            </label>
+            <label className="flex items-baseline gap-3 border-b border-border py-2">
+              <span className="w-16 shrink-0 text-[12px] font-semibold text-muted">Bcc</span>
+              <input
+                value={draft.bcc || ""}
+                onChange={(e) => set("bcc", e.target.value)}
+                placeholder="Hidden from everyone on the message"
+                className="min-w-0 flex-1 bg-transparent text-[13px] text-heading placeholder:text-muted focus:outline-none"
+              />
+            </label>
+          </>
+        )}
+
         <label className="flex items-baseline gap-3 border-b border-border py-2">
           <span className="w-16 shrink-0 text-[12px] font-semibold text-muted">Subject</span>
           <input

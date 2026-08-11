@@ -16,25 +16,40 @@ export const mailboxService = {
   /** Cheap probe so the page can show a "connect your email" prompt instead of an error. */
   status: () => API.get(`${BASE}/status`).then((r) => r.data?.data ?? r.data),
 
-  /** folder is "INBOX" or "SENT". */
-  listMessages: ({ folder = "INBOX", page = 0, size = 25 } = {}) =>
-    API.get(`${BASE}/messages`, { params: { folder, page, size } }).then((r) => ({
+  /**
+   * folder is "INBOX" or "SENT". `q` narrows on the IMAP SERVER — From, To, Subject or Body — so it
+   * reaches mail far past the fetched page. Omitted when blank so an empty box is a plain list, not
+   * a search for the empty string.
+   */
+  listMessages: ({ folder = "INBOX", page = 0, size = 25, q = "" } = {}) =>
+    API.get(`${BASE}/messages`, {
+      params: { folder, page, size, ...(q?.trim() ? { q: q.trim() } : {}) },
+    }).then((r) => ({
       messages: r.data?.data ?? [],
       meta: r.data?.pagination ?? null,
     })),
 
+  /**
+   * Fetch one message's body. Also marks it \Seen server-side — opening it here means the same thing
+   * as opening it in Gmail, so the returned `seen` is true and the list row should be patched with
+   * it rather than refetched.
+   */
   getMessage: (uid, folder = "INBOX") =>
     API.get(`${BASE}/messages/${uid}`, { params: { folder } }).then((r) => r.data?.data ?? r.data),
 
   /**
-   * Send from the agency's own address. `to` may be a comma-separated list.
+   * Send from the agency's own address. `to`, `cc` and `bcc` may each be comma-separated lists.
    *
    * No `from` — the server uses the address saved under Settings > Email. Requires COMM_SEND, which
    * is a separate permission from the COMM_READ that opens this screen: reading the agency inbox and
    * writing to a customer from the agency's address are different acts.
+   *
+   * All three fields ride on ONE message. The server used to loop and send a copy per recipient,
+   * which made a multi-address To behave like Bcc — nobody saw who else got it.
    */
-  sendMessage: ({ to, subject, body }) =>
-    API.post(`${BASE}/messages`, { to, subject, body }).then((r) => r.data?.data ?? r.data),
+  sendMessage: ({ to, cc, bcc, subject, body }) =>
+    API.post(`${BASE}/messages`, { to, cc, bcc, subject, body })
+      .then((r) => r.data?.data ?? r.data),
 
   /**
    * One attachment's bytes, as a Blob. `index` is its position in the message's attachmentNames —

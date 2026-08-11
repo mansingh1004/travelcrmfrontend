@@ -98,7 +98,11 @@ export default function Mailbox() {
   const [page, setPage] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  /* Two states, not one. `query` is what is in the box; `search` is what the server was asked for.
+     They are separate because an IMAP SEARCH is a round trip to the mail provider — searching on
+     every keystroke would issue a request per character and rate-limit the account. Enter commits. */
   const [query, setQuery] = useState("");
+  const [search, setSearch] = useState("");
 
   const [cursor, setCursor] = useState(0);
   const [openUid, setOpenUid] = useState(null);
@@ -127,7 +131,12 @@ export default function Mailbox() {
     setLoading(true);
     setError("");
     try {
-      const { messages, meta: m } = await mailboxService.listMessages({ folder, page, size: 50 });
+      const { messages, meta: m } = await mailboxService.listMessages({
+        folder,
+        page,
+        size: 50,
+        q: search,
+      });
       setRows(messages);
       setMeta(m);
       setCursor(0);
@@ -139,19 +148,25 @@ export default function Mailbox() {
     } finally {
       setLoading(false);
     }
-  }, [status, folder, page]);
+  }, [status, folder, page, search]);
 
   useEffect(() => { load(); }, [load]);
 
-  // Client-side narrowing of the loaded page only — deliberately not called "search", because it
-  // cannot see mail beyond the 50 rows already fetched.
-  const visible = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter((m) =>
-      [m.subject, m.from, m.to].filter(Boolean).some((v) => v.toLowerCase().includes(q))
-    );
-  }, [rows, query]);
+  /* The server did the narrowing. This used to be a useMemo that filtered the 50 fetched rows,
+     which meant the box could only ever find mail already on screen — it answered "no matches" for
+     every message older than the current page while looking like it had searched the mailbox. */
+  const visible = rows;
+
+  const runSearch = useCallback(() => {
+    setPage(0);
+    setSearch(query.trim());
+  }, [query]);
+
+  const clearSearch = useCallback(() => {
+    setQuery("");
+    setPage(0);
+    setSearch("");
+  }, []);
 
   const openMessage = useCallback(async (row) => {
     if (!row) return;
@@ -159,7 +174,16 @@ export default function Mailbox() {
     setOpenUid(row.uid);
     setOpening(true);
     try {
-      setMessage(await mailboxService.getMessage(row.uid, folder));
+      const full = await mailboxService.getMessage(row.uid, folder);
+      setMessage(full);
+      /* The server marked it \Seen while fetching it, so the row is stale the moment it renders.
+         Patch it here rather than re-listing: a refetch is a second IMAP connection to learn one
+         boolean the response already told us. */
+      if (full?.seen) {
+        setRows((current) =>
+          current.map((r) => (r.uid === row.uid ? { ...r, seen: true } : r))
+        );
+      }
     } catch (err) {
       setOpenUid(null);
       if (!isAlreadyReported(err)) {
@@ -170,11 +194,22 @@ export default function Mailbox() {
     }
   }, [folder]);
 
+  /* The signature is put IN the textarea, not appended by the server on send.
+     Two reasons. The operator sees exactly what will go out and can cut it for a one-line reply,
+     which is what people actually do; and appending server-side would double it the moment any
+     other client prefilled it too. `-- ` is the RFC 3676 delimiter — mail clients use it to collapse
+     the signature when quoting, which is what stops it stacking three deep down a thread. */
+  const signature = status?.signature || "";
+  const withSignature = useCallback(
+    (body = "") => (signature ? `${body}\n\n-- \n${signature}` : body),
+    [signature]
+  );
+
   const startCompose = useCallback((prefill = {}) => {
     setOpenUid(null);
     setMessage(null);
-    setDraft({ to: "", subject: "", body: "", ...prefill });
-  }, []);
+    setDraft({ to: "", cc: "", bcc: "", subject: "", body: withSignature(""), ...prefill });
+  }, [withSignature]);
 
   /* Reply prefills the address and quotes the original underneath — the quote is why this is a
      button and not just "compose with the address filled in". `Re:` is added once only. */
@@ -183,12 +218,14 @@ export default function Mailbox() {
     const addr = (m.from || "").match(/<([^>]+)>/)?.[1] || m.from || "";
     const subject = /^re:/i.test(m.subject || "") ? m.subject : `Re: ${m.subject || ""}`.trim();
     const quoted = (m.body || "").split("\n").map((l) => `> ${l}`).join("\n");
+    // Signature sits above the quote, where a reply is actually read — not underneath the thing
+    // being replied to.
     startCompose({
       to: addr,
       subject,
-      body: `\n\nOn ${m.sentAt || ""}, ${displayName(m.from)} wrote:\n${quoted}`,
+      body: `${withSignature("")}\n\nOn ${m.sentAt || ""}, ${displayName(m.from)} wrote:\n${quoted}`,
     });
-  }, [startCompose]);
+  }, [startCompose, withSignature]);
 
   const switchFolder = useCallback((id) => {
     setFolder(id);
@@ -197,6 +234,7 @@ export default function Mailbox() {
     setMessage(null);
     setDraft(null);
     setQuery("");
+    setSearch("");
   }, []);
 
   // ── keyboard ──────────────────────────────────────────────────────────────
@@ -315,16 +353,23 @@ export default function Mailbox() {
 
         <div className="relative ml-auto">
           <Search size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+          {/* Enter searches, Escape clears. Not search-as-you-type: each run is an IMAP SEARCH
+              against the provider, and one per keystroke is how an account gets throttled. */}
           <input
             ref={searchRef}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Filter this page…"
+            onKeyDown={(e) => {
+              if (e.key === "Enter") { e.preventDefault(); runSearch(); }
+              if (e.key === "Escape") { e.preventDefault(); clearSearch(); e.target.blur(); }
+            }}
+            placeholder="Search mailbox — press Enter"
             className="w-56 rounded-md border border-slate-200 bg-white py-1.5 pl-8 pr-7 text-[12px] text-slate-800 placeholder:text-slate-400 focus:border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-100"
           />
-          {query && (
+          {(query || search) && (
             <button
-              onClick={() => setQuery("")}
+              onClick={clearSearch}
+              title="Clear search"
               className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
             >
               <X size={12} />
@@ -360,7 +405,7 @@ export default function Mailbox() {
           ) : visible.length === 0 ? (
             <Centered>
               <p className="text-[13px] text-slate-400">
-                {query ? "Nothing on this page matches." : "Nothing here."}
+                {search ? `No messages match “${search}”.` : "Nothing here."}
               </p>
             </Centered>
           ) : (
@@ -435,7 +480,12 @@ export default function Mailbox() {
 
         <section className={`min-h-0 flex-1 overflow-y-auto ${openUid || draft ? "block" : "hidden md:block"}`}>
           {draft ? (
-            <ComposePane draft={draft} setDraft={setDraft} onSent={() => { setDraft(null); load(); }} />
+            <ComposePane
+              draft={draft}
+              setDraft={setDraft}
+              signature={signature}
+              onSent={() => { setDraft(null); load(); }}
+            />
           ) : opening ? (
             <Centered><Loader2 size={18} className="animate-spin text-slate-300" /></Centered>
           ) : message ? (
@@ -473,8 +523,12 @@ function Centered({ children }) {
    No From field: the server sends as the address saved under Settings > Email. Offering one would be
    a choice the server overrides, and the one way a tenant could appear to send as an address it has
    not authenticated as. */
-function ComposePane({ draft, setDraft, onSent }) {
+function ComposePane({ draft, setDraft, signature = "", onSent }) {
   const [sending, setSending] = useState(false);
+  /* Cc and Bcc stay hidden until asked for. Three address rows on every compose is three rows of
+     nothing for the reply that is 90% of what gets written here. Opened automatically below when a
+     draft arrives carrying either — otherwise a forward would silently drop its copies. */
+  const [showCopies, setShowCopies] = useState(Boolean(draft.cc || draft.bcc));
   const toRef = useRef(null);
 
   // Caret lands where the work is: To on a fresh compose, the body on a reply.
@@ -485,8 +539,20 @@ function ComposePane({ draft, setDraft, onSent }) {
 
   const set = (k, v) => setDraft((d) => ({ ...d, [k]: v }));
 
-  const recipients = String(draft.to || "").split(/[,;]/).map((s) => s.trim()).filter(Boolean);
-  const badAddress = recipients.find((a) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(a));
+  const split = (v) => String(v || "").split(/[,;]/).map((s) => s.trim()).filter(Boolean);
+  const VALID = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  const recipients = split(draft.to);
+  const ccList = split(draft.cc);
+  const bccList = split(draft.bcc);
+  // Named field, not just "an address is wrong" — with three rows on screen that is a hunt.
+  const badAddress =
+    [["To", recipients], ["Cc", ccList], ["Bcc", bccList]]
+      .map(([field, list]) => {
+        const bad = list.find((a) => !VALID.test(a));
+        return bad ? `${bad} (${field})` : null;
+      })
+      .find(Boolean) || null;
   const canSendNow = recipients.length > 0 && !badAddress && draft.subject.trim() && !sending;
 
   const send = async () => {
@@ -495,10 +561,18 @@ function ComposePane({ draft, setDraft, onSent }) {
     try {
       await mailboxService.sendMessage({
         to: recipients.join(","),
+        cc: ccList.join(","),
+        bcc: bccList.join(","),
         subject: draft.subject.trim(),
         body: draft.body,
       });
-      toast.success(`Sent to ${recipients.join(", ")}`);
+      // Bcc is counted, not listed — reading the addresses back in a toast on a shared screen is
+      // the one place a blind copy stops being blind.
+      const copies = [
+        ccList.length ? `${ccList.length} cc` : null,
+        bccList.length ? `${bccList.length} bcc` : null,
+      ].filter(Boolean).join(", ");
+      toast.success(`Sent to ${recipients.join(", ")}${copies ? ` (${copies})` : ""}`);
       onSent();
     } catch (err) {
       if (!isAlreadyReported(err)) toast.error(getErrorMessage(err, "Could not send that email"));
@@ -508,7 +582,11 @@ function ComposePane({ draft, setDraft, onSent }) {
   };
 
   const discard = () => {
-    const typed = draft.to || draft.subject || draft.body.trim();
+    /* A body holding nothing but the prefilled signature is an untouched draft, not a lost one —
+       without this subtraction every empty compose would ask "Discard this draft?" on the way out. */
+    const seeded = signature ? `\n\n-- \n${signature}` : "";
+    const written = draft.body === seeded ? "" : draft.body.trim();
+    const typed = draft.to || draft.cc || draft.bcc || draft.subject || written;
     if (typed && !window.confirm("Discard this draft?")) return;
     setDraft(null);
   };
@@ -543,7 +621,40 @@ function ComposePane({ draft, setDraft, onSent }) {
             placeholder="someone@example.com — comma-separate for several"
             className="min-w-0 flex-1 bg-transparent text-[13px] text-slate-800 placeholder:text-slate-400 focus:outline-none"
           />
+          {!showCopies && (
+            <button
+              type="button"
+              onClick={() => setShowCopies(true)}
+              className="shrink-0 text-[11px] font-semibold text-slate-400 transition hover:text-slate-700"
+            >
+              Cc / Bcc
+            </button>
+          )}
         </label>
+
+        {showCopies && (
+          <>
+            <label className="flex items-baseline gap-3 border-b border-slate-200 py-2">
+              <span className="w-16 shrink-0 text-[12px] font-semibold text-slate-400">Cc</span>
+              <input
+                value={draft.cc || ""}
+                onChange={(e) => set("cc", e.target.value)}
+                placeholder="Everyone here can see each other"
+                className="min-w-0 flex-1 bg-transparent text-[13px] text-slate-800 placeholder:text-slate-400 focus:outline-none"
+              />
+            </label>
+            <label className="flex items-baseline gap-3 border-b border-slate-200 py-2">
+              <span className="w-16 shrink-0 text-[12px] font-semibold text-slate-400">Bcc</span>
+              <input
+                value={draft.bcc || ""}
+                onChange={(e) => set("bcc", e.target.value)}
+                placeholder="Hidden from everyone on the message"
+                className="min-w-0 flex-1 bg-transparent text-[13px] text-slate-800 placeholder:text-slate-400 focus:outline-none"
+              />
+            </label>
+          </>
+        )}
+
         <label className="flex items-baseline gap-3 border-b border-slate-200 py-2">
           <span className="w-16 shrink-0 text-[12px] font-semibold text-slate-400">Subject</span>
           <input

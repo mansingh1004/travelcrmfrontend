@@ -26,6 +26,9 @@ const emailConfigurationService = {
       password: formData.passwordChanged ? formData.password : undefined,
       fromEmail: (formData.fromEmail || "").trim(),
       fromName: (formData.fromName || "").trim(),
+      // Always sent, including as "" — the server treats null as "field absent, keep what is
+      // stored", so omitting it would make clearing the signature impossible.
+      signature: formData.signature ?? "",
     });
   },
 
