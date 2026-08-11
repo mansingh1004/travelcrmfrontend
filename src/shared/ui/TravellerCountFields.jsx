@@ -94,18 +94,38 @@ export default function TravellerCountFields({
             Longer than the third-of-a-grid tile it used to be, but capped to the SAME max-width as
             the 2×2 breakdown block below it — same height, same type size, same right edge. Left at
             full column width it overhung the counters underneath and the group stopped reading as
-            one block. */}
+            one block.
+
+            It says "Total Travellers" in both states, and that forces it to become DERIVED once the
+            breakdown is open. Collapsed it is editable and writes totalAdults, which is the whole
+            party while children and infants are zero. Expanded it would only be the adults — so an
+            editable box still labelled "Total Travellers" would have read 4 directly above a
+            breakdown adding up to 5. Read-only, computed from the four counters below, it cannot
+            disagree with them. Adults are set through Adult Male / Adult Female, which is where
+            setAdultCount already recomputes totalAdults from. */}
         {showBreakdown ? (
           <div className="max-w-sm">
-            <CountInput
-              name="totalAdults"
-              label={expanded ? "Total Adults" : "Total Travellers"}
-              icon={Users}
-              value={values.totalAdults}
-              onChange={onCountChange}
-              invalid={Boolean(error)}
-              focusClass={tone.focus}
-            />
+            {expanded ? (
+              <div className={`flex items-center gap-2 rounded-lg border bg-slate-50 px-2.5 py-2 ${
+                error ? "border-red-300" : "border-slate-200"
+              }`}>
+                <Users className="h-4 w-4 shrink-0 text-slate-400" />
+                <span className="min-w-0 flex-1 truncate text-xs font-semibold text-slate-600">Total Travellers</span>
+                <span aria-live="polite" className="w-12 text-right text-sm font-bold text-slate-800">
+                  {totalTravellers}
+                </span>
+              </div>
+            ) : (
+              <CountInput
+                name="totalAdults"
+                label="Total Travellers"
+                icon={Users}
+                value={values.totalAdults}
+                onChange={onCountChange}
+                invalid={Boolean(error)}
+                focusClass={tone.focus}
+              />
+            )}
           </div>
         ) : (
           /* Compact hosts suppress the breakdown toggle, so children and infants have no other home
@@ -148,16 +168,9 @@ export default function TravellerCountFields({
               <CountInput name="children" label="Children" icon={Users} value={values.children} onChange={onCountChange} focusClass={tone.focus} />
               <CountInput name="infants" label="Infants" icon={Baby} value={values.infants} onChange={onCountChange} focusClass={tone.focus} />
             </div>
-            {error ? (
-              <p role="alert" className="text-xs font-medium text-red-500">{error}</p>
-            ) : (
-              /* Children and infants ADD to the headcount, they are not carved out of it — so the
-                 running total is shown the moment the breakdown is open, rather than letting the
-                 agent discover on the next screen that "4 travellers" became 6. */
-              <p className="text-[11px] font-semibold text-slate-500">
-                {totalTravellers} traveller{totalTravellers === 1 ? "" : "s"} in total
-              </p>
-            )}
+            {/* The running total moved UP into the Total Travellers tile — one number, one place.
+                Only the reconciliation error is left down here, next to the two boxes it is about. */}
+            {error && <p role="alert" className="text-xs font-medium text-red-500">{error}</p>}
           </div>
         )}
       </fieldset>

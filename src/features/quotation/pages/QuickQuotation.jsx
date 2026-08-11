@@ -220,6 +220,134 @@ export const rememberQuickQuoteDefaults = (model) => {
  * Lead → a fully seeded quote model. Exported as buildQuickQuoteModel because the rapid lead form
  * builds it from the record it is ABOUT to save, not one it has fetched — same shape, no lead id yet.
  */
+/* Party + room count → the grouped room lines a stay is priced from.
+   Lifted out of initialModel so syncQuickQuotePax can rebuild a stay with the SAME arithmetic the
+   seed used. Two copies of "how do travellers split across rooms" is how the room lines start
+   disagreeing with the counters they were derived from.
+
+   `template` carries the commercial fields forward — room type, meal plan, price, images. Changing
+   the party size must not wipe the ₹6,500 Deluxe the agent already picked; only who is in the room
+   and how many of them there are is recomputed. */
+const buildRoomLines = ({ adults, children, infants, extraBeds, rooms }, savedAllocations = [], template = null) => {
+  const roomCount = Math.max(1, asNumber(rooms, 1));
+  const distribute = (total) => Array.from(
+    { length: roomCount },
+    (_, index) => Math.floor(asNumber(total) / roomCount) + (index < asNumber(total) % roomCount ? 1 : 0),
+  );
+  const adultSplit = distribute(adults);
+  const childSplit = distribute(children);
+  const infantSplit = distribute(infants);
+  const extraBedSplit = distribute(extraBeds);
+
+  const allocations = savedAllocations.length > 0
+    ? savedAllocations
+    : Array.from({ length: roomCount }, (_, index) => ({
+      roomNumber: index + 1,
+      roomCategoryPreference: "Any",
+      bedPreference: "Any",
+      adults: adultSplit[index],
+      children: childSplit[index],
+      infants: infantSplit[index],
+      extraBeds: extraBedSplit[index],
+      childAges: [],
+    }));
+
+  /* Nine rooms used to arrive as nine identical room lines, each demanding its own room type, meal
+     plan and price — the agent typed the same Deluxe row nine times. Rooms of the SAME SHAPE now
+     collapse into ONE line carrying a `rooms` count, which the totals already multiply by
+     (sectionTotal.hotel) and the payload already carries (`rooms: room.rooms`), so only the seeding
+     was ever the problem.
+     Grouped rather than flattened to a single line on purpose: a room-wise plan the agent actually
+     filled in — say 7 doubles and 2 triples — still prices as two lines. Collapsing those would drop
+     the extra pax silently and under-quote the trip, which is worse than the retyping this fixes.
+     The key is every field that can change what one room costs: category, bed, who is in it, extra
+     beds, and the child ages a hotel's child policy reads. Ages are sorted because [8,5] and [5,8]
+     are the same room to price, and an unsorted key would split them into two lines. */
+  const roomShapeKey = (allocation) => JSON.stringify([
+    allocation.roomCategoryPreference || "Any",
+    allocation.bedPreference || "Any",
+    Math.max(1, asNumber(allocation.adults, 1)),
+    Math.max(0, asNumber(allocation.children)),
+    asNumber(allocation.infants),
+    asNumber(allocation.extraBeds),
+    [...(Array.isArray(allocation.childAges) ? allocation.childAges : [])].map(String).sort(),
+  ]);
+  const roomGroups = [];
+  const roomGroupIndex = new Map();
+  allocations.forEach((allocation) => {
+    const key = roomShapeKey(allocation);
+    const at = roomGroupIndex.get(key);
+    if (at != null) {
+      roomGroups[at].rooms += 1;
+      return;
+    }
+    roomGroupIndex.set(key, roomGroups.length);
+    roomGroups.push({ allocation, rooms: 1 });
+  });
+
+  return roomGroups.map(({ allocation, rooms: roomQty }, groupIndex) => ({
+    id: rowId(),
+    // roomNumber is the LINE's index, not a physical room — nine rooms on one line still number 1.
+    roomNumber: groupIndex + 1,
+    roomCategoryPreference: allocation.roomCategoryPreference || "Any",
+    bedPreference: allocation.bedPreference || "Any",
+    adults: Math.max(1, asNumber(allocation.adults, 1)),
+    children: Math.max(0, asNumber(allocation.children)),
+    infants: asNumber(allocation.infants),
+    extraBeds: asNumber(allocation.extraBeds),
+    childAges: Array.isArray(allocation.childAges) ? allocation.childAges : [],
+    roomType: template?.roomType ?? "",
+    roomTypeMasterPublicId: template?.roomTypeMasterPublicId ?? null,
+    platformRoomPublicId: template?.platformRoomPublicId ?? null,
+    bedType: template?.bedType ?? "",
+    occupancy: template?.occupancy ?? null,
+    mealPlan: template?.mealPlan ?? "",
+    mealPlanMasterPublicId: template?.mealPlanMasterPublicId ?? null,
+    platformMealPlanPublicId: template?.platformMealPlanPublicId ?? null,
+    pricePerRoom: template?.pricePerRoom ?? "",
+    masterBaseRate: template?.masterBaseRate ?? null,
+    rateSource: template?.rateSource ?? "MISSING",
+    imagePath: template?.imagePath ?? "",
+    rooms: roomQty,
+  }));
+};
+
+/**
+ * Re-split the party across a stay's room lines after the counters ABOVE the builder change.
+ *
+ * The seed already distributes correctly — 6 adults over 3 rooms has always been [2,2,2]. The gap is
+ * what happens AFTER: CreateLead stops re-seeding the moment the quote is touched (so that typing an
+ * itinerary stop cannot wipe entered prices), and picking a hotel counts as touching it. From then on
+ * the counters and the room lines drifted apart silently, which is how a party of 6 got quoted as 2.
+ *
+ * Same contract as syncQuickQuoteServices: returns the SAME object when nothing changed, so calling
+ * it from an effect cannot loop.
+ *
+ * A stay where the agent has hand-edited ANY room line's pax is left completely alone. Per stay, not
+ * per line, on purpose — the lines of one stay are a single distribution, so rebuilding half of it
+ * around an edited line produces a split that matches neither what the agent typed nor the counters.
+ * `paxTouched` is what says "the agent has shaped this stay themselves".
+ */
+export const syncQuickQuotePax = (model, counts) => {
+  if (!model?.hotel?.rows?.length) return model;
+  let changed = false;
+  const rows = model.hotel.rows.map((stay) => {
+    const lines = stay.roomLines || [];
+    if (lines.some((line) => line.paxTouched)) return stay;
+    const rebuilt = buildRoomLines(counts, [], lines[0] || null);
+    // Compare on what this function actually owns. Ids are regenerated every call, so an identity
+    // check would report a change on every keystroke anywhere on the lead form.
+    const shapeOf = (list) => JSON.stringify(list.map((line) => [
+      line.adults, line.children, line.infants, line.extraBeds, line.rooms,
+      line.roomCategoryPreference, line.bedPreference,
+    ]));
+    if (shapeOf(lines) === shapeOf(rebuilt)) return stay;
+    changed = true;
+    return { ...stay, roomLines: rebuilt };
+  });
+  return changed ? { ...model, hotel: { ...model.hotel, rows } } : model;
+};
+
 export function initialModel(lead) {
   if (!lead) return null;
   const sticky = readQuoteSticky();
@@ -318,59 +446,11 @@ export function initialModel(lead) {
   const destination = itinerary[0]?.destination || "";
   const nights = itinerary.reduce((sum, stop) => sum + asNumber(stop.nights), 0);
   const savedAllocations = Array.isArray(lead.roomAllocations) ? lead.roomAllocations : [];
-  const distribute = (total) => Array.from(
-    { length: rooms },
-    (_, index) => Math.floor(total / rooms) + (index < total % rooms ? 1 : 0),
+  // One implementation, shared with syncQuickQuotePax — see buildRoomLines.
+  const seededRoomLines = buildRoomLines(
+    { adults, children, infants, extraBeds: asNumber(lead.extraBeds), rooms },
+    savedAllocations,
   );
-  const adultSplit = distribute(adults);
-  const childSplit = distribute(children);
-  const infantSplit = distribute(infants);
-  const extraBedSplit = distribute(asNumber(lead.extraBeds));
-  const roomAllocations = savedAllocations.length > 0
-    ? savedAllocations
-    : Array.from({ length: rooms }, (_, index) => ({
-      roomNumber: index + 1,
-      roomCategoryPreference: "Any",
-      bedPreference: "Any",
-      adults: adultSplit[index],
-      children: childSplit[index],
-      infants: infantSplit[index],
-      extraBeds: extraBedSplit[index],
-      childAges: [],
-    }));
-
-  /* Nine rooms used to arrive as nine identical room lines, each demanding its own room type, meal
-     plan and price — the agent typed the same Deluxe row nine times. Rooms of the SAME SHAPE now
-     collapse into ONE line carrying a `rooms` count, which the totals already multiply by
-     (sectionTotal.hotel) and the payload already carries (`rooms: room.rooms`), so only the seeding
-     was ever the problem.
-     Grouped rather than flattened to a single line on purpose: a room-wise plan the agent actually
-     filled in — say 7 doubles and 2 triples — still prices as two lines. Collapsing those would drop
-     the extra pax silently and under-quote the trip, which is worse than the retyping this fixes.
-     The key is every field that can change what one room costs: category, bed, who is in it, extra
-     beds, and the child ages a hotel's child policy reads. Ages are sorted because [8,5] and [5,8]
-     are the same room to price, and an unsorted key would split them into two lines. */
-  const roomShapeKey = (allocation) => JSON.stringify([
-    allocation.roomCategoryPreference || "Any",
-    allocation.bedPreference || "Any",
-    Math.max(1, asNumber(allocation.adults, 1)),
-    Math.max(0, asNumber(allocation.children)),
-    asNumber(allocation.infants),
-    asNumber(allocation.extraBeds),
-    [...(Array.isArray(allocation.childAges) ? allocation.childAges : [])].map(String).sort(),
-  ]);
-  const roomGroups = [];
-  const roomGroupIndex = new Map();
-  roomAllocations.forEach((allocation) => {
-    const key = roomShapeKey(allocation);
-    const at = roomGroupIndex.get(key);
-    if (at != null) {
-      roomGroups[at].rooms += 1;
-      return;
-    }
-    roomGroupIndex.set(key, roomGroups.length);
-    roomGroups.push({ allocation, rooms: 1 });
-  });
 
   return {
     title: [lead.customerName, destination, nights ? `${nights}N` : ""].filter(Boolean).join(" – ") || "Quotation",
@@ -384,19 +464,8 @@ export function initialModel(lead) {
         refundable: true, stars: 0, imagePath: "", hotelMasterPublicId: null,
         platformHotelPublicId: null, hotelOrigin: null, platformOwned: false, syncStatus: null,
         roomTypeOptions: [], mealPlanOptions: [],
-        /* roomNumber is now the LINE's index, not a physical room — nine rooms on one line still
-           number 1. It survives only as a stable label and as what removeRoom() renumbers. */
-        roomLines: roomGroups.map(({ allocation, rooms: roomQty }, groupIndex) => ({
-          id: rowId(), roomNumber: groupIndex + 1,
-          roomCategoryPreference: allocation.roomCategoryPreference || "Any",
-          bedPreference: allocation.bedPreference || "Any",
-          adults: Math.max(1, asNumber(allocation.adults, 1)), children: Math.max(0, asNumber(allocation.children)),
-          infants: asNumber(allocation.infants), extraBeds: asNumber(allocation.extraBeds),
-          childAges: Array.isArray(allocation.childAges) ? allocation.childAges : [],
-          roomType: "", roomTypeMasterPublicId: null, platformRoomPublicId: null, bedType: "", occupancy: null,
-          mealPlan: "", mealPlanMasterPublicId: null, platformMealPlanPublicId: null, pricePerRoom: "",
-          masterBaseRate: null, rateSource: "MISSING", imagePath: "", rooms: roomQty,
-        })),
+        // Fresh ids per stay — two stays must never share a room line's id, or updating one edits both.
+        roomLines: seededRoomLines.map((line) => ({ ...line, id: rowId() })),
       })),
     },
     flight: {
@@ -792,7 +861,7 @@ function QuickHotelRoomLine({
               label={`adults in room type ${line.roomNumber}`}
               min={1}
               value={line.adults}
-              onChange={(adults) => onUpdate({ adults })}
+              onChange={(adults) => onUpdate({ adults, paxTouched: true })}
             />
           </div>
         </Field>
@@ -803,6 +872,7 @@ function QuickHotelRoomLine({
             value={line.children}
             onChange={(children) => onUpdate({
               children,
+              paxTouched: true,
               childAges: (line.childAges || []).slice(0, children),
             })}
           />
@@ -817,7 +887,7 @@ function QuickHotelRoomLine({
             value={line.rooms}
             placeholder="1"
             onFocus={(event) => event.target.select()}
-            onChange={(event) => onUpdate({ rooms: event.target.value })}
+            onChange={(event) => onUpdate({ rooms: event.target.value, paxTouched: true })}
           />
         </Field>
         {canRemove && (
