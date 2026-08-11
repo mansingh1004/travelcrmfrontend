@@ -123,6 +123,24 @@ const cls = (invalid, icon) =>
   `${control} ${icon ? "pl-9 pr-3" : "px-3"} ${invalid ? "border-red-300 focus:border-red-400 focus:ring-red-100" : "border-slate-200"}`;
 
 export default function CustomerDocuments({ register, errors }) {
+  // Aadhar is 12 digits and nothing else, so the field now refuses the rest while you type: letters
+  // are dropped and a 13th digit never lands. The strip has to happen before react-hook-form reads
+  // the input, which is why this wraps the registered onChange instead of using register's own
+  // { onChange } option — that one fires after the raw value is already in form state, so the last
+  // typed letter would survive there even though the box looks clean.
+  const aadhar = register("aadharNo", {
+    // Spaces stay tolerated for records saved before this rule — opening Edit on one should not
+    // flag a field the user never touched.
+    pattern: { value: /^$|^\d{4}\s?\d{4}\s?\d{4}$/, message: "Aadhar must be 12 digits" },
+  });
+  // Conditional rewrite: assigning to value parks the caret at the end, so only do it when
+  // something actually had to be removed. Ordinary digit typing leaves the caret alone.
+  const onAadharChange = (event) => {
+    const digits = event.target.value.replace(/\D/g, "").slice(0, 12);
+    if (digits !== event.target.value) event.target.value = digits;
+    return aadhar.onChange(event);
+  };
+
   return (
     <Panel
       icon={IdCard}
@@ -202,10 +220,8 @@ export default function CustomerDocuments({ register, errors }) {
           <div className="relative">
             <IdCard className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
-              {...register("aadharNo", {
-                // 12 digits, spaces tolerated because that is how people read them aloud.
-                pattern: { value: /^$|^\d{4}\s?\d{4}\s?\d{4}$/, message: "Aadhar must be 12 digits" },
-              })}
+              {...aadhar}
+              onChange={onAadharChange}
               id="aadharNo"
               inputMode="numeric"
               placeholder="1234 5678 9012"

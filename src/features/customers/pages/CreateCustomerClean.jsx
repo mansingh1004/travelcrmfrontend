@@ -161,6 +161,21 @@ export default function CreateCustomerClean() {
     }
   };
 
+  // Aadhar is 12 digits and nothing else, so the field refuses the rest while you type: letters are
+  // dropped and a 13th digit never lands. The strip has to happen before react-hook-form reads the
+  // input, which is why this wraps the registered onChange instead of using register's own
+  // { onChange } option — that one fires after the raw value is already in form state.
+  const aadhar = register("aadharNo", {
+    pattern: { value: /^$|^\d{4}\s?\d{4}\s?\d{4}$/, message: "Aadhar must be 12 digits" },
+  });
+  // Conditional rewrite: assigning to value parks the caret at the end, so only do it when
+  // something actually had to be removed.
+  const onAadharChange = (event) => {
+    const digits = event.target.value.replace(/\D/g, "").slice(0, 12);
+    if (digits !== event.target.value) event.target.value = digits;
+    return aadhar.onChange(event);
+  };
+
   return (
     <form onSubmit={handleSubmit(onSubmit)} noValidate className="min-h-screen bg-slate-50">
       <header className="border-b border-slate-200 bg-white shadow-sm">
@@ -279,7 +294,7 @@ export default function CreateCustomerClean() {
                 })} />
               </Field>
               <Field label="Aadhar Number" icon={IdCard} optional error={errors.aadharNo?.message}>
-                <input placeholder="1234 5678 9012" className={inputClass} {...register("aadharNo", { maxLength: { value: 20, message: "Aadhar number must not exceed 20 characters" } })} />
+                <input placeholder="1234 5678 9012" inputMode="numeric" className={`${inputClass} ${errors.aadharNo ? "border-red-300" : ""}`} {...aadhar} onChange={onAadharChange} />
               </Field>
               <div className="sm:col-span-3">
                 <Field label="Document Notes" icon={FileText} optional error={errors.documents?.message}>
