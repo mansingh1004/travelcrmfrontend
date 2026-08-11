@@ -15,6 +15,7 @@ import {
   ArrowUpCircle,
   BedDouble,
   Building2,
+  CalendarRange,
   ClipboardCheck,
   Coins,
   CreditCard,
@@ -121,6 +122,16 @@ export const CONSOLE_NAV_SECTIONS = [
         // sits unanswered.
         badge: "hotelRequests",
         keywords: "approval queue bookings",
+      },
+      {
+        id: "console.hotelOccupancy",
+        label: "Stay Calendar",
+        path: "/console/hotel-occupancy",
+        Icon: CalendarRange,
+        // No badge: it is a picture of what is already committed, not work waiting to be done.
+        // Sits directly under Hotel Requests because it is what an operator opens WHILE deciding
+        // one — "how many of this property's rooms do I already hold that week".
+        keywords: "occupancy rooms nights stays calendar allotment availability",
       },
       {
         id: "console.commissions",

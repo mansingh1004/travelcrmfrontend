@@ -23,3 +23,4 @@ export { default as ConsoleHotelPartners } from "./pages/HotelPartners";
 export { default as ConsolePlatformHotelDetail } from "./pages/PlatformHotelDetail";
 export { default as ConsoleMarketplaceBookings } from "./pages/MarketplaceBookings";
 export { default as ConsoleMarketplaceCommissions } from "./pages/MarketplaceCommissions";
+export { default as ConsoleMarketplaceOccupancy } from "./pages/MarketplaceOccupancy";
