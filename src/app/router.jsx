@@ -5,7 +5,7 @@ import Layout from "./Layout";
 import PageLoader from "./PageLoader";
 import NotFound from "./NotFound";
 import RouteErrorBoundary from "./RouteErrorBoundary";
-import { hasPermission, isTenantAdmin, isSubAgent, isFleetOnly, P } from "@shared/lib/access";
+import { hasPermission, hasModule, isTenantAdmin, isSubAgent, isFleetOnly, P } from "@shared/lib/access";
 
 /* ── Lazy route chunks (Phase 5b) ─────────────────────────────
    Each feature's pages load on first navigation, one chunk per feature.
@@ -55,7 +55,9 @@ const EditVendor = lazyPage(vendors, "EditVendor");
 const VendorDetails = lazyPage(vendors, "VendorDetails");
 
 const reminders = () => import("@features/reminders");
+const mailbox = () => import("@features/mailbox");
 const Reminders = lazyPage(reminders, "Reminders");
+const Mailbox = lazyPage(mailbox, "Mailbox");
 const CreateReminder = lazyPage(reminders, "CreateReminder");
 const BookingReminders = lazyPage(reminders, "BookingReminders");
 const Notifications = lazyPage(reminders, "Notifications");
@@ -113,6 +115,7 @@ const ConsoleUsage = lazyPage(consoleFeature, "ConsoleUsage");
 const ConsoleUsers = lazyPage(consoleFeature, "ConsoleUsers");
 const ConsoleFeatureFlags = lazyPage(consoleFeature, "ConsoleFeatureFlags");
 const ConsoleGlobalConfig = lazyPage(consoleFeature, "ConsoleGlobalConfig");
+const ConsolePlatformEmail = lazyPage(consoleFeature, "ConsolePlatformEmail");
 const ConsoleAuditLog = lazyPage(consoleFeature, "ConsoleAuditLog");
 const ConsoleAnnouncements = lazyPage(consoleFeature, "ConsoleAnnouncements");
 const ConsoleOps = lazyPage(consoleFeature, "ConsoleOps");
@@ -259,6 +262,7 @@ const AppRouter = () => {
               <Route path="users" element={<ConsoleUsers />} />
               <Route path="feature-flags" element={<ConsoleFeatureFlags />} />
               <Route path="config" element={<ConsoleGlobalConfig />} />
+              <Route path="platform-email" element={<ConsolePlatformEmail />} />
               <Route path="audit" element={<ConsoleAuditLog />} />
               <Route path="announcements" element={<ConsoleAnnouncements />} />
               <Route path="ops" element={<ConsoleOps />} />
@@ -355,6 +359,7 @@ const AppRouter = () => {
               <Route path="AllVendors" element={<AllVendors />} />
               <Route path="CreateVendor" element={<CreateVendor />} />
               <Route path="Reminders" element={<Reminders />} />
+              <Route path="Mailbox" element={<Guard allow={hasPermission(P.COMM_READ) && hasModule("COMMUNICATION")}><Mailbox /></Guard>} />
               {/* Task & Team Calendar (gated by TASK_READ; sub-agents get a row-scoped personal calendar) */}
               <Route path="calendar" element={<Guard allow={hasPermission(P.TASK_READ)}><Calendar /></Guard>} />
               {/* All Tasks list — same TASK_READ gate and the same TASKS module as the calendar.

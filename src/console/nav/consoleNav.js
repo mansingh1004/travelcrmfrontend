@@ -27,6 +27,7 @@ import {
   Palette as PaletteIcon,
   ScrollText,
   Settings2,
+  Mail,
   ToggleLeft,
   UserCog,
   Users,
@@ -198,6 +199,13 @@ export const CONSOLE_NAV_SECTIONS = [
         path: "/console/config",
         Icon: Settings2,
         keywords: "settings maintenance",
+      },
+      {
+        id: "console.platform-email",
+        label: "Platform Email",
+        path: "/console/platform-email",
+        Icon: Mail,
+        keywords: "smtp mailbox inbox sent invites sender",
       },
       {
         id: "console.audit",
