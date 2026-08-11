@@ -10,6 +10,8 @@
 // Styling follows AllLeads.jsx's inline-style modal idiom (fixed inset-0 z-50 overlay, click-outside
 // to close, Plus Jakarta Sans set explicitly — the tenant app applies no global font).
 
+import { useEffect, useRef } from "react";
+
 import { X, FileText, Sparkles, Crown, Gem, Check } from "lucide-react";
 
 const FONT = "'Plus Jakarta Sans', system-ui, sans-serif";
@@ -50,10 +52,11 @@ const STYLES = [
   },
 ];
 
-function StyleCard({ def, isSaved, actionLabel, onPick }) {
+function StyleCard({ def, isSaved, actionLabel, onPick, cardRef }) {
   const Icon = def.icon;
   return (
     <button
+      ref={cardRef}
       onClick={() => onPick(def.value)}
       style={{
         border: "2px solid #e2e8f0", borderRadius: 16, background: "rgba(255,255,255,0.85)",
@@ -118,6 +121,28 @@ export default function QuotationStyleModal({ savedStyle, mode = "download", onS
       : "Pick a design for this download. The quotation itself stays as it is.";
   const actionLabel = isShare ? "Share" : isPreview ? "Preview" : "Download";
 
+  /* Esc closes, and the saved design takes focus on open. Neither existed: the dialog could only be
+     dismissed with the mouse, which stalled a keyboard-driven agent at the very last step of the
+     flow — the one they reach after Ctrl+Enter has already created the quotation.
+
+     Focus lands on the SAVED design because it is the answer nine times out of ten, so Enter alone
+     finishes the job. Bound on the document, not the overlay, because focus is inside this dialog
+     and nothing above it should see the key; the listener is removed on unmount, so the two open
+     styles this dialog is used in (download and share) can never leave a stale handler behind. */
+  const firstCardRef = useRef(null);
+  useEffect(() => {
+    const onKey = (event) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    firstCardRef.current?.focus();
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const savedValue = savedStyle || "CLASSIC";
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
@@ -146,7 +171,8 @@ export default function QuotationStyleModal({ savedStyle, mode = "download", onS
             <StyleCard
               key={def.value}
               def={def}
-              isSaved={(savedStyle || "CLASSIC") === def.value}
+              cardRef={def.value === savedValue ? firstCardRef : undefined}
+              isSaved={savedValue === def.value}
               actionLabel={actionLabel}
               onPick={onSelect}
             />

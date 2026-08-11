@@ -19,6 +19,9 @@ export {
   quickQuoteSteps,
   quickQuoteCompletion,
   quickQuotePayload,
+  quickQuoteGrandTotal,
+  quickQuoteProblems,
+  rememberQuickQuoteDefaults,
   syncQuickQuoteServices,
   validateQuickQuote,
 } from "./pages/QuickQuotation";
