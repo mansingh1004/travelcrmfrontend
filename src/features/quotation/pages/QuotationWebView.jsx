@@ -553,7 +553,7 @@
 //         </div>
 //       )}
 
-//       {/* ━━━━━ TESTIMONIALS ━━━━━ */}
+
 //       {testimonials.length > 0 && (
 //         <div style={{ maxWidth:1040, margin:"0 auto", padding:"64px 24px 0" }}>
 //           <SectionTitle sub="Stories from fellow travelers">Loved by Travelers</SectionTitle>
