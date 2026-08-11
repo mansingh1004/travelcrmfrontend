@@ -22,6 +22,7 @@ export {
   quickQuoteGrandTotal,
   quickQuoteProblems,
   rememberQuickQuoteDefaults,
+  syncQuickQuotePax,
   syncQuickQuoteServices,
   validateQuickQuote,
 } from "./pages/QuickQuotation";

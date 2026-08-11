@@ -849,6 +849,7 @@ import {
   quickQuoteTotals,
   quotationService,
   rememberQuickQuoteDefaults,
+  syncQuickQuotePax,
   syncQuickQuoteServices,
   validateQuickQuote,
 } from "@features/quotation";
@@ -2878,6 +2879,24 @@ export default function LeadFormPage() {
     if (!quoteInline || !quoteTouchedRef.current) return;
     setQuoteModel((current) => syncQuickQuoteServices(current, servicesKey ? servicesKey.split("|") : []));
   }, [quoteInline, servicesKey]);
+
+  /* The same problem as the services sync above, for the party size.
+     The seed already splits travellers across rooms correctly, but seeding stops the moment the
+     quote is touched — and picking a hotel touches it. From then on, correcting the party from 2 to
+     6 upstairs left the hotel's room lines still saying 2 adults, and the quote went out priced for
+     a party that was never coming. Serialised into a string for the same reason as draftLeadKey: the
+     dependency has to compare by VALUE or every keystroke on the form would rebuild the room lines.
+     syncQuickQuotePax leaves any stay the agent has hand-shaped alone and returns the same object
+     when nothing changed, so this cannot loop. */
+  const paxKey = [
+    toInt(adultsValue, 1), toInt(childrenValue), toInt(infantsValue),
+    toInt(roomsValue, 1), toInt(extraBedsValue),
+  ].join("|");
+  useEffect(() => {
+    if (!quoteInline || !quoteTouchedRef.current) return;
+    const [adults, children, infants, rooms, extraBeds] = paxKey.split("|").map(Number);
+    setQuoteModel((current) => syncQuickQuotePax(current, { adults, children, infants, rooms, extraBeds }));
+  }, [quoteInline, paxKey]);
 
   /* Open the section a just-ticked service created, once the model actually carries it.
      `focus` is the difference between the two places a service can be ticked from. From the picker
