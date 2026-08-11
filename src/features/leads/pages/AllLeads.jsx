@@ -1427,7 +1427,7 @@ function QuotationsModal({ lead, onClose, canDelete, canEdit }) {
         </div>
       </div>
 
-      {/* Web-format view of a selected quotation, shown over the list, with Share controls */}
+     
       {webViewQ && (
         <div className="fixed inset-0 z-[60] bg-white overflow-y-auto">
           <div className="sticky top-0 z-10 bg-white/90 backdrop-blur border-b border-slate-200 px-4 py-3 flex items-center justify-between gap-3">
