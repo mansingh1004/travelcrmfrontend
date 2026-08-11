@@ -59,7 +59,7 @@ const TAB_ICON = "h-4 w-4";
 /**
 
  *
- * AlertRail raises exactly two actionable alerts and they deep-link to Documents and MONEY —
+ 
  * never to Enquiries. The band above ends on Outstanding, and the drill-down for that figure is
  * Money, so it sits third, adjacent to the number that sends people there. Enquiries and Timeline
  * are sales-side depth and follow. Overview stays first: it is the only tab whose data is already
