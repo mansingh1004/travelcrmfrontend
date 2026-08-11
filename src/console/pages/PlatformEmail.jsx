@@ -63,6 +63,41 @@ const displayName = (addr) => {
 
 const errText = (e, fallback) => e?.response?.data?.message || fallback;
 
+/**
+ * Pull one attachment down and hand it to the browser.
+ *
+ * The object URL is revoked on the next tick: a leaked one pins the entire blob in memory for the
+ * life of the tab, and a mailbox is a screen people leave open all day.
+ *
+ * The error path has a wrinkle worth knowing — the response is a BLOB, so an error body is a Blob
+ * too and `e.response.data.message` is undefined. The message has to be read out of it before the
+ * usual idiom works.
+ */
+async function downloadAttachment(uid, index, fileName, folder, showToast) {
+  try {
+    const blob = await platformMailService.attachment(uid, index, folder);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName || "attachment";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  } catch (e) {
+    let message = "Could not download that attachment.";
+    try {
+      const body = e?.response?.data;
+      if (body instanceof Blob) {
+        message = JSON.parse(await body.text())?.message || message;
+      } else {
+        message = errText(e, message);
+      }
+    } catch { /* keep the fallback */ }
+    showToast("error", message);
+  }
+}
+
 export default function PlatformEmail() {
   // Opens on the Inbox. The page-level <h1> that used to sit above the tabs is gone with it: the
   // console header already names the screen, and a title block plus a description paragraph is a
@@ -563,12 +598,20 @@ function MailboxTab({ folder, showToast }) {
               {folder === "SENT" && message.to && (
                 <div className="mt-0.5 text-[12px] text-muted">to {message.to}</div>
               )}
+              {/* Keyed by INDEX, not name — the server resolves the MIME part positionally because
+                  two parts in one message can legitimately share a filename. */}
               {message.attachmentNames?.length > 0 && (
                 <div className="mt-3 flex flex-wrap gap-1.5">
-                  {message.attachmentNames.map((n) => (
-                    <span key={n} className="inline-flex items-center gap-1 rounded border border-border px-2 py-0.5 text-[11px] text-muted">
+                  {message.attachmentNames.map((n, i) => (
+                    <button
+                      key={`${i}-${n}`}
+                      type="button"
+                      onClick={() => downloadAttachment(message.uid, i, n, folder, showToast)}
+                      title={`Download ${n}`}
+                      className="inline-flex items-center gap-1 rounded border border-border px-2 py-0.5 text-[11px] text-muted transition hover:border-border-strong hover:bg-page hover:text-heading"
+                    >
                       <Paperclip size={10} /> {n}
-                    </span>
+                    </button>
                   ))}
                 </div>
               )}

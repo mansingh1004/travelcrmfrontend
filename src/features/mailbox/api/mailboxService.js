@@ -35,6 +35,20 @@ export const mailboxService = {
    */
   sendMessage: ({ to, subject, body }) =>
     API.post(`${BASE}/messages`, { to, subject, body }).then((r) => r.data?.data ?? r.data),
+
+  /**
+   * One attachment's bytes, as a Blob. `index` is its position in the message's attachmentNames —
+   * the server resolves the MIME part positionally, because two parts in one message can share a
+   * filename and matching on the name would hand back the wrong one while looking correct.
+   *
+   * The server always answers Content-Disposition: attachment, so the browser saves it rather than
+   * rendering an arbitrary sender's HTML inside the app's own origin.
+   */
+  attachment: (uid, index, folder = "INBOX") =>
+    API.get(`${BASE}/messages/${uid}/attachments/${index}`, {
+      params: { folder },
+      responseType: "blob",
+    }).then((r) => r.data),
 };
 
 export default mailboxService;

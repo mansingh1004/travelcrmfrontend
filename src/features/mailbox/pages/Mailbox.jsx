@@ -49,6 +49,40 @@ const fmtFull = (iso) => {
   return Number.isNaN(d.getTime()) ? "" : d.toLocaleString();
 };
 
+/**
+ * Pull one attachment down and hand it to the browser.
+ *
+ * Module scope, not a hook: it closes over nothing and both the reading pane and any future preview
+ * need the same behaviour. The object URL is revoked on the next tick — a leaked one pins the whole
+ * blob in memory for the life of the tab, and a mailbox is a screen people leave open for hours.
+ */
+async function downloadAttachment(uid, index, fileName, folder) {
+  try {
+    const blob = await mailboxService.attachment(uid, index, folder);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName || "attachment";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  } catch (err) {
+    if (isAlreadyReported(err)) return;
+    /* The response is a BLOB, so an error body is a Blob too and getErrorMessage finds nothing on
+       it. Read the JSON out first — the server refuses an oversized part with a real sentence, and
+       "Could not download" instead of "larger than 25 MB" sends the operator looking for a bug. */
+    let message = "Could not download that attachment.";
+    try {
+      const body = err?.response?.data;
+      message = body instanceof Blob
+        ? (JSON.parse(await body.text())?.message || message)
+        : getErrorMessage(err, message);
+    } catch { /* keep the fallback */ }
+    toast.error(message);
+  }
+}
+
 /** "Prasad Thombare <p@x.com>" → "Prasad Thombare"; a bare address stays as-is. */
 const displayName = (addr) => {
   if (!addr) return "(unknown)";
@@ -612,15 +646,20 @@ function MessageView({ message, folder, onBack, onReply }) {
         <div className="mt-0.5 text-[12px] text-slate-400">to {message.to}</div>
       )}
 
+      {/* Keyed by INDEX, not name: a message can carry two parts called invoice.pdf, and the server
+          resolves the part positionally for exactly that reason. */}
       {message.attachmentNames?.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-1.5">
-          {message.attachmentNames.map((n) => (
-            <span
-              key={n}
-              className="inline-flex items-center gap-1 rounded border border-slate-200 px-2 py-0.5 text-[11px] text-slate-500"
+          {message.attachmentNames.map((n, i) => (
+            <button
+              key={`${i}-${n}`}
+              type="button"
+              onClick={() => downloadAttachment(message.uid, i, n, folder)}
+              title={`Download ${n}`}
+              className="inline-flex items-center gap-1 rounded border border-slate-200 px-2 py-0.5 text-[11px] text-slate-500 transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-800"
             >
               <Paperclip size={10} /> {n}
-            </span>
+            </button>
           ))}
         </div>
       )}

@@ -44,4 +44,17 @@ export const platformMailService = {
    */
   sendMessage: ({ to, subject, body }) =>
     ConsoleAPI.post(`${BASE}/messages`, { to, subject, body }).then(unwrap),
+
+  /**
+   * One attachment's bytes, as a Blob. `index` is its position in attachmentNames — the server
+   * resolves the MIME part positionally, since two parts in one message can share a filename.
+   *
+   * The hotel-partner case: an invite goes out from this mailbox, the property replies with its
+   * rate card attached, and until now the console could name the file but not open it.
+   */
+  attachment: (uid, index, folder = "INBOX") =>
+    ConsoleAPI.get(`${BASE}/messages/${uid}/attachments/${index}`, {
+      params: { folder },
+      responseType: "blob",
+    }).then((res) => res.data),
 };
