@@ -24,3 +24,5 @@ export { default as ConsolePlatformHotelDetail } from "./pages/PlatformHotelDeta
 export { default as ConsoleMarketplaceBookings } from "./pages/MarketplaceBookings";
 export { default as ConsoleMarketplaceCommissions } from "./pages/MarketplaceCommissions";
 export { default as ConsoleMarketplaceOccupancy } from "./pages/MarketplaceOccupancy";
+export { default as ConsoleCommercialRules } from "./pages/CommercialRules";
+export { default as ConsoleMarketplaceCredit } from "./pages/MarketplaceCredit";

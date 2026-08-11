@@ -63,7 +63,6 @@ const NotificationSettings = lazyPage(reminders, "NotificationSettings");
 
 const quotation = () => import("@features/quotation");
 const CreateQuotation = lazyPage(quotation, "CreateQuotation");
-const QuickQuotation = lazyPage(quotation, "QuickQuotation");
 const PublicQuotationPage = lazyPage(quotation, "PublicQuotationPage");
 const PackageTemplates = lazyPage(quotation, "PackageTemplates");
 const TemplateBuilder = lazyPage(quotation, "TemplateBuilder");
@@ -124,6 +123,8 @@ const ConsolePlatformHotelDetail = lazyPage(consoleFeature, "ConsolePlatformHote
 const ConsoleMarketplaceBookings = lazyPage(consoleFeature, "ConsoleMarketplaceBookings");
 const ConsoleMarketplaceCommissions = lazyPage(consoleFeature, "ConsoleMarketplaceCommissions");
 const ConsoleMarketplaceOccupancy = lazyPage(consoleFeature, "ConsoleMarketplaceOccupancy");
+const ConsoleCommercialRules = lazyPage(consoleFeature, "ConsoleCommercialRules");
+const ConsoleMarketplaceCredit = lazyPage(consoleFeature, "ConsoleMarketplaceCredit");
 
 const hotelPartner = () => import("@features/hotelpartner");
 const HotelPartnerRegister = lazyPage(hotelPartner, "HotelPartnerRegister");
@@ -273,6 +274,13 @@ const AppRouter = () => {
                 allotment to report on; this is the exposure the operator already carries.
               */}
               <Route path="hotel-occupancy" element={<ConsoleMarketplaceOccupancy />} />
+              {/*
+                ⚠ The platform's margin structure, and its tenant credit ledger. SuperAdmin realm
+                only — a tenant who could read a commercial rule could compute the platform's cut on
+                every booking against that hotel.
+              */}
+              <Route path="hotel-pricing" element={<ConsoleCommercialRules />} />
+              <Route path="hotel-credit" element={<ConsoleMarketplaceCredit />} />
               {/* The platform earning ledger — append-only, and SuperAdmin-only by construction. */}
               <Route path="hotel-commissions" element={<ConsoleMarketplaceCommissions />} />
               <Route path="palette" element={<ConsolePalette />} />
@@ -354,7 +362,15 @@ const AppRouter = () => {
               <Route path="tasks" element={<Guard allow={hasPermission(P.TASK_READ)}><AllTasks /></Guard>} />
 
               <Route path="createquotation" element={<Guard allow={(hasPermission(P.QUOTATION_CREATE) || hasPermission(P.QUOTATION_UPDATE)) && hasPermission(P.LEAD_READ)}><CreateQuotation /></Guard>} />
-              <Route path="quick-quote" element={<Guard allow={hasPermission(P.QUOTATION_CREATE) && hasPermission(P.LEAD_READ)}><QuickQuotation /></Guard>} />
+              {/*
+                The standalone /quick-quote page is retired. Pricing now happens inside the rapid
+                lead form, which captures the enquiry and prices it in one pass; a separate route
+                onto the same accordion with no lead attached was a slower way to the same screen.
+
+                The MODULE is very much alive — CreateLead hosts the builder inline and imports
+                quickQuotePayload/Totals/Steps/Completion from it through the quotation barrel. Do
+                not delete QuickQuotation.jsx while trimming this route.
+              */}
               {/* Package templates — gated by QUOTATION_* (page also self-checks). */}
               <Route path="quotations/templates" element={<Guard allow={hasPermission(P.QUOTATION_READ)}><PackageTemplates /></Guard>} />
               <Route path="quotations/templates/new" element={<Guard allow={hasPermission(P.QUOTATION_CREATE)}><TemplateBuilder /></Guard>} />

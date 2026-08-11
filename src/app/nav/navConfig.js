@@ -184,13 +184,13 @@ export const NAV_SECTIONS = [
           // No "Build a quotation" row: the builder is always entered against a
           // lead, so it belongs in Quick Create (and ⌘K), not as a rail
           // destination that would open an empty builder with nothing selected.
-          {
-            id: "quotations.quick",
-            label: "Quick quote",
-            path: "/quick-quote",
-            keywords: "fast rapid one page",
-            can: () => hasPermission(P.QUOTATION_CREATE) && hasPermission(P.LEAD_READ),
-          },
+          //
+          // The standalone "Quick quote" row is gone too, and for a related
+          // reason: pricing now happens INSIDE the rapid lead form, which
+          // captures the enquiry and prices it in one pass. A second entry point
+          // that opened the same accordion with no lead attached was a slower
+          // route to the same place. CreateLead's rapid mode still hosts the
+          // builder — see quotation/index.js.
           {
             id: "quotations.templates",
             label: "Package templates",
@@ -678,34 +678,16 @@ export function buildQuickActions(navigate) {
       can: () => hasPermission(P.LEAD_CREATE) && hasModule("LEADS"),
       run: () => navigate("/createlead"),
     },
-    {
-      id: "action.quotation",
-      group: "Sales",
-      label: "New quotation",
-      sublabel: "Build an itinerary and price it",
-      Icon: FileText,
-      tone: "emerald",
-      keywords: "create quote proposal itinerary",
-      can: () =>
-        hasPermission(P.QUOTATION_CREATE) &&
-        hasPermission(P.LEAD_READ) &&
-        hasModule("QUOTATIONS"),
-      run: () => navigate("/createquotation"),
-    },
-    {
-      id: "action.quickquote",
-      group: "Sales",
-      label: "Quick quote",
-      sublabel: "One-page price, no builder",
-      Icon: FileText,
-      tone: "emerald",
-      keywords: "fast rapid quote",
-      can: () =>
-        hasPermission(P.QUOTATION_CREATE) &&
-        hasPermission(P.LEAD_READ) &&
-        hasModule("QUOTATIONS"),
-      run: () => navigate("/quick-quote"),
-    },
+    // "New quotation" and "Quick quote" were both here, and both are gone.
+    //
+    // Neither could do anything useful from Quick Create: a quotation is ALWAYS
+    // built against a lead, so opening /createquotation cold gave you an empty
+    // builder with nothing selected and the first thing to do was go and find a
+    // lead — the step the shortcut was supposed to save.
+    //
+    // The route still exists and is still the builder. It is reached the way it
+    // is actually used: from a lead, or from the rapid lead form, which now
+    // captures the enquiry and prices it in one pass. Start at New lead.
     {
       id: "action.customer",
       group: "Sales",
