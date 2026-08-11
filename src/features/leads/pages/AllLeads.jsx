@@ -1435,7 +1435,7 @@ function QuotationsModal({ lead, onClose, canDelete, canEdit }) {
               className="inline-flex items-center gap-1.5 text-sm font-bold text-slate-600 hover:text-blue-600 flex-shrink-0">
               <X size={16} /> Back
             </button>
-            {/* Share this quotation with the client */}
+            
             <div className="flex items-center gap-2 flex-wrap justify-end">
               <button onClick={() => copyLink(webViewQ, webViewStyle)}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 hover:border-blue-300 text-slate-600 hover:text-blue-600 text-xs font-bold transition-all">
