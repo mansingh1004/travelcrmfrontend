@@ -1455,7 +1455,7 @@ function QuotationsModal({ lead, onClose, canDelete, canEdit }) {
         </div>
       )}
 
-      {/* Design picker for the weblink preview — Classic / Modern / Premium, nothing saved. */}
+     
       {previewPickFor && (
         <QuotationStyleModal
           mode="preview"
