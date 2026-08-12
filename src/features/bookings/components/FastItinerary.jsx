@@ -609,6 +609,11 @@ export default function FastItinerary({ hydrationKey, itinerary, onAdd, onRemove
             const cityValue = selectedCity ? String(cityIdOf(selectedCity)) : row.city ? "__saved__" : "";
 
 
+            /* A row can name a city that is not in the current list — either because it left the
+               master data, or because the trip destination was just switched out from under it.
+               Either way it keeps showing as "(saved)" instead of the combobox falling back to its
+               placeholder and silently blanking a row that has data in it. */
+
             /* A row loaded from a lead or a booking snapshot can name a place that is no longer in
                the master list. The native selects carried a "(saved)" option for exactly that, and
               
@@ -616,12 +621,16 @@ export default function FastItinerary({ hydrationKey, itinerary, onAdd, onRemove
             const rowDestinationOptions = destinationValue === "__saved__"
               ? [{ value: "__saved__", label: `${row.destination} (saved)` }, ...destinationOptions]
               : destinationOptions;
+
             const cityOptions = cities.map((item) => ({ value: String(cityIdOf(item)), label: item.name || "" }));
 
             /* A row can name a city that is not in the current list — either because it left the
                master data, or because the trip destination was just switched out from under it.
                Either way it keeps showing as "(saved)" instead of the combobox falling back to its
                placeholder and silently blanking a row that has data in it. */
+
+
+            const cityOptions = cities.map((item) => ({ value: String(cityIdOf(item)), label: item.name || "" }))
 
             const rowCityOptions = cityValue === "__saved__"
               ? [{ value: "__saved__", label: `${row.city} (saved)` }, ...cityOptions]
