@@ -69,31 +69,47 @@ export function Card({ id, title, hint, right, children }) {
  * Rendered as a <label> so the whole label text is part of the control's tap target — on a phone
  * that roughly doubles the area a shaky thumb can hit.
  */
-export function Row({ label, hint, required, children }) {
+export function Row({ label, hint, required, error, children }) {
   return (
     <label className="flex flex-col gap-1.5 sm:flex-row sm:gap-4">
-      <span className="text-[13px] font-semibold text-slate-700 sm:w-44 sm:shrink-0 sm:pt-3">
+      <span className={`text-[13px] font-semibold sm:w-44 sm:shrink-0 sm:pt-3 ${error ? "text-rose-600" : "text-slate-700"}`}>
         {label}
         {required && <span className="ml-0.5 text-rose-500">*</span>}
         {hint && <span className="block text-[12px] font-normal text-slate-400">{hint}</span>}
       </span>
-      <span className="min-w-0 flex-1">{children}</span>
+      <span className={`min-w-0 flex-1 ${error ? INVALID : ""}`}>
+        {children}
+        {error && <span className="mt-1 block text-[12px] font-semibold text-rose-600">{error}</span>}
+      </span>
     </label>
   );
 }
 
 /**
+ * Turns whatever control sits inside red, without every caller having to thread an error class into
+ * its own input.
+ *
+ * <p>Descendant variants rather than a prop on each input: this form has inputs, selects and
+ * textareas across eight sections, and asking each one to know about validity is how half of them
+ * end up not knowing. The wrapper owns it, so marking a field is one prop at the Row.</p>
+ */
+const INVALID =
+  "[&_input]:border-rose-400 [&_input]:ring-rose-100 " +
+  "[&_select]:border-rose-400 [&_textarea]:border-rose-400";
+
+/**
  * Label stacked ABOVE the control — for dense grids (rate rows) where Row's side label would leave
  * no usable width on a phone.
  */
-export function Field({ label, hint, className = "", children }) {
+export function Field({ label, hint, error, className = "", children }) {
   return (
     <label className={`block min-w-0 ${className}`}>
-      <span className="mb-1 block truncate text-[12px] font-semibold text-slate-600">
+      <span className={`mb-1 block truncate text-[12px] font-semibold ${error ? "text-rose-600" : "text-slate-600"}`}>
         {label}
         {hint && <span className="ml-1 font-normal text-slate-400">· {hint}</span>}
       </span>
-      {children}
+      <span className={`block ${error ? INVALID : ""}`}>{children}</span>
+      {error && <span className="mt-1 block text-[12px] font-semibold text-rose-600">{error}</span>}
     </label>
   );
 }
