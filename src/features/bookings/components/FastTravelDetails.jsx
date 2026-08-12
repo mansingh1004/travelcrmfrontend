@@ -281,8 +281,14 @@ export default function FastTravelDetails({
               </div>
             </IconField>
 
-            <IconField label="Pickup Time" icon={Clock3}>
-              <input type="time" value={form.pickupTime || ""} onChange={(event) => setField("pickupTime", event.target.value)} className={inputClass} />
+            {/* DATE and time, not time alone — a pickup the night before an early flight is a
+                different fact from one on the travel date, and the time on its own cannot say so.
+                Bound to `pickupDateTime`, the field this form has always had: BookingDetails
+                already renders it as "Pickup At" and the lead prefill already maps it. It used to
+                appear only under Car/Road; a pickup has a time whatever the mode, so it lives in
+                the PICKUP band now and shows for all of them. */}
+            <IconField label="Pickup Date & Time" icon={CalendarDays}>
+              <input type="datetime-local" value={form.pickupDateTime || ""} onChange={(event) => setField("pickupDateTime", event.target.value)} className={inputClass} />
             </IconField>
           </div>
 
@@ -322,16 +328,21 @@ export default function FastTravelDetails({
           </div>
         )}
 
+        {/* Two columns, not three: dropping the duplicated "Pickup Date & Time" left this block a
+            field short and a third of it empty. */}
         {form.pickupMode === "Car / Road" && (
-          <div className="grid grid-cols-1 gap-4 rounded-lg border border-amber-100 bg-amber-50/50 p-3 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 rounded-lg border border-amber-100 bg-amber-50/50 p-3 sm:grid-cols-2">
             <IconField label="Pickup Address" icon={MapPin}>
               {/* OLD — replaced in create-form redesign: <input autoFocus ... /> — see the airport
                   field above for why autoFocus had to go. */}
               <input value={form.pickupAddress} onChange={(event) => setField("pickupAddress", event.target.value)} placeholder="Pickup address" className={inputClass} />
             </IconField>
-            <IconField label="Pickup Date & Time" icon={CalendarDays}>
-              <input type="datetime-local" value={form.pickupDateTime} onChange={(event) => setField("pickupDateTime", event.target.value)} className={inputClass} />
-            </IconField>
+            {/* "Pickup Date & Time" used to sit here and asked the same question twice: the PICKUP
+                band above already has a Pickup Time for every mode, and the DATE half duplicated
+                Trip Start Date. Removed rather than kept for Road only, because a pickup time is
+                not a road-specific fact — a flight or train pickup has one too.
+                `pickupDateTime` is still written to tripSnapshot.departure so an older booking that
+                stored one keeps it; it is simply no longer asked for here. */}
             <IconField label="Vehicle Preference" icon={Car}>
               <input value={form.vehiclePreference} onChange={(event) => setField("vehiclePreference", event.target.value)} placeholder="Sedan, SUV, Traveller" className={inputClass} />
             </IconField>
@@ -361,8 +372,11 @@ export default function FastTravelDetails({
                 <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               </div>
             </IconField>
-            <IconField label="Drop Time" icon={Clock3}>
-              <input type="time" value={form.dropTime || ""} onChange={(event) => setField("dropTime", event.target.value)} className={inputClass} />
+            {/* Date + time, matching Pickup. The return leg of a trip is just as likely to cross
+                midnight — an overnight bus dropping at 6am is a different fact from 6am the day
+                the trip ends, and a bare time cannot tell them apart. */}
+            <IconField label="Drop Date & Time" icon={CalendarDays}>
+              <input type="datetime-local" value={form.dropDateTime || ""} onChange={(event) => setField("dropDateTime", event.target.value)} className={inputClass} />
             </IconField>
           </div>
         </Band>
