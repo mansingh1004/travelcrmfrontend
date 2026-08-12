@@ -21,6 +21,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Radar, RefreshCw, Layers, PackageSearch, Wallet, PlaneTakeoff, CalendarRange,
+  Rows3, CalendarDays,
 } from "lucide-react";
 
 import { usePagedList } from "@shared/api/usePagedList";
@@ -33,6 +34,7 @@ import {
   Badge, ReadinessDots, DaysBadge, SpanBar,
 } from "../components/opsUi";
 import OpsDetailPanel from "../components/OpsDetailPanel";
+import OpsCalendar from "../components/OpsCalendar";
 import operationsService, { isoDate, addDays } from "../api/operationsService";
 
 const COLS = "132px 1.5fr 1fr 1.3fr 176px 104px";
@@ -65,6 +67,7 @@ export default function Operations() {
   const allowed = hasPermission(P.BOOKING_READ);
 
   const [tab, setTab] = useState("ALL");
+  const [view, setView] = useState("board");
   const [rangeKey, setRangeKey] = useState("14");
   const [counts, setCounts] = useState({});
   const [countsLoading, setCountsLoading] = useState(true);
@@ -83,11 +86,21 @@ export default function Operations() {
   const fetcher = useCallback((params) => operationsService.board(params), []);
 
   const {
-    rows, meta, loading, error, page, setPage, total, totalPages, reload,
+    rows, meta, loading, error, page, setPage, pageSize, setPageSize, total, totalPages, reload,
   } = usePagedList(fetcher, {
     size: 25,
     filters: useMemo(() => ({ tab, from, to }), [tab, from, to]),
   });
+
+  // A month grid cannot be paged — a trip missing from the calendar reads as a trip that
+  // does not exist, which is worse than a list that says "page 2 of 3". So the calendar
+  // asks for the server's maximum page instead, and says so plainly when the window holds
+  // more than that.
+  useEffect(() => {
+    setPageSize(view === "calendar" ? 100 : 25);
+  }, [view, setPageSize]);
+
+  const calendarTruncated = view === "calendar" && total > rows.length;
 
   const loadCounts = useCallback(async () => {
     if (!allowed) return;
@@ -114,9 +127,9 @@ export default function Operations() {
 
   const refreshAll = useCallback(() => { reload(); loadCounts(); }, [reload, loadCounts]);
 
-  const pageSize = meta?.size ?? 25;
-  const fromRow = total === 0 ? 0 : page * pageSize + 1;
-  const toRow = Math.min((page + 1) * pageSize, total);
+  const rowsPerPage = meta?.size ?? pageSize ?? 25;
+  const fromRow = total === 0 ? 0 : page * rowsPerPage + 1;
+  const toRow = Math.min((page + 1) * rowsPerPage, total);
 
   if (!allowed) {
     return (
@@ -139,6 +152,29 @@ export default function Operations() {
       crumb="Operations · what still needs doing"
       actions={
         <div className="flex items-center gap-2">
+          {/* Board and calendar are two renderings of ONE query, not two screens.
+              Switching keeps the tab, the window and the selected booking. */}
+          <div className="flex items-center gap-1 p-1 rounded-xl border border-slate-200 bg-white">
+            {[
+              { key: "board", label: "Board", Icon: Rows3 },
+              { key: "calendar", label: "Calendar", Icon: CalendarDays },
+            ].map(({ key, label, Icon }) => (
+              <button
+                key={key}
+                onClick={() => setView(key)}
+                aria-pressed={view === key}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  view === key
+                    ? "bg-gradient-to-r from-blue-600 to-indigo-500 text-white shadow-sm"
+                    : "text-slate-500 hover:text-blue-600"
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5" />
+                {label}
+              </button>
+            ))}
+          </div>
+
           <div className="flex items-center gap-1 p-1 rounded-xl border border-slate-200 bg-white">
             <CalendarRange className="w-4 h-4 text-slate-400 ml-1.5 mr-0.5" />
             {RANGES.map((r) => (
@@ -211,6 +247,7 @@ export default function Operations() {
         </nav>
 
         {/* ── Board ──────────────────────────────────────────────────────────── */}
+        {view === "board" && (
         <Panel className="flex-1 overflow-hidden min-w-0">
           <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between gap-3">
             <p className="text-xs font-bold text-slate-400">
@@ -329,6 +366,30 @@ export default function Operations() {
 
           <Pager page={page} totalPages={totalPages} total={total} from={fromRow} to={toRow} onPage={setPage} />
         </Panel>
+        )}
+
+        {/* ── Calendar ────────────────────────────────────────────────────────
+            The same rows, drawn on a month. No second fetch. */}
+        {view === "calendar" && (
+          <div className="flex-1 min-w-0">
+            {calendarTruncated && (
+              <p className="mb-2 text-[11px] font-bold text-amber-700 bg-amber-50 ring-1 ring-amber-200 rounded-lg px-3 py-2">
+                Showing the first {rows.length} of {total} departures in this window — a month grid cannot page.
+                Narrow the range to see them all.
+              </p>
+            )}
+            {loading ? (
+              <Panel className="p-10 text-center text-xs font-bold text-slate-400">Loading departures…</Panel>
+            ) : (
+              <OpsCalendar
+                rows={rows}
+                windowStart={from}
+                selected={selected}
+                onSelect={setSelected}
+              />
+            )}
+          </div>
+        )}
 
         {/* ── Detail panel ───────────────────────────────────────────────────
             Beside the list, not instead of it: the row stays on screen so the
