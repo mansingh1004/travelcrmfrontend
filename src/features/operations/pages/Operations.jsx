@@ -43,7 +43,9 @@ const COLS = "132px 1.5fr 1fr 1.3fr 176px 104px";
 const TABS = [
   { key: "ALL",             label: "All",          icon: Layers },
   { key: "UNCONFIRMED",     label: "Unconfirmed",  icon: PackageSearch, danger: true },
-  { key: "PAYMENT_PENDING", label: "Payment due",  icon: Wallet },
+  // "Balance pending", not "Payment due" — there is no customer payment schedule anywhere in
+  // this product, so nothing here is DUE on a date. It means money still owing.
+  { key: "PAYMENT_PENDING", label: "Balance pending", icon: Wallet },
   { key: "DEPARTING_TODAY", label: "Departing today", icon: PlaneTakeoff },
 ];
 
@@ -172,6 +174,18 @@ export default function Operations() {
       toast.error(getErrorMessage(error, "Could not load the operations board"));
     }
   }, [error]);
+
+  // Keep the open drawer on the refreshed row.
+  //
+  // Confirming a supplier inside the drawer refreshes the board, but `selected` still held the
+  // object captured at click time — so the service line moved to Confirmed while the readiness
+  // chips above it went on showing the state before the change. Re-pointing at the row that
+  // just came back is what makes the panel agree with itself.
+  useEffect(() => {
+    if (!selected) return;
+    const fresh = rows.find((r) => r.bookingPublicId === selected.bookingPublicId);
+    if (fresh && fresh !== selected) setSelected(fresh);
+  }, [rows, selected]);
 
   const refreshAll = useCallback(() => { reload(); loadCounts(); loadDays(); }, [reload, loadCounts, loadDays]);
 
