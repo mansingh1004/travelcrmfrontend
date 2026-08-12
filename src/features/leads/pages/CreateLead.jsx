@@ -817,6 +817,7 @@ import {
   Phone,
   Plane,
   Plus,
+  Wallet,
   RotateCcw,
   Route,
   Share2,
@@ -833,6 +834,7 @@ import {
 import { leadService } from "../api/leadService";
 import { useLeadSources } from "../lib/useLeadSources";
 import SearchableSelect from "../components/SearchableSelect";
+import BookFromQuotePanel from "../components/BookFromQuotePanel";
 import QuickDestinationModal from "../../masters/components/QuickDestinationModal";
 import QuickCityModal from "../../masters/components/QuickCityModal";
 // Cross-feature, through the barrel — customers owns "does this person already exist?" and the
@@ -846,6 +848,7 @@ import {
   QuotationStyleModal,
   buildQuickQuoteModel,
   quickQuotePayload,
+  quickQuoteGrandTotal,
   quickQuoteTotals,
   quotationService,
   rememberQuickQuoteDefaults,
@@ -2796,6 +2799,13 @@ export default function LeadFormPage() {
 
   const [quoteModel, setQuoteModel] = useState(null);
   const [createdQuote, setCreatedQuote] = useState(null);
+  /* Whether the inline booking panel is showing. Closed by default: most quotes are sent and slept
+     on, and a booking form open under every one of them would be noise on the common path. */
+  const [bookOpen, setBookOpen] = useState(false);
+  /* BOOKING_CREATE, not the LEAD_CREATE that opened this page — an agent who takes enquiries is not
+     necessarily the person who commits the agency to a supplier. The backend enforces the same
+     split, so without this the button would exist only to produce a 403. */
+  const canBook = useMemo(() => hasPermission(P.BOOKING_CREATE), []);
   const [quoteBusy, setQuoteBusy] = useState(false);
   const [quoteStyleOpen, setQuoteStyleOpen] = useState(false);
   const quoteSectionsRef = useRef(null);
@@ -2810,6 +2820,10 @@ export default function LeadFormPage() {
   const resetInlineQuote = useCallback(() => {
     setCreatedQuote(null);
     setQuoteModel(null);
+    // Belongs here for the reason above, not next to its button: an open booking panel left over
+    // from the last enquiry would be holding the PREVIOUS customer's vendor cost and advance, ready
+    // to confirm against the new lead.
+    setBookOpen(false);
     quoteTouchedRef.current = false;
     setQuoteTouched(false);
     // The step chain resets with the quote, not separately — every one of those paths already routes
@@ -4074,6 +4088,18 @@ export default function LeadFormPage() {
                   >
                     <ExternalLink className="h-3.5 w-3.5" /> Full editor
                   </button>
+                  {/* Emerald, and to the left of "Next enquiry", because at this exact moment the
+                      customer is either saying yes or they are not. Every other button here assumes
+                      the answer comes later. */}
+                  {!bookOpen && canBook && (
+                    <button
+                      type="button"
+                      onClick={() => setBookOpen(true)}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-emerald-700"
+                    >
+                      <Wallet className="h-3.5 w-3.5" /> Book now
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={startNextEnquiry}
@@ -4082,6 +4108,19 @@ export default function LeadFormPage() {
                     <Plus className="h-3.5 w-3.5" /> Next enquiry
                   </button>
                 </div>
+
+                {/* Inline, not a modal or a route. The quote is on screen, the customer is on the
+                    phone or at the desk, and the whole point is that saying yes costs no navigation.
+                    A modal here would cover the very figures the agent is reading back. */}
+                {bookOpen && createdQuote.lead && (
+                  <div className="w-full">
+                    <BookFromQuotePanel
+                      lead={createdQuote.lead}
+                      quotationId={createdQuote.id}
+                      quotedAmount={quickQuoteGrandTotal(quoteModel)}
+                    />
+                  </div>
+                )}
               </div>
             )}
           </section>
