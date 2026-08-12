@@ -155,7 +155,7 @@ export default function FastItinerary({ hydrationKey, itinerary, onAdd, onRemove
 
             /* A row loaded from a lead or a booking snapshot can name a place that is no longer in
                the master list. The native selects carried a "(saved)" option for exactly that, and
-               without it the combobox would find no label for the value and fall back to the
+              
                placeholder — i.e. silently show an empty row over saved data. */
             const rowDestinationOptions = destinationValue === "__saved__"
               ? [{ value: "__saved__", label: `${row.destination} (saved)` }, ...destinationOptions]
