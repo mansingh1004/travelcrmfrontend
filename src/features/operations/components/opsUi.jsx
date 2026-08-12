@@ -1,0 +1,346 @@
+// features/operations/components/opsUi.jsx
+// ─────────────────────────────────────────────────────────────────────────────
+// Feature-local UI primitives for the Operations screen.
+//
+// The shell primitives are the same shape as tasksUi.jsx, copied rather than imported:
+// per-feature kits in this app are strictly feature-local, and nothing outside a feature
+// may reach into its components/. Same visual language — blue-600→indigo-500 accent,
+// glass cards, gold row hover.
+//
+// What is NEW here is the bottom half: readiness dots and the travel span bar. Those are
+// what make this an operations screen rather than another list of bookings.
+//
+// The font is applied in <Page/>. There is no global font-family rule in the tenant app —
+// omit it and the screen silently renders in the browser default.
+// ─────────────────────────────────────────────────────────────────────────────
+import {
+  Inbox, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
+  Bed, Car, FileText, Camera, Wallet, User,
+} from "lucide-react";
+
+const FONT = "'Plus Jakarta Sans',system-ui,sans-serif";
+
+const GLOBAL_STYLE = `
+@keyframes fadeUp { from { opacity:0; transform: translateY(6px);} to {opacity:1; transform:none;} }
+@keyframes slideIn { from { opacity:0; transform: translateX(24px);} to {opacity:1; transform:none;} }
+.ops-scope ::-webkit-scrollbar { height: 8px; width: 8px; }
+.ops-scope ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 8px; }
+.ops-scope ::-webkit-scrollbar-track { background: transparent; }
+`;
+
+export function Page({ icon: Icon, title, crumb, actions, children }) {
+  return (
+    <div
+      className="ops-scope min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-100"
+      style={{ fontFamily: FONT }}
+    >
+      <style>{GLOBAL_STYLE}</style>
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 py-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5">
+          <div className="flex items-center gap-3 min-w-0">
+            {Icon && (
+              <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-500 flex items-center justify-center shadow-md shadow-blue-200 shrink-0">
+                <Icon className="w-5 h-5 text-white" />
+              </div>
+            )}
+            <div className="min-w-0">
+              <h1 className="text-xl sm:text-2xl font-extrabold text-slate-800 truncate">{title}</h1>
+              {crumb && <p className="text-xs font-bold text-slate-400 tracking-wide">{crumb}</p>}
+            </div>
+          </div>
+          {actions}
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+export function Panel({ className = "", children, style }) {
+  return (
+    <div
+      className={`bg-white/80 backdrop-blur-md rounded-2xl border border-slate-200/60 shadow-sm ${className}`}
+      style={style}
+    >
+      {children}
+    </div>
+  );
+}
+
+export function GridHead({ cols, children }) {
+  return (
+    <div
+      className="hidden md:grid items-stretch gap-0 px-5 py-3 bg-slate-50/80 text-[11px] font-extrabold text-slate-400 uppercase tracking-wider border-b border-slate-100"
+      style={{ gridTemplateColumns: cols }}
+    >
+      {children}
+    </div>
+  );
+}
+
+export function GridRow({ cols, index = 0, children, className = "", onClick, active }) {
+  return (
+    <div
+      role={onClick ? "button" : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onClick={onClick}
+      onKeyDown={onClick ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(); } } : undefined}
+      className={`hidden md:grid items-stretch gap-0 px-5 py-3.5 border-b border-slate-50 transition-colors group ${
+        onClick ? "cursor-pointer" : ""
+      } ${active ? "ring-1 ring-inset ring-blue-300" : ""} ${className}`}
+      style={{
+        gridTemplateColumns: cols,
+        animation: "fadeUp .35s ease both",
+        animationDelay: `${index * 30}ms`,
+        background: active ? "#eeda9226" : undefined,
+      }}
+      onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = "#eeda9218"; }}
+      onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = "transparent"; }}
+    >
+      {children}
+    </div>
+  );
+}
+
+export function Cell({ children, first, right, className = "" }) {
+  const base = first
+    ? "flex items-center pr-3 min-w-0"
+    : `flex items-center ${right ? "justify-end" : "justify-center"} border-l border-slate-200/70 pl-3 min-w-0`;
+  return <div className={`${base} ${className}`}>{children}</div>;
+}
+
+const TONES = {
+  red:    "bg-red-100 text-red-700",
+  amber:  "bg-amber-100 text-amber-700",
+  green:  "bg-green-100 text-green-700",
+  blue:   "bg-blue-100 text-blue-700",
+  slate:  "bg-slate-100 text-slate-600",
+};
+
+export function Badge({ tone = "slate", children, className = "" }) {
+  return (
+    <span className={`inline-flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full ${TONES[tone] ?? TONES.slate} ${className}`}>
+      {children}
+    </span>
+  );
+}
+
+export const inputCls =
+  "w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-700 font-medium placeholder-slate-400 focus:border-blue-400 focus:ring-2 focus:ring-blue-50 outline-none transition-all hover:border-slate-300";
+
+export function GridSkeleton({ cols, rows = 5 }) {
+  return [...Array(rows)].map((_, i) => (
+    <div
+      key={i}
+      className="hidden md:grid items-center gap-0 px-5 py-3.5 border-b border-slate-50"
+      style={{ gridTemplateColumns: cols }}
+    >
+      {cols.split(" ").map((_, j) => (
+        <div key={j} className={j === 0 ? "" : "border-l border-slate-200/70 pl-3"}>
+          <div
+            className="h-4 rounded-lg bg-slate-200 animate-pulse"
+            style={{ width: `${45 + ((i * 7 + j * 13) % 45)}%` }}
+          />
+        </div>
+      ))}
+    </div>
+  ));
+}
+
+export function GridEmpty({ icon: Icon = Inbox, title = "Nothing here yet", hint }) {
+  return (
+    <div className="text-center py-20 px-5">
+      <div className="flex flex-col items-center justify-center">
+        <div className="w-16 h-16 bg-slate-50 border border-slate-100 rounded-2xl flex items-center justify-center mb-4 shadow-sm -rotate-3">
+          <Icon size={28} className="text-slate-400" />
+        </div>
+        <p className="text-lg font-extrabold text-slate-600 mb-1">{title}</p>
+        {hint && <p className="text-sm text-slate-400 max-w-sm mx-auto leading-relaxed">{hint}</p>}
+      </div>
+    </div>
+  );
+}
+
+export function Pager({ page, totalPages, total, from, to, onPage }) {
+  if (!total) return null;
+  const pages = Array.from({ length: totalPages }, (_, i) => i)
+    .filter((p) => p === 0 || p === totalPages - 1 || Math.abs(p - page) <= 1)
+    .reduce((acc, p, i, arr) => {
+      if (i > 0 && p - arr[i - 1] > 1) acc.push("…");
+      acc.push(p);
+      return acc;
+    }, []);
+
+  return (
+    <div className="px-5 py-4 border-t border-slate-100 bg-slate-50/60 flex flex-col sm:flex-row items-center justify-between gap-3">
+      <p className="text-xs text-slate-400 font-medium">
+        Showing <span className="font-bold text-slate-600">{from}</span> to{" "}
+        <span className="font-bold text-slate-600">{to}</span> of{" "}
+        <span className="font-bold text-slate-600">{total}</span> entries
+      </p>
+      <div className="flex items-center gap-1.5">
+        <PBtn disabled={page === 0} onClick={() => onPage(0)}><ChevronsLeft className="w-3.5 h-3.5" /></PBtn>
+        <PBtn disabled={page === 0} onClick={() => onPage(page - 1)}><ChevronLeft className="w-3.5 h-3.5" /></PBtn>
+        {pages.map((p, i) =>
+          typeof p === "string" ? (
+            <span key={`e${i}`} className="px-1 text-xs text-slate-400">…</span>
+          ) : (
+            <button
+              key={p}
+              onClick={() => onPage(p)}
+              className={`w-8 h-8 rounded-lg text-xs font-bold border transition-all ${
+                page === p
+                  ? "bg-gradient-to-r from-blue-600 to-indigo-500 border-blue-600 text-white shadow-sm"
+                  : "bg-white border-slate-200 text-slate-600 hover:border-blue-300 hover:text-blue-600"
+              }`}
+            >
+              {p + 1}
+            </button>
+          )
+        )}
+        <PBtn disabled={page >= totalPages - 1} onClick={() => onPage(page + 1)}><ChevronRight className="w-3.5 h-3.5" /></PBtn>
+        <PBtn disabled={page >= totalPages - 1} onClick={() => onPage(totalPages - 1)}><ChevronsRight className="w-3.5 h-3.5" /></PBtn>
+      </div>
+    </div>
+  );
+}
+
+function PBtn({ disabled, onClick, children }) {
+  return (
+    <button
+      disabled={disabled}
+      onClick={onClick}
+      className="px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 text-xs font-bold text-slate-500 hover:border-blue-300 hover:text-blue-600 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+    >
+      {children}
+    </button>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Operations-specific primitives
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * The dimensions a row reports on, in the order they are worked through.
+ *
+ * Server-driven values; this map only decides how each is drawn. A dimension the
+ * server adds later renders with a fallback icon rather than disappearing.
+ */
+export const DIMENSIONS = [
+  { key: "HOTEL",      label: "Hotel",      Icon: Bed },
+  { key: "TRANSPORT",  label: "Transport",  Icon: Car },
+  { key: "DOCUMENTS",  label: "Documents",  Icon: FileText },
+  { key: "ACTIVITIES", label: "Activities", Icon: Camera },
+  { key: "GUIDE",      label: "Guide",      Icon: User },
+  { key: "PAYMENT",    label: "Payment",    Icon: Wallet },
+];
+
+/**
+ * Readiness → colour.
+ *
+ * NOT_APPLICABLE is deliberately the faintest thing on the row rather than a
+ * fourth colour competing for attention: it means "this booking does not need
+ * this", and drawing it loudly is how a column becomes noise people skip.
+ */
+export const READINESS_STYLE = {
+  READY:          { dot: "bg-emerald-500", chip: "bg-emerald-50 text-emerald-700 ring-emerald-200", label: "Ready" },
+  IN_PROGRESS:    { dot: "bg-amber-500",   chip: "bg-amber-50 text-amber-700 ring-amber-200",       label: "In progress" },
+  NOT_STARTED:    { dot: "bg-rose-500",    chip: "bg-rose-50 text-rose-700 ring-rose-200",          label: "Not started" },
+  NOT_APPLICABLE: { dot: "bg-slate-200",   chip: "bg-slate-50 text-slate-400 ring-slate-200",       label: "Not needed" },
+};
+
+const fallbackStyle = READINESS_STYLE.NOT_APPLICABLE;
+
+/** A row of readiness dots — the whole point of the board, in about 100 pixels. */
+export function ReadinessDots({ readiness = {} }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      {DIMENSIONS.map(({ key, label, Icon }) => {
+        const status = readiness[key] ?? "NOT_APPLICABLE";
+        const style = READINESS_STYLE[status] ?? fallbackStyle;
+        return (
+          <span
+            key={key}
+            title={`${label}: ${style.label}`}
+            aria-label={`${label}: ${style.label}`}
+            className="relative inline-flex items-center justify-center w-6 h-6 rounded-lg bg-white border border-slate-200"
+          >
+            <Icon size={12} className="text-slate-400" />
+            <span className={`absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full ring-2 ring-white ${style.dot}`} />
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Full-width chips for the detail panel, where there is room to spell it out. */
+export function ReadinessList({ readiness = {} }) {
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      {DIMENSIONS.map(({ key, label, Icon }) => {
+        const status = readiness[key] ?? "NOT_APPLICABLE";
+        const style = READINESS_STYLE[status] ?? fallbackStyle;
+        return (
+          <div
+            key={key}
+            className={`flex items-center gap-2 px-3 py-2 rounded-xl ring-1 ${style.chip}`}
+          >
+            <Icon size={14} />
+            <span className="text-xs font-bold truncate">{label}</span>
+            <span className={`ml-auto w-2 h-2 rounded-full shrink-0 ${style.dot}`} />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * Days-to-departure, coloured by how close it is.
+ *
+ * Past departures read "in progress" rather than a negative number: the board
+ * keeps showing a trip while it is being delivered, and "-3 days" reads as an
+ * error to anyone scanning quickly.
+ */
+export function DaysBadge({ days }) {
+  if (days == null) return <span className="text-slate-400">—</span>;
+  if (days < 0) return <Badge tone="blue">In progress</Badge>;
+  if (days === 0) return <Badge tone="red">Today</Badge>;
+  if (days === 1) return <Badge tone="red">Tomorrow</Badge>;
+  if (days <= 3) return <Badge tone="amber">{days} days</Badge>;
+  return <Badge tone="slate">{days} days</Badge>;
+}
+
+/**
+ * The travel span as a bar, positioned inside the visible window.
+ *
+ * A booking with no end date draws a single-day tick rather than a bar that runs
+ * to the edge — the honest rendering of "we do not know when this comes back".
+ */
+export function SpanBar({ start, end, windowStart, windowEnd }) {
+  const dayMs = 86400000;
+  const toDay = (v) => Math.floor(new Date(`${v}T00:00:00`).getTime() / dayMs);
+
+  if (!start || !windowStart || !windowEnd) return null;
+
+  const w0 = toDay(windowStart);
+  const w1 = toDay(windowEnd);
+  const total = Math.max(1, w1 - w0);
+
+  const s = Math.max(w0, toDay(start));
+  const e = end ? Math.min(w1, Math.max(s, toDay(end))) : s;
+
+  const left = ((s - w0) / total) * 100;
+  const width = Math.max(2.5, ((e - s) / total) * 100);
+
+  return (
+    <div className="relative h-2 w-full rounded-full bg-slate-100 overflow-hidden" title={end ? `${start} → ${end}` : start}>
+      <div
+        className="absolute top-0 h-2 rounded-full bg-gradient-to-r from-blue-500 to-indigo-500"
+        style={{ left: `${left}%`, width: `${width}%` }}
+      />
+    </div>
+  );
+}

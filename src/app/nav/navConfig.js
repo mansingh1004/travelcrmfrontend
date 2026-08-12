@@ -50,6 +50,7 @@ import {
   BellRing,
   Inbox,
   CircleUser,
+  Radar,
 } from "lucide-react";
 
 import {
@@ -243,6 +244,21 @@ export const NAV_SECTIONS = [
     id: "operations",
     label: "Operations",
     items: [
+      {
+        // First in the section because it is where the day starts: not "show me a
+        // booking" but "of the parties travelling soon, which are not ready".
+        id: "ops.board",
+        // Appended rather than slotted in: 1-9 are taken and renumbering the rail is a
+        // product decision, not a side effect of adding a screen. Move it up if operations
+        // should outrank quotations on the rail.
+        primary: 10,
+        label: "Operations",
+        path: "/operations",
+        Icon: Radar,
+        tone: "blue",
+        keywords: "ops board departures readiness suppliers unconfirmed pending checklist",
+        can: () => hasPermission(P.BOOKING_READ) && hasModule("BOOKINGS"),
+      },
       {
         id: "bookings",
         primary: 6,

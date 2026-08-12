@@ -1,0 +1,77 @@
+// features/operations/api/operationsService.js
+// ─────────────────────────────────────────────────────────────────────────────
+// The operations board's API surface.
+//
+// Envelope note: /board returns PagedApiResponse ({ data, pagination }), so `board`
+// hands back the RAW axios response — usePagedList reads res.data.data and
+// res.data.pagination itself. Everything else returns ApiResponse and is unwrapped
+// here, so call sites never think about the envelope.
+// ─────────────────────────────────────────────────────────────────────────────
+import API from "@shared/api/http";
+
+/** yyyy-MM-dd from local date parts. Never toISOString — that is UTC and drops a day west of IST. */
+export function isoDate(d) {
+  if (!d) return undefined;
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+export function addDays(date, days) {
+  const d = new Date(date);
+  d.setDate(d.getDate() + days);
+  return d;
+}
+
+const operationsService = {
+  /**
+   * Bookings departing in the window, nearest departure first.
+   *
+   * Returns the raw response for usePagedList. `params` carries page/size plus the
+   * filters the hook spreads in: { tab, from, to }.
+   */
+  board: (params) => API.get("/operations/board", { params }),
+
+  /** Badge counts, keyed by tab. Each is counted with its own tab's predicate. */
+  tabCounts: async (params) => {
+    const res = await API.get("/operations/tab-counts", { params });
+    return res?.data?.data ?? {};
+  },
+
+  /**
+   * Turn a booking's sold itinerary into the dated service lines it is delivered against.
+   *
+   * Resolves to { outcome, createdCount, createdIds } — outcome distinguishes CREATED
+   * from ALREADY_PLANNED and NOTHING_TO_PROJECT, so the screen can say which happened
+   * instead of claiming success on a no-op.
+   */
+  generateTripPlan: async (bookingPublicId) => {
+    const res = await API.post(`/operations/bookings/${bookingPublicId}/trip-plan`);
+    return res?.data?.data ?? null;
+  },
+
+  /** The service lines behind a row — the detail panel's list. */
+  serviceItems: async (bookingPublicId) => {
+    const res = await API.get(`/bookings/${bookingPublicId}/services`);
+    return res?.data?.data ?? [];
+  },
+
+  /** Assign a supplier to one line, with its confirmation number. */
+  assignVendor: async (bookingPublicId, itemPublicId, payload) => {
+    const res = await API.put(
+      `/bookings/${bookingPublicId}/services/${itemPublicId}/vendor`,
+      payload
+    );
+    return res?.data?.data ?? null;
+  },
+
+  /** Move one line's operational status — PENDING / CONFIRMED / CANCELLED. */
+  setServiceStatus: async (bookingPublicId, itemPublicId, status) => {
+    const res = await API.put(
+      `/bookings/${bookingPublicId}/services/${itemPublicId}`,
+      { status }
+    );
+    return res?.data?.data ?? null;
+  },
+};
+
+export default operationsService;

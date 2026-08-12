@@ -99,6 +99,7 @@ const Dashboard = lazyPage(() => import("@features/dashboard"), "Dashboard");
 const TrashPage = lazyPage(() => import("@features/trash"), "TrashPage");
 const Calendar = lazyPage(() => import("@features/calendar"), "Calendar");
 const AllTasks = lazyPage(() => import("@features/calendar"), "AllTasks");
+const Operations = lazyPage(() => import("@features/operations"), "Operations");
 
 // ── Platform SuperAdmin Console — SEPARATE realm (own token "sa_token", violet/dark theme) ──
 const consoleFeature = () => import("@/console");
@@ -374,6 +375,13 @@ const AppRouter = () => {
               {/* All Tasks list — same TASK_READ gate and the same TASKS module as the calendar.
               Rows are scoped per caller by the backend, so a sub-agent sees their own slice. */}
               <Route path="tasks" element={<Guard allow={hasPermission(P.TASK_READ)}><AllTasks /></Guard>} />
+
+              {/* Booking Operations — deliberately SEPARATE from the team calendar above.
+              Different consumer (ops executive, not the selling agent) and different date
+              semantics: a booking is a span, a task is a point. Gated on BOOKING_READ because
+              the board shows booking data and nothing else — a new OPS_* permission would be a
+              second name for the same access. */}
+              <Route path="operations" element={<Guard allow={hasPermission(P.BOOKING_READ)}><Operations /></Guard>} />
 
               <Route path="createquotation" element={<Guard allow={(hasPermission(P.QUOTATION_CREATE) || hasPermission(P.QUOTATION_UPDATE)) && hasPermission(P.LEAD_READ)}><CreateQuotation /></Guard>} />
               {/*
