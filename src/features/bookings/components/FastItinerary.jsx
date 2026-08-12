@@ -548,7 +548,7 @@ export default function FastItinerary({ hydrationKey, itinerary, onAdd, onRemove
 
       <div className="p-4 sm:p-5">
         {/* Destination, once, above the stops it governs. It used to sit on every row, which meant
-            picking "Nepal" as many times as the trip had stops — the country is a property of the
+            times as the trip had stops — the country is a property of the
             trip, the city is what actually differs stop to stop. */}
         <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
           <span className="shrink-0 text-xs font-semibold text-slate-500">Trip destination</span>
