@@ -368,6 +368,7 @@ export default function HotelPartnerReview() {
                           <tr key={rt.publicId} className={`border-b border-border/60 last:border-0 ${rt.active === false ? "opacity-60" : ""}`}>
                             <td className="py-1.5 pr-3 font-semibold text-heading">
                               {rt.mealPlanCode}
+                              <span className="ml-1 font-medium text-muted">{mealLabel(rt.mealPlanCode)}</span>
                               {rt.active === false && <span className="ml-1.5"><InactiveTag /></span>}
                             </td>
                             <td className="py-1.5 pr-3 text-body">{human(rt.occupancyBasis)}</td>
@@ -622,6 +623,16 @@ const money = (a, c = "INR") =>
     : `${c === "INR" ? "₹" : `${c} `}${Number(a).toLocaleString("en-IN")}`;
 
 const fmt = (s) => (s ? new Date(s).toLocaleString() : "—");
+
+/**
+ * EP/CP/MAP/AP are hotel-trade shorthand (European, Continental, Modified American and American
+ * Plan) and a reviewer should not have to remember which of them includes dinner. Wording mirrors
+ * MealPlanCode.defaultLabel on the backend so every screen says the same thing about the same code.
+ */
+const MEAL_LABELS = {
+  EP: "Room Only", CP: "Breakfast", MAP: "Breakfast + 1 Meal", AP: "All Meals", CUSTOM: "Custom",
+};
+const mealLabel = (code) => MEAL_LABELS[code] ?? "";
 
 /** SINGLE_OCCUPANCY → "Single occupancy". The old panel printed the raw enum. */
 const human = (v) =>

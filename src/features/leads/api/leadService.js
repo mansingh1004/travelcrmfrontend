@@ -209,6 +209,9 @@ function transformFormData(formData, services = [], itinerary = []) {
     followUpDate:   formData.followUpDate            || null,
     packageType:    formData.packageType             || null,
     travelDate:     formData.travelDate             || null,
+    returnDate:     formData.returnDate             || null,
+    hotelCategory:  formData.hotelCategory?.trim()  || null,
+    mealPlanPreference: formData.mealPlanPreference?.trim() || null,
     departCountry:  formData.departCountry          || "Not Specified",
     departCity:     formData.departCity             || "Not Specified",
     departureMode:  formData.departureMode          || null,
@@ -221,7 +224,11 @@ function transformFormData(formData, services = [], itinerary = []) {
     pickupAddress:  formData.pickupAddress?.trim()   || null,
     pickupDateTime: formData.pickupDateTime          || null,
     vehiclePreference: formData.vehiclePreference?.trim() || null,
-    
+    // Outside the departureMode-gated trio above, deliberately: the server clears each transport
+    // group whose mode does not match, and a party arriving by train but dropped back by the hired
+    // car would otherwise lose this the moment the mode was set.
+    dropAddress:    formData.dropAddress?.trim()    || null,
+
     // --- Room & Extra Bed ---
     rooms:          Number(formData.rooms)          || 1,
     extraBeds:      Number(formData.extraBeds)      || 0,
