@@ -122,6 +122,7 @@ const ConsoleOps = lazyPage(consoleFeature, "ConsoleOps");
 const ConsoleSuperAdmins = lazyPage(consoleFeature, "ConsoleSuperAdmins");
 const ConsolePlatformHotels = lazyPage(consoleFeature, "ConsolePlatformHotels");
 const ConsoleHotelPartners = lazyPage(consoleFeature, "ConsoleHotelPartners");
+const ConsoleHotelPartnerReview = lazyPage(consoleFeature, "ConsoleHotelPartnerReview");
 const ConsoleHotelNominations = lazyPage(consoleFeature, "ConsoleHotelNominations");
 const ConsolePlatformHotelDetail = lazyPage(consoleFeature, "ConsolePlatformHotelDetail");
 const ConsoleMarketplaceBookings = lazyPage(consoleFeature, "ConsoleMarketplaceBookings");
@@ -270,6 +271,12 @@ const AppRouter = () => {
               <Route path="superadmins" element={<ConsoleSuperAdmins />} />
               {/* Platform hotel catalog — the supply side. Owned here, not by any tenant. */}
               <Route path="hotel-partners" element={<ConsoleHotelPartners />} />
+              {/* Reviewing a submission is a PAGE, not the slide-over it used to be. A hotel carries
+                  identity, location, policies, photos, rooms, meal plans and rates; at max-w-xl the
+                  old drawer showed 28 of 55 fields and the decision to publish was taken on half the
+                  payload. A route also makes the review shareable and openable in a second tab,
+                  which is what comparing against a duplicate actually needs. */}
+              <Route path="hotel-partners/:publicId" element={<ConsoleHotelPartnerReview />} />
               <Route path="hotel-nominations" element={<ConsoleHotelNominations />} />
               <Route path="hotel-catalog" element={<ConsolePlatformHotels />} />
               <Route path="hotel-catalog/:publicId" element={<ConsolePlatformHotelDetail />} />

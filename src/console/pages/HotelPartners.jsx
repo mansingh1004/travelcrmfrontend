@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import {
-  BedDouble, Check, Copy, ExternalLink, Loader2, Mail, MapPin, Plus, RefreshCw, Send, Star, Trash2, X,
+  Copy, Loader2, Mail, MapPin, Plus, RefreshCw, Send, Star, Trash2, X,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "@shared/ui/toast";
@@ -15,9 +15,6 @@ import { hotelPartnerService, INVITE_STATUS, REG_STATUS } from "../api/hotelPart
  * this page in the same visual language as the rest of the console.
  */
 
-const money = (a, c = "INR") =>
-  a === null || a === undefined ? "—"
-    : `${c === "INR" ? "₹" : c + " "}${Number(a).toLocaleString("en-IN")}`;
 const fmtDate = (s) => (s ? new Date(s).toLocaleString() : "—");
 
 function Chip({ map, value }) {
@@ -38,11 +35,11 @@ const TABS = [
 ];
 
 export default function HotelPartners() {
+  const navigate = useNavigate();
   const [tab, setTab] = useState("SUBMITTED");
   const [regs, setRegs] = useState([]);
   const [invites, setInvites] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selected, setSelected] = useState(null);
   const [inviting, setInviting] = useState(false);
   /* The invite whose history is open. Holds the whole row, not just the id, so the panel header can
      name the partner while the fetch is still in flight. */
@@ -105,7 +102,9 @@ export default function HotelPartners() {
           <ul className="divide-y divide-border">
             {regs.map((r) => (
               <li key={r.publicId}>
-                <button onClick={() => setSelected(r.publicId)}
+                {/* A route, not a drawer — the review needs the whole page, and the URL makes it
+                    shareable and openable in a second tab for comparing duplicates. */}
+                <button onClick={() => navigate(`/console/hotel-partners/${r.publicId}`)}
                   className="flex w-full items-center gap-3 px-5 py-3.5 text-left hover:bg-surface-hover">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
@@ -166,9 +165,6 @@ export default function HotelPartners() {
       {inviting && <InviteDialog onClose={() => setInviting(false)} onDone={load} />}
       {timelineFor && (
         <TimelinePanel invite={timelineFor} onClose={() => setTimelineFor(null)} />
-      )}
-      {selected && (
-        <ReviewPanel publicId={selected} onClose={() => setSelected(null)} onDecided={load} />
       )}
     </div>
   );
@@ -458,231 +454,3 @@ function TimelinePanel({ invite, onClose }) {
   );
 }
 
-function ReviewPanel({ publicId, onClose, onDecided }) {
-  const navigate = useNavigate();
-  const [reg, setReg] = useState(null);
-  const [dups, setDups] = useState([]);
-  const [mode, setMode] = useState("");
-  const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        const [r, d] = await Promise.all([
-          hotelPartnerService.getRegistration(publicId),
-          hotelPartnerService.duplicates(publicId).catch(() => []),
-        ]);
-        if (!alive) return;
-        setReg(r);
-        setDups(d || []);
-      } catch (err) {
-        if (alive) setError(getErrorMessage(err, "Could not load this submission."));
-      }
-    })();
-    return () => { alive = false; };
-  }, [publicId]);
-
-  const decide = async (fn) => {
-    setBusy(true);
-    setError("");
-    try {
-      await fn();
-      toast.success("Done.");
-      onDecided();
-      onClose();
-    } catch (err) {
-      // Kept INSIDE the panel: a 409 the operator cannot see is a button that does nothing.
-      setError(getErrorMessage(err, "That did not work."));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const decidable = reg?.status === "SUBMITTED";
-
-  return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/40" onClick={onClose}>
-      <aside className="h-full w-full max-w-xl overflow-y-auto bg-surface shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <header className="sticky top-0 flex items-center gap-3 border-b border-border bg-surface px-5 py-3.5">
-          <div className="min-w-0 flex-1">
-            <h3 className="truncate text-base font-bold text-heading">{reg?.name || "Submission"}</h3>
-            {reg && <Chip map={REG_STATUS} value={reg.status} />}
-          </div>
-          <button onClick={onClose} className="rounded-lg p-1 text-muted hover:bg-surface-hover hover:text-heading">
-            <X size={17} />
-          </button>
-        </header>
-
-        {!reg ? (
-          <div className="flex justify-center py-16"><Loader2 className="animate-spin text-muted" /></div>
-        ) : (
-          <div className="space-y-5 px-5 py-4">
-            {dups.length > 0 && (
-              <div className="rounded-lg bg-hue-amber-soft px-3 py-2 text-sm text-hue-amber">
-                <strong>Possible duplicate.</strong> {dups.length} other submission
-                {dups.length === 1 ? "" : "s"} share this name and city. Check before approving.
-              </div>
-            )}
-
-            <Section title="Property">
-              <KV k="City" v={[reg.cityName, reg.stateName, reg.countryCode].filter(Boolean).join(", ")} />
-              <KV k="Address" v={reg.address} />
-              <KV k="Stars" v={reg.stars} />
-              <KV k="Guest rating" v={reg.rating} />
-              <KV k="Phone" v={reg.phone} />
-              <KV k="Email" v={reg.email} />
-              <KV k="Website" v={reg.website} />
-              <KV k="Map" v={reg.mapUrl} />
-              <KV k="Check-in / out" v={[reg.checkInTime, reg.checkOutTime].filter(Boolean).join(" — ")} />
-            </Section>
-
-            {reg.overview && <Section title="About"><p className="text-sm text-body">{reg.overview}</p></Section>}
-
-            {reg.images?.length > 0 && (
-              <Section title={`Photos (${reg.images.length})`}>
-                <div className="grid grid-cols-4 gap-2">
-                  {reg.images.map((src, i) => (
-                    <img key={i} src={src} alt="" className="h-20 w-full rounded-lg object-cover" />
-                  ))}
-                </div>
-              </Section>
-            )}
-
-            {reg.amenities?.length > 0 && (
-              <Section title="Amenities">
-                <div className="flex flex-wrap gap-1.5">
-                  {reg.amenities.map((a) => (
-                    <span key={a} className="rounded-md bg-surface-hover px-2 py-0.5 text-xs text-body">{a}</span>
-                  ))}
-                </div>
-              </Section>
-            )}
-
-            <Section title={`Rooms & net rates (${reg.rooms?.length ?? 0})`}>
-              {(reg.rooms ?? []).map((room) => (
-                <div key={room.publicId} className="rounded-lg border border-border p-3">
-                  <div className="mb-2 flex items-center gap-2">
-                    <BedDouble size={14} className="text-muted" />
-                    <span className="font-semibold text-heading">{room.name}</span>
-                    <span className="text-xs text-muted">
-                      {[room.bedType, room.size].filter(Boolean).join(" · ")}
-                    </span>
-                  </div>
-                  <table className="w-full text-xs">
-                    <tbody>
-                      {(room.rates ?? []).map((rt) => (
-                        <tr key={rt.publicId} className="border-t border-border">
-                          <td className="py-1.5 text-body">{rt.mealPlanCode}</td>
-                          <td className="py-1.5 text-muted">{rt.occupancyBasis?.replace(/_/g, " ").toLowerCase()}</td>
-                          <td className="py-1.5 text-muted">
-                            {rt.refundable === true ? "Refundable" : rt.refundable === false ? "Non-refundable" : "—"}
-                          </td>
-                          <td className="py-1.5 text-right font-bold text-heading">
-                            {money(rt.netRate, rt.currency)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ))}
-            </Section>
-
-            {error && <p className="rounded-lg bg-hue-rose-soft px-3 py-2 text-sm text-hue-rose">{error}</p>}
-
-            {/* Where the trail used to end. The registration said APPROVED and nothing more; the
-                catalog hotel it became lived on another screen with no link, so "is this property
-                actually live?" was answered by searching the catalog for the name and hoping it was
-                unique. The id has existed on the entity all along as promotion's idempotency guard —
-                it was simply never exposed. */}
-            {reg?.promotedPlatformHotelPublicId && (
-              <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-surface-hover/50 px-3 py-2.5">
-                <span className="text-sm text-body">
-                  Live in the catalog as a platform hotel.
-                </span>
-                <button
-                  onClick={() => navigate(`/console/hotel-catalog/${reg.promotedPlatformHotelPublicId}`)}
-                  className="ml-auto inline-flex items-center gap-1.5 text-sm font-bold text-accent hover:underline"
-                >
-                  Open the hotel <ExternalLink size={13} />
-                </button>
-              </div>
-            )}
-
-            {decidable && (
-              <div className="space-y-3 border-t border-border pt-4">
-                {!mode ? (
-                  <div className="flex flex-wrap gap-2">
-                    <button onClick={() => decide(() => hotelPartnerService.approve(publicId))} disabled={busy}
-                      className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3.5 py-2 text-sm font-bold text-accent-text hover:bg-accent-hover disabled:opacity-50">
-                      {busy ? <Loader2 size={14} className="animate-spin" /> : <Check size={15} />} Approve
-                    </button>
-                    <button onClick={() => { setMode("changes"); setNote(""); }}
-                      className="rounded-lg border border-border px-3.5 py-2 text-sm font-semibold text-body hover:bg-surface-hover">
-                      Request changes
-                    </button>
-                    <button onClick={() => { setMode("reject"); setNote(""); }}
-                      className="rounded-lg border border-border px-3.5 py-2 text-sm font-semibold text-hue-rose hover:bg-hue-rose-soft">
-                      Reject
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <p className="text-xs font-semibold text-body">
-                      {mode === "reject"
-                        ? "Why are you rejecting this? The hotel is shown this."
-                        : "What should they change? The hotel is shown this and can edit again."}
-                    </p>
-                    <textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)}
-                      className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-heading outline-none focus:ring-2 focus:ring-focus" />
-                    <div className="flex gap-2">
-                      <button disabled={busy || !note.trim()}
-                        onClick={() => decide(() =>
-                          mode === "reject"
-                            ? hotelPartnerService.reject(publicId, note)
-                            : hotelPartnerService.requestChanges(publicId, note))}
-                        className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3.5 py-2 text-sm font-bold text-accent-text hover:bg-accent-hover disabled:opacity-50">
-                        {busy && <Loader2 size={14} className="animate-spin" />}
-                        {mode === "reject" ? "Reject" : "Send back"}
-                      </button>
-                      <button onClick={() => setMode("")}
-                        className="rounded-lg border border-border px-3.5 py-2 text-sm font-semibold text-body hover:bg-surface-hover">
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                )}
-                <p className="text-xs text-muted">
-                  Approving creates a <strong>draft</strong> hotel in the catalog. It stays invisible to
-                  tenants until you publish it from Hotel Catalog.
-                </p>
-              </div>
-            )}
-          </div>
-        )}
-      </aside>
-    </div>
-  );
-}
-
-function Section({ title, children }) {
-  return (
-    <section className="space-y-2">
-      <h4 className="text-xs font-bold uppercase tracking-wide text-muted">{title}</h4>
-      {children}
-    </section>
-  );
-}
-
-function KV({ k, v }) {
-  if (v === null || v === undefined || v === "") return null;
-  return (
-    <div className="flex gap-3 text-sm">
-      <span className="w-32 shrink-0 text-muted">{k}</span>
-      <span className="min-w-0 flex-1 break-words text-body">{String(v)}</span>
-    </div>
-  );
-}
