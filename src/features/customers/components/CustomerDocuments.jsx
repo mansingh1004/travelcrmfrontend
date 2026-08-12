@@ -148,8 +148,7 @@ export default function CustomerDocuments({ register, errors }) {
       description="Capture only when needed for visa, ticketing or compliance"
     >
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {/* max={TODAY} — the old input had no bound, so a date of birth in the future saved fine
-            and only came back as a round-trip 400 from the backend's @PastOrPresent. */}
+       
         <Field id="birthday" label="Date of Birth" optional error={errors.birthday?.message}>
           <div className="relative">
             <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />

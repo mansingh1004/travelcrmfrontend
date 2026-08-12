@@ -23,7 +23,7 @@ const API = axios.create({
   // an indistinguishable "Something went wrong."
   timeout: 30000,
   headers: {
-    "Content-Type": "application/json",
+    // "Content-Type": "application/json",
     Accept: "application/json",
   },
 });

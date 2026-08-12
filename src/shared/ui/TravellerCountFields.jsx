@@ -49,6 +49,10 @@ export default function TravellerCountFields({
   compact = false,
   showBreakdownInCompact = false,
   showExtraBedsInCompact = false,
+  /* Hide the Rooms / Extra Beds pair. Defaults to showing them, so every existing caller is
+     untouched; the booking form turns them off because its Room Requirement rows own that number
+     there, and two editors for one value is how they drift apart. */
+  showRooms = true,
 }) {
   const tone = THEMES[theme] || THEMES.blue;
   const error = getAdultBreakdownError(values);
@@ -175,15 +179,17 @@ export default function TravellerCountFields({
         )}
       </fieldset>
 
-      <fieldset className="min-w-0 border-0 p-0">
-        <legend className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-slate-400">
-          Rooms
-        </legend>
-        <div className={`grid items-start gap-2.5 ${showExtraBeds ? "grid-cols-2" : "grid-cols-1"}`}>
-          <CountInput name="rooms" label="Rooms" icon={BedDouble} value={values.rooms} onChange={onCountChange} min={1} focusClass={tone.focus} />
-          {showExtraBeds && <CountInput name="extraBeds" label="Extra Beds" icon={BedDouble} value={values.extraBeds} onChange={onCountChange} focusClass={tone.focus} />}
-        </div>
-      </fieldset>
+      {showRooms && (
+        <fieldset className="min-w-0 border-0 p-0">
+          <legend className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-slate-400">
+            Rooms
+          </legend>
+          <div className={`grid items-start gap-2.5 ${showExtraBeds ? "grid-cols-2" : "grid-cols-1"}`}>
+            <CountInput name="rooms" label="Rooms" icon={BedDouble} value={values.rooms} onChange={onCountChange} min={1} focusClass={tone.focus} />
+            {showExtraBeds && <CountInput name="extraBeds" label="Extra Beds" icon={BedDouble} value={values.extraBeds} onChange={onCountChange} focusClass={tone.focus} />}
+          </div>
+        </fieldset>
+      )}
     </div>
   );
 }
