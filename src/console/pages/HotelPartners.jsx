@@ -44,6 +44,9 @@ export default function HotelPartners() {
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
   const [inviting, setInviting] = useState(false);
+  /* The invite whose history is open. Holds the whole row, not just the id, so the panel header can
+     name the partner while the fetch is still in flight. */
+  const [timelineFor, setTimelineFor] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -135,7 +138,14 @@ export default function HotelPartners() {
           <ul className="divide-y divide-border">
             {invites.map((inv) => (
               <li key={inv.publicId} className="flex flex-wrap items-center gap-3 px-5 py-3">
-                <div className="min-w-0 flex-1">
+                {/* The row itself opens the timeline. The actions stay separate buttons — resend
+                    rotates the token and revoke is destructive, and neither should be one stray
+                    click away from "I wanted to see what happened". */}
+                <button
+                  onClick={() => setTimelineFor(inv)}
+                  title="Show everything that has happened with this partner"
+                  className="min-w-0 flex-1 rounded-lg px-1 py-0.5 text-left hover:bg-surface-hover"
+                >
                   <div className="flex items-center gap-2">
                     <span className="truncate font-semibold text-heading">{inv.contactName}</span>
                     <Chip map={INVITE_STATUS} value={inv.status} />
@@ -145,7 +155,7 @@ export default function HotelPartners() {
                     {inv.hintHotelName ? ` · ${inv.hintHotelName}` : ""}
                     {" · expires "}{fmtDate(inv.expiresAt)}
                   </p>
-                </div>
+                </button>
                 <InviteActions invite={inv} onDone={load} />
               </li>
             ))}
@@ -154,6 +164,9 @@ export default function HotelPartners() {
       </section>
 
       {inviting && <InviteDialog onClose={() => setInviting(false)} onDone={load} />}
+      {timelineFor && (
+        <TimelinePanel invite={timelineFor} onClose={() => setTimelineFor(null)} />
+      )}
       {selected && (
         <ReviewPanel publicId={selected} onClose={() => setSelected(null)} onDecided={load} />
       )}
@@ -316,6 +329,135 @@ function InviteDialog({ onClose, onDone }) {
 }
 
 /** Slide-over review, mirroring the Hotel Requests decision panel: one mode open at a time. */
+/* ── Partner timeline ─────────────────────────────────────────────────────────
+   The lifecycle and the actual correspondence in one column, interleaved by time.
+
+   Interleaved, not two stacked lists, because the question this screen answers is "why is this one
+   stuck", and the answer is almost always the gap between two rows of different kinds — the invite
+   went out on the 3rd, they replied with a question on the 4th, and nothing has happened since. Two
+   separate lists put those three facts in two places and the gap in neither. */
+const EVENT_TONE = {
+  INVITE_CREATED: "bg-hue-sky",
+  INVITE_SENT: "bg-hue-sky",
+  INVITE_OPENED: "bg-hue-indigo",
+  INVITE_CONSUMED: "bg-hue-indigo",
+  REGISTRATION_SUBMITTED: "bg-hue-amber",
+  REGISTRATION_REVIEWED: "bg-hue-amber",
+  HOTEL_PUBLISHED: "bg-hue-emerald",
+};
+
+function TimelinePanel({ invite, onClose }) {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let alive = true;
+    hotelPartnerService
+      .timeline(invite.publicId)
+      .then((d) => { if (alive) setData(d); })
+      .catch((err) => { if (alive) setError(getErrorMessage(err, "Could not load this timeline.")); });
+    return () => { alive = false; };
+  }, [invite.publicId]);
+
+  /* One list, sorted by time. Messages carry `sentAt`, events carry `at` — normalised to a single
+     `when` here so the sort has one key rather than a comparator that knows about both shapes. */
+  const entries = [
+    ...(data?.events || []).map((e) => ({ kind: "event", when: e.at, data: e })),
+    ...(data?.messages || []).map((m) => ({ kind: "message", when: m.sentAt, data: m })),
+  ].sort((a, b) => new Date(a.when) - new Date(b.when));
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/40" onClick={onClose}>
+      <aside
+        className="h-full w-full max-w-xl overflow-y-auto bg-surface shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <header className="sticky top-0 flex items-center gap-3 border-b border-border bg-surface px-5 py-3.5">
+          <div className="min-w-0 flex-1">
+            <h3 className="truncate text-base font-bold text-heading">
+              {invite.contactName || invite.contactEmail}
+            </h3>
+            <p className="truncate text-xs text-muted">
+              {invite.contactEmail}
+              {invite.hintHotelName ? ` · ${invite.hintHotelName}` : ""}
+            </p>
+          </div>
+          <button onClick={onClose} className="rounded-lg p-1 text-muted hover:bg-surface-hover hover:text-heading">
+            <X size={17} />
+          </button>
+        </header>
+
+        <div className="px-5 py-4">
+          {error ? (
+            <p className="rounded-lg bg-hue-rose-soft px-3 py-2 text-sm text-hue-rose">{error}</p>
+          ) : !data ? (
+            <div className="flex justify-center py-12"><Loader2 className="animate-spin text-muted" /></div>
+          ) : (
+            <>
+              {/* Soft failure: the lifecycle below is still real, so this is a note rather than the
+                  whole pane's error state. */}
+              {data.mailboxError && (
+                <p className="mb-4 rounded-lg bg-hue-amber-soft px-3 py-2 text-xs text-hue-amber">
+                  Email could not be read: {data.mailboxError}
+                </p>
+              )}
+
+              {entries.length === 0 ? (
+                <p className="py-12 text-center text-sm text-muted">Nothing recorded yet.</p>
+              ) : (
+                <ol className="relative space-y-4 border-l border-border pl-5">
+                  {entries.map((entry, i) =>
+                    entry.kind === "event" ? (
+                      <li key={`e-${i}`} className="relative">
+                        <span
+                          className={`absolute -left-[1.4rem] top-1.5 h-2 w-2 rounded-full ${
+                            EVENT_TONE[entry.data.key] || "bg-border"
+                          }`}
+                        />
+                        <p className="text-sm font-semibold text-heading">{entry.data.label}</p>
+                        {entry.data.detail && (
+                          <p className="mt-0.5 text-xs text-body">{entry.data.detail}</p>
+                        )}
+                        <p className="mt-0.5 text-[11px] text-muted">{fmtDate(entry.data.at)}</p>
+                      </li>
+                    ) : (
+                      <li key={`m-${i}`} className="relative">
+                        <span className="absolute -left-[1.4rem] top-1.5 flex h-2 w-2 items-center justify-center rounded-full bg-accent" />
+                        <div className="rounded-lg border border-border bg-page px-3 py-2">
+                          <div className="flex items-baseline gap-2">
+                            <Mail size={11} className="shrink-0 text-muted" />
+                            <span className="min-w-0 flex-1 truncate text-sm font-semibold text-heading">
+                              {entry.data.subject || "(no subject)"}
+                            </span>
+                            {entry.data.hasAttachments && (
+                              <span className="shrink-0 text-[10px] font-semibold text-muted">FILE</span>
+                            )}
+                          </div>
+                          <p className="mt-0.5 truncate text-xs text-body">
+                            {entry.data.from || "—"}
+                          </p>
+                          <p className="mt-0.5 text-[11px] text-muted">{fmtDate(entry.data.sentAt)}</p>
+                        </div>
+                      </li>
+                    )
+                  )}
+                </ol>
+              )}
+
+              {/* No inline reader here on purpose. The mailbox already opens a message properly —
+                  marks it read, renders the body as text, downloads attachments — and a second
+                  half-implementation of that would be the one that renders sender HTML. */}
+              <p className="mt-5 text-xs text-muted">
+                Open a message in Platform Email to read it or reply.
+              </p>
+            </>
+          )}
+        </div>
+      </aside>
+    </div>
+  );
+}
+
 function ReviewPanel({ publicId, onClose, onDecided }) {
   const navigate = useNavigate();
   const [reg, setReg] = useState(null);
