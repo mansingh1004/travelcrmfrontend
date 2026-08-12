@@ -195,6 +195,7 @@ function SettingsTab({ showToast, onSignatureChange }) {
         enabled: s.enabled !== false,
         signature: s.signature || "",
         passwordSet: !!s.passwordSet,
+        passwordUnreadable: !!s.passwordUnreadable,
         source: s.source || "ENVIRONMENT",
       });
       setTestTo((prev) => prev || s.username || "");
@@ -277,6 +278,23 @@ function SettingsTab({ showToast, onSignatureChange }) {
           </span>
         </header>
 
+        {/* Loud, because this is the failure that looks like every other failure. With a stale
+            app.encryption.key the saved ciphertext is still present, so the form reads "a password
+            is saved" and SMTP auth fails anyway — sending the operator to check Gmail, DNS and
+            firewall rules for something one re-entry fixes. */}
+        {form.passwordUnreadable && (
+          <div className="mx-4 mt-4 flex items-start gap-2 rounded-lg bg-rose-500/10 px-3 py-2.5 text-[12.5px] leading-relaxed text-rose-600">
+            <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+            <span>
+              <b>The saved app password cannot be read on this server.</b> It is still stored, but
+              this instance cannot decrypt it — {" "}
+              <code className="rounded bg-rose-500/10 px-1">app.encryption.key</code> is not the one
+              it was saved with. Every platform email will fail SMTP authentication until you type
+              the app password in again below and save.
+            </span>
+          </div>
+        )}
+
         <div className="grid gap-4 p-4 sm:grid-cols-2">
           <Field label="SMTP host">
             <input className={inputCls} value={form.host}
@@ -292,7 +310,9 @@ function SettingsTab({ showToast, onSignatureChange }) {
           </Field>
           <Field
             label="App password"
-            hint={form.passwordSet ? "A password is saved. Leave blank to keep it." : "Required."}
+            hint={form.passwordUnreadable
+              ? "Saved, but this server cannot read it — re-enter it."
+              : form.passwordSet ? "A password is saved. Leave blank to keep it." : "Required."}
           >
             <input className={inputCls} type="password" value={form.password}
               onChange={(e) => set("password", e.target.value)}

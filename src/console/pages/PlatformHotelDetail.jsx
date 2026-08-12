@@ -97,6 +97,11 @@ export default function PlatformHotelDetail() {
             {hotel.linkedTenantCount > 0 && (
               <Badge variant="blue">Imported by {hotel.linkedTenantCount} tenant{hotel.linkedTenantCount === 1 ? "" : "s"}</Badge>
             )}
+            {/* The detail page was read-only apart from publishing, so a hotel could be created and
+                then never filled in — and a hotel with no active room cannot be published at all. */}
+            <Button size="sm" variant="outline" onClick={() => navigate(`/console/hotel-catalog/${publicId}/edit`)}>
+              Edit
+            </Button>
             {hotel.status === "ACTIVE" ? (
               <Button size="sm" variant="outline" onClick={() => setUnpublishOpen(true)}>Unpublish</Button>
             ) : (
