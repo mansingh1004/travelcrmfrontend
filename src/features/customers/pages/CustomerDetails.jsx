@@ -52,7 +52,7 @@ const unwrap = (response) => response?.data?.data ?? response?.data;
  *
  * Every "start the next workflow" button carries the customer with it (`?customerId=`). Previously
  * they all navigated to an empty form, so the clerk re-keyed the phone number of the person they
- * were already looking at.
+ 
  */
 const TAB_ICON = "h-4 w-4";
 
