@@ -168,13 +168,12 @@ const initialForm = () => ({
   pickupCity: "",
   pickupCityId: "",
   pickupMode: "",
-  pickupTime: "",
   dropCountry: "India",
   dropCountryId: "",
   dropCity: "",
   dropCityId: "",
   dropMode: "",
-  dropTime: "",
+  dropDateTime: "",
 
   // What the booking REQUIRES, not what operations later assigns. No registration, vendor, driver
   // or status here — those appear once a requirement is fulfilled and belong to that flow.
@@ -760,13 +759,12 @@ export default function BookingFormPage() {
           pickupCity: pickup.city || departure.city || "",
           pickupCityId: pickup.cityId || "",
           pickupMode: normalizeDepartureMode(pickup.mode || departure.mode),
-          pickupTime: String(pickup.time || "").slice(0, 5),
           dropCountry: drop.country || "India",
           dropCountryId: drop.countryId || "",
           dropCity: drop.city || "",
           dropCityId: drop.cityId || "",
           dropMode: normalizeDepartureMode(drop.mode),
-          dropTime: String(drop.time || "").slice(0, 5),
+          dropDateTime: String(drop.dateTime || "").slice(0, 16),
           vehicleRequirements: (Array.isArray(snapshot.vehicleRequirements) ? snapshot.vehicleRequirements : [])
             .map((row) => ({
               id: nextRowId(),
@@ -1460,7 +1458,9 @@ export default function BookingFormPage() {
           cityId: form.pickupCityId || null,
           city: form.pickupCity.trim() || null,
           mode: form.pickupMode || null,
-          time: form.pickupTime || null,
+          // Full timestamp, not a bare time: an early-morning flight is often picked up the night
+          // before, which a time alone cannot express.
+          dateTime: form.pickupDateTime || null,
         },
         drop: {
           countryId: form.dropCountryId || null,
@@ -1468,7 +1468,8 @@ export default function BookingFormPage() {
           cityId: form.dropCityId || null,
           city: form.dropCity.trim() || null,
           mode: form.dropMode || null,
-          time: form.dropTime || null,
+          // Full timestamp, same as pickup — a drop can fall on a different date to the trip's end.
+          dateTime: form.dropDateTime || null,
         },
         // What the trip REQUIRES. Registration, vendor, driver and status are operational facts
         // that appear after fulfilment and are deliberately absent here.
@@ -1495,6 +1496,10 @@ export default function BookingFormPage() {
           country: form.pickupCountry.trim() || null,
           city: form.pickupCity.trim() || null,
           mode: form.pickupMode || null,
+          // Hoisted OUT of the Car/Road branch below. The field is asked for every mode now, and
+          // BookingDetails reads exactly this key to show "Pickup At" — leaving it road-only would
+          // have made a flight pickup time vanish from the booking it was entered on.
+          pickupDateTime: form.pickupDateTime || null,
           ...(form.pickupMode === "Flight / Airport" ? {
             airport: form.departureAirport.trim() || null,
             airportCode: form.airportCode.trim().toUpperCase() || null,
@@ -1507,7 +1512,6 @@ export default function BookingFormPage() {
           } : {}),
           ...(form.pickupMode === "Car / Road" ? {
             pickupAddress: form.pickupAddress.trim() || null,
-            pickupDateTime: form.pickupDateTime || null,
             vehiclePreference: form.vehiclePreference.trim() || null,
           } : {}),
         },
