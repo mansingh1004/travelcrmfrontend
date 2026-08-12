@@ -12,6 +12,7 @@
 // executive need that permission just to confirm a room.
 // ─────────────────────────────────────────────────────────────────────────────
 import { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { X, Wand2, Loader2, CheckCircle2, Circle, Ban, ListChecks, UserPlus, Search } from "lucide-react";
 
 import { getErrorMessage, isAlreadyReported } from "@shared/api/apiError";
@@ -167,13 +168,34 @@ export default function OpsDetailPanel({ entry, onClose, onChanged }) {
 
   if (!entry) return null;
 
-  return (
-    <aside
-      className="lg:w-[380px] shrink-0"
-      aria-label={`Operations detail for ${entry.bookingCode}`}
-      style={{ animation: "slideIn .25s ease both" }}
-    >
-      <Panel className="overflow-hidden lg:sticky lg:top-20">
+  // PORTALLED TO document.body, not rendered in place. `position: fixed` is only
+  // viewport-relative while no ancestor establishes a containing block — and this app has
+  // backdrop-blur on its cards and a sticky navbar, either of which silently turns the
+  // drawer into a clipped box somewhere inside the page. The portal is what makes it
+  // reliably a drawer. Same reason fleetUi's Dialog portals.
+  //
+  // z sits above the navbar's z-40 so the drawer covers the chrome rather than sliding
+  // underneath it.
+  return createPortal(
+    <>
+      {/* Backdrop. The panel overlays the board rather than sitting in the layout, so
+          opening a booking never reflows the table underneath — the row you clicked
+          stays exactly where your eye left it. */}
+      <div
+        className="fixed inset-0 z-[60] bg-slate-900/30"
+        onClick={onClose}
+        aria-hidden="true"
+      />
+      <aside
+        role="dialog"
+        aria-modal="true"
+        className="fixed right-0 top-0 z-[70] h-screen w-full sm:w-[430px] p-3"
+        aria-label={`Operations detail for ${entry.bookingCode}`}
+        style={{ animation: "slideIn .25s ease both", fontFamily: "'Plus Jakarta Sans',system-ui,sans-serif" }}
+      >
+        {/* h-full + inner scroll: a booking with a dozen service lines scrolls INSIDE the
+            drawer instead of running off the bottom of the screen. */}
+        <Panel className="bg-white shadow-2xl h-full overflow-y-auto">
         {/* Header */}
         <div className="px-5 py-4 border-b border-slate-100 flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -358,7 +380,9 @@ export default function OpsDetailPanel({ entry, onClose, onChanged }) {
             </ul>
           )}
         </div>
-      </Panel>
-    </aside>
+        </Panel>
+      </aside>
+    </>,
+    document.body
   );
 }

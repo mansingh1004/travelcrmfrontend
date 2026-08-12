@@ -203,21 +203,24 @@ export default function Operations() {
         </div>
       }
     >
-      <div className="flex flex-col lg:flex-row gap-5">
-        {/* ── Exception rail ─────────────────────────────────────────────────── */}
-        <nav className="lg:w-52 shrink-0" aria-label="Operations filters">
-          <Panel className="overflow-hidden lg:sticky lg:top-20">
-            <ul className="flex lg:flex-col overflow-x-auto lg:overflow-visible">
+      <div className="flex flex-col gap-4">
+        {/* ── Exception filters ───────────────────────────────────────────────
+            Horizontal, above the board rather than a rail beside it. A 200px rail
+            costs the widest column on the screen — the readiness dots — exactly the
+            space it needs, and these are four tabs, not a navigation tree. */}
+        <nav className="w-full" aria-label="Operations filters">
+          <Panel className="overflow-hidden">
+            <ul className="flex overflow-x-auto">
               {TABS.map(({ key, label, icon: Icon, danger }) => {
                 const active = tab === key;
                 const count = counts?.[key];
                 const alarming = danger && count > 0;
                 return (
-                  <li key={key} className="flex-1 lg:flex-none">
+                  <li key={key} className="flex-1 min-w-[150px]">
                     <button
                       onClick={() => { setTab(key); setSelected(null); }}
                       aria-pressed={active}
-                      className={`w-full flex items-center justify-between gap-2 px-4 py-3 text-sm font-bold transition-all border-b border-slate-50 whitespace-nowrap ${
+                      className={`w-full flex items-center justify-between gap-2 px-4 py-3 text-sm font-bold transition-all border-r border-slate-100 last:border-r-0 whitespace-nowrap ${
                         active
                           ? "bg-gradient-to-r from-blue-600 to-indigo-500 text-white shadow-sm"
                           : "text-slate-600 hover:bg-slate-50"

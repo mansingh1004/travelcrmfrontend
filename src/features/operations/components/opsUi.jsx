@@ -35,7 +35,10 @@ export function Page({ icon: Icon, title, crumb, actions, children }) {
       style={{ fontFamily: FONT }}
     >
       <style>{GLOBAL_STYLE}</style>
-      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 py-6">
+      {/* Full-bleed, unlike the other list screens in this app. An operations board is a
+          wide table of departures against a calendar; capping it at 1600px leaves the
+          readiness columns cramped on exactly the large monitors this screen lives on. */}
+      <div className="w-full px-4 sm:px-6 py-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5">
           <div className="flex items-center gap-3 min-w-0">
             {Icon && (
