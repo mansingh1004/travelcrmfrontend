@@ -55,6 +55,20 @@ const operationsService = {
     return res?.data?.data ?? [];
   },
 
+  /**
+   * Typeahead over the vendor master for the assign picker.
+   *
+   * Guarded by VENDOR_READ on the server, which an operations user may not hold — the
+   * caller is expected to treat a 403 as "no picker", not as a broken panel. Kept small
+   * (20 rows) because a Vendor loads two secondary tables per row.
+   */
+  searchVendors: async (q) => {
+    const res = await API.get("/vendors", {
+      params: { q: q || undefined, size: 20, sortBy: "vendorName", sortDir: "asc" },
+    });
+    return res?.data?.data ?? [];
+  },
+
   /** Assign a supplier to one line, with its confirmation number. */
   assignVendor: async (bookingPublicId, itemPublicId, payload) => {
     const res = await API.put(

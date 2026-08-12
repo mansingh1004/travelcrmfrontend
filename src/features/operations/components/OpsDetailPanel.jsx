@@ -12,7 +12,7 @@
 // executive need that permission just to confirm a room.
 // ─────────────────────────────────────────────────────────────────────────────
 import { useCallback, useEffect, useState } from "react";
-import { X, Wand2, Loader2, CheckCircle2, Circle, Ban, ListChecks } from "lucide-react";
+import { X, Wand2, Loader2, CheckCircle2, Circle, Ban, ListChecks, UserPlus, Search } from "lucide-react";
 
 import { getErrorMessage, isAlreadyReported } from "@shared/api/apiError";
 import { toast } from "@shared/ui/toast";
@@ -37,6 +37,17 @@ export default function OpsDetailPanel({ entry, onClose, onChanged }) {
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState(null);
   const [generating, setGenerating] = useState(false);
+
+  // Supplier picker. Open for one line at a time — a panel with six open pickers is a
+  // panel nobody can read.
+  const [pickerFor, setPickerFor] = useState(null);
+  const [vendorQuery, setVendorQuery] = useState("");
+  const [vendors, setVendors] = useState([]);
+  const [vendorsLoading, setVendorsLoading] = useState(false);
+  // The vendor master sits behind VENDOR_READ, which an operations user may not hold.
+  // That is a missing capability, not a broken panel, so it degrades to a message.
+  const [vendorsDenied, setVendorsDenied] = useState(false);
+  const [confirmationNo, setConfirmationNo] = useState("");
 
   const bookingId = entry?.bookingPublicId;
 
@@ -100,6 +111,57 @@ export default function OpsDetailPanel({ entry, onClose, onChanged }) {
       if (!isAlreadyReported(err)) toast.error(getErrorMessage(err, "Could not generate the service lines"));
     } finally {
       setGenerating(false);
+    }
+  };
+
+  // Debounced typeahead. Runs only while a picker is open, so closing it stops the
+  // requests rather than leaving a timer firing against a panel nobody is looking at.
+  useEffect(() => {
+    if (!pickerFor) return undefined;
+    let cancelled = false;
+    setVendorsLoading(true);
+    const timer = setTimeout(async () => {
+      try {
+        const found = await operationsService.searchVendors(vendorQuery.trim());
+        if (!cancelled) { setVendors(found); setVendorsDenied(false); }
+      } catch (err) {
+        if (cancelled) return;
+        // 403 means this user cannot read the vendor master — a missing capability, not a
+        // failure worth a toast on top of the interceptor's own.
+        if (err?.response?.status === 403) setVendorsDenied(true);
+        else if (!isAlreadyReported(err)) console.warn("Vendor lookup failed", err);
+        setVendors([]);
+      } finally {
+        if (!cancelled) setVendorsLoading(false);
+      }
+    }, 300);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [pickerFor, vendorQuery]);
+
+  const openPicker = (line) => {
+    setPickerFor(line.publicId);
+    setVendorQuery("");
+    setVendors([]);
+    setVendorsDenied(false);
+    setConfirmationNo(line.confirmationNumber ?? "");
+  };
+
+  const assign = async (line, vendor) => {
+    if (!canWrite) return;
+    setBusyId(line.publicId);
+    try {
+      await operationsService.assignVendor(bookingId, line.publicId, {
+        vendorPublicId: vendor.publicId,
+        confirmationNumber: confirmationNo.trim() || undefined,
+      });
+      setPickerFor(null);
+      await load();
+      onChanged?.();
+      toast.success(`${vendor.vendorName} assigned`);
+    } catch (err) {
+      if (!isAlreadyReported(err)) toast.error(getErrorMessage(err, "Could not assign that supplier"));
+    } finally {
+      setBusyId(null);
     }
   };
 
@@ -201,20 +263,95 @@ export default function OpsDetailPanel({ entry, onClose, onChanged }) {
                         {line.confirmationNumber && <> · <span className="font-mono">{line.confirmationNumber}</span></>}
                       </p>
 
-                      {canWrite && (
-                        <select
-                          value={line.status}
-                          disabled={busy}
-                          onChange={(e) => setStatus(line, e.target.value)}
-                          aria-label={`Status for ${line.title}`}
-                          className="text-[11px] font-bold rounded-lg border border-slate-200 bg-white px-2 py-1 text-slate-600 focus:border-blue-400 outline-none disabled:opacity-50 shrink-0"
-                        >
-                          <option value="PENDING">Pending</option>
-                          <option value="CONFIRMED">Confirmed</option>
-                          <option value="CANCELLED">Cancelled</option>
-                        </select>
-                      )}
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {canWrite && (
+                          <button
+                            onClick={() => (pickerFor === line.publicId ? setPickerFor(null) : openPicker(line))}
+                            aria-expanded={pickerFor === line.publicId}
+                            title={line.vendorName ? "Change supplier" : "Assign a supplier"}
+                            className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-blue-600 hover:border-blue-300 transition-all"
+                          >
+                            <UserPlus className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+
+                        {canWrite && (
+                          <select
+                            value={line.status}
+                            disabled={busy}
+                            onChange={(e) => setStatus(line, e.target.value)}
+                            aria-label={`Status for ${line.title}`}
+                            className="text-[11px] font-bold rounded-lg border border-slate-200 bg-white px-2 py-1 text-slate-600 focus:border-blue-400 outline-none disabled:opacity-50"
+                          >
+                            <option value="PENDING">Pending</option>
+                            <option value="CONFIRMED">Confirmed</option>
+                            <option value="CANCELLED">Cancelled</option>
+                          </select>
+                        )}
+                      </div>
                     </div>
+
+                    {/* Supplier picker — inline, because leaving the panel to assign a
+                        supplier defeats the point of the panel. */}
+                    {pickerFor === line.publicId && (
+                      <div className="mt-2.5 pt-2.5 border-t border-slate-100">
+                        {vendorsDenied ? (
+                          <p className="text-[11px] text-amber-700 bg-amber-50 ring-1 ring-amber-200 rounded-lg px-2.5 py-2">
+                            You don't have access to the vendor list. Ask your administrator for the
+                            Vendors permission, or set the supplier from the booking screen.
+                          </p>
+                        ) : (
+                          <>
+                            <div className="relative mb-2">
+                              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                              <input
+                                autoFocus
+                                value={vendorQuery}
+                                onChange={(e) => setVendorQuery(e.target.value)}
+                                placeholder="Search suppliers…"
+                                aria-label="Search suppliers"
+                                className="w-full pl-8 pr-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-700 font-medium placeholder-slate-400 focus:border-blue-400 outline-none"
+                              />
+                            </div>
+
+                            <input
+                              value={confirmationNo}
+                              onChange={(e) => setConfirmationNo(e.target.value)}
+                              placeholder="Confirmation number (optional)"
+                              aria-label="Confirmation number"
+                              className="w-full mb-2 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-xs text-slate-700 font-medium placeholder-slate-400 focus:border-blue-400 outline-none"
+                            />
+
+                            {vendorsLoading && (
+                              <p className="text-[11px] text-slate-400 py-2 flex items-center gap-1.5">
+                                <Loader2 className="w-3 h-3 animate-spin" /> Searching…
+                              </p>
+                            )}
+
+                            {!vendorsLoading && vendors.length === 0 && (
+                              <p className="text-[11px] text-slate-400 py-2">
+                                {vendorQuery ? "No supplier matches that." : "Type to search suppliers."}
+                              </p>
+                            )}
+
+                            <ul className="max-h-40 overflow-y-auto space-y-1">
+                              {vendors.map((v) => (
+                                <li key={v.publicId}>
+                                  <button
+                                    onClick={() => assign(line, v)}
+                                    disabled={busy}
+                                    className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-semibold text-slate-600 hover:bg-blue-50 hover:text-blue-700 disabled:opacity-50 transition-colors"
+                                  >
+                                    {v.vendorName}
+                                    {v.vendorType && <span className="text-slate-400 font-medium"> · {v.vendorType}</span>}
+                                  </button>
+                                </li>
+                              ))}
+                            </ul>
+                          </>
+                        )}
+                      </div>
+                    )}
                   </li>
                 );
               })}
