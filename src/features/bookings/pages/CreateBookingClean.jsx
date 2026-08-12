@@ -3,6 +3,7 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   ArrowLeft,
   BadgeIndianRupee,
+  Route,
   CalendarCheck2,
   Calculator,
   Check,
@@ -24,8 +25,13 @@ import {
 } from "lucide-react";
 
 import bookingService from "../api/bookingService";
-import FastItinerary from "../components/FastItinerary";
 import FastTravelDetails from "../components/FastTravelDetails";
+import RouteSegments from "../components/RouteSegments";
+import {
+  emptyRouteRow, emptyRoomRow, emptyVehicleRow, nextRowId,
+  tripDuration, totalRouteNights, routeSummary, routeWarnings,
+} from "../lib/bookingTripModel";
+import { vehicleService } from "@features/masters";
 import { customerService } from "@features/customers";
 import { leadService, SearchableSelect } from "@features/leads";
 import { vendorService } from "@features/vendors";
@@ -111,14 +117,27 @@ let itinerarySequence = 2;
 
 const initialForm = () => ({
   customerPhone: "",
+  // WhatsApp is a SEPARATE reachable number: the phone on file is often a landline or a spouse's
+  // handset. Defaults to mirroring the phone because that is the common case — see whatsappSameAsPhone.
+  customerWhatsapp: "",
+  whatsappSameAsPhone: true,
   customerName: "",
   customerEmail: "",
   customerCity: "",
+  // The customer DTO already carries `state` (see customers/api/customerService.js), so this is a
+  // real field rather than a new one. It is NOT derived from the city: the City master has no
+  // state/province column today, so nothing can resolve "Pune" to "Maharashtra" yet.
+  customerState: "",
   birthday: "",
   anniversary: "",
   destinationId: "",
   destination: "",
+  // travelDate REMAINS the trip's start and is still what the server stores and reports on. The end
+  // date is additive; deriving one from the other would be wrong in both directions.
   travelDate: "",
+  tripEndDate: "",
+  // NOT a travel date. bookingDate is when the booking was taken — it defaults to today and is what
+  // the ledger and the booking list order by. Keeping it separate is deliberate.
   bookingDate: today(),
   packageType: "",
   departCountry: "India",
@@ -133,6 +152,37 @@ const initialForm = () => ({
   pickupAddress: "",
   pickupDateTime: "",
   vehiclePreference: "",
+
+  // ── Pickup / Drop ──────────────────────────────────────────────────────────────────────────
+  // Replaces the single "departure" block, which could only describe how the party LEFT. A trip
+  // also has to be brought back, and the two ends differ (fly out, drive home).
+  //
+  // Neither has to sit inside the sold destination, and both may be the SAME city: a Nepal package
+  // is routinely picked up and dropped at Gorakhpur. Nothing here validates against `destination`.
+  //
+  // The legacy departCountry/departCity/departureMode above are kept in state and still written to
+  // the payload, so a booking saved by this form is still readable by anything that only knows the
+  // old shape.
+  pickupCountry: "India",
+  pickupCountryId: "",
+  pickupCity: "",
+  pickupCityId: "",
+  pickupMode: "",
+  pickupTime: "",
+  dropCountry: "India",
+  dropCountryId: "",
+  dropCity: "",
+  dropCityId: "",
+  dropMode: "",
+  dropTime: "",
+
+  // What the booking REQUIRES, not what operations later assigns. No registration, vendor, driver
+  // or status here — those appear once a requirement is fulfilled and belong to that flow.
+  // Vehicles start EMPTY: most bookings need none, and a pre-seeded blank row reads as a
+  // requirement someone forgot to fill. Rooms start with one, because a stay always has at least one.
+  vehicleRequirements: [],
+  roomRequirements: [emptyRoomRow()],
+
   rooms: "1",
   showAdultBreakdown: false,
   male: null,
@@ -145,7 +195,11 @@ const initialForm = () => ({
   specialAssistanceTypes: [],
   assistancePassengerCount: "0",
   specialAssistanceNotes: "",
-  itinerary: [{ id: 1, destinationId: "", destination: "", cityId: "", city: "", nights: "2" }],
+  // Route legs, FROM -> TO, with the nights spent at the TO city. Keeps the `itinerary` key rather
+  // than introducing a second one, so the payload shape the server already receives is unchanged in
+  // NAME; only the fields inside each row grow (see the payload builder, which still writes the old
+  // destination/city/nights alongside the new from/to).
+  itinerary: [emptyRouteRow()],
   services: [],
   tripNotes: "",
   customerAmount: "",
@@ -237,6 +291,7 @@ function TriToggle({ label, value, onChange, options, hint }) {
     </div>
   );
 }
+
 
 function Panel({ icon: Icon, title, description, action, children }) {
   return (
@@ -490,14 +545,31 @@ export default function BookingFormPage() {
       male: lead.male ?? lead.maleCount,
       female: lead.female ?? lead.femaleCount,
     });
-    const itinerary = Array.isArray(lead.itinerary) && lead.itinerary.length
+    /* A lead's itinerary is a LIST OF STAYS (destination + city + nights), not a route: it says
+       where the party wants to go, never how they move between stops. Each stay therefore becomes
+       the TO city of a leg, and the FROM is chained from the previous stay — which reconstructs
+       the obvious route without inventing any city the lead did not name. The first leg's FROM is
+       left for the pickup sync below to fill. */
+    const leadStays = Array.isArray(lead.itinerary) && lead.itinerary.length
       ? lead.itinerary.map((item) => ({
-          id: itinerarySequence++,
-          destinationId: item.destinationId || item.destination?.id || item.destination?.publicId || "",
-          destination: typeof item.destination === "string" ? item.destination : item.destination?.name || "",
           cityId: item.cityId || item.city?.id || item.city?.publicId || "",
-          city: typeof item.city === "string" ? item.city : item.city?.name || "",
+          city: typeof item.city === "string"
+            ? item.city
+            : item.city?.name
+              || (typeof item.destination === "string" ? item.destination : item.destination?.name)
+              || "",
           nights: String(item.nights ?? 0),
+        }))
+      : null;
+
+    const itinerary = leadStays
+      ? leadStays.map((stay, index) => ({
+          id: itinerarySequence++,
+          fromCityId: index === 0 ? "" : leadStays[index - 1].cityId,
+          fromCity: index === 0 ? "" : leadStays[index - 1].city,
+          toCityId: stay.cityId,
+          toCity: stay.city,
+          nights: stay.nights,
         }))
       : null;
 
@@ -513,6 +585,13 @@ export default function BookingFormPage() {
       departCountry: lead.departCountry || lead.departureCountry || current.departCountry,
       departCity: lead.departCity || lead.departureCity || current.departCity,
       departureMode: normalizeDepartureMode(lead.departureMode || lead.transportMode) || current.departureMode,
+      /* A lead has no pickup/drop concept — it records where the traveller DEPARTS FROM, which is
+         exactly this booking's pickup. Mapped across so a lead-created booking arrives with its
+         pickup filled rather than blank. Drop is left empty: the lead never carried a return, and
+         defaulting it to the pickup would invent a round trip nobody stated. */
+      pickupCountry: lead.departCountry || lead.departureCountry || current.pickupCountry,
+      pickupCity: lead.departCity || lead.departureCity || current.pickupCity,
+      pickupMode: normalizeDepartureMode(lead.departureMode || lead.transportMode) || current.pickupMode,
       departureAirport: lead.departureAirport || lead.airportName || current.departureAirport,
       airportCode: lead.airportCode || lead.departureAirportCode || current.airportCode,
       preferredFlightTime: String(lead.preferredFlightTime || lead.flightTime || current.preferredFlightTime).slice(0, 5),
@@ -610,24 +689,31 @@ export default function BookingFormPage() {
         const departure = snapshot.departure || {};
         const travellers = snapshot.travellers || {};
         const assistance = snapshot.specialAssistance || {};
+        /* Pickup falls back to the legacy `departure` block, so a booking saved before this
+           redesign opens with its pickup populated instead of three blank fields. Drop has no
+           legacy equivalent — it simply did not exist — so it starts empty rather than guessing. */
+        const pickup = snapshot.pickup || {};
+        const drop = snapshot.drop || {};
         const adultPrefill = deriveAdultBreakdown({
           totalAdults: travellers.totalAdults,
           male: travellers.male,
           female: travellers.female,
         });
+        /* Route rows, tolerant of both shapes.
+           A row saved by this form has fromCity/toCity. A LEGACY row has only destination/city —
+           its `city` was the place stayed in, which is this model's TO city, so it maps there and
+           the FROM is left for the clerk. That keeps every old booking readable and editable
+           rather than silently emptying its itinerary. */
         const itinerary = Array.isArray(snapshot.itinerary) && snapshot.itinerary.length > 0
           ? snapshot.itinerary.map((item) => ({
               id: itinerarySequence++,
-              destinationId: "",
-              destination: item.destination || "",
-              cityId: "",
-              city: item.city || "",
+              fromCityId: item.fromCityId || "",
+              fromCity: item.fromCity || "",
+              toCityId: item.toCityId || "",
+              toCity: item.toCity || item.city || item.destination || "",
               nights: String(item.nights ?? 0),
             }))
-          : [{
-              id: itinerarySequence++, destinationId: booking.destinationId || "",
-              destination: booking.destinationSnapshot || "", cityId: "", city: "", nights: "1",
-            }];
+          : [emptyRouteRow()];
 
         loadedRef.current = {
           travelDate: dateInput(booking.travelDate),
@@ -654,13 +740,56 @@ export default function BookingFormPage() {
           customerName: booking.customerNameSnapshot || customer?.name || "",
           customerEmail: customer?.email || "",
           customerCity: customer?.city || customer?.address?.city || "",
+          customerState: customer?.state || customer?.address?.state || "",
+          // A saved WhatsApp number is by definition a deliberate one, so the mirror starts OFF and
+          // the stored value is shown as-is. With no stored number the mirror stays on, which is
+          // also right: an older booking never captured one.
+          customerWhatsapp: snapshot.customerWhatsapp || "",
+          whatsappSameAsPhone: !snapshot.customerWhatsapp,
           birthday: dateInput(customer?.birthday || customer?.birthDate),
           anniversary: dateInput(customer?.anniversary || customer?.anniversaryDate),
           destinationId: booking.destinationId || "",
           destination: booking.destinationSnapshot || "",
           travelDate: dateInput(booking.travelDate),
+          tripEndDate: dateInput(snapshot.tripEndDate),
           bookingDate: dateInput(booking.bookingDate),
           packageType: snapshot.packageType || "",
+          // Pickup falls back to the legacy departure block; drop has no legacy source.
+          pickupCountry: pickup.country || departure.country || "India",
+          pickupCountryId: pickup.countryId || "",
+          pickupCity: pickup.city || departure.city || "",
+          pickupCityId: pickup.cityId || "",
+          pickupMode: normalizeDepartureMode(pickup.mode || departure.mode),
+          pickupTime: String(pickup.time || "").slice(0, 5),
+          dropCountry: drop.country || "India",
+          dropCountryId: drop.countryId || "",
+          dropCity: drop.city || "",
+          dropCityId: drop.cityId || "",
+          dropMode: normalizeDepartureMode(drop.mode),
+          dropTime: String(drop.time || "").slice(0, 5),
+          vehicleRequirements: (Array.isArray(snapshot.vehicleRequirements) ? snapshot.vehicleRequirements : [])
+            .map((row) => ({
+              id: nextRowId(),
+              vehicleType: row.vehicleType || "",
+              vehicleId: row.vehicleId || "",
+              model: row.model || "",
+              capacity: row.capacity == null ? "" : String(row.capacity),
+              quantity: String(row.quantity ?? 1),
+            })),
+          // An older booking has no room rows — fall back to one row carrying the flat counts it
+          // did store, so its rooms/extraBeds are not lost on the way into the new editor.
+          roomRequirements: Array.isArray(snapshot.roomRequirements) && snapshot.roomRequirements.length > 0
+            ? snapshot.roomRequirements.map((row) => ({
+                id: nextRowId(),
+                roomType: row.roomType || "Double",
+                acType: row.acType || "Any",
+                count: String(row.count ?? 1),
+                extraBeds: String(row.extraBeds ?? 0),
+              }))
+            : [{
+                id: nextRowId(), roomType: "Double", acType: "Any",
+                count: String(travellers.rooms ?? 1), extraBeds: String(travellers.extraBeds ?? 0),
+              }],
           departCountry: departure.country || "India",
           departCity: departure.city || "",
           departureMode: normalizeDepartureMode(departure.mode),
@@ -832,23 +961,243 @@ export default function BookingFormPage() {
     });
   };
 
-  const addItineraryRow = () => setForm((current) => ({
-    ...current,
-    itinerary: [...current.itinerary, {
-      id: itinerarySequence++, destinationId: "", destination: "", cityId: "", city: "", nights: "1",
-    }],
-  }));
+  /* WhatsApp mirrors the phone while the box is ticked — including every later edit to the phone,
+     which is the whole point: a number corrected after the fact must not leave a stale WhatsApp
+     behind. Unticking stops the mirror and keeps whatever was last shown as the starting value, so
+     the clerk edits a number rather than an empty field. */
+  const whatsappNumber = form.whatsappSameAsPhone ? form.customerPhone : form.customerWhatsapp;
 
+  const setWhatsappSameAsPhone = (checked) =>
+    setForm((current) => ({
+      ...current,
+      whatsappSameAsPhone: checked,
+      customerWhatsapp: checked ? "" : (current.customerWhatsapp || current.customerPhone),
+    }));
+
+  /* Travel period → "5 Nights / 6 Days", and the night count the route is measured against.
+     Recomputed from the two dates rather than stored, so the two can never disagree. */
+  const duration = useMemo(
+    () => tripDuration(form.travelDate, form.tripEndDate),
+    [form.travelDate, form.tripEndDate]
+  );
+
+  /* Room rows rolled back up into the two flat counters the rest of the app still reads. Without
+     this, moving the UI to a room MIX would have silently zeroed "rooms" everywhere it is shown. */
+  const roomTotals = useMemo(() => ({
+    rooms: form.roomRequirements.reduce((sum, row) => sum + (Number(row.count) || 0), 0),
+    extraBeds: form.roomRequirements.reduce((sum, row) => sum + (Number(row.extraBeds) || 0), 0),
+  }), [form.roomRequirements]);
+
+  const routeNights = useMemo(() => totalRouteNights(form.itinerary), [form.itinerary]);
+  const tripRouteSummary = useMemo(() => routeSummary(form.itinerary), [form.itinerary]);
+
+  /* WARNINGS, not errors. A route mid-edit routinely does not add up, and this form's convention
+     is to block only on what the server will reject. */
+  const tripRouteWarnings = useMemo(
+    () => routeWarnings({
+      rows: form.itinerary,
+      tripNights: duration && !duration.invalid ? duration.nights : null,
+      pickupCity: form.pickupCity,
+      dropCity: form.dropCity,
+    }),
+    [form.itinerary, duration, form.pickupCity, form.dropCity]
+  );
+
+  /* Cities OF THE CHOSEN DESTINATION — the route's own vocabulary.
+     Scoped rather than the whole master: a Nepal booking's legs are Nepali cities, and offering
+     every city the tenant has ever entered turns the leg picker into a haystack. Refetched when
+     the destination changes. */
+  const [destinationCities, setDestinationCities] = useState([]);
+  const [loadingCities, setLoadingCities] = useState(false);
+  useEffect(() => {
+    if (!form.destinationId) { setDestinationCities([]); return undefined; }
+    let active = true;
+    setLoadingCities(true);
+    geographyService
+      .getCitiesByDestination(form.destinationId)
+      .then((list) => { if (active) setDestinationCities(Array.isArray(list) ? list : []); })
+      .catch(() => { if (active) setDestinationCities([]); })
+      .finally(() => { if (active) setLoadingCities(false); });
+    return () => { active = false; };
+  }, [form.destinationId]);
+
+  /* ── The route's city options: destination cities + whatever Pickup/Drop say ─────────────────
+     Pickup and Drop are free text precisely because they are often OUTSIDE the destination — a
+     Nepal package boarding at Gorakhpur. Merging those two typed values in is what lets such a
+     city be chosen as a leg without opening the picker up to the entire master.
+
+     They carry no master id, so they are keyed `name:<city>`; RouteSegments stores that as a name
+     with an empty id, which the payload already tolerates (ids have always been optional there).
+     De-duplicated case-insensitively, so typing a city that IS in the destination list does not
+     produce two identical options. */
+  const buildCityOptions = useCallback((extraCity, extraLabel) => {
+    const options = destinationCities.map((city) => ({
+      value: String(city.id),
+      label: city.name,
+    }));
+    const seen = new Set(destinationCities.map((city) => String(city.name || "").trim().toLowerCase()));
+
+    const name = String(extraCity || "").trim();
+    if (name && !seen.has(name.toLowerCase())) {
+      // Prepended, not appended: it is the likeliest answer for this end of the journey, so it
+      // should be the first thing in the list rather than something to scroll past.
+      options.unshift({ value: `name:${name}`, label: `${name} — ${extraLabel}` });
+    }
+    return options;
+  }, [destinationCities]);
+
+  /* FROM gets the destination's cities plus the PICKUP city; TO gets them plus the DROP city.
+     Split rather than merging both into both, because the two ends are not interchangeable: you
+     depart from the pickup and arrive at the drop, and offering "Gorakhpur — drop" as a From on
+     leg 1 is an answer that is never right. */
+  const fromCityOptions = useMemo(
+    () => buildCityOptions(form.pickupCity, "pickup"),
+    [buildCityOptions, form.pickupCity]
+  );
+  const toCityOptions = useMemo(
+    () => buildCityOptions(form.dropCity, "drop"),
+    [buildCityOptions, form.dropCity]
+  );
+
+  /* Vehicle master, for the requirement rows' model/capacity picker. Failure is silent: the type
+     and quantity are still usable without it, and a toast on page load for an optional lookup is
+     noise. */
+  const [vehicleMaster, setVehicleMaster] = useState([]);
+  const [loadingVehicleMaster, setLoadingVehicleMaster] = useState(true);
+  useEffect(() => {
+    let active = true;
+    Promise.resolve(vehicleService.getAllVehicles?.())
+      .then((res) => {
+        if (!active) return;
+        const list = res?.data?.data ?? res?.data ?? [];
+        setVehicleMaster(Array.isArray(list) ? list : []);
+      })
+      .catch(() => { if (active) setVehicleMaster([]); })
+      .finally(() => { if (active) setLoadingVehicleMaster(false); });
+    return () => { active = false; };
+  }, []);
+
+  /* ── Pickup → first leg's FROM, Drop → last leg's TO ─────────────────────────────────────────
+     The three are one journey, so the route should not ask again for a city the clerk already
+     named. What makes this safe rather than destructive is WHEN it writes:
+
+       • only into an EMPTY cell, or one still holding the PREVIOUS pickup/drop value — i.e. a cell
+         the clerk has not touched. A city they typed themselves is never overwritten;
+       • the previous value is tracked in a ref, so "still matches the old pickup" can be told
+         apart from "happens to equal it by coincidence".
+
+     Anything it declines to change surfaces through routeWarnings ("Route starts at X but pickup
+     is Y") — a visible mismatch the clerk resolves, rather than a silent correction. */
+  const lastSynced = useRef({ pickupCityId: "", pickupCity: "", dropCityId: "", dropCity: "" });
+
+  useEffect(() => {
+    const previous = lastSynced.current;
+    lastSynced.current = {
+      pickupCityId: form.pickupCityId, pickupCity: form.pickupCity,
+      dropCityId: form.dropCityId, dropCity: form.dropCity,
+    };
+    if (!form.pickupCity && !form.dropCity) return;
+
+    setForm((current) => {
+      const rows = current.itinerary;
+      if (!rows.length) return current;
+
+      const untouched = (row, side, prevId, prevName) =>
+        (!row[`${side}CityId`] && !row[`${side}City`])
+        || (prevId && row[`${side}CityId`] === prevId)
+        || (!prevId && prevName && row[`${side}City`] === prevName);
+
+      let changed = false;
+      const next = rows.slice();
+
+      if (form.pickupCity && untouched(next[0], "from", previous.pickupCityId, previous.pickupCity)) {
+        if (next[0].fromCityId !== form.pickupCityId || next[0].fromCity !== form.pickupCity) {
+          next[0] = { ...next[0], fromCityId: form.pickupCityId, fromCity: form.pickupCity };
+          changed = true;
+        }
+      }
+
+      const lastIndex = next.length - 1;
+      if (form.dropCity && untouched(next[lastIndex], "to", previous.dropCityId, previous.dropCity)) {
+        if (next[lastIndex].toCityId !== form.dropCityId || next[lastIndex].toCity !== form.dropCity) {
+          // 0 nights with it: arriving at the drop is the journey home, not a stay. Only applied
+          // where this sync is already allowed to write — a leg the agent has filled in keeps both
+          // its city and its nights.
+          next[lastIndex] = {
+            ...next[lastIndex], toCityId: form.dropCityId, toCity: form.dropCity, nights: "0",
+          };
+          changed = true;
+        }
+      }
+
+      return changed ? { ...current, itinerary: next } : current;
+    });
+    // Deliberately keyed on the pickup/drop city ONLY. Adding `form.itinerary` would re-run this on
+    // every keystroke in the route and fight the clerk for the cell.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.pickupCityId, form.pickupCity, form.dropCityId, form.dropCity]);
+
+  /* A new leg CHAINS off the last one: its FROM is seeded with the previous leg's TO, because
+     retyping the city you just arrived in is pure friction. Seeding happens once, at insert —
+     editing an existing row never rewrites its neighbours, so a deliberate manual correction
+     cannot be silently undone. Any resulting gap surfaces as a warning instead. */
+  const addItineraryRow = () => setForm((current) => {
+    const last = current.itinerary[current.itinerary.length - 1];
+    return {
+      ...current,
+      itinerary: [...current.itinerary, emptyRouteRow(last?.toCity || "", last?.toCityId || "")],
+    };
+  });
+
+  /* Choosing a TO on the LAST leg opens the next one automatically.
+     A trip is entered as a chain — arrive somewhere, then say where you go next — and making the
+     clerk reach for "Add stop" between every pair is the friction this removes.
+
+     It stops on its own: the new leg only appears when the chosen city is NOT the drop city, so
+     naming the drop closes the route instead of adding an empty row after it. With no drop city
+     set yet, every pick opens another leg, which is exactly the "keep going" case. */
   const updateItineraryRow = (id, field, value) => {
     setForm((current) => {
       const index = current.itinerary.findIndex((item) => item.id === id);
-      const itinerary = current.itinerary.map((item) => item.id === id ? { ...item, [field]: value } : item);
-      const firstRow = index === 0;
+      const itinerary = current.itinerary.map((item) => (item.id === id ? { ...item, [field]: value } : item));
+
+      const isLastRow = index === itinerary.length - 1;
+      const settingTo = field === "toCity" || field === "toCityId";
+      if (!isLastRow || !settingTo) return { ...current, itinerary };
+
+      const row = itinerary[index];
+      const toName = String(row.toCity || "").trim();
+      // Wait for the NAME. `toCityId` and `toCity` are written as two separate updates, and firing
+      // on the id would append a leg before the city it chains from is even known.
+      if (field === "toCityId" || !toName) return { ...current, itinerary };
+
+      /* Arriving back at the DROP city closes the route — and that leg is a journey home, not a
+         stay, so its nights are set to 0 rather than left at the default 1.
+         This is the one place the "nights belong to the To city" rule needs explaining, and the
+         cheapest explanation is not having to make the decision: an agent who never touches the
+         field still gets a correct round trip. It stays editable for the rare case where the party
+         really does overnight at the drop point before flying out. */
+      const drop = String(current.dropCity || "").trim();
+      if (drop && toName.toLowerCase() === drop.toLowerCase()) {
+        return {
+          ...current,
+          itinerary: itinerary.map((item) => (item.id === id ? { ...item, nights: "0" } : item)),
+        };
+      }
+
+      /* The new leg opens ALREADY CLOSED to the drop city, at 0 nights — so the route is a
+         complete round trip at every moment, not a dangling half-leg the agent has to remember to
+         finish. Adding another stop is then just changing that To, which opens the next
+         pre-closed leg behind it. Nobody has to type the way home. */
+      const nextLeg = emptyRouteRow(row.toCity, row.toCityId);
       return {
         ...current,
-        itinerary,
-        ...(firstRow && field === "destination" ? { destination: value || current.destination } : {}),
-        ...(firstRow && field === "destinationId" ? { destinationId: value || current.destinationId } : {}),
+        itinerary: [
+          ...itinerary,
+          drop
+            ? { ...nextLeg, toCityId: current.dropCityId || "", toCity: current.dropCity, nights: "0" }
+            : nextLeg,
+        ],
       };
     });
   };
@@ -859,6 +1208,27 @@ export default function BookingFormPage() {
       ? current.itinerary.filter((item) => item.id !== id)
       : current.itinerary,
   }));
+
+  /* Vehicle + room requirement rows. One generic pair rather than four near-identical handlers:
+     the only thing that differs is which array and which factory. */
+  const addRow = (key, factory) => () =>
+    setForm((current) => ({ ...current, [key]: [...current[key], factory()] }));
+
+  const updateRow = (key) => (id, field, value) =>
+    setForm((current) => ({
+      ...current,
+      [key]: current[key].map((row) => (row.id === id ? { ...row, [field]: value } : row)),
+    }));
+
+  // Vehicles may go to zero (most bookings need none); rooms keep at least one, because a stay
+  // always has rooms and an empty table reads as "not asked yet".
+  const removeRow = (key, keepAtLeastOne) => (id) =>
+    setForm((current) => ({
+      ...current,
+      [key]: keepAtLeastOne && current[key].length <= 1
+        ? current[key]
+        : current[key].filter((row) => row.id !== id),
+    }));
 
   const availableLeads = useMemo(() => leads.filter((lead) =>
     !(lead.leadStage === "Converted" || lead.convertedBookingPublicId) ||
@@ -1058,6 +1428,9 @@ export default function BookingFormPage() {
             phone: form.customerPhone.trim(),
             email: form.customerEmail.trim() || null,
             city: form.customerCity.trim() || null,
+            // `state` is already part of CustomerRequestDTO (see customers/api/customerService.js),
+            // so this is an existing field the booking form simply never sent.
+            state: form.customerState.trim() || null,
             birthday: form.birthday || null,
             anniversary: form.anniversary || null,
           },
@@ -1070,34 +1443,86 @@ export default function BookingFormPage() {
       travelDate: form.travelDate,
       tripSnapshot: {
         packageType: form.packageType || null,
+        // Trip END date. travelDate above remains the START and is still the column the server
+        // reports and filters on; this rides in the snapshot because promoting it to a real column
+        // is a backend change. See the contract note in the Phase 1 report.
+        tripEndDate: form.tripEndDate || null,
+        // WhatsApp is NOT part of CustomerRequestDTO, so it is deliberately NOT sent on `customer`
+        // — inventing a field there would 400 or be dropped silently. Held against the booking
+        // until the customer entity gains one.
+        customerWhatsapp: (whatsappNumber || "").trim() || null,
+        // ── Pickup / Drop ─────────────────────────────────────────────────────────────────────
+        // Neither is validated against `destination`: a Nepal package picked up and dropped at
+        // Gorakhpur is a normal booking, and pickup and drop may be the same city.
+        pickup: {
+          countryId: form.pickupCountryId || null,
+          country: form.pickupCountry.trim() || null,
+          cityId: form.pickupCityId || null,
+          city: form.pickupCity.trim() || null,
+          mode: form.pickupMode || null,
+          time: form.pickupTime || null,
+        },
+        drop: {
+          countryId: form.dropCountryId || null,
+          country: form.dropCountry.trim() || null,
+          cityId: form.dropCityId || null,
+          city: form.dropCity.trim() || null,
+          mode: form.dropMode || null,
+          time: form.dropTime || null,
+        },
+        // What the trip REQUIRES. Registration, vendor, driver and status are operational facts
+        // that appear after fulfilment and are deliberately absent here.
+        vehicleRequirements: form.vehicleRequirements
+          .filter((row) => row.vehicleType || row.model)
+          .map((row) => ({
+            vehicleType: row.vehicleType || null,
+            vehicleId: row.vehicleId || null,
+            model: row.model || null,
+            capacity: row.capacity === "" ? null : Number(row.capacity),
+            quantity: Number(row.quantity) || 1,
+          })),
+        roomRequirements: form.roomRequirements
+          .filter((row) => row.roomType)
+          .map((row) => ({
+            roomType: row.roomType,
+            acType: row.acType || "Any",
+            count: Number(row.count) || 1,
+            extraBeds: Number(row.extraBeds) || 0,
+          })),
+        // KEPT, and still written. Anything that only understands the old shape — an older client,
+        // a report, a saved booking's read path — keeps working unchanged.
         departure: {
-          country: form.departCountry.trim() || null,
-          city: form.departCity.trim() || null,
-          mode: form.departureMode || null,
-          ...(form.departureMode === "Flight / Airport" ? {
+          country: form.pickupCountry.trim() || null,
+          city: form.pickupCity.trim() || null,
+          mode: form.pickupMode || null,
+          ...(form.pickupMode === "Flight / Airport" ? {
             airport: form.departureAirport.trim() || null,
             airportCode: form.airportCode.trim().toUpperCase() || null,
             preferredTime: form.preferredFlightTime || null,
           } : {}),
-          ...(form.departureMode === "Train / Rail" ? {
+          ...(form.pickupMode === "Train / Rail" ? {
             railwayStation: form.railwayStation.trim() || null,
             trainClass: form.trainClass.trim() || null,
             preferredTime: form.preferredTrainTime || null,
           } : {}),
-          ...(form.departureMode === "Car / Road" ? {
+          ...(form.pickupMode === "Car / Road" ? {
             pickupAddress: form.pickupAddress.trim() || null,
             pickupDateTime: form.pickupDateTime || null,
             vehiclePreference: form.vehiclePreference.trim() || null,
           } : {}),
         },
         travellers: {
-          rooms: Number(form.rooms) || 0,
+          // Rolled up from the room requirement rows when there are any, so the flat counters the
+          // rest of the app still reads (booking list, details header, reports) stay correct now
+          // that the UI edits a mix rather than a single number. Falls back to the plain field for
+          // a booking with no rows.
+          rooms: roomTotals.rooms || Number(form.rooms) || 0,
           male: adultPayload.male,
           female: adultPayload.female,
           totalAdults: adultPayload.totalAdults,
           children: Number(form.children) || 0,
           infants: Number(form.infants) || 0,
-          extraBeds: Number(form.extraBeds) || 0,
+          extraBeds: roomTotals.extraBeds || Number(form.extraBeds) || 0,
         },
         specialAssistance: {
           required: form.specialAssistanceRequired,
@@ -1105,13 +1530,25 @@ export default function BookingFormPage() {
           passengerCount: form.specialAssistanceRequired ? Number(form.assistancePassengerCount) || 0 : 0,
           notes: form.specialAssistanceRequired ? form.specialAssistanceNotes.trim() || null : null,
         },
+        /* Route legs. Each item carries BOTH shapes:
+             • fromCity/toCity (+ ids) — the route, what this form now edits;
+             • destination/city/nights — the legacy keys, so a reader that predates this change
+               still shows the stay. `city` is the TO city because that is where the nights are
+               spent, which is exactly what the old field meant.
+           IDs are persisted for the first time. The previous version stored names only, which is
+           why re-opening a saved booking lost every city id and the cascade had to be re-picked. */
         itinerary: form.itinerary
-          .filter((item) => String(item.destination || "").trim() || String(item.city || "").trim())
+          .filter((item) => String(item.fromCity || "").trim() || String(item.toCity || "").trim())
           .map((item, index) => ({
-            destination: String(item.destination || "").trim() || null,
-            city: String(item.city || "").trim() || null,
+            fromCityId: item.fromCityId || null,
+            fromCity: String(item.fromCity || "").trim() || null,
+            toCityId: item.toCityId || null,
+            toCity: String(item.toCity || "").trim() || null,
             nights: Number(item.nights) || 0,
             dayNumber: index + 1,
+            // legacy mirror
+            destination: String(item.toCity || "").trim() || null,
+            city: String(item.toCity || "").trim() || null,
           })),
         notes: form.tripNotes.trim() || null,
       },
@@ -1608,7 +2045,13 @@ export default function BookingFormPage() {
             </div>
           )}
 
-          <div className="mt-4 grid grid-cols-1 gap-4 border-t border-slate-100 pt-4 sm:grid-cols-2 lg:grid-cols-5">
+          {/* 4 columns, not 5. With 5 the seven fields landed as 5 + 2, which squeezed WhatsApp —
+              a field with a checkbox under it — into a fifth of the row where both its label and
+              its checkbox wrapped, and then left three empty cells on the second row.
+              At 4 with WhatsApp spanning 2, both rows fill exactly:
+                Name | Email | City | State
+                WhatsApp (×2) | Birth Date | Anniversary */}
+          <div className="mt-4 grid grid-cols-1 gap-4 border-t border-slate-100 pt-4 sm:grid-cols-2 lg:grid-cols-4">
             {/* OLD — required={customerMode === "new"}
                 The block can now be open while the lookup is still in flight, and during that
                 window this rendered as optional before flipping to required — telling the clerk the
@@ -1629,6 +2072,43 @@ export default function BookingFormPage() {
             <Field label="City" optional>
               <input value={form.customerCity} onChange={(event) => setField("customerCity", event.target.value)} disabled={customerFieldsLocked} placeholder="Customer city" className={`${controlClass("customerCity")} disabled:bg-slate-50`} />
             </Field>
+            {/* State is a REAL customer field (CustomerRequestDTO carries it) that this form simply
+                never sent. It is typed, not derived: the City master has no state/province column,
+                so nothing can resolve "Pune" to "Maharashtra" yet — see the backend contract note. */}
+            <Field label="State / Province" optional>
+              <input value={form.customerState} onChange={(event) => setField("customerState", event.target.value)} disabled={customerFieldsLocked} placeholder="Maharashtra" className={`${controlClass("customerState")} disabled:bg-slate-50`} />
+            </Field>
+            {/* WhatsApp opens the SECOND row and spans two columns: the number and its
+                "same as phone" toggle are one decision, and at single-column width the label and
+                the checkbox text both wrapped. The toggle sits inline beside the input on desktop
+                and drops beneath it on narrow screens. */}
+            <div className="min-w-0 lg:col-span-2">
+              <Field label="WhatsApp Number" optional>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <div className="relative min-w-0 flex-1">
+                    <Phone className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <input
+                      inputMode="tel"
+                      value={whatsappNumber}
+                      onChange={(event) => setField("customerWhatsapp", event.target.value)}
+                      disabled={customerFieldsLocked || form.whatsappSameAsPhone}
+                      placeholder="Same as phone"
+                      className={`${controlClass("customerWhatsapp", true)} disabled:bg-slate-50`}
+                    />
+                  </div>
+                  <label className="flex shrink-0 cursor-pointer items-center gap-2 text-xs font-medium text-slate-500">
+                    <input
+                      type="checkbox"
+                      checked={form.whatsappSameAsPhone}
+                      onChange={(event) => setWhatsappSameAsPhone(event.target.checked)}
+                      disabled={customerFieldsLocked}
+                      className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-200"
+                    />
+                    Same as phone
+                  </label>
+                </div>
+              </Field>
+            </div>
             <Field label="Birth Date" optional>
               <input type="date" value={form.birthday} onChange={(event) => setField("birthday", event.target.value)} disabled={customerFieldsLocked} className={`${controlClass("birthday")} disabled:bg-slate-50`} />
             </Field>
@@ -1642,6 +2122,12 @@ export default function BookingFormPage() {
             The money fields moved to the sticky rail, so "commercial" no longer lives here. */}
         <Panel icon={CalendarCheck2} title="Booking Details" description="Core booking and destination information">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {/* Booking Date leads the section: it is WHEN THE BOOKING WAS TAKEN — the first fact
+                about the record, defaulted to today — and it is not a travel date. Keeping it
+                first, ahead of the trip's own details, is what stops it being read as one. */}
+            <Field label="Booking Date" optional>
+              <input type="date" value={form.bookingDate} onChange={(event) => setField("bookingDate", event.target.value)} className={controlClass("bookingDate")} />
+            </Field>
             {/* OLD — a native <select name="destination"> with the same options. Replaced with the
                 combobox for the search; `name` stays on the trigger so validate()'s
                 querySelector('[name="destination"]').focus() still lands on this control. */}
@@ -1679,9 +2165,6 @@ export default function BookingFormPage() {
                 </select>
                 <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               </div>
-            </Field>
-            <Field label="Booking Date" optional>
-              <input type="date" value={form.bookingDate} onChange={(event) => setField("bookingDate", event.target.value)} className={controlClass("bookingDate")} />
             </Field>
             {/* OLD — native <select> over the assignee list. Same swap as Destination: a tenant with
                 a full sales floor could not type a colleague's name to find them. */}
@@ -1722,19 +2205,41 @@ export default function BookingFormPage() {
 
         {/* onBlurField added in the create-form redesign so Travel Date validates on blur like the
             fields owned by this page, instead of waiting for submit. */}
-        <FastTravelDetails form={form} setField={setField} errors={errors} onBlurField={blurField} />
+        {/* Pickup, Drop, Vehicle Requirement, Travellers and Room Requirement are all bands INSIDE
+            this one panel. They were briefly three extra cards, which split one job — "describe the
+            trip" — across four boxes the eye had to reassemble. */}
+        <FastTravelDetails
+          form={form}
+          setField={setField}
+          errors={errors}
+          onBlurField={blurField}
+          vehicleRows={form.vehicleRequirements}
+          vehicleMaster={vehicleMaster}
+          loadingVehicleMaster={loadingVehicleMaster}
+          onAddVehicle={addRow("vehicleRequirements", emptyVehicleRow)}
+          onRemoveVehicle={removeRow("vehicleRequirements", false)}
+          onUpdateVehicle={updateRow("vehicleRequirements")}
+          roomRows={form.roomRequirements}
+          onAddRoom={addRow("roomRequirements", emptyRoomRow)}
+          onRemoveRoom={removeRow("roomRequirements", true)}
+          onUpdateRoom={updateRow("roomRequirements")}
+        />
 
-        <div className="grid grid-cols-1 items-stretch gap-5 lg:grid-cols-[minmax(0,7fr)_minmax(280px,3fr)]">
-          <FastItinerary
-            hydrationKey={editing ? routeBookingId : form.leadPublicId || "direct-booking-clean"}
-            itinerary={form.itinerary}
-            onAdd={addItineraryRow}
-            onRemove={removeItineraryRow}
-            onUpdate={updateItineraryRow}
-          />
-
-          <Panel icon={PackageCheck} title="Services & Notes" description="Confirmed inclusions and instructions">
-            <div className="grid grid-cols-2 gap-2">
+        {/* ── Services & Notes ─────────────────────────────────────────────────────────────────
+            Full width, directly under Travel Details. It used to be a narrow right-hand column
+            beside the itinerary, which forced the chips into a 2-wide stack and left the itinerary
+            squeezed into 7/10ths of the row — the source of most of the empty space on this page.
+            Laid out horizontally, the eight chips fit one or two rows and the notes sit beside
+            them instead of underneath. */}
+        <Panel icon={PackageCheck} title="Services & Notes" description="Confirmed inclusions and instructions">
+          {/* items-start is the fix for the oversized chips: without it the grid stretches every
+              cell to the tallest one — the notes textarea — so each service button grew to ~90px
+              tall. Now the chip block keeps its natural height and the textarea is free to be
+              taller than it. */}
+          <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+            {/* auto-rows-min for the same reason one level down, so the two chip rows do not
+                stretch to fill the column either. */}
+            <div className="grid auto-rows-min grid-cols-2 gap-2 sm:grid-cols-4">
               {SERVICES.map((service) => {
                 // OLD — replaced in create-form redesign
                 // const selected = form.services.includes(service);
@@ -1747,19 +2252,52 @@ export default function BookingFormPage() {
                   (item) => String(item).toLowerCase() === service.toLowerCase()
                 );
                 return (
-                  <button key={service} type="button" onClick={() => toggleService(service)} className={`inline-flex min-w-0 items-center justify-center gap-1.5 rounded-lg border px-2.5 py-2 text-xs font-semibold transition ${selected ? "border-blue-600 bg-blue-600 text-white" : "border-slate-200 bg-white text-slate-600 hover:border-blue-300 hover:bg-blue-50"}`}>
+                  <button key={service} type="button" onClick={() => toggleService(service)} className={`inline-flex h-9 min-w-0 items-center justify-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition ${selected ? "border-blue-600 bg-blue-600 text-white" : "border-slate-200 bg-white text-slate-600 hover:border-blue-300 hover:bg-blue-50"}`}>
                     {selected && <Check className="h-3.5 w-3.5 shrink-0" />}<span className="truncate">{service}</span>
                   </button>
                 );
               })}
             </div>
-            <div className="mt-4">
-              <Field label="Booking / Trip Notes" optional>
-                <textarea rows={6} value={form.tripNotes} onChange={(event) => setField("tripNotes", event.target.value)} placeholder="Confirmed preferences, inclusions or internal instructions" className={`${controlClass("tripNotes")} resize-y`} />
-              </Field>
-            </div>
-          </Panel>
-        </div>
+            {/* Notes sit BESIDE the chips on lg (they are the same decision — "what is included")
+                and fall under them on smaller screens. No h-full: that was making the textarea
+                stretch the row, which is what inflated the chips. */}
+            <Field label="Booking / Trip Notes" optional>
+              <textarea rows={4} value={form.tripNotes} onChange={(event) => setField("tripNotes", event.target.value)} placeholder="Confirmed preferences, inclusions or internal instructions" className={`${controlClass("tripNotes")} resize-y`} />
+            </Field>
+          </div>
+        </Panel>
+
+        {/* ── Travel Itinerary ─────────────────────────────────────────────────────────────────
+            Now full width. The route table has four columns of its own; at 7/10ths of the row its
+            city pickers were the narrowest controls on the page. */}
+        <Panel
+          icon={Route}
+          title="Travel Itinerary"
+          description="The route, leg by leg — nights are spent at the To city"
+          action={
+            duration && !duration.invalid ? (
+              <span className={`rounded-lg px-2 py-1 text-[11px] font-bold ${
+                routeNights === duration.nights
+                  ? "bg-emerald-50 text-emerald-700"
+                  : "bg-amber-50 text-amber-700"
+              }`}>
+                {routeNights} / {duration.nights} nights
+              </span>
+            ) : null
+          }
+        >
+          <RouteSegments
+            rows={form.itinerary}
+            fromCityOptions={fromCityOptions}
+            toCityOptions={toCityOptions}
+            loadingCities={loadingCities}
+            summary={tripRouteSummary}
+            warnings={tripRouteWarnings}
+            onAdd={addItineraryRow}
+            onRemove={removeItineraryRow}
+            onUpdate={updateItineraryRow}
+          />
+        </Panel>
         </div>
 
         {/* Money rail — sticky on lg so the amounts and the server-computed figures stay in view
