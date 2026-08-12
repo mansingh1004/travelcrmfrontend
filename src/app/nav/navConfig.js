@@ -684,7 +684,7 @@ export function buildQuickActions(navigate) {
       tone: "violet",
       keywords: "create lead enquiry add fast rapid full prospect quote",
       can: () => hasPermission(P.LEAD_CREATE) && hasModule("LEADS"),
-      run: () => navigate("/createlead"),
+      run: () => navigate("/leads/incoming"),
     },
     // "New quotation" and "Quick quote" were both here, and both are gone.
     //
