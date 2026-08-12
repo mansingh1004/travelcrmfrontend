@@ -35,6 +35,7 @@ import {
 } from "../components/opsUi";
 import OpsDetailPanel from "../components/OpsDetailPanel";
 import OpsCalendar from "../components/OpsCalendar";
+import OpsDaySummary from "../components/OpsDaySummary";
 import operationsService, { isoDate, addDays } from "../api/operationsService";
 
 const COLS = "132px 1.5fr 1fr 1.3fr 176px 104px";
@@ -72,6 +73,8 @@ export default function Operations() {
   const [counts, setCounts] = useState({});
   const [countsLoading, setCountsLoading] = useState(true);
   const [selected, setSelected] = useState(null);
+  const [days, setDays] = useState([]);
+  const [daysLoading, setDaysLoading] = useState(true);
 
   // The window the board looks at. Recomputed only when the preset changes, so the
   // filters object stays stable and does not re-fire the load effect every render.
@@ -119,13 +122,58 @@ export default function Operations() {
 
   useEffect(() => { loadCounts(); }, [loadCounts]);
 
+  const loadDays = useCallback(async () => {
+    if (!allowed) return;
+    setDaysLoading(true);
+    try {
+      setDays(await operationsService.daySummary({ from, to }));
+    } catch (err) {
+      // Same rule as the badges: the summary is a convenience over a working board, so a
+      // failure here degrades to no strip rather than a toast on top of the interceptor's.
+      if (!isAlreadyReported(err)) console.warn("Operations day summary failed", err);
+      setDays([]);
+    } finally {
+      setDaysLoading(false);
+    }
+  }, [allowed, from, to]);
+
+  useEffect(() => { loadDays(); }, [loadDays]);
+
+  /**
+   * Open a booking from a day card.
+   *
+   * The card lists every booking that day, but the board is paged and tab-filtered, so the
+   * one clicked may not be among the loaded rows. When it is, the full entry opens with its
+   * readiness. When it is not, the panel still opens with what the card knows and simply
+   * omits the readiness block rather than showing a grid of grey dots that would read as
+   * "nothing is ready".
+   */
+  const openFromSummary = useCallback((bookingPublicId) => {
+    const loaded = rows.find((r) => r.bookingPublicId === bookingPublicId);
+    if (loaded) { setSelected(loaded); return; }
+
+    for (const day of days) {
+      const ref = (day.bookings ?? []).find((b) => b.bookingPublicId === bookingPublicId);
+      if (ref) {
+        setSelected({
+          bookingPublicId: ref.bookingPublicId,
+          bookingCode: ref.bookingCode,
+          customerName: ref.customerName,
+          travelDate: day.date,
+          readiness: null,
+        });
+        return;
+      }
+    }
+  }, [rows, days]);
+
   useEffect(() => {
     if (error && !isAlreadyReported(error)) {
       toast.error(getErrorMessage(error, "Could not load the operations board"));
     }
   }, [error]);
 
-  const refreshAll = useCallback(() => { reload(); loadCounts(); }, [reload, loadCounts]);
+  const refreshAll = useCallback(() => { reload(); loadCounts(); loadDays(); }, [reload, loadCounts, loadDays]);
 
   const rowsPerPage = meta?.size ?? pageSize ?? 25;
   const fromRow = total === 0 ? 0 : page * rowsPerPage + 1;
@@ -204,6 +252,11 @@ export default function Operations() {
       }
     >
       <div className="flex flex-col gap-4">
+        {/* ── Day rollup ──────────────────────────────────────────────────────
+            Above everything, because it answers the question that comes before
+            "which booking": what does this day actually take. */}
+        <OpsDaySummary days={days} loading={daysLoading} onSelectBooking={openFromSummary} />
+
         {/* ── Exception filters ───────────────────────────────────────────────
             Horizontal, above the board rather than a rail beside it. A 200px rail
             costs the widest column on the screen — the readiness dots — exactly the

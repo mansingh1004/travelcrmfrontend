@@ -214,11 +214,15 @@ export default function OpsDetailPanel({ entry, onClose, onChanged }) {
           </button>
         </div>
 
-        {/* Readiness */}
-        <div className="px-5 py-4 border-b border-slate-100">
-          <p className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider mb-2.5">Readiness</p>
-          <ReadinessList readiness={entry.readiness} />
-        </div>
+        {/* Readiness — omitted entirely when the caller opened this from somewhere that does
+            not carry it (a day card can name a booking the board has not loaded). Rendering
+            the grid with nothing in it would read as "nothing is ready", which is a lie. */}
+        {entry.readiness && (
+          <div className="px-5 py-4 border-b border-slate-100">
+            <p className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider mb-2.5">Readiness</p>
+            <ReadinessList readiness={entry.readiness} />
+          </div>
+        )}
 
         {/* Service lines */}
         <div className="px-5 py-4">
@@ -226,11 +230,18 @@ export default function OpsDetailPanel({ entry, onClose, onChanged }) {
             <p className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider">
               Service lines
             </p>
-            {lines.length > 0 && (
-              <Badge tone={entry.suppliersConfirmed >= entry.suppliersTotal ? "green" : "amber"}>
-                {entry.suppliersConfirmed} / {entry.suppliersTotal} confirmed
-              </Badge>
-            )}
+            {/* Counted from the lines this panel actually loaded, not from the board row.
+                The row may not exist — a day card can open a booking the board has not
+                fetched — and these are the same lines the count describes anyway. */}
+            {lines.length > 0 && (() => {
+              const active = lines.filter((l) => l.status !== "CANCELLED");
+              const done = active.filter((l) => l.status === "CONFIRMED").length;
+              return (
+                <Badge tone={done >= active.length ? "green" : "amber"}>
+                  {done} / {active.length} confirmed
+                </Badge>
+              );
+            })()}
           </div>
 
           {loading && (

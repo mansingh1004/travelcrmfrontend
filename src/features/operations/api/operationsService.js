@@ -31,6 +31,17 @@ const operationsService = {
    */
   board: (params) => API.get("/operations/board", { params }),
 
+  /**
+   * The window rolled up by departure day.
+   *
+   * One entry per day that actually has departures — a quiet fortnight returns two cards,
+   * not fourteen empty ones.
+   */
+  daySummary: async (params) => {
+    const res = await API.get("/operations/day-summary", { params });
+    return res?.data?.data ?? [];
+  },
+
   /** Badge counts, keyed by tab. Each is counted with its own tab's predicate. */
   tabCounts: async (params) => {
     const res = await API.get("/operations/tab-counts", { params });
