@@ -15,7 +15,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import {
   Inbox, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
-  Bed, Car, FileText, Camera, Wallet, User, Boxes,
+  Bed, Car, FileText, Camera, Wallet, User, Boxes, PlaneTakeoff,
 } from "lucide-react";
 
 const FONT = "'Plus Jakarta Sans',system-ui,sans-serif";
@@ -232,15 +232,31 @@ function PBtn({ disabled, onClick, children }) {
  */
 export const DIMENSIONS = [
   { key: "HOTEL",      label: "Hotel",      Icon: Bed },
-  { key: "TRANSPORT",  label: "Transport",  Icon: Car },
+  { key: "VEHICLE",    label: "Vehicle",    Icon: Car },
+  { key: "ACTIVITIES", label: "Sightseeing", Icon: Camera },
+  // The long-haul leg, split from VEHICLE server-side so the Vehicle column can mean vehicles.
+  { key: "TRAVEL",     label: "Travel",     Icon: PlaneTakeoff },
   { key: "DOCUMENTS",  label: "Documents",  Icon: FileText },
-  { key: "ACTIVITIES", label: "Activities", Icon: Camera },
   // Everything the server's service-type tokens do not recognise — meals, cruises, whatever an
   // agency invents. It has to be listed here or it is computed and then never drawn, which is
   // the state it was invisible in before.
   { key: "OTHER",      label: "Other",      Icon: Boxes },
   { key: "GUIDE",      label: "Guide",      Icon: User },
   { key: "PAYMENT",    label: "Payment",    Icon: Wallet },
+];
+
+/**
+ * The three the table gives a column of its own.
+ *
+ * The rest still count towards Overall Status and still appear in the expanded row — they
+ * simply do not each get a column, because nine columns of dots is not a glance. Overall
+ * Status is computed server-side over ALL dimensions, so a row can read green across these
+ * three and still say ACTION NEEDED; that is not a bug, and the expanded row says why.
+ */
+export const COLUMN_DIMENSIONS = [
+  { key: "HOTEL",      label: "Hotel",       Icon: Bed },
+  { key: "VEHICLE",    label: "Vehicle",     Icon: Car },
+  { key: "ACTIVITIES", label: "Sightseeing", Icon: Camera },
 ];
 
 /**
@@ -301,6 +317,115 @@ export function ReadinessList({ readiness = {} }) {
         );
       })}
     </div>
+  );
+}
+
+/**
+ * One dimension in a table cell: a word, and the count behind it.
+ *
+ * The word is the worst case across that dimension's lines and the count is the arithmetic —
+ * "PENDING · 3 of 4" says both "not done" and "nearly done", which a single badge cannot. A
+ * dimension with no lines reads NOT ARRANGED rather than a blank cell: nothing arranged is a
+ * state, and an empty cell reads as a rendering failure.
+ */
+export function DimensionCell({ status, count }) {
+  const total = count?.total ?? 0;
+  const confirmed = count?.confirmed ?? 0;
+
+  const style =
+    status === "READY"       ? { chip: "bg-emerald-50 text-emerald-700 ring-emerald-200", label: "CONFIRMED" }
+    : status === "IN_PROGRESS" ? { chip: "bg-amber-50 text-amber-700 ring-amber-200",     label: "PENDING" }
+    : status === "NOT_STARTED" ? { chip: "bg-rose-50 text-rose-700 ring-rose-200",        label: "PENDING" }
+    : { chip: "bg-rose-50 text-rose-700 ring-rose-200", label: "NOT ARRANGED" };
+
+  // NOT_APPLICABLE with zero lines is "nothing arranged"; with lines it is genuinely not needed.
+  const notNeeded = status === "NOT_APPLICABLE" && total > 0;
+
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <span
+        className={`inline-flex items-center text-[10px] font-extrabold tracking-wide px-2 py-1 rounded-md ring-1 ${
+          notNeeded ? "bg-slate-50 text-slate-400 ring-slate-200" : style.chip
+        }`}
+      >
+        {notNeeded ? "NOT NEEDED" : style.label}
+      </span>
+      {total > 0 && (
+        <span className="text-[10px] font-bold text-slate-400 tabular-nums">
+          {confirmed} of {total}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The row's one-word verdict, computed server-side over EVERY dimension.
+ *
+ * Deliberately not derived in the browser from the three columns beside it. Those are three of
+ * eight, and a row can be green across all three while a visa nobody has applied for sits in the
+ * expanded panel. The server owns this because the server is the only one that sees all of it.
+ */
+export function OverallBadge({ status }) {
+  const style =
+    status === "READY"   ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
+    : status === "URGENT" ? "bg-rose-50 text-rose-700 ring-rose-200"
+    : "bg-amber-50 text-amber-700 ring-amber-200";
+
+  const label =
+    status === "READY" ? "READY" : status === "URGENT" ? "URGENT" : "ACTION NEEDED";
+
+  return (
+    <span className={`inline-flex items-center text-[10px] font-extrabold tracking-wide px-2.5 py-1 rounded-md ring-1 ${style}`}>
+      {label}
+    </span>
+  );
+}
+
+/**
+ * One of the figures across the top of the board.
+ *
+ * `hint` carries what the number is OF — "40% of total", "Traveling today / tomorrow". A bare
+ * count invites the reader to invent a denominator, and they invent the wrong one.
+ */
+export function SummaryCard({ icon: Icon, tone = "blue", label, value, hint, loading, onClick, active }) {
+  const tones = {
+    blue:    "bg-blue-50 text-blue-600 ring-blue-100",
+    green:   "bg-emerald-50 text-emerald-600 ring-emerald-100",
+    amber:   "bg-amber-50 text-amber-600 ring-amber-100",
+    red:     "bg-rose-50 text-rose-600 ring-rose-100",
+    indigo:  "bg-indigo-50 text-indigo-600 ring-indigo-100",
+  };
+  const rings = {
+    blue: "ring-blue-400", green: "ring-emerald-400", amber: "ring-amber-400",
+    red: "ring-rose-400", indigo: "ring-indigo-400",
+  };
+
+  // A card that filters has to look like it does. Pressed state is a ring in the card's own
+  // colour rather than a fill: the number is what people read, and inverting the card makes
+  // the one figure they came for the hardest to see.
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`flex items-center gap-3 px-4 py-3.5 bg-white rounded-2xl border shadow-sm min-w-0 text-left transition-all ${
+        active
+          ? `border-transparent ring-2 ${rings[tone] ?? rings.blue} shadow-md`
+          : "border-slate-200/60 hover:border-slate-300 hover:shadow-md"
+      }`}
+    >
+      <span className={`shrink-0 w-11 h-11 rounded-xl grid place-items-center ring-1 ${tones[tone] ?? tones.blue}`}>
+        <Icon className="w-5 h-5" />
+      </span>
+      <div className="min-w-0">
+        <p className="text-[11px] font-bold text-slate-500 truncate">{label}</p>
+        <p className="text-xl font-extrabold text-slate-800 tabular-nums leading-tight">
+          {loading ? <span className="text-slate-300">·</span> : value}
+        </p>
+        {hint && <p className="text-[10px] font-bold text-slate-400 truncate">{hint}</p>}
+      </div>
+    </button>
   );
 }
 

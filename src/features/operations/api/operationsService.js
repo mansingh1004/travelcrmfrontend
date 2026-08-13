@@ -49,6 +49,19 @@ const operationsService = {
   },
 
   /**
+   * The five figures across the top — total, ready, action needed, urgent, balance pending.
+   *
+   * Counted over every booking in the window, NOT over the page on screen: a card that only
+   * agreed with the visible ten would teach people the cards cannot be trusted. Takes `search`
+   * so the cards follow a search, but never `tab` — the cards are what the tabs are read
+   * against, so filtering them by the active tab would make them tautological.
+   */
+  summary: async (params) => {
+    const res = await API.get("/operations/summary", { params });
+    return res?.data?.data ?? null;
+  },
+
+  /**
    * Turn a booking's sold itinerary into the dated service lines it is delivered against.
    *
    * Resolves to { outcome, createdCount, createdIds } — outcome distinguishes CREATED

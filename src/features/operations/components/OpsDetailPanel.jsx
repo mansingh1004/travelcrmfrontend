@@ -19,7 +19,7 @@ import { getErrorMessage, isAlreadyReported } from "@shared/api/apiError";
 import { toast } from "@shared/ui/toast";
 import { hasPermission, P } from "@shared/lib/access";
 
-import { Panel, Badge, ReadinessList, GridEmpty } from "./opsUi";
+import { Badge, ReadinessList, GridEmpty } from "./opsUi";
 import operationsService from "../api/operationsService";
 
 const STATUS_META = {
@@ -195,7 +195,13 @@ export default function OpsDetailPanel({ entry, onClose, onChanged }) {
       >
         {/* h-full + inner scroll: a booking with a dozen service lines scrolls INSIDE the
             drawer instead of running off the bottom of the screen. */}
-        <Panel className="bg-white shadow-2xl h-full overflow-y-auto">
+        {/* NOT <Panel>. Panel's base is `bg-white/80 backdrop-blur-md`, and passing `bg-white`
+            through className does not override it: both utilities have the same specificity, so
+            the winner is whichever Tailwind emitted later in the stylesheet, not whichever came
+            later in the class attribute. The drawer rendered translucent with the board showing
+            through it. A drawer is a surface you read forms on — it has to be opaque, so it
+            states its own background rather than fighting a base class for it. */}
+        <div className="bg-white rounded-2xl border border-slate-200/60 shadow-2xl h-full overflow-y-auto">
         {/* Header */}
         <div className="px-5 py-4 border-b border-slate-100 flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -391,7 +397,7 @@ export default function OpsDetailPanel({ entry, onClose, onChanged }) {
             </ul>
           )}
         </div>
-        </Panel>
+        </div>
       </aside>
     </>,
     document.body
