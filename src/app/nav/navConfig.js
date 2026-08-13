@@ -698,25 +698,9 @@ export function buildQuickActions(navigate) {
       sublabel: "Fast intake and quick quotation",
       Icon: Zap,
       tone: "violet",
-      keywords: "create lead enquiry add fast rapid prospect quote",
+      keywords: "create lead enquiry add fast rapid full prospect quote",
       can: () => hasPermission(P.LEAD_CREATE) && hasModule("LEADS"),
       run: () => navigate("/leads/incoming"),
-    },
-    /* The full enquiry form, back as its own entry point now that /createlead has two modes again.
-       Deliberately NOT a second route to the row above — that one goes to the incoming queue, which
-       is a different screen and a later deliberate change; this opens the form directly in Full
-       details. ?mode=full is read once on mount, so the link lands in the right mode without
-       fighting the toggle afterwards. */
-    {
-      id: "action.lead.full",
-      group: "Sales",
-      label: "New lead",
-      sublabel: "The full enquiry form",
-      Icon: Users,
-      tone: "cyan",
-      keywords: "create lead enquiry add prospect full details form",
-      can: () => hasPermission(P.LEAD_CREATE) && hasModule("LEADS"),
-      run: () => navigate("/createlead?mode=full"),
     },
     // "New quotation" and "Quick quote" were both here, and both are gone.
     //

@@ -820,7 +820,6 @@ import {
   Wallet,
   RotateCcw,
   Route,
-  Search,
   Share2,
   ShieldCheck,
   Ship,
@@ -1307,8 +1306,17 @@ function ServiceCard({ icon: Icon, label, tile, selected, onClick }) {
   );
 }
 
+/* One panel, one layout — the two-mode split is retired.
+   Full details used to render this as a wide two-column block with a General Requirements textarea,
+   and Rapid rendered a stacked version that dropped that textarea altogether. Dropping it was the
+   expensive half of the split: a trip note taken on the call could only be recorded by reopening
+   the lead afterwards, which costs more than the panel it was meant to save. The notes box now
+   rides with the assistance fields in the rail, in every mode.
+
+   Open on arrival. It only earns rail space while the enquiry is being taken — once the itinerary
+   is confirmed the whole panel retires to a SummaryRow with the other two, so being open costs
+   nothing past the point where it stops being relevant. */
 function RequirementsAssistancePanel({
-  rapidEntry,
   register,
   errors,
   assistanceRequired,
@@ -1319,19 +1327,11 @@ function RequirementsAssistancePanel({
   totalTravellers,
   summary,
 }) {
-  /* Open on arrival in BOTH modes now. Rapid used to fold this on mount, which optimised for the
-     common case at the cost of the one that matters: an exception nobody sees is an exception nobody
-     records. It only earns rail space while the enquiry is being taken — once the itinerary is
-     confirmed the whole panel retires to a SummaryRow with the other two, so being open costs
-     nothing past the point where it stops being relevant. */
-
   return (
     <Panel
       icon={Accessibility}
-      title={rapidEntry ? "Special Assistance" : "Requirements & Assistance"}
-      description={rapidEntry
-        ? "Only open this exception when a traveller needs operational support"
-        : "Trip preferences and traveller support in one place"}
+      title="Requirements & Assistance"
+      description="Trip preferences and traveller support in one place"
       collapsible
       defaultOpen
       summary={summary}
@@ -1339,24 +1339,22 @@ function RequirementsAssistancePanel({
         errors.specialAssistanceTypes || errors.assistancePassengerCount || errors.specialAssistanceNotes,
       )}
     >
-      <div className={rapidEntry ? "space-y-4" : "grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]"}>
-        {!rapidEntry && (
-          <Field id="notes" label="General Requirements" optional hint="Hotels, meals, budget, occasion and other trip-wide preferences.">
-            <textarea
-              {...register("notes")}
-              id="notes"
-              rows={4}
-              placeholder="Preferred hotels, meals, budget, occasion and other trip requirements"
-              className={`${control(false)} resize-y`}
-            />
-          </Field>
-        )}
+      <div className="space-y-4">
+        <Field id="notes" label="General Requirements" optional hint="Hotels, meals, budget, occasion and other trip-wide preferences.">
+          <textarea
+            {...register("notes")}
+            id="notes"
+            rows={4}
+            placeholder="Preferred hotels, meals, budget, occasion and other trip requirements"
+            className={`${control(false)} resize-y`}
+          />
+        </Field>
 
-        <div className={rapidEntry ? "" : "border-t border-slate-100 pt-4 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0"}>
-          {!rapidEntry && <div className="mb-3">
+        <div className="border-t border-slate-100 pt-4">
+          <div className="mb-3">
             <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500">Accessibility &amp; Assistance</h3>
             <p className="mt-1 text-[11px] text-slate-400">Operational support needed for one or more travellers</p>
-          </div>}
+          </div>
           <div>
             <p className="mb-1.5 text-xs font-semibold text-slate-600">Special assistance required?</p>
             <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1" role="group" aria-label="Special assistance required">
@@ -1384,8 +1382,10 @@ function RequirementsAssistancePanel({
             </div>
           </div>
 
+          {/* Single column on purpose — the panel lives in the 300px rail now, so the old
+              full-details `md:grid-cols-[minmax(0,1fr)_130px]` split would only squeeze both. */}
           {assistanceRequired && (
-            <div className={`mt-3 grid gap-3 rounded-lg border border-blue-100 bg-blue-50/40 p-3 ${rapidEntry ? "" : "md:grid-cols-[minmax(0,1fr)_130px]"}`}>
+            <div className="mt-3 grid gap-3 rounded-lg border border-blue-100 bg-blue-50/40 p-3">
               <div>
                 <p className="mb-1.5 text-xs font-semibold text-slate-600">
                   Assistance Type <span className="text-red-500">*</span>
@@ -1421,7 +1421,7 @@ function RequirementsAssistancePanel({
                   className={control(false)}
                 />
               </Field>
-              <div className={rapidEntry ? "" : "md:col-span-2"}>
+              <div>
                 <Field id="specialAssistanceNotes" label="Assistance Details" optional error={errors.specialAssistanceNotes?.message}>
                   <input
                     {...register("specialAssistanceNotes", { maxLength: { value: 500, message: "Max 500 characters" } })}
@@ -1467,21 +1467,16 @@ export function LeadFormPanels({
   services,
   onToggleService,
   itinerary,
-  roomAllocations,
-  onUpdateRoomAllocation,
-  onRebalanceRoomAllocations,
   onAddRow,
   onRemoveRow,
   onUpdateRow,
   phoneRef,
   belowPhone = null,
   compactRail = false,
-  rapidEntry = false,
-  showRoomPlanning = false,
-  /* Progressive disclosure, rapid CREATE with QUOTATION_CREATE only: Customer → Trip → Itinerary is
+  /* Progressive disclosure, CREATE with QUOTATION_CREATE only: Customer → Trip → Itinerary is
      one step, and it hands over to Services only when the agent says it is done. Off everywhere else
-     — full details shows everything at once by definition, and edit must never lock a field on a
-     record that already exists (a saved lead may legitimately carry no itinerary at all).
+     — edit must never lock a field on a record that already exists (a saved lead may legitimately
+     carry no itinerary at all).
      The page owns the two flags because a failed submit has to be able to force the fold open. */
   stepFlow = false,
   itineraryConfirmed = false,
@@ -1505,7 +1500,11 @@ export function LeadFormPanels({
   const [loadingRows, setLoadingRows] = useState({});
   const [destinationModalRow, setDestinationModalRow] = useState(null);
   const [cityModalRow, setCityModalRow] = useState(null);
-  const [rapidSourceEditing, setRapidSourceEditing] = useState(false);
+  /* Retired with Full details: rapid used to show a picked Lead Source as a read-only chip with a
+     "Change" link to buy back rail space, and `rapidSourceEditing` was the latch behind it. The
+     merged form renders the searchable select outright — the field is required and never prefilled,
+     so a control the agent has to click twice to correct is the wrong saving to make.
+  const [rapidSourceEditing, setRapidSourceEditing] = useState(false); */
 
   const departureMode = watch("departureMode");
   const assistanceRequired = watch("specialAssistanceRequired");
@@ -1515,7 +1514,9 @@ export function LeadFormPanels({
   const showAdultBreakdown = Boolean(watch("showAdultBreakdown"));
   const totalAdults = toInt(watch("totalAdults"));
   const totalTravellers = totalAdults + toInt(watch("children")) + toInt(watch("infants"));
-  const needsOriginCity = services.includes("flight") || services.includes("vehicle");
+  /* `needsOriginCity` is gone with Full details: the departing city used to appear in rapid only
+     when a Flight or Vehicle was ticked, which meant the field a Hotel-only enquiry still wants
+     was simply not on the form. It is now always rendered, next to the departing country. */
   // The latch, not the data: Services waits for the agent's explicit continue, so adding a stop
   // later never yanks the picker (and the priced quote under it) back off the screen.
   const servicesLocked = stepFlow && !itineraryConfirmed;
@@ -1557,10 +1558,15 @@ export function LeadFormPanels({
   ].filter(Boolean).join(" · ");
   /* Lifted out of RequirementsAssistancePanel because the folded rail needs the same line the panel
      shows when collapsed, and two copies of "what does this panel currently say" is exactly how a
-     summary starts lying about the form. */
-  const assistanceSummary = assistanceRequired
-    ? (assistanceTypes.length > 0 ? assistanceTypes.join(", ") : "Required — no type chosen yet")
-    : "None";
+     summary starts lying about the form. It covers BOTH halves of the panel now that the General
+     Requirements box has moved in — a summary that only ever said "None" over a filled-in notes
+     box is worse than no summary at all. */
+  const requirementsSummary = [
+    String(watch("notes") || "").trim() ? "Requirements noted" : "",
+    assistanceRequired
+      ? `Assistance: ${assistanceTypes.length > 0 ? assistanceTypes.join(", ") : "type not chosen yet"}`
+      : "",
+  ].filter(Boolean).join(" · ") || "Nothing added";
 
   /* specialAssistanceTypes is written with setValue from the chip row, so it has no rendered input
      to hang rules off — it has to be registered explicitly or it is never validated at all, and the
@@ -1581,11 +1587,10 @@ export function LeadFormPanels({
   }, [getValues, register]);
 
   // ── Reference data. Independent effects, so they run in parallel; none blocks typing. ─────────
+  /* The country list is fetched unconditionally now. Rapid used to skip it because it hid the
+     Departing Country select; that select is part of the one merged form, so skipping the fetch
+     would leave it permanently empty. */
   useEffect(() => {
-    if (rapidEntry) {
-      setLoadingCountries(false);
-      return undefined;
-    }
     if (countries.length > 0) return undefined;
     setLoadingCountries(true);
     let active = true;
@@ -1601,7 +1606,7 @@ export function LeadFormPanels({
       .catch(() => { if (active) setCountries([]); })
       .finally(() => { if (active) setLoadingCountries(false); });
     return () => { active = false; };
-  }, [countries.length, rapidEntry]);
+  }, [countries.length]);
 
   useEffect(() => {
     let active = true;
@@ -1771,15 +1776,9 @@ export function LeadFormPanels({
     } else if (name !== "totalAdults") {
       setValue("totalAdults", getValues("totalAdults"), { shouldValidate: true });
     }
-    if (["adults", "children", "infants", "rooms", "extraBeds"].includes(roomField)) {
-      onRebalanceRoomAllocations({
-        rooms: roomField === "rooms" ? roomValue : getValues("rooms"),
-        adults: roomField === "adults" ? roomValue : getValues("totalAdults"),
-        children: roomField === "children" ? roomValue : getValues("children"),
-        infants: roomField === "infants" ? roomValue : getValues("infants"),
-        extraBeds: roomField === "extraBeds" ? roomValue : getValues("extraBeds"),
-      });
-    }
+    /* The re-split of the party across room rows went with the room-by-room editor. `rooms` is a
+       plain count on the form and feeds the quotation directly; nothing downstream needs the
+       per-room breakdown any more. */
   };
 
   const toggleAdultBreakdown = (checked) => {
@@ -1808,7 +1807,12 @@ export function LeadFormPanels({
 
   return (
     <>
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,7fr)_minmax(300px,3fr)] lg:items-start">
+      {/* Fixed rail, proportional main — the booking form's split, for the same reason. The rail
+          holds Lead Setup, Services and Assistance: short panels of small controls that stop
+          getting better above ~320px. As `3fr` it took ~30% of a 1400px page, so on a wide monitor
+          it grew into 420px of half-empty panel while the Customer and Trip fields — the ones that
+          actually want width — wrapped a column earlier than they needed to. */}
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
       {/* ── 1 + 2 folded · what the enquiry says, in two lines ─────────────────────────────────
           Not a third rendering of these fields — just their values, so there is nothing here that
           can drift out of step with the panels below. Either the panels are mounted or these rows
@@ -1828,7 +1832,7 @@ export function LeadFormPanels({
         title="Customer"
         description="Phone first — an existing lead on this number is flagged as you type"
       >
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <Field id="phone" label="Phone" required error={errors.phone?.message}>
             <div className="relative">
               <Phone className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -1882,8 +1886,11 @@ export function LeadFormPanels({
             {belowPhone}
 
             <div className="mt-4 border-t border-slate-100 pt-4">
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500">Travellers &amp; Rooms</h3>
+              {/* The "Travellers & Rooms" heading that sat here is gone: TravellerCountFields now
+                  carries its own "Travellers" and "Rooms" legends over the two groups, so this was
+                  the same words a second time, one line above them. The hint stays — it is the one
+                  thing that row said which the legends do not. */}
+              <div className="mb-2 flex justify-end">
                 <p className="text-[11px] text-slate-400">Click a number and type to replace it</p>
               </div>
               <TravellerCountFields
@@ -1899,9 +1906,10 @@ export function LeadFormPanels({
                 }}
                 onCountChange={setAdultCount}
                 onToggleBreakdown={toggleAdultBreakdown}
-                compact={rapidEntry}
-                showBreakdownInCompact={false}
-                showExtraBedsInCompact={false}
+                /* `compact` is gone with Full details. It did exactly two things — hide the
+                   "Specify adult gender count" toggle and hide Extra Beds — so rapid could not
+                   record a male/female split or an extra bed without switching modes first. Both
+                   are back for everyone; the counters are one row either way. */
               />
               {/* The blue Total Travellers strip is retired. TravellerCountFields' own first box is
                   now labelled "Total Travellers" and, once the breakdown is open, is the derived
@@ -1912,97 +1920,11 @@ export function LeadFormPanels({
                 <span …>Total Travellers</span><span …>{totalTravellers}</span>
               </div> */}
 
-              {showRoomPlanning && (
-                <div id="room-allocation-group" className="mt-4 border-t border-slate-100 pt-4">
-                <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 bg-slate-50/60 p-3 transition hover:border-violet-200 hover:bg-violet-50/40">
-                  <input
-                    {...register("roomPlanEnabled")}
-                    type="checkbox"
-                    className="mt-0.5 h-4 w-4 rounded border-slate-300 text-violet-600 focus:ring-violet-500"
-                  />
-                  <span className="min-w-0">
-                    <span className="block text-xs font-bold text-slate-700">Add room-wise plan</span>
-                    <span className="mt-0.5 block text-[11px] text-slate-400">
-                      Optional — use only when specific room categories, beds or child ages are needed.
-                    </span>
-                  </span>
-                </label>
-
-                {roomPlanEnabled && (
-                  <div className="mt-3">
-                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500">Room-wise plan</h3>
-                    <p className="mt-0.5 text-[11px] text-slate-400">Used to create room lines automatically in Quick Quote</p>
-                  </div>
-                  <span className="rounded-full bg-violet-50 px-2.5 py-1 text-[11px] font-bold text-violet-700">
-                    {roomAllocations.length} room{roomAllocations.length === 1 ? "" : "s"}
-                  </span>
-                </div>
-                <div className="space-y-2.5">
-                  {roomAllocations.map((room) => (
-                    <div key={room.id} className="rounded-lg border border-slate-200 bg-slate-50/60 p-3">
-                      <div className="mb-2 flex items-center justify-between">
-                        <span className="text-xs font-bold text-slate-700">Room {room.roomNumber}</span>
-                        <span className="text-[11px] font-semibold text-slate-400">
-                          {toInt(room.adults) + toInt(room.children) + toInt(room.infants)} travellers
-                        </span>
-                      </div>
-                      <div className={`grid gap-2 ${rapidEntry ? "grid-cols-2" : "grid-cols-2 md:grid-cols-4"}`}>
-                        <label className="text-[11px] font-semibold text-slate-500">
-                          Category
-                          <select value={room.roomCategoryPreference} onChange={(event) => onUpdateRoomAllocation(room.id, { roomCategoryPreference: event.target.value })} className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2 py-2 text-xs font-semibold text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100">
-                            {ROOM_CATEGORY_OPTIONS.map((option) => <option key={option}>{option}</option>)}
-                          </select>
-                        </label>
-                        <label className="text-[11px] font-semibold text-slate-500">
-                          Bed
-                          <select value={room.bedPreference} onChange={(event) => onUpdateRoomAllocation(room.id, { bedPreference: event.target.value })} className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2 py-2 text-xs font-semibold text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100">
-                            {BED_PREFERENCE_OPTIONS.map((option) => <option key={option}>{option}</option>)}
-                          </select>
-                        </label>
-                        {[
-                          ["adults", "Adults", 6],
-                          ["children", "Children", 4],
-                          ["infants", "Infants", 3],
-                          ["extraBeds", "Extra beds", 3],
-                        ].map(([field, label, max]) => (
-                          <label key={field} className="text-[11px] font-semibold text-slate-500">
-                            {label}
-                            <select value={room[field]} onChange={(event) => onUpdateRoomAllocation(room.id, { [field]: Number(event.target.value) })} className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2 py-2 text-xs font-semibold text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100">
-                              {Array.from({ length: max + 1 }, (_, value) => <option key={value} value={value}>{value}</option>)}
-                            </select>
-                          </label>
-                        ))}
-                      </div>
-                      {toInt(room.children) > 0 && (
-                        <div className="mt-2 flex flex-wrap items-end gap-2">
-                          {Array.from({ length: toInt(room.children) }, (_, index) => (
-                            <label key={index} className="text-[11px] font-semibold text-slate-500">
-                              Child {index + 1} age
-                              <select
-                                value={room.childAges?.[index] ?? ""}
-                                onChange={(event) => {
-                                  const childAges = [...(room.childAges || [])];
-                                  childAges[index] = event.target.value === "" ? "" : Number(event.target.value);
-                                  onUpdateRoomAllocation(room.id, { childAges });
-                                }}
-                                className="mt-1 block rounded-md border border-slate-200 bg-white px-2 py-2 text-xs font-semibold text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                              >
-                                <option value="">Not set</option>
-                                {Array.from({ length: 18 }, (_, age) => <option key={age} value={age}>{age}</option>)}
-                              </select>
-                            </label>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-                  </div>
-                )}
-                </div>
-              )}
+              {/* The room-by-room plan is gone. It asked for a room category, a bed preference and
+                  an age per child, per room — on a form whose whole purpose is to take an enquiry
+                  in one pass. It was already edit-only, so no new lead ever carried one; leads that
+                  do keep theirs (see the save payload) because the backend regroups them into the
+                  booking room mix at conversion. */}
             </div>
 
 
@@ -2012,16 +1934,18 @@ export function LeadFormPanels({
                 summary had to carry two rows to describe one customer. Merged in, behind a
                 rule rather than a second heading — everything above identifies the customer,
                 everything below is what you learn about them on the call. */}
-            <div className="mt-5 space-y-3 border-t border-slate-100 pt-4">
-              <div className="grid grid-cols-2 gap-3">
-                <Field id="birthDate" label="Date of Birth" optional>
-                  <input {...register("birthDate")} id="birthDate" type="date" max={today()} className={control(false)} />
-                </Field>
-                <Field id="anniversaryDate" label="Anniversary" optional>
-                  <input {...register("anniversaryDate")} id="anniversaryDate" type="date" max={today()} className={control(false)} />
-                </Field>
-              </div>
-    
+            {/* One grid, not a stack. These five were a 2-up row followed by three full-width
+                fields, which made the optional half of the panel twice as tall as the half that
+                actually identifies the customer. They are all small controls; they belong on the
+                same four-column rhythm as the fields above the rule. */}
+            <div className="mt-5 grid grid-cols-1 gap-4 border-t border-slate-100 pt-4 sm:grid-cols-2 lg:grid-cols-4">
+              <Field id="birthDate" label="Date of Birth" optional>
+                <input {...register("birthDate")} id="birthDate" type="date" max={today()} className={control(false)} />
+              </Field>
+              <Field id="anniversaryDate" label="Anniversary" optional>
+                <input {...register("anniversaryDate")} id="anniversaryDate" type="date" max={today()} className={control(false)} />
+              </Field>
+
               <Field id="preferredCommunication" label="Preferred Contact Channel" optional>
                 <div className="relative">
                   <select {...register("preferredCommunication")} id="preferredCommunication" className={`${control(false)} appearance-none pr-9`}>
@@ -2074,9 +1998,10 @@ export function LeadFormPanels({
               </span>
             }
           >
-            <div className={rapidEntry
-              ? "grid grid-cols-1 gap-4 sm:grid-cols-2"
-              : "grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4"}>
+            {/* Four fields, two up. Full details ran these at lg:grid-cols-4, but that was a
+                full-width main column; the merged form always keeps the 300px rail, so four
+                across would put a date picker and two selects in ~150px each. */}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Field id="travelDate" label="Travel Date" required error={errors.travelDate?.message}>
                 <div className="relative">
                   <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -2090,7 +2015,7 @@ export function LeadFormPanels({
                 </div>
               </Field>
 
-              {!rapidEntry && <Field id="departCountry" label="Departing Country" optional>
+              <Field id="departCountry" label="Departing Country" optional>
                 <SearchableSelect
                   name="departCountry"
                   options={countries}
@@ -2102,14 +2027,14 @@ export function LeadFormPanels({
                   searchable
                   advanceOnSelect
                 />
-              </Field>}
+              </Field>
 
-              {(!rapidEntry || needsOriginCity) && <Field id="departCity" label={rapidEntry ? "Origin City" : "Departing City"} optional>
+              <Field id="departCity" label="Departing City" optional>
                 <div className="relative">
                   <MapPin className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                   <input {...register("departCity")} id="departCity" placeholder="e.g. Pune" className={control(false, true)} />
                 </div>
-              </Field>}
+              </Field>
 
               <Field id="departureMode" label="Departure Mode" optional>
                 <div className="relative">
@@ -2355,13 +2280,13 @@ export function LeadFormPanels({
         </div>
         )}
 
-        {/* ── Services — rapid mode only, and deliberately OUT of the right rail ────────────────
+        {/* ── Services — deliberately OUT of the right rail ─────────────────────────────────────
             Ticking a service is the act of starting to fill it in (toggleService queues the section
             to open below), so the picker earns main-column width and reads as a card grid instead of
-            a 2×4 list squeezed into a 300px rail. Full details and EditLead keep the rail's Chip
-            grid further down, untouched — only one of the two `services-group` nodes ever mounts,
-            so save()'s scrollIntoView still resolves. */}
-        {rapidEntry && servicesLocked && (
+            a 2×4 list squeezed into a 300px rail. This is now the ONLY services picker: the rail's
+            Chip grid went with Full details, so there is exactly one `services-group` node in the
+            document and save()'s scrollIntoView can only resolve to it. */}
+        {servicesLocked && (
           /* Locked, not absent, and the count still shows: sticky pre-ticks Hotel from the previous
              enquiry, so a stub that said nothing would read as "your services were dropped". */
           <div className="min-w-0 lg:col-start-1">
@@ -2375,7 +2300,7 @@ export function LeadFormPanels({
           </div>
         )}
 
-        {rapidEntry && !servicesLocked && (
+        {!servicesLocked && (
           <div className="min-w-0 lg:col-start-1">
             <Panel
               icon={LayoutGrid}
@@ -2418,22 +2343,15 @@ export function LeadFormPanels({
           </div>
         )}
 
+        {/* Full details rendered a SECOND copy of Requirements & Assistance here, in the main
+            column, while rapid rendered it in the rail. Retired: there is one instance now, at the
+            foot of the rail with the other optional panels, so the `notes` textarea can never be in
+            the document twice.
         {!rapidEntry && (
           <div className="min-w-0 lg:col-start-1">
-            <RequirementsAssistancePanel
-              rapidEntry={false}
-              register={register}
-              errors={errors}
-              assistanceRequired={assistanceRequired}
-              assistanceTypes={assistanceTypes}
-              toggleAssistance={toggleAssistance}
-              setValue={setValue}
-              getValues={getValues}
-              totalTravellers={totalTravellers}
-              summary={assistanceSummary}
-            />
+            <RequirementsAssistancePanel rapidEntry={false} … />
           </div>
-        )}
+        )} */}
 
         <aside className={`min-w-0 ${compactRail ? "space-y-4 lg:sticky lg:top-[72px] lg:col-start-2 lg:row-start-1 lg:row-span-3" : "space-y-5 lg:col-start-2 lg:row-start-3"}`}>
           {/* ── The rail, folded · the same retirement Customer and Trip get ──────────────────────
@@ -2447,24 +2365,21 @@ export function LeadFormPanels({
               {/* Same order as the panels below — a folded row and the panel it restores must sit
                   in the same place, or continuing puts the agent somewhere they did not expect. */}
               <SummaryRow icon={UserCheck} title="Lead Setup" detail={leadSetupSummary} onEdit={onExpandEnquiry} />
-              <SummaryRow icon={Accessibility} title="Special Assistance" detail={assistanceSummary} onEdit={onExpandEnquiry} />
+              <SummaryRow icon={Accessibility} title="Requirements" detail={requirementsSummary} onEdit={onExpandEnquiry} />
             </>
           )}
 
-          {/* Rapid gets the same panel full details has. Birthday, anniversary, budget and the
-              follow-up date are all things the customer says once, on the call — leaving them out
-              of the fast path meant reopening the lead afterwards to type them in, which is slower
-              than the panel it was meant to save. It differs from full details in one way only:
-              rapid lets the agent hand-fold it, because it shares the rail with two other panels. */}
+          {/* Hand-foldable, because it shares the rail with the other panels — and it retires to
+              its SummaryRow with them once the itinerary is confirmed. */}
           {!foldEnquiry && <Panel
             icon={UserCheck}
             title="Lead Setup"
-            description={rapidEntry ? "Only source needs attention; stage and owner are prefilled" : "Source, stage and ownership"}
+            description="Source, type, stage, owner and package"
             collapsible
-            /* Open on arrival in both modes now. Rapid prefills stage and owner but NOT the source,
-               and a prefill nobody saw is a prefill nobody checked — the panel owning the one field
-               the form cannot fill in has to be visible while the enquiry is being taken. It retires
-               to its SummaryRow on "Done — continue", so being open costs nothing afterwards. */
+            /* Open on arrival. Type, stage and owner arrive prefilled but the source does not, and a
+               prefill nobody saw is a prefill nobody checked — the panel owning the one field the
+               form cannot fill in has to be visible while the enquiry is being taken. It retires to
+               its SummaryRow on "Done — continue", so being open costs nothing afterwards. */
             defaultOpen
             summary={leadSetupSummary}
             forceOpen={Boolean(errors.leadSource || errors.leadType || errors.leadStage || errors.assignedUserId)}
@@ -2477,43 +2392,23 @@ export function LeadFormPanels({
                 error={errors.leadSource?.message || (sourcesError ? "Couldn't load sources — showing the current value only." : undefined)}
               >
                 <input type="hidden" {...register("leadSource", { required: "Lead source is required" })} />
-                {rapidEntry && leadSourceValue && !rapidSourceEditing ? (
-                  <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
-                    <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-700">{leadSourceLabel}</span>
-                    <button
-                      type="button"
-                      data-skip-enter="true"
-                      onClick={() => setRapidSourceEditing(true)}
-                      className="shrink-0 text-xs font-bold text-blue-600 hover:text-blue-800"
-                    >
-                      Change
-                    </button>
-                  </div>
-                ) : (
-                  <SearchableSelect
-                    name="leadSource"
-                    options={sourceOptionsFor(leadSourceValue)}
-                    value={leadSourceValue}
-                    onChange={(value) => {
-                      setValue("leadSource", value, { shouldDirty: true, shouldValidate: true });
-                      if (rapidEntry) setRapidSourceEditing(false);
-                    }}
-                    placeholder="Select source"
-                    loading={sourcesLoading}
-                    searchable
-                    advanceOnSelect
-                  />
-                )}
+                <SearchableSelect
+                  name="leadSource"
+                  options={sourceOptionsFor(leadSourceValue)}
+                  value={leadSourceValue}
+                  onChange={(value) => setValue("leadSource", value, { shouldDirty: true, shouldValidate: true })}
+                  placeholder="Select source"
+                  loading={sourcesLoading}
+                  searchable
+                  advanceOnSelect
+                />
               </Field>
 
-              {rapidEntry && (
-                <>
-                  <input type="hidden" {...register("leadType", { required: "Lead type is required" })} />
-                  <input type="hidden" {...register("leadStage", { required: "Lead stage is required" })} />
-                </>
-              )}
-
-              {!rapidEntry && <div className="grid grid-cols-2 gap-4">
+              {/* Type and Stage used to be two hidden inputs in rapid — registered so their rules
+                  ran, but with no control to change them, so a Hot lead or a Contacted one could
+                  only be recorded by leaving the mode. They are real selects for everyone now; the
+                  defaults (Fresh / New Lead) are unchanged, so the fast path still needs no touch. */}
+              <div className="grid grid-cols-2 gap-4">
                 <Field id="leadType" label="Lead Type" required error={errors.leadType?.message}>
                   <div className="relative">
                     <select {...register("leadType", { required: "Lead type is required" })} id="leadType" className={`${control(errors.leadType)} appearance-none pr-9`}>
@@ -2532,40 +2427,22 @@ export function LeadFormPanels({
                     <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                   </div>
                 </Field>
-              </div>}
+              </div>
 
-              {rapidEntry ? (
-                <div id="assignedUserId" className="space-y-1.5">
-                  <input type="hidden" {...register("assignedUserId", { required: "Assigned user is required" })} />
-                  {!usersLoading && !forcedSelf && !assignedUserValue ? (
-                    <>
-                      <p className="text-xs font-semibold text-amber-700">Auto-assignment is unavailable. Choose an owner to continue.</p>
-                      <SearchableSelect
-                        name="assignedUserId"
-                        options={users}
-                        value=""
-                        onChange={(value) => setValue("assignedUserId", value, { shouldDirty: true, shouldValidate: true })}
-                        placeholder="Select team member"
-                        searchable
-                        advanceOnSelect
-                      />
-                    </>
-                  ) : (
-                  <div className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 ${errors.assignedUserId ? "border-red-300 bg-red-50" : "border-slate-200 bg-slate-50"}`}>
-                    {usersLoading ? <LoaderCircle className="h-4 w-4 animate-spin text-blue-500" /> : <UserCheck className="h-4 w-4 text-blue-500" />}
-                    <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-700">
-                      {usersLoading
-                        ? "Choosing the best owner…"
-                        : forcedSelf
-                          ? (selfUser?.name || "Assigned to you")
-                          : (users.find((user) => String(user.value) === String(watch("assignedUserId")))?.label || "Choose an owner in Full details")}
-                    </span>
-                    <span className="shrink-0 text-[11px] font-semibold text-slate-400">Auto</span>
-                  </div>
-                  )}
-                  {errors.assignedUserId && <p className="text-xs text-red-500">{errors.assignedUserId.message}</p>}
-                </div>
-              ) : <Field id="assignedUserId" label="Assign To" required error={errors.assignedUserId?.message}>
+              {/* One control, not two. Rapid rendered a read-only "Auto" pill whose only escape
+                  hatch was the sentence "Choose an owner in Full details" — a dead end once that
+                  mode is gone. The select below IS the auto-assignment: the recommendation effect
+                  writes it, so it opens on the recommended owner and can simply be overtyped.
+                  `forcedSelf` still wins, because that one is a permission, not a suggestion. */}
+              <Field
+                id="assignedUserId"
+                label="Assign To"
+                required
+                error={errors.assignedUserId?.message}
+                hint={forcedSelf ? undefined : usersLoading
+                  ? "Choosing the best owner…"
+                  : assignedUserValue ? "Auto-assigned — change it if this lead belongs elsewhere." : undefined}
+              >
                 {forcedSelf ? (
                   <>
                     <input type="hidden" {...register("assignedUserId", { required: "Assigned user is required" })} />
@@ -2592,9 +2469,9 @@ export function LeadFormPanels({
                     />
                   </>
                 )}
-              </Field>}
+              </Field>
 
-              {!rapidEntry && <Field id="packageType" label="Package Type" optional>
+              <Field id="packageType" label="Package Type" optional>
                 <div className="relative">
                   <select {...register("packageType")} id="packageType" className={`${control(false)} appearance-none pr-9`}>
                     <option value="">Select package</option>
@@ -2602,34 +2479,20 @@ export function LeadFormPanels({
                   </select>
                   <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 </div>
-              </Field>}
+              </Field>
             </div>
           </Panel>}
 
-
-          {/* Rail copy — full details and EditLead only. Rapid renders the card grid in the main
-              column instead (see above); the identical subtree behind a boolean is the cheapest
-              proof that nothing about full mode changed. */}
+          {/* The rail's Chip copy of the services picker is retired with Full details. It was the
+              second `services-group` node in the file, and the only reason save()'s scrollIntoView
+              had to rely on exactly one of the two being mounted. The card grid in the main column
+              is now the single picker.
           {!rapidEntry && <Panel icon={Search} title="Services" description="What this quotation should include">
-            <div id="services-group">
-              <div className="grid grid-cols-2 gap-2">
-                {SERVICES.map((service) => (
-                  <Chip
-                    key={service.id}
-                    selected={services.includes(service.id)}
-                    onClick={() => onToggleService(service.id)}
-                  >
-                    {service.label}
-                  </Chip>
-                ))}
-              </div>
-              {errors.services && <p className="mt-2 text-xs text-red-500">{errors.services.message}</p>}
-            </div>
+            <div id="services-group"> … Chip grid … </div>
+          </Panel>} */}
 
-          </Panel>}
-          {rapidEntry && !foldEnquiry && (
+          {!foldEnquiry && (
             <RequirementsAssistancePanel
-              rapidEntry
               register={register}
               errors={errors}
               assistanceRequired={assistanceRequired}
@@ -2638,7 +2501,7 @@ export function LeadFormPanels({
               setValue={setValue}
               getValues={getValues}
               totalTravellers={totalTravellers}
-              summary={assistanceSummary}
+              summary={requirementsSummary}
             />
           )}
         </aside>
@@ -2663,7 +2526,9 @@ export default function LeadFormPage() {
   const { id } = useParams();
   const editing = Boolean(id);
   const [searchParams] = useSearchParams();
-  const requestedMode = searchParams.get("mode");
+  /* `?mode=rapid|full` is retired along with the second mode. It is deliberately just ignored
+     rather than redirected: old bookmarks, the quick-action palette and anything that still links
+     with the param land on the one form instead of 404ing on a mode that no longer exists. */
   const navigate = useNavigate();
   const { showToast } = useToast();
   const formRef = useRef(null);
@@ -2686,6 +2551,11 @@ export default function LeadFormPage() {
      and by save(). One derivation for all three, so the page can never lock a step it is about to
      demand — the classic dead end where "Select at least one service" points at a locked picker. */
   const itineraryReady = useMemo(() => hasCompleteStop(itinerary), [itinerary]);
+  /* A lead's saved room-by-room plan, held exactly as it arrived. There is no editor for it any
+     more, so this is the only thing standing between an old lead's plan and being wiped by the
+     next save. Empty on create — that form never produced one. */
+  const loadedRoomAllocationsRef = useRef([]);
+
   const [roomAllocations, setRoomAllocations] = useState(() => rebalanceRooms([], {
     rooms: 1, adults: 2, children: 0, infants: 0, extraBeds: 0,
   }));
@@ -2700,20 +2570,26 @@ export default function LeadFormPage() {
   const [contactMatch, setContactMatch] = useState(EMPTY_MATCH);
   const [checkingContact, setCheckingContact] = useState(false);
   const [autoFilled, setAutoFilled] = useState([]);
-  /* Rapid is the default; ?mode=full opens the full enquiry form directly, which is what the
-     "New lead" quick action links to. Editing always lands in Full details — reopening a lead to
-     change one field should never hide the others.
+  /* ── Rapid Mode is the only mode ─────────────────────────────────────────────────────────────
+     There were two: Rapid, and a "Full details" form that was the only place a handful of fields
+     existed at all — notes, departing country, lead type, stage, package type, the adult gender
+     split, extra beds, and a freely-chosen owner. Every one of those has moved into Rapid, so the
+     toggle had nothing left to switch between and is gone with the `?mode=` param, the Alt+1/Alt+2
+     shortcut and the blue intro banner.
 
-     The effect deps are [editing, requestedMode] and the query string does not change while the
-     page is open, so this seeds the mode once and then leaves the toggle alone. Switching to Rapid
-     on a ?mode=full URL stays switched. */
-  const [rapidEntry, setRapidEntry] = useState(() => !editing && requestedMode !== "full");
+     What did NOT change is the Rapid flow: sticky header, sticky-field batch entry, the
+     itinerary → services → quotation chain with its fold, Ctrl+Enter to price and
+     Ctrl+Shift+Enter to save-and-start-the-next. The extra fields ride in the collapsible rail
+     panels, which retire to their summary rows the moment the itinerary is confirmed — so the fast
+     path is the same number of keystrokes it was.
 
-  useEffect(() => {
-    if (editing) return;
-    if (requestedMode === "rapid") setRapidEntry(true);
-    if (requestedMode === "full") setRapidEntry(false);
-  }, [editing, requestedMode]);
+  // const [rapidEntry, setRapidEntry] = useState(false);
+  // const [rapidEntry, setRapidEntry] = useState(() => !editing && requestedMode !== "full");
+  // useEffect(() => {
+  //   if (editing) return;
+  //   if (requestedMode === "rapid") setRapidEntry(true);
+  //   if (requestedMode === "full") setRapidEntry(false);
+  // }, [editing, requestedMode]); */
 
   const [savedThisSession, setSavedThisSession] = useState(readSessionCount);
 
@@ -2763,38 +2639,30 @@ export default function LeadFormPage() {
     [],
   );
 
+  /* Retired with the second mode. It existed to tear the inline quote down when the agent left
+     Rapid — without it `createdQuote` survived into full-details and relabelled the primary button
+     "Update Quotation", whose handler then bailed on the now-null model and did nothing at all.
+     With one mode there is nothing to leave, so the whole hazard is gone rather than handled.
   const changeEntryMode = (nextRapidEntry) => {
     setRapidEntry(nextRapidEntry);
-    // Leaving rapid tears down the inline quote with it. Without this, `createdQuote` survived into
-    // full-details mode and relabelled its primary button "Update Quotation" — a button whose
-    // handler then bailed on the now-null model and did nothing at all. Coming back to rapid was
-    // just as broken: `quoteTouchedRef` stayed true, so the seeding effect refused to rebuild the
-    // model and the accordion never re-mounted.
     if (!nextRapidEntry) resetInlineQuote();
-  };
+  }; */
 
-  /* ── Rapid mode: price the enquiry without leaving this screen ───────────────────────────────
-     Rapid used to take the enquiry here and then NAVIGATE to /quick-quote to price it, so a single
+  /* ── Price the enquiry without leaving this screen ───────────────────────────────────────────
+     This page used to take the enquiry and then NAVIGATE to /quick-quote to price it, so a single
      phone call spanned two pages and a page load. The quotation accordion now renders below this
      form: the model is seeded live from the trip details as they are typed, and one click writes the
-     lead and its quotation back to back. Full mode is untouched and still hands off to /quick-quote.
+     lead and its quotation back to back.
 
-     Only rapid, only create, only with QUOTATION_CREATE — everything above the Services panel keeps
-     working exactly as it did for every other combination. */
-  /* BOTH modes price on this page now. Full details used to hand off to /quick-quote, which meant
-     a single phone call spanned two screens and a page load — the exact cost Rapid was built to
-     remove, still being paid by the mode that collects the most detail. */
+     Only create, only with QUOTATION_CREATE — an agent who cannot write quotations gets the same
+     lead form with no pricing block under it, exactly as before. */
   const quoteInline = !editing && canCreateQuotation;
   /* The step chain — itinerary → services → quotation — exists to feed the quote, so it is scoped to
      exactly the agents who get a quote: same condition as quoteInline, deliberately not a looser
      one. Without QUOTATION_CREATE there is no pricing block to protect, and gating Services there
-     would only add a lock to a form that has nothing behind it. Full details and edit are untouched
-     for the same reason: neither locks anything today, and neither should start. */
-  /* The LOCKING chain — itinerary must be confirmed before Services opens — stays Rapid-only. It is
-     what makes Rapid a guided run; Full details is the mode you choose when you want every field at
-     once, and gating its panels behind a "Done — continue" button would take that away. So Full gets
-     the inline quote WITHOUT the locks. */
-  const stepFlow = !editing && rapidEntry && canCreateQuotation;
+     would only add a lock to a form that has nothing behind it. Edit is untouched for the same
+     reason: it locks nothing today, and must not start locking a record that already exists. */
+  const stepFlow = quoteInline;
   /* The agent's explicit "I am done adding stops". Nothing infers this — the form can always take
      one more stop, so a rule like "every row is filled" would open Services after the first one and
      then slam it shut the moment Add Stop appended a blank row, tearing a half-priced quotation off
@@ -2815,12 +2683,11 @@ export default function LeadFormPage() {
   /* Both halves of the latch fire together: the picker unlocks and the enquiry folds, so the screen
      belongs to the step that just became actionable. Scrolled, not focused — the service cards are
      buttons, and landing focus on the first one would make a stray Enter tick it. */
-  /* "There is enough here to price." In Rapid that is the agent pressing "Done — continue", which
-     is a deliberate step in the chain. Full details has no chain and never renders that button, so
-     asking for itineraryConfirmed there would leave the quotation a locked stub forever — the block
-     would be mounted, gated on a flag nothing could ever set. Full uses the same underlying test the
-     confirm button itself is offered on. */
-  const quoteReady = stepFlow ? itineraryConfirmed : itineraryReady;
+  /* "There is enough here to price" — the agent pressing "Done — continue", which is a deliberate
+     step in the chain rather than anything the form infers. With one mode this is exactly
+     itineraryConfirmed; it keeps a name of its own because the two gates below read better asking
+     whether the quote is ready than asking about the itinerary. */
+  const quoteReady = itineraryConfirmed;
 
   const confirmItinerary = useCallback(() => {
     setItineraryConfirmed(true);
@@ -3094,6 +2961,11 @@ export default function LeadFormPage() {
         setItinerary(rows.length > 0 ? rows : [blankRow()]);
 
         const savedAllocations = Array.isArray(lead.roomAllocations) ? lead.roomAllocations : [];
+        /* The room-by-room plan has no editor on this form any more, but a lead saved when it did
+           still carries one, and the backend regroups it into the booking's room MIX at conversion
+           time. Held verbatim so saving an old lead cannot silently destroy it — an edit form that
+           deletes what it chose not to show you is worse than one that shows too much. */
+        loadedRoomAllocationsRef.current = savedAllocations;
         setValue("roomPlanEnabled", savedAllocations.length > 0, { shouldDirty: false });
         if (savedAllocations.length > 0) {
           setRoomAllocations(savedAllocations.map((room, index) => blankRoomAllocation(index + 1, {
@@ -3455,21 +3327,18 @@ export default function LeadFormPage() {
     if (createQuotation && quoteInline) {
       const problem = validateQuickQuote(quoteModel);
       if (problem) {
+        // Every offending section is marked inline; the toast covers the one problem the accordion
+        // has no panel for (a missing quotation title).
+        quoteSectionsRef.current?.showProblems();
         if (problem.section) quoteSectionsRef.current?.reveal(problem.section, problem.field || null);
         showToast(problem.message, "error");
         return;
       }
     }
 
-    if (data.roomPlanEnabled) {
-      const emptyRoomIndex = roomAllocations.findIndex((room) =>
-        toInt(room.adults) + toInt(room.children) + toInt(room.infants) === 0);
-      if (emptyRoomIndex >= 0) {
-        showToast(`Room ${emptyRoomIndex + 1} must contain at least one traveller.`, "error");
-        document.getElementById("room-allocation-group")?.scrollIntoView({ block: "center", behavior: "smooth" });
-        return;
-      }
-    }
+    /* The "every room holds at least one traveller" check went with the editor. It guarded input
+       this form no longer takes, and a validation that can fail on a field nobody can see is a
+       dead end: the toast pointed at #room-allocation-group, which is not in the document. */
 
     clearErrors("services");
     setSubmitting(true);
@@ -3488,22 +3357,10 @@ export default function LeadFormPage() {
         children: toInt(data.children),
         infants: toInt(data.infants),
         assistancePassengerCount: data.specialAssistanceRequired ? toInt(data.assistancePassengerCount) : 0,
-        roomAllocations: data.roomPlanEnabled ? roomAllocations.map((room, index) => {
-          const childAges = Array.isArray(room.childAges) && room.childAges.length === toInt(room.children)
-            && room.childAges.every((age) => age !== "" && age != null)
-            ? room.childAges.map((age) => toInt(age))
-            : [];
-          return {
-            roomNumber: index + 1,
-            roomCategoryPreference: room.roomCategoryPreference || "Any",
-            bedPreference: room.bedPreference || "Any",
-            adults: toInt(room.adults),
-            children: toInt(room.children),
-            infants: toInt(room.infants),
-            extraBeds: toInt(room.extraBeds),
-            childAges,
-          };
-        }) : [],
+        /* Passed straight through, never rebuilt. Nothing on this form edits the room-by-room plan
+           now; a new lead sends [] (as it always did — the editor was edit-only), and an old lead
+           sends back exactly what it arrived with. */
+        roomAllocations: loadedRoomAllocationsRef.current,
         budget: data.budget === "" || data.budget == null || Number.isNaN(Number(data.budget))
           ? null
           : Number(data.budget),
@@ -3563,6 +3420,10 @@ export default function LeadFormPage() {
             const body = response?.data?.data || response?.data || {};
             const newQuotationId = body.publicId || body.id;
             if (!newQuotationId) throw new Error("Quotation was saved but its ID was not returned.");
+            // Markup / tax / discount type and the inclusions boilerplate ride into the next
+            // enquiry, the same way the lead's own sticky fields do. Only after the server accepted
+            // the quotation — see rememberQuickQuoteDefaults.
+            rememberQuickQuoteDefaults(quoteModel);
             setCreatedQuote({
               id: String(newQuotationId),
               quoteNo: body.quoteNo == null ? "" : String(body.quoteNo),
@@ -3602,7 +3463,7 @@ export default function LeadFormPage() {
         reset({ ...blankDefaults(), ...readSticky() });
         setServices(readStickyServices());
         setItinerary([blankRow()]);
-        setRoomAllocations(rebalanceRooms([], { rooms: 1, adults: 2, children: 0, infants: 0, extraBeds: 0 }));
+        loadedRoomAllocationsRef.current = [];
         resetContactMatch();
         // The quote belongs to the lead that was just written, not to the blank one now on screen.
         resetInlineQuote();
@@ -3624,29 +3485,21 @@ export default function LeadFormPage() {
   const onFormKeyDown = (event) => {
     /* The quotation accordion below has its own key map (Enter walks its fields, Alt+1…8 jumps
        between its sections) and it sits INSIDE this form, so its keydown fires first and bubbles
-       here. Without this guard Alt+2 would jump a section and then switch the form to Full mode,
-       and Enter would move the caret twice. Anything the accordion handled is already done. */
+       here. Without this guard Enter would move the caret twice. Anything the accordion handled is
+       already done.
+
+       Alt+1 / Alt+2 used to switch entry mode from anywhere on the form, and are retired with it —
+       which also settles the collision the guard above was written for: Alt+2 inside the accordion
+       is now unambiguously "jump to section 2". */
     if (event.defaultPrevented) return;
-    if (!editing && event.altKey && !event.ctrlKey && !event.metaKey && event.key === "1") {
-      event.preventDefault();
-      changeEntryMode(true);
-      window.setTimeout(() => phoneRef.current?.focus(), 0);
-      return;
-    }
-    if (!editing && event.altKey && !event.ctrlKey && !event.metaKey && event.key === "2") {
-      event.preventDefault();
-      changeEntryMode(false);
-      window.setTimeout(() => phoneRef.current?.focus(), 0);
-      return;
-    }
     if (event.key !== "Enter") return;
     if (event.ctrlKey || event.metaKey) {
       event.preventDefault();
       // Once the quotation exists the lead does too, so Ctrl+Enter has to UPDATE. Re-running the
       // create path here wrote a second lead and a second quotation for the same customer.
       if (createdQuote) { updateInlineQuote(); return; }
-      const addAnother = !editing && rapidEntry && event.shiftKey; // batch-next exists only in Rapid Mode
-      const createQuotation = !editing && !addAnother && rapidEntry && canCreateQuotation;
+      const addAnother = !editing && event.shiftKey; // batch-next is a create-only shortcut
+      const createQuotation = !editing && !addAnother && canCreateQuotation;
       handleSubmit((data) => save(data, { addAnother, createQuotation }), onInvalid)();
       return;
     }
@@ -3664,7 +3517,7 @@ export default function LeadFormPage() {
     reset({ ...blankDefaults(), ...readSticky() });
     setServices(readStickyServices());
     setItinerary([blankRow()]);
-    setRoomAllocations(rebalanceRooms([], { rooms: 1, adults: 2, children: 0, infants: 0, extraBeds: 0 }));
+    loadedRoomAllocationsRef.current = [];
     resetContactMatch();
     resetInlineQuote();
     /* Deferred, unlike before: clearing from a folded enquiry means the Phone input is not in the
@@ -3876,9 +3729,7 @@ export default function LeadFormPage() {
   ) : null;
 
   // Filled slate-100 chips read as the old kit; a white chip with a 1px border is the flat rule.
-  const kbdCls = rapidEntry
-    ? "rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-bold text-slate-500"
-    : "rounded bg-slate-100 px-1";
+  const kbdCls = "rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-bold text-slate-500";
 
   return (
     <form
@@ -3889,16 +3740,12 @@ export default function LeadFormPage() {
       className="min-h-screen bg-slate-50"
       style={{ fontFamily: FONT }}
     >
-      {/* Rapid pins the header instead of the action bar. A bottom-sticky bar is a no-op on this
+      {/* The header is pinned instead of the action bar. A bottom-sticky bar is a no-op on this
           page — the app shell scrolls <main>, and this bar is its parent's last child, so it has
           nowhere to travel — while the header is the FIRST child of a min-h-screen form and has the
           whole form to stick through. Clear / Save & New / Create Quote ride along with it. */}
-      <header className={rapidEntry
-        ? "sticky top-0 z-30 border-b border-slate-200 bg-white"
-        : "border-b border-slate-200 bg-white/95 shadow-sm backdrop-blur"}>
-        <div className={rapidEntry
-          ? "mx-auto flex w-full max-w-[1400px] flex-wrap items-center justify-between gap-3 px-4 py-3.5"
-          : "mx-auto flex w-full max-w-[1400px] items-center justify-between gap-3 px-4 py-3"}>
+      <header className="sticky top-0 z-30 border-b border-slate-200 bg-white">
+        <div className="mx-auto flex w-full max-w-[1400px] flex-wrap items-center justify-between gap-3 px-4 py-3.5">
           <div className="flex min-w-0 items-center gap-3">
             <button
               type="button"
@@ -3910,55 +3757,34 @@ export default function LeadFormPage() {
             </button>
             <div className="min-w-0">
               <h1 className="truncate text-base font-bold text-slate-900 sm:text-lg">
-                {editing ? `Edit Lead${leadCode ? ` · ${leadCode}` : ""}` : rapidEntry ? "Quick Quote" : "Create Lead"}
+                {editing ? `Edit Lead${leadCode ? ` · ${leadCode}` : ""}` : "Quick Quote"}
               </h1>
               <p className="hidden text-xs text-slate-500 sm:block">
                 <kbd className={kbdCls}>Enter</kbd> next field ·
-                <kbd className={`ml-1 ${kbdCls}`}>Ctrl+Enter</kbd> {rapidEntry && !editing ? "create quote" : "save"}
+                <kbd className={`ml-1 ${kbdCls}`}>Ctrl+Enter</kbd> {!editing ? "create quote" : "save"}
                 {!editing && (
                   <>
-                    {" · "}<kbd className={kbdCls}>Alt+1/2</kbd> rapid/full
+                    {" · "}<kbd className={kbdCls}>Ctrl+Shift+Enter</kbd> save &amp; next
                   </>
                 )}
               </p>
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            {/* The session counter and the mode toggle move up here in rapid — the blue banner that
-                used to carry them is dropped, so a batch clerk no longer re-reads onboarding copy
-                on every enquiry. Full details keeps the banner and its own toggle. */}
-            {rapidEntry && !editing && savedThisSession > 0 && (
+            {/* The session counter lives up here — the blue banner that used to carry it is dropped,
+                so a batch clerk no longer re-reads onboarding copy on every enquiry.
+                The Rapid / Full details segmented control that sat beside it is retired: with every
+                full-details field merged into this form there is nothing on the other side of it. */}
+            {!editing && savedThisSession > 0 && (
               <span className="hidden items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700 sm:inline-flex">
                 <CheckCircle2 className="h-3.5 w-3.5" />
                 {savedThisSession} saved this session
               </span>
             )}
-            {rapidEntry && (
-              <div className="inline-flex w-fit shrink-0 rounded-lg border border-slate-200 bg-slate-50 p-0.5" role="group" aria-label="Lead entry mode">
-                <button
-                  type="button"
-                  onClick={() => changeEntryMode(true)}
-                  aria-pressed
-                  className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-bold text-white"
-                >
-                  Rapid
-                </button>
-                <button
-                  type="button"
-                  onClick={() => changeEntryMode(false)}
-                  aria-pressed={false}
-                  className="rounded-md px-3 py-1.5 text-xs font-bold text-slate-500 transition hover:text-slate-700"
-                >
-                  Full details
-                </button>
-              </div>
-            )}
-            <button type="button" onClick={editing ? () => navigate("/allleads") : clearForm} disabled={submitting} className={rapidEntry
-              ? "hidden items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50 sm:flex"
-              : "hidden items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50 sm:flex"}>
+            <button type="button" onClick={editing ? () => navigate("/allleads") : clearForm} disabled={submitting} className="hidden items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50 sm:flex">
               <RotateCcw className="h-3.5 w-3.5" /> {editing ? "Cancel" : "Clear"}
             </button>
-            {!editing && rapidEntry && <button
+            {!editing && <button
               type="button"
               onClick={handleSubmit((data) => save(data, { addAnother: true }), onInvalid)}
               disabled={submitting}
@@ -3966,7 +3792,7 @@ export default function LeadFormPage() {
             >
               <Plus className="h-3.5 w-3.5" /> Save &amp; New
             </button>}
-            {!editing && rapidEntry && canCreateQuotation ? (
+            {!editing && canCreateQuotation ? (
               <>
                 <button
                   type="button"
@@ -3983,13 +3809,13 @@ export default function LeadFormPage() {
                 </button>
               </>
             ) : (
-              /* Everything the branch above is not: editing, Full details, or a Rapid agent who
-                 cannot raise quotations. That last case used to fall through a `(!rapidEntry ||
-                 editing)` gate to `null`, so a LEAD_CREATE agent WITHOUT QUOTATION_CREATE had no
-                 save button on this bar at all — the Create Quote branch needs the permission they
-                 do not have, and this one demanded Full mode they were not in. There is no state
-                 left without a way to save, which is why there is no `: null` any more. */
-              <button type="submit" disabled={submitting} className={`inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-xs font-bold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60 sm:text-sm ${rapidEntry ? "transition" : "shadow-sm"}`}>
+              /* Editing, or creating without QUOTATION_CREATE. The old condition here was
+                 `(!rapidEntry || editing)`, which resolved to FALSE for a LEAD_CREATE agent with no
+                 quotation permission working in rapid — they got no primary control in the header
+                 (and none in the action bar either, which used the same test), leaving "Save & New"
+                 as the only way to write a lead at all. With one mode the else branch is simply
+                 "not the Create Quote case", so that hole closes on its own. */
+              <button type="submit" disabled={submitting} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60 sm:text-sm">
                 {submitting ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
                 {submitting ? "Saving..." : editing ? "Save Changes" : "Save Lead"}
               </button>
@@ -3998,61 +3824,20 @@ export default function LeadFormPage() {
         </div>
       </header>
 
-      <main className={rapidEntry
-        ? "mx-auto w-full max-w-[1400px] space-y-4 px-4 py-5"
-        : "mx-auto w-full max-w-[1400px] space-y-5 px-4 py-4"}>
+      <main className="mx-auto w-full max-w-[1400px] space-y-4 px-4 py-5">
 
-        {rapidEntry && (
-          <p className="pt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">Enquiry details</p>
-        )}
+        <p className="pt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">Enquiry details</p>
 
-        {/* Full details keeps its banner — the mode toggle, the session counter and the intro copy
-            all still live here for that mode. Rapid moved the first two into the header and dropped
-            the third; see the header block above. */}
+        {/* The blue intro banner is retired with Full details. It carried three things: the mode
+            toggle (nothing left to toggle), the session counter (moved into the sticky header, where
+            a batch clerk can see it without scrolling) and a paragraph of onboarding copy that was
+            re-read on every one of 50-100 enquiries a day.
         {!rapidEntry && (
-        <div className="flex flex-col gap-3 rounded-xl border border-blue-100 bg-blue-50/70 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex min-w-0 items-start gap-3 sm:items-center">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white shadow-sm">
-              <Zap className="h-4 w-4" />
-            </span>
-            <div className="min-w-0">
-              <p className="text-sm font-bold text-slate-800">
-                {rapidEntry ? "Quick Quote intake" : "Full lead details"}
-                {!editing && savedThisSession > 0 && (
-                  <span className="ml-2 font-semibold text-blue-700">
-                    {savedThisSession} saved this session
-                  </span>
-                )}
-              </p>
-              <p className="mt-0.5 text-xs text-slate-500">
-                {rapidEntry
-                  ? editing
-                    ? "Only daily-use fields are shown; hidden lead details remain preserved."
-                    : "Enter only quote essentials. Lead creation and quotation handoff stay in one continuous workflow."
-                  : "All customer, transport and assistance fields are available."}
-              </p>
-            </div>
+          <div className="… bg-blue-50/70 …">
+            … "Full lead details" / "All customer, transport and assistance fields are available."
+            … <div role="group" aria-label="Lead entry mode"> Rapid | Full details </div>
           </div>
-          <div className="inline-flex w-fit shrink-0 rounded-lg border border-blue-200 bg-white p-1" role="group" aria-label="Lead entry mode">
-            <button
-              type="button"
-              onClick={() => changeEntryMode(true)}
-              aria-pressed={rapidEntry}
-              className={`rounded-md px-3 py-1.5 text-xs font-bold transition ${rapidEntry ? "bg-blue-600 text-white shadow-sm" : "text-slate-500 hover:bg-slate-50"}`}
-            >
-              Rapid
-            </button>
-            <button
-              type="button"
-              onClick={() => changeEntryMode(false)}
-              aria-pressed={!rapidEntry}
-              className={`rounded-md px-3 py-1.5 text-xs font-bold transition ${!rapidEntry ? "bg-blue-600 text-white shadow-sm" : "text-slate-500 hover:bg-slate-50"}`}
-            >
-              Full details
-            </button>
-          </div>
-        </div>
-        )}
+        )} */}
 
         <LeadFormPanels
           register={register}
@@ -4064,17 +3849,12 @@ export default function LeadFormPage() {
           services={services}
           onToggleService={toggleService}
           itinerary={itinerary}
-          roomAllocations={roomAllocations}
-          onUpdateRoomAllocation={updateRoomAllocation}
-          onRebalanceRoomAllocations={rebalanceRoomAllocations}
           onAddRow={addRow}
           onRemoveRow={removeRow}
           onUpdateRow={updateRow}
           phoneRef={phoneRef}
           belowPhone={editing ? null : duplicateStrip}
           compactRail
-          rapidEntry={rapidEntry}
-          showRoomPlanning={editing}
           stepFlow={stepFlow}
           itineraryConfirmed={itineraryConfirmed}
           itineraryConfirmable={itineraryConfirmable}
@@ -4102,9 +3882,7 @@ export default function LeadFormPage() {
               title="Pricing"
               hint={quoteReady
                 ? "Tick a service above and its section opens here, seeded from the trip details."
-                : stepFlow
-                  ? "Finish the itinerary and continue — services come first."
-                  : "Add an itinerary stop, then tick a service to price it here."}
+                : "Finish the itinerary and continue — services come first."}
             />
           </section>
         )}
@@ -4266,22 +4044,18 @@ export default function LeadFormPage() {
           </section>
         )}
 
-        <div className={rapidEntry
-          ? "flex flex-col-reverse gap-3 rounded-xl border border-slate-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between"
-          : "flex flex-col-reverse gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between"}>
+        <div className="flex flex-col-reverse gap-3 rounded-xl border border-slate-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-xs text-slate-500">
             <span className="font-bold text-red-500">*</span> Required fields are marked.
-            {!editing && rapidEntry
+            {!editing
               ? " Ctrl+Enter creates the quote; Ctrl+Shift+Enter saves and starts the next lead."
               : ""}
           </p>
           <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={() => navigate("/allleads")} disabled={submitting} className={rapidEntry
-              ? "flex-1 rounded-lg border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50 sm:flex-none"
-              : "flex-1 rounded-lg border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50 sm:flex-none"}>
+            <button type="button" onClick={() => navigate("/allleads")} disabled={submitting} className="flex-1 rounded-lg border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50 sm:flex-none">
               Cancel
             </button>
-            {!editing && rapidEntry && <button
+            {!editing && <button
               type="button"
               onClick={handleSubmit((data) => save(data, { addAnother: true }), onInvalid)}
               disabled={submitting}
@@ -4293,11 +4067,10 @@ export default function LeadFormPage() {
             {!editing && canCreateQuotation && (
               <button
                 type="button"
-                // In rapid mode this is the same action as the accordion's last-section button —
-                // once the quotation exists it becomes an update, so the two can never disagree
-                // about what pressing the primary control does.
-                // `quoteInline &&` matters: leaving rapid nulls the model, so a bare `createdQuote`
-                // test left full-details mode with an "Update Quotation" button that did nothing.
+                // The same action as the accordion's last-section button — once the quotation
+                // exists it becomes an update, so the two can never disagree about what pressing
+                // the primary control does. `quoteInline &&` is kept as the model's liveness test:
+                // it is what guarantees "Update Quote" is never offered over a null model.
                 onClick={quoteInline && createdQuote
                   ? updateInlineQuote
                   : handleSubmit(
@@ -4308,27 +4081,22 @@ export default function LeadFormPage() {
                     onInvalid,
                   )}
                 disabled={submitting || quoteBusy}
-                className={`inline-flex flex-1 items-center justify-center gap-2 rounded-lg px-5 py-2.5 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-60 sm:flex-none ${rapidEntry
-                  ? "bg-emerald-600 text-white transition hover:bg-emerald-700"
-                  : "border border-emerald-200 bg-emerald-50 text-emerald-700 shadow-sm hover:bg-emerald-100"}`}
+                className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60 sm:flex-none"
               >
                 {(submitting || quoteBusy)
                   ? <LoaderCircle className="h-4 w-4 animate-spin" />
                   : <Zap className="h-4 w-4" />}
                 {/* Same words as the header control, which fires the same handler — two names for
                     one action reads as two different actions. */}
-                {quoteInline && createdQuote
-                  ? "Update Quote"
-                  : rapidEntry ? "Create Quote" : "Save & Create Quotation"}
+                {quoteInline && createdQuote ? "Update Quote" : "Create Quote"}
               </button>
             )}
 
-            {/* Same hole as the header bar, same fix: without `|| !canCreateQuotation` a Rapid
-                agent who cannot raise quotations got neither the emerald button above (they lack
-                the permission) nor this one (they are not in Full mode), and could only save
-                through "Save & New". */}
-            {(editing || !rapidEntry || !canCreateQuotation) && (
-              <button type="submit" disabled={submitting} className={`inline-flex flex-1 items-center justify-center gap-2 rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-60 sm:flex-none ${rapidEntry ? "transition" : "shadow-sm"}`}>
+            {/* Editing, or creating without QUOTATION_CREATE — the same hole the header block
+                describes: `(editing || !rapidEntry)` left a quotation-less create agent with no
+                Save Lead button on either bar. */}
+            {(editing || !canCreateQuotation) && (
+              <button type="submit" disabled={submitting} className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-bold text-white transition hover:bg-blue-700 disabled:opacity-60 sm:flex-none">
                 {submitting ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
                 {submitting ? "Saving..." : editing ? "Save Changes" : "Save Lead"}
               </button>
