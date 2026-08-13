@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  Accessibility,
   Bus,
   CalendarDays,
   Car,
@@ -14,18 +13,11 @@ import {
 
 import { geographyService } from "@shared/api/geographyService";
 import { SearchableSelect } from "@features/leads";
-import TravellerCountFields from "@shared/ui/TravellerCountFields";
 import { tripDuration, durationLabel } from "../lib/bookingTripModel";
-import { VehicleRequirementRows, RoomRequirementRows } from "./RequirementRows";
 
 
 const MODES = ["Flight / Airport", "Train / Rail", "Car / Road", "Bus", "Other"];
-const ASSISTANCE_TYPES = [
-  "Wheelchair Assistance",
-  "Senior Citizen Assistance",
-  "Special Meal Requirement",
-  "Airport Assistance",
-];
+// ASSISTANCE_TYPES moved to CreateBookingClean with the Special assistance block it labels.
 
 const inputClass = "w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none hover:border-slate-300 focus:border-teal-500 focus:ring-2 focus:ring-teal-100";
 const labelClass = "mb-1.5 block text-xs font-semibold text-slate-600";
@@ -66,11 +58,15 @@ function IconField({ label, icon: Icon, required, error, children }) {
 
 export default function FastTravelDetails({
   form, setField, errors = {}, onBlurField,
-  // Vehicle + room requirement rows are OWNED BY THE PAGE, like every other field here: this
-  // component renders and reports, it stores nothing.
-  vehicleRows = [], onAddVehicle, onRemoveVehicle, onUpdateVehicle,
-  vehicleMaster = [], loadingVehicleMaster = false,
-  roomRows = [], onAddRoom, onRemoveRoom, onUpdateRoom,
+  /* Vehicle and Room Requirement used to be two bands at the bottom of this panel. They now live
+     together in their own "Vehicle & Room Requirement" card above Travel Details — the same two
+     headings appearing in two places on one page read as two different questions. Each of those
+     bands reports its own total now, so nothing about them comes down here at all. */
+  /* Destination + Package Type, rendered by the PAGE and slotted into the first row here.
+     They came from the removed Booking Details card and belong beside the travel dates, but their
+     state, master loading and validation all live in the page — passing them as markup keeps that
+     ownership rather than threading eight props (options, loading, error, blur, …) through. */
+  primaryFields = null,
 }) {
   const [countries, setCountries] = useState([]);
   const [loadingCountries, setLoadingCountries] = useState(true);
@@ -122,28 +118,10 @@ export default function FastTravelDetails({
   // never going to reach the payload. Dropping the wipe fixes the bug and costs nothing.
   const changeMode = (mode) => setField("pickupMode", mode);
 
-  const toggleAssistance = (type) => {
-    const selected = form.specialAssistanceTypes.includes(type);
-    setField(
-      "specialAssistanceTypes",
-      selected
-        ? form.specialAssistanceTypes.filter((item) => item !== type)
-        : [...form.specialAssistanceTypes, type]
-    );
-  };
-
-  const toggleAdultBreakdown = (checked) => {
-    setField("showAdultBreakdown", checked);
-    setField("male", checked ? String(Number(form.male) || 0) : null);
-    setField("female", checked ? String(Number(form.female) || 0) : null);
-  };
-
-  const totalAdults = Number(form.totalAdults) || 0;
-  const totalTravellers = totalAdults + (Number(form.children) || 0) + (Number(form.infants) || 0);
-  /* Rooms now come from the requirement rows, not the flat counter — the header badge read
-     `form.rooms`, which stopped changing the moment the mix became the thing being edited. */
-  const totalRooms = roomRows.reduce((sum, row) => sum + (Number(row.count) || 0), 0)
-    || Number(form.rooms) || 0;
+  /* The header badge is gone along with its two inputs. It reported rooms and then travellers, and
+     both of those are now edited in OTHER cards — a number that changes here when you type over
+     there is exactly the confusion the Requirement totals were moved to fix. The trip DURATION
+     badge below still belongs: it is derived from the two dates in this panel. */
   const savedCountryMissing = form.pickupCountry && !countries.some((country) => country.name === form.pickupCountry);
 
   /* The option value is the country NAME, not its id — departCountry is a name string all the way
@@ -159,12 +137,19 @@ export default function FastTravelDetails({
     <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
       <div className="flex flex-col gap-2 border-b border-slate-100 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
         <div>
-          <h2 className="text-sm font-bold text-slate-800">Travel Details & Travellers</h2>
+          <h2 className="text-sm font-bold text-slate-800">Travel Details</h2>
           <p className="mt-0.5 text-xs text-slate-500">Type through the fields in one keyboard-friendly sequence</p>
         </div>
-        <span className="inline-flex w-fit items-center rounded-full bg-teal-50 px-2.5 py-1 text-xs font-semibold text-teal-700">
-          {totalTravellers} traveller{totalTravellers === 1 ? "" : "s"} · {totalRooms} room{totalRooms === 1 ? "" : "s"}
-        </span>
+        {/* The trip length, in the corner. Unlike the travellers and rooms badges that used to sit
+            here, this one is DERIVED FROM THIS PANEL — the two dates a few lines below it — so it
+            cannot be changed from another card while you are looking at it. Renders only once both
+            dates are set and the range makes sense; durationLabel returns "" otherwise, and a
+            corner reading "0 Nights" on an empty form says nothing. */}
+        {durationText ? (
+          <span className="inline-flex w-fit items-center rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">
+            {durationText}
+          </span>
+        ) : null}
       </div>
 
       {/* space-y-6 between bands, and each Band draws its own top rule — so the panel reads as one
@@ -183,7 +168,7 @@ export default function FastTravelDetails({
           <div className="min-w-0 sm:col-span-2 lg:max-w-lg">
             <label className={labelClass}>
               <span className="inline-flex items-center gap-1.5">
-                <CalendarDays className="h-3.5 w-3.5 text-slate-400" /> Travel Period
+                <CalendarDays className="h-3.5 w-3.5 text-slate-400" /> Travel Date
                 <span className="text-red-500">*</span>
               </span>
             </label>
@@ -234,6 +219,9 @@ export default function FastTravelDetails({
             )}
           </div>
 
+          {/* Destination + Package Type — WHERE the trip goes and WHAT it is, beside WHEN. The
+              three used to be split across two cards for no reason other than history. */}
+          {primaryFields}
         </div>
 
         {/* ── Pickup ───────────────────────────────────────────────────────────────────────────
@@ -242,6 +230,36 @@ export default function FastTravelDetails({
             row with two empty columns beside them — the gap in the middle of this panel. */}
         <Band title="Pickup" hint="Where the trip starts — need not match the destination">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+
+            {/* DATE and time, not time alone — a pickup the night before an early flight is a
+                different fact from one on the travel date, and the time on its own cannot say so.
+                Bound to `pickupDateTime`, the field this form has always had: BookingDetails
+                already renders it as "Pickup At" and the lead prefill already maps it. It used to
+                appear only under Car/Road; a pickup has a time whatever the mode, so it lives in
+                the PICKUP band now and shows for all of them. */}
+            <IconField label="Pickup Date & Time" icon={CalendarDays}>
+              <input type="datetime-local" value={form.pickupDateTime || ""} onChange={(event) => setField("pickupDateTime", event.target.value)} className={inputClass} />
+            </IconField>
+
+            <IconField label="Pickup Mode" icon={Bus}>
+              <div className="relative">
+                <select value={form.pickupMode} onChange={(event) => changeMode(event.target.value)} className={`${inputClass} appearance-none pr-9`}>
+                  <option value="">Select mode</option>
+                  {MODES.map((mode) => <option key={mode} value={mode}>{mode}</option>)}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              </div>
+            </IconField>
+
+            {/* FREE TEXT, deliberately. A pickup point is routinely outside the sold destination —
+                a Nepal package boarding at Gorakhpur — so a picker scoped to the destination could
+                not express it, and one scoped to every city in the master is a haystack.
+                What makes this work with the route: whatever is typed here is MERGED into the
+                itinerary's city options, so "Gorakhpur" becomes selectable as a leg alongside the
+                destination's own cities. */}
+            <IconField label="Pickup City" icon={MapPin}>
+              <input value={form.pickupCity} onChange={(event) => setField("pickupCity", event.target.value)} placeholder="e.g. Gorakhpur" className={inputClass} />
+            </IconField>
             {/* OLD — a native <select> over the whole country master. ~200 rows behind a control
                 whose only keyboard affordance is "jump to the next option starting with this
                 letter", which it then forgets. Create Lead already answers this field with the
@@ -259,36 +277,6 @@ export default function FastTravelDetails({
                 advanceOnSelect
                 className="hover:border-slate-300"
               />
-            </IconField>
-
-            {/* FREE TEXT, deliberately. A pickup point is routinely outside the sold destination —
-                a Nepal package boarding at Gorakhpur — so a picker scoped to the destination could
-                not express it, and one scoped to every city in the master is a haystack.
-                What makes this work with the route: whatever is typed here is MERGED into the
-                itinerary's city options, so "Gorakhpur" becomes selectable as a leg alongside the
-                destination's own cities. */}
-            <IconField label="Pickup City" icon={MapPin}>
-              <input value={form.pickupCity} onChange={(event) => setField("pickupCity", event.target.value)} placeholder="e.g. Gorakhpur" className={inputClass} />
-            </IconField>
-
-            <IconField label="Pickup Mode" icon={Bus}>
-              <div className="relative">
-                <select value={form.pickupMode} onChange={(event) => changeMode(event.target.value)} className={`${inputClass} appearance-none pr-9`}>
-                  <option value="">Select mode</option>
-                  {MODES.map((mode) => <option key={mode} value={mode}>{mode}</option>)}
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              </div>
-            </IconField>
-
-            {/* DATE and time, not time alone — a pickup the night before an early flight is a
-                different fact from one on the travel date, and the time on its own cannot say so.
-                Bound to `pickupDateTime`, the field this form has always had: BookingDetails
-                already renders it as "Pickup At" and the lead prefill already maps it. It used to
-                appear only under Car/Road; a pickup has a time whatever the mode, so it lives in
-                the PICKUP band now and shows for all of them. */}
-            <IconField label="Pickup Date & Time" icon={CalendarDays}>
-              <input type="datetime-local" value={form.pickupDateTime || ""} onChange={(event) => setField("pickupDateTime", event.target.value)} className={inputClass} />
             </IconField>
           </div>
 
@@ -355,13 +343,11 @@ export default function FastTravelDetails({
             pair. Neither is validated against the destination and both may be the same city. */}
         <Band title="Drop" hint="Where the trip finishes — need not match the destination or the pickup">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <IconField label="Drop Country" icon={Globe2}>
-              <input value={form.dropCountry || ""} onChange={(event) => setField("dropCountry", event.target.value)} placeholder="India" className={inputClass} />
-            </IconField>
-            {/* Free text for the same reason as Pickup, and merged into the route's options the
-                same way — so a drop city outside the destination closes the last leg. */}
-            <IconField label="Drop City" icon={MapPin}>
-              <input value={form.dropCity || ""} onChange={(event) => setField("dropCity", event.target.value)} placeholder="e.g. Gorakhpur" className={inputClass} />
+            {/* Date + time, matching Pickup. The return leg of a trip is just as likely to cross
+                midnight — an overnight bus dropping at 6am is a different fact from 6am the day
+                the trip ends, and a bare time cannot tell them apart. */}
+            <IconField label="Drop Date & Time" icon={CalendarDays}>
+              <input type="datetime-local" value={form.dropDateTime || ""} onChange={(event) => setField("dropDateTime", event.target.value)} className={inputClass} />
             </IconField>
             <IconField label="Drop Mode" icon={Bus}>
               <div className="relative">
@@ -372,89 +358,22 @@ export default function FastTravelDetails({
                 <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               </div>
             </IconField>
-            {/* Date + time, matching Pickup. The return leg of a trip is just as likely to cross
-                midnight — an overnight bus dropping at 6am is a different fact from 6am the day
-                the trip ends, and a bare time cannot tell them apart. */}
-            <IconField label="Drop Date & Time" icon={CalendarDays}>
-              <input type="datetime-local" value={form.dropDateTime || ""} onChange={(event) => setField("dropDateTime", event.target.value)} className={inputClass} />
+            {/* Free text for the same reason as Pickup, and merged into the route's options the
+                same way — so a drop city outside the destination closes the last leg. */}
+            <IconField label="Drop City" icon={MapPin}>
+              <input value={form.dropCity || ""} onChange={(event) => setField("dropCity", event.target.value)} placeholder="e.g. Gorakhpur" className={inputClass} />
+            </IconField>
+            <IconField label="Drop Country" icon={Globe2}>
+              <input value={form.dropCountry || ""} onChange={(event) => setField("dropCountry", event.target.value)} placeholder="India" className={inputClass} />
             </IconField>
           </div>
         </Band>
 
-        {/* ── Vehicle requirement ─────────────────────────────────────────────────────────────
-            What the trip NEEDS. Registration, vendor and driver are operational facts recorded
-            after fulfilment and deliberately live elsewhere. */}
-        <Band title="Vehicle Requirement" hint="What the trip needs — not the vehicle finally assigned">
-          <VehicleRequirementRows
-            rows={vehicleRows}
-            vehicles={vehicleMaster}
-            loading={loadingVehicleMaster}
-            onAdd={onAddVehicle}
-            onRemove={onRemoveVehicle}
-            onUpdate={onUpdateVehicle}
-          />
-        </Band>
-
-        <Band title="Travellers" hint="Click a number and type to replace it">
-          {/* showRooms=false: the Room Requirement band below owns rooms and extra beds here, and
-              two editors for one number is how they drift apart. */}
-          <TravellerCountFields
-            values={form}
-            onCountChange={setField}
-            onToggleBreakdown={toggleAdultBreakdown}
-            theme="teal"
-            showRooms={false}
-          />
-        </Band>
-
-        {/* ── Room requirement ────────────────────────────────────────────────────────────────
-            Replaces the flat Rooms/Extra Beds counters, which could not express a mixed party
-            ("3 Double AC + 1 Triple Non AC"). The old counters are still written to the payload
-            from these rows, so nothing downstream loses its numbers. */}
-        <Band title="Room Requirement" hint="Room mix for the party">
-          <RoomRequirementRows
-            rows={roomRows}
-            onAdd={onAddRoom}
-            onRemove={onRemoveRoom}
-            onUpdate={onUpdateRoom}
-          />
-        </Band>
-
-        <div className="border-t border-slate-100 pt-4">
-          <label className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-slate-700">
-            <input type="checkbox" checked={form.specialAssistanceRequired} onChange={(event) => {
-              const checked = event.target.checked;
-              setField("specialAssistanceRequired", checked);
-              if (!checked) {
-                setField("specialAssistanceTypes", []);
-                setField("assistancePassengerCount", "0");
-                setField("specialAssistanceNotes", "");
-              } else if (!(Number(form.assistancePassengerCount) > 0)) {
-                setField("assistancePassengerCount", "1");
-              }
-            }} className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500" />
-            <Accessibility className="h-4 w-4 text-teal-600" /> Special assistance required
-          </label>
-
-          {form.specialAssistanceRequired && (
-            <div className="mt-3 grid gap-3 rounded-lg border border-teal-100 bg-teal-50/40 p-3 lg:grid-cols-[1fr_150px_1fr]">
-              <div className="flex flex-wrap gap-2">
-                {ASSISTANCE_TYPES.map((type) => {
-                  const selected = form.specialAssistanceTypes.includes(type);
-                  return <button key={type} type="button" onClick={() => toggleAssistance(type)} className={`rounded-md border px-2.5 py-1.5 text-xs font-semibold ${selected ? "border-teal-600 bg-teal-600 text-white" : "border-slate-200 bg-white text-slate-600"}`}>{type}</button>;
-                })}
-              </div>
-              <div>
-                <label className={labelClass}>Passengers</label>
-                <input type="number" min="1" max={Math.max(totalTravellers, 1)} value={form.assistancePassengerCount} onFocus={(event) => event.target.select()} onChange={(event) => setField("assistancePassengerCount", event.target.value)} className={inputClass} />
-              </div>
-              <div>
-                <label className={labelClass}>Assistance Notes</label>
-                <input value={form.specialAssistanceNotes} onChange={(event) => setField("specialAssistanceNotes", event.target.value)} placeholder="Specific support required" className={inputClass} />
-              </div>
-            </div>
-          )}
-        </div>
+        {/* Travellers AND Special assistance both moved to Customer Details. Assistance was left
+            here at first on the reasoning that a wheelchair at the gate is a fact about the
+            journey — but it asks "how many of the party need it", so it cannot be read without the
+            headcount, and the headcount now lives in the other card. Two panels apart, the cap and
+            the number it caps were invisible to each other. They travel together. */}
       </div>
     </section>
   );
