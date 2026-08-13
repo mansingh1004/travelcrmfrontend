@@ -203,6 +203,20 @@ function normalizeBooking(b = {}) {
     netProfit, netMargin, payPct, refunded,
     customerAdjustments, costVariations, commission,
     overseas:        !!b.overseasTourPackage,
+    /* The three per-booking tax overrides. The API has always shipped them and nothing read them,
+       so the rail printed "Customer Amount / GST / TCS" as plain facts — including the case where
+       gstInclusive is true and the stored customerAmount is the pre-tax base DERIVED out of the
+       gross the agent typed. The number on screen was one the agent never entered, unexplained.
+       TRI-STATE: null means "follow the tenant settings", which is not the same as false. */
+    applyGst:        b.applyGst ?? null,
+    gstInclusive:    b.gstInclusive ?? null,
+    applyTcs:        b.applyTcs ?? null,
+    /* A booking cancelled as an accidental duplicate rendered identically to any other
+       cancellation. The page has a whole Cancellation panel and an Audit section and neither could
+       say "this duplicated BK-xxxx", name the reason, or link the survivor. */
+    duplicateOfBookingPublicId: b.duplicateOfBookingPublicId || null,
+    duplicateResolvedAt:        b.duplicateResolvedAt || null,
+    duplicateResolutionReason:  b.duplicateResolutionReason || "",
     status:          (b.status || "PENDING").toUpperCase(),
     payStatus:       (b.paymentStatus || b.payStatus || "UNPAID").toUpperCase(),
     notes:           b.notes || "",
@@ -401,7 +415,13 @@ function AddPaymentModal({ booking, onClose, onAdded, showToast }) {
 }
 
 /* ─── ASSIGN VENDOR MODAL ────────────────────────────────────── */
-function AssignVendorModal({ booking, service, onClose, onAssigned, showToast }) {
+/**
+ * @param canSeeCost whether this user may READ the supplier cost. Load-bearing: the API nulls
+ *   vendorCost for anyone without BOOKING_PROFIT_READ, so without this the modal showed an EMPTY,
+ *   editable cost box on a line that already had one — and any figure typed replaced a number the
+ *   page was never allowed to see.
+ */
+function AssignVendorModal({ booking, service, onClose, onAssigned, showToast, canSeeCost }) {
   const [vendors, setVendors]         = useState([]);
   const [loadingVendors, setLoading]  = useState(true);
   const [vendorPublicId, setVendorId] = useState(service?.vendorPublicId || "");
@@ -479,9 +499,19 @@ function AssignVendorModal({ booking, service, onClose, onAssigned, showToast })
           </div>
           <div>
             <label htmlFor="vendor-cost" className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5 block">Vendor Cost (₹)</label>
-            <input id="vendor-cost" type="number" step="0.01" min="0" value={vendorCost} onChange={e=>setVendorCost(e.target.value)}
-              placeholder="0.00"
-              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium focus:border-blue-400 outline-none"/>
+            <input id="vendor-cost" type="number" step="0.01" min="0"
+              value={canSeeCost ? vendorCost : ""} onChange={e=>setVendorCost(e.target.value)}
+              disabled={!canSeeCost}
+              placeholder={canSeeCost ? "0.00" : "Hidden"}
+              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm font-medium focus:border-blue-400 outline-none disabled:bg-slate-50 disabled:text-slate-400"/>
+            {/* An empty box on a line that HAS a cost is the lie this replaces: the API nulls the
+                figure for users without BOOKING_PROFIT_READ, so it looked unset rather than hidden,
+                and typing into it overwrote a number they were never shown. */}
+            {!canSeeCost && (
+              <p className="mt-1.5 text-[11px] text-slate-400">
+                You cannot view supplier cost, so it is left untouched. The vendor still changes.
+              </p>
+            )}
           </div>
         </div>
         <div className="flex gap-3 mt-6">
@@ -962,6 +992,11 @@ export default function BookingDetails() {
       // No status is sent — the server derives PARTIAL/PAID back from the money.
       await bookingService.updateExpense(booking.id, exp.publicId, {
         paidAmount: alreadyPaid + payment,
+        /* What THIS page believed was disbursed when it did that sum. `alreadyPaid` comes from local
+           state loaded who-knows-how-long ago, so if anyone recorded a payment on this line since —
+           another tab, the payments screen, a colleague — the cumulative total above is computed
+           from a stale base and would erase theirs. Sending it makes the server refuse instead. */
+        expectedPaidAmount: alreadyPaid,
         ...(settleForm.mode ? { paymentMode: settleForm.mode } : {}),
         ...(settleForm.reference.trim() ? { referenceNumber: settleForm.reference.trim() } : {}),
       });
@@ -1178,12 +1213,18 @@ export default function BookingDetails() {
         onClose={()=>{ if (!variationSaving) { setShowVariationModal(false); setEditVariation(null); } }}
         onSave={saveVariations}/>}
       {assignSvc   && <AssignVendorModal booking={b} service={assignSvc} showToast={showToast}
+        canSeeCost={canSeeMargin}
         onClose={()=>setAssignSvc(null)}
         onAssigned={()=>{ fetchServices(); fetchBooking(); }}/>}
       {showRefund  && <RefundBookingModal booking={b} onToast={showToast}
         onClose={()=>setShowRefund(false)}
         onRefunded={()=>{ fetchBooking(); fetchPayments(); fetchCancelSummary(); }}/>}
+      {/* overseas is passed in because the modal hardcoded it false in its own state and posted
+          that — the backend applies 206C(1G) TCS from the REQUEST flag alone and never consults the
+          stored booking. A tax invoice raised here for an overseas package therefore carried no TCS
+          unless the operator happened to re-tick a box for a fact the booking already knew. */}
       {gstOpen     && <BookingInvoiceModal bookingId={b.id} bookingCode={b.code}
+        overseasTourPackage={b.overseas}
         onClose={()=>setGstOpen(false)}/>}
       {/* The modal compares `booking.status === "Completed"` in title case to block cancelling a
           completed booking, but this page normalises status to UPPERCASE — pass it back in the
@@ -1410,9 +1451,17 @@ export default function BookingDetails() {
               {/* Payment position */}
               <div className="px-5 py-4 space-y-2.5">
                 {[
-                  ["Customer Amount", b.customerAmount, "text-slate-700"],
-                  ["GST",             b.gst,            "text-slate-500"],
-                  ["TCS",             b.tcs,            "text-slate-500"],
+                  /* Labelled when this booking overrides the tenant's tax mode. Under GST-inclusive
+                     pricing the STORED customerAmount is the pre-tax base derived out of the gross
+                     the agent typed — so the figure here is one they never entered, and printing it
+                     unlabelled read as an arithmetic error nobody on the page could explain. */
+                  [b.gstInclusive === true ? "Customer Amount (base — price was GST-inclusive)" : "Customer Amount",
+                                     b.customerAmount, "text-slate-700"],
+                  [b.applyGst === false ? "GST (off for this booking)" : "GST",
+                                     b.gst,            "text-slate-500"],
+                  [b.applyTcs === false ? "TCS (off for this booking)"
+                    : b.applyTcs === true ? "TCS (forced on)" : "TCS",
+                                     b.tcs,            "text-slate-500"],
                   ["Total Payable",   b.totalPayable,   "text-blue-600 font-extrabold"],
                   ["Paid Amount",     b.paid,           "text-green-600 font-bold"],
                   ["Due Amount",      b.due,            b.due > 0 ? "text-red-600 font-bold" : "text-green-600 font-bold"],
