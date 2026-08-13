@@ -261,7 +261,7 @@ export const blankDefaults = () => ({
   leadSource: "", leadType: "Fresh", leadStage: "New Lead",
   assignedUserId: "", birthDate: "", anniversaryDate: "",
   preferredCommunication: "", followUpDate: "", packageType: "",
-  travelDate: "", departCountry: "India", departCity: "",
+  travelDate: "", returnDate: "", departCountry: "India", departCity: "",
   departureMode: "", departureAirport: "", airportCode: "", preferredFlightTime: "",
   railwayStation: "", trainClass: "", preferredTrainTime: "",
   pickupAddress: "", pickupDateTime: "", vehiclePreference: "",
@@ -1248,6 +1248,27 @@ export function LeadFormPanels({
                 </div>
               </Field>
 
+              {/* When they come back. Optional, because a caller often has a departure in mind and
+                  no return yet — but it is the field that decides whether a converted booking is a
+                  SPAN or a single point: the backend copies it to the booking's tripEndDate, and
+                  without it the operations board can only say "End date not set".
+
+                  `min` is the travel date, so a return before departure cannot be typed at all
+                  rather than being rejected on save. */}
+              <Field id="returnDate" label="Return Date" optional error={errors.returnDate?.message}>
+                <div className="relative">
+                  <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <input
+                    {...register("returnDate")}
+                    id="returnDate"
+                    type="date"
+                    min={watch("travelDate") || undefined}
+                    aria-invalid={Boolean(errors.returnDate)}
+                    className={control(errors.returnDate, true)}
+                  />
+                </div>
+              </Field>
+
               <Field id="departCountry" label="Departing Country" optional>
                 <SearchableSelect
                   name="departCountry"
@@ -2131,6 +2152,7 @@ export default function LeadFormPage() {
           followUpDate: toDateInput(lead.followUpDate ?? lead.followupDate ?? lead.nextFollowUpDate),
           packageType: lead.packageType ?? lead.tripType ?? "",
           travelDate: toDateInput(lead.travelDate ?? lead.tripDate ?? lead.departureDate),
+          returnDate: toDateInput(lead.returnDate),
           departCountry: lead.departCountry ?? lead.departureCountry ?? "India",
           departCity: lead.departCity ?? lead.departureCity ?? "",
           departureMode: lead.departureMode ?? lead.transportMode ?? "",
