@@ -1427,7 +1427,7 @@ function QuotationsModal({ lead, onClose, canDelete, canEdit }) {
         </div>
       </div>
 
-      {/* Web-format view of a selected quotation, shown over the list, with Share controls */}
+     
       {webViewQ && (
         <div className="fixed inset-0 z-[60] bg-white overflow-y-auto">
           <div className="sticky top-0 z-10 bg-white/90 backdrop-blur border-b border-slate-200 px-4 py-3 flex items-center justify-between gap-3">
@@ -1435,7 +1435,7 @@ function QuotationsModal({ lead, onClose, canDelete, canEdit }) {
               className="inline-flex items-center gap-1.5 text-sm font-bold text-slate-600 hover:text-blue-600 flex-shrink-0">
               <X size={16} /> Back
             </button>
-            {/* Share this quotation with the client */}
+            
             <div className="flex items-center gap-2 flex-wrap justify-end">
               <button onClick={() => copyLink(webViewQ, webViewStyle)}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 hover:border-blue-300 text-slate-600 hover:text-blue-600 text-xs font-bold transition-all">
@@ -1455,7 +1455,7 @@ function QuotationsModal({ lead, onClose, canDelete, canEdit }) {
         </div>
       )}
 
-      {/* Design picker for the weblink preview — Classic / Modern / Premium, nothing saved. */}
+     
       {previewPickFor && (
         <QuotationStyleModal
           mode="preview"
@@ -2460,16 +2460,3 @@ const Leads = () => {
 };
 
 export default Leads;
-
-
-
-
-
-
-
-
-
-
-
-
-

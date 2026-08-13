@@ -518,7 +518,7 @@
 //         </div>
 //       )}
 
-//       {/* ━━━━━ TRANSPORT ━━━━━ */}
+//     
 //       {q.vehicle?.included && q.vehicle?.vehicles?.length > 0 && (
 //         <div style={{ maxWidth:1040, margin:"0 auto", padding:"64px 24px 0" }}>
 //           <SectionTitle sub="Travel in comfort and style">Your Transport</SectionTitle>
@@ -553,7 +553,7 @@
 //         </div>
 //       )}
 
-//       {/* ━━━━━ TESTIMONIALS ━━━━━ */}
+
 //       {testimonials.length > 0 && (
 //         <div style={{ maxWidth:1040, margin:"0 auto", padding:"64px 24px 0" }}>
 //           <SectionTitle sub="Stories from fellow travelers">Loved by Travelers</SectionTitle>
@@ -583,7 +583,7 @@
 //         </div>
 //       )}
 
-//       {/* ━━━━━ PRICE BREAKDOWN ━━━━━ */}
+
 //       {(totals.subtotal != null || grand != null) && (
 //         <div style={{ maxWidth:1040, margin:"0 auto", padding:"64px 24px 0" }}>
 //           <SectionTitle sub="Transparent, no hidden costs">Price Breakdown</SectionTitle>
@@ -735,7 +735,7 @@ import { useParams } from "react-router-dom";
 import { getErrorMessage } from "@shared/api/apiError";
 import ModernWebView from "../components/ModernWebView";
 import PremiumWebView from "../components/PremiumWebView";
-
+import LuxuryWebView from "../components/LuxuryWebView";
 const API = import.meta.env.VITE_API_URL || "http://localhost:8080/api";
 
 const inr = (v) => (v == null ? "—" : `₹${Number(v).toLocaleString("en-IN")}`);
@@ -848,8 +848,13 @@ export default function QuotationWebView({ publicId, styleOverride }) {
   if (!q)      return <Centered>Quotation not found.</Centered>;
 
   const style = styleOverride || q.templateStyle;
+ 
+
   if (style === "MODERN")  return <ModernWebView  data={q} pdfUrl={`${API}/public/quotations/${publicId}/pdf`} />;
   if (style === "PREMIUM") return <PremiumWebView data={q} pdfUrl={`${API}/public/quotations/${publicId}/pdf`} />;
+if (style === "LUXURY")  return  <LuxuryWebView data={q} pdfUrl={`${API}/public/quotations/${publicId}/pdf`}/>;
+
+
 
   const c = q.customer || {};
   const company = q.company || q.organization || {};
@@ -951,12 +956,16 @@ export default function QuotationWebView({ publicId, styleOverride }) {
       {/* ━━━━━ HERO ━━━━━ */}
       <div style={{ backgroundColor:"#000", color:"#fff", position:"relative", overflow:"hidden" }}>
         
+
+      
+
         
+
         {q.coverImageUrl && (
           <img src={q.coverImageUrl} alt="" style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"cover", opacity: 0.5 }} />
         )}
 
-        {/* ── Airplane orbit ── */}
+       
         <div style={{ position:"absolute", inset:0, overflow:"hidden", pointerEvents:"none", zIndex:0 }}>
           <svg width="100%" height="100%" viewBox="0 0 1200 400" preserveAspectRatio="xMidYMid slice" style={{ position:"absolute", inset:0 }}>
             <defs>

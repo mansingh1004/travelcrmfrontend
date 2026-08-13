@@ -58,6 +58,44 @@ export const geographyService = {
    */
   getDestinationById: (destinationId) =>
     API.get(`/destinations/${destinationId}`).then((r) => r.data?.data ?? null),
+
+  /**
+   * Every city the tenant can pick, ACROSS countries, each tagged with the country it came from.
+   * → [{ id, name, countryId, countryName, stateName? }]
+   *
+   * The booking route editor needs this: a leg is a place, not a package region, and a trip is
+   * routinely picked up outside the destination it sells (a Nepal package boarding at Gorakhpur).
+   * Scoping to one country or to the chosen destination would hide exactly those cities.
+   *
+   * Composed from the per-country dropdown rather than a single unscoped call because
+   * /masters/dropdown/cities is only known to answer with a countryId or destinationId, and the
+   * MASTER /cities endpoint that would return everything sits behind master permissions a booking
+   * clerk does not necessarily hold. Countries are few, the calls run in parallel, and the result
+   * is fetched once per editor mount.
+   *
+   * `stateName` is passed through if the dropdown DTO ever carries it, so the "Pune — Maharashtra,
+   * India" label starts working the moment the backend adds the field, with no change here.
+   */
+  getAllCitiesWithCountry: async () => {
+    const countries = await geographyService.getCountries();
+    const perCountry = await Promise.all(
+      countries.map((country) =>
+        API.get("/masters/dropdown/cities", { params: { countryId: country.id } })
+          .then((res) =>
+            (res.data?.data ?? []).map((city) => ({
+              id: city.value ?? city.id,
+              name: city.label ?? city.name,
+              countryId: country.id,
+              countryName: country.name,
+              stateName: city.stateName ?? city.state ?? null,
+            }))
+          )
+          // One country failing must not empty the whole picker.
+          .catch(() => [])
+      )
+    );
+    return perCountry.flat();
+  },
 };
 
 export default geographyService;

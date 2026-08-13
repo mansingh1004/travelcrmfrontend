@@ -52,18 +52,18 @@ const unwrap = (response) => response?.data?.data ?? response?.data;
  *
  * Every "start the next workflow" button carries the customer with it (`?customerId=`). Previously
  * they all navigated to an empty form, so the clerk re-keyed the phone number of the person they
- * were already looking at.
+ 
  */
 const TAB_ICON = "h-4 w-4";
 
 /**
- * Tab order follows the page's own alerting, not a guess about what people want.
+
  *
- * AlertRail raises exactly two actionable alerts and they deep-link to Documents and MONEY —
+ 
  * never to Enquiries. The band above ends on Outstanding, and the drill-down for that figure is
  * Money, so it sits third, adjacent to the number that sends people there. Enquiries and Timeline
  * are sales-side depth and follow. Overview stays first: it is the only tab whose data is already
- * in flight when the page mounts.
+ 
  */
 const TABS = [
   { key: "overview",  label: "Overview",  icon: <CircleUserRound className={TAB_ICON} /> },
