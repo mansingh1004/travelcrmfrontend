@@ -1186,11 +1186,19 @@ export function LeadFormPanels({
 
             {belowPhone}
 
-            <div className="mt-3 border-t border-slate-100 pt-3">
-              {/* The "Travellers & Rooms" heading that sat here is gone: TravellerCountFields now
-                  carries its own "Travellers" and "Rooms" legends over the two groups, so this was
-                  the same words a second time, one line above them. The hint stays — it is the one
-                  thing that row said which the legends do not. */}
+            {/* No rule between the contact fields and the counters. Who is calling and how many of
+                them are travelling are ONE answer taken in one breath — "Sharma ji, four adults, two
+                kids" — and the hairline was splitting that into two blocks the eye had to cross.
+
+                The rule stays further down, before Optional details, because THAT is a real seam:
+                everything above it is asked on every call, everything below it is asked when there
+                is time.
+
+                The "Travellers & Rooms" heading that sat here is gone too: TravellerCountFields
+                carries its own "Travellers" and "Rooms" legends, so this was the same words a second
+                time, one line above them. The hint stays — it is the one thing that row said which
+                the legends do not. */}
+            <div className="mt-3">
               <div className="mb-2 flex justify-end">
                 <p className="text-[11px] text-slate-400">Click a number and type to replace it</p>
               </div>
