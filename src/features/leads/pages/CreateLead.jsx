@@ -1228,7 +1228,7 @@ export function LeadFormPanels({
                   nobody asked for on the call is an age nobody can get afterwards. The ARRAY is
                   the source of truth; raising Children appends a blank rather than rebuilding the
                   list, so ages already typed are never renumbered mid-call. */}
-              <div className="mt-2.5 grid grid-cols-1 gap-x-3 gap-y-2 sm:grid-cols-2">
+              <div className="mt-2.5 grid grid-cols-1 gap-x-3 gap-y-2 sm:grid-cols-2 lg:grid-cols-4">
                 <Field
                   id="seniors60Plus"
                   label="Seniors 60+"
@@ -1407,10 +1407,12 @@ export function LeadFormPanels({
               </Field>
             </div>
 
-            {/* Four fields, two up. Full details ran these at lg:grid-cols-4, but that was a
-                full-width main column; the merged form always keeps the 300px rail, so four
-                across would put a date picker and two selects in ~150px each. */}
-            <div className="grid grid-cols-1 gap-x-3 gap-y-2 sm:grid-cols-2">
+            {/* Four across, which is what this panel ran at a week ago. It was cut to two on the
+                reasoning that the 320px rail left only ~150px a column — that arithmetic was wrong:
+                1400px of page, less the rail, less padding, leaves ~1000px here, so four columns are
+                ~240px each and a date picker sits in that comfortably. Two columns doubled the
+                height of the longest panel on the form for no gain. */}
+            <div className="grid grid-cols-1 gap-x-3 gap-y-2 sm:grid-cols-2 lg:grid-cols-4">
               <Field id="travelDate" label="Travel Date" required error={errors.travelDate?.message}>
                 <div className="relative">
                   <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
