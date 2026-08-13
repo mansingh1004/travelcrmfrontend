@@ -17,8 +17,8 @@
 // editable field: editing leg 2's TO does not rewrite leg 3, so a manual correction is never
 // silently undone. The parent surfaces any resulting gap as a warning instead.
 
-import { useCallback, useEffect, useRef } from "react";
-import { ArrowRight, MapPin, Plus, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ArrowRight, Check, MapPin, Plus, Trash2 } from "lucide-react";
 import { SearchableSelect } from "@features/leads";
 
 const HEAD = "text-[11px] font-semibold uppercase tracking-wide text-slate-400";
@@ -50,6 +50,16 @@ export default function RouteSegments({
   const lastFromRef = useRef(null);
   const lastToRef = useRef(null);
   const previousCount = useRef(rows.length);
+
+  /* Which leg's bin is armed. One click arms, the next removes — so a mis-click costs nothing.
+     It disarms on blur and after a few seconds, so a primed button never sits waiting for a later,
+     unrelated click. */
+  const [armedRemove, setArmedRemove] = useState(null);
+  useEffect(() => {
+    if (armedRemove == null) return undefined;
+    const timer = setTimeout(() => setArmedRemove(null), 4000);
+    return () => clearTimeout(timer);
+  }, [armedRemove]);
 
   useEffect(() => {
     if (rows.length <= previousCount.current) { previousCount.current = rows.length; return; }
@@ -204,16 +214,27 @@ export default function RouteSegments({
             ) : null}
           </div>
 
+          {/* TWO deliberate protections, because this used to delete rows by accident:
+              • tabIndex={-1} keeps it out of the Enter-to-advance path (see FOCUSABLE in the page).
+                Enter from Nights now moves to the NEXT LEG, never onto a bin icon.
+              • one click ARMS, a second confirms. A single stray click cannot destroy a leg, and
+                the armed state times out on its own so it cannot sit primed indefinitely.
+              Still fully usable by mouse, and reachable by screen readers via aria-label. */}
           <button
             type="button"
-            onClick={() => onRemove(row.id)}
+            tabIndex={-1}
+            onClick={() => (armedRemove === row.id ? onRemove(row.id) : setArmedRemove(row.id))}
+            onBlur={() => setArmedRemove((current) => (current === row.id ? null : current))}
             disabled={rows.length === 1}
-            aria-label={`Remove leg ${index + 1}`}
-            className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-slate-200 bg-white text-slate-400
-                       transition hover:border-red-300 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-30
-                       md:border-slate-200"
+            aria-label={armedRemove === row.id ? `Confirm remove leg ${index + 1}` : `Remove leg ${index + 1}`}
+            title={armedRemove === row.id ? "Click again to remove this leg" : "Remove this leg"}
+            className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg border transition
+                        disabled:cursor-not-allowed disabled:opacity-30
+                        ${armedRemove === row.id
+                          ? "border-red-400 bg-red-50 text-red-600"
+                          : "border-slate-200 bg-white text-slate-400 hover:border-red-300 hover:text-red-500"}`}
           >
-            <Trash2 className="h-3.5 w-3.5" />
+            {armedRemove === row.id ? <Check className="h-3.5 w-3.5" /> : <Trash2 className="h-3.5 w-3.5" />}
           </button>
         </div>
       ))}

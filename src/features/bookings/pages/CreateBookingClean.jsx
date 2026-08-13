@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
+  Accessibility,
   ArrowLeft,
   BadgeIndianRupee,
+  Bus,
   Route,
-  CalendarCheck2,
   Calculator,
   Check,
   CheckCircle2,
@@ -20,13 +21,15 @@ import {
   Store,
   Plus,
   RotateCcw,
-  Search,
   UserCheck,
+  Wallet,
 } from "lucide-react";
 
 import bookingService from "../api/bookingService";
 import FastTravelDetails from "../components/FastTravelDetails";
+import TravellerCountFields from "@shared/ui/TravellerCountFields";
 import RouteSegments from "../components/RouteSegments";
+import { VehicleRequirementRows, RoomRequirementRows } from "../components/RequirementRows";
 import {
   emptyRouteRow, emptyRoomRow, emptyVehicleRow, nextRowId,
   tripDuration, totalRouteNights, routeSummary, routeWarnings,
@@ -63,7 +66,28 @@ const writeSticky = (values) => {
   } catch { /* private mode — sticky is a convenience, never a requirement */ }
 };
 
-const SERVICES = ["Hotel", "Flight", "Sightseeing", "Cruise", "Vehicle", "Visa", "Passport", "Add-on"];
+/* Advance payment modes. Imported from the payments ledger rather than retyped: BookingPayments
+   already owns this vocabulary as PAYMENT_METHODS against the `paymentMethod` field, and a second
+   copy here would drift from the list every receipt is actually recorded against. */
+const PAYMENT_METHODS = ["Cash", "Bank Transfer", "UPI", "Credit Card", "Debit Card", "Cheque", "Online", "Wallet", "Other"];
+/* Five services, in the order they are usually decided: the vehicle and the hotel are settled
+   first on most trips, add-ons last.
+   Cruise, Visa and Passport were REMOVED from this form — they are rare enough here that they cost
+   every booking a second row of chips. Removing them from the picker does NOT remove them from
+   existing bookings: `services` is a free array on the payload, an older booking that carries
+   "Visa" keeps it, and the toggle below matches case-insensitively so nothing already selected is
+   silently dropped on edit. */
+const SERVICES = ["Vehicle", "Hotel", "Flight", "Sightseeing", "Add-on"];
+
+/* Came across with the Special assistance block from FastTravelDetails, unchanged — these strings
+   are stored verbatim in tripSnapshot.specialAssistance.types, so editing the list would orphan the
+   selections on every booking already saved. */
+const ASSISTANCE_TYPES = [
+  "Wheelchair Assistance",
+  "Senior Citizen Assistance",
+  "Special Meal Requirement",
+  "Airport Assistance",
+];
 const PACKAGE_TYPES = ["Family", "Honeymoon", "Group", "Corporate", "Pilgrimage", "Adventure"];
 
 const phonePattern = /^[+\d\s\-()]{7,20}$/;
@@ -128,6 +152,9 @@ const initialForm = () => ({
   // real field rather than a new one. It is NOT derived from the city: the City master has no
   // state/province column today, so nothing can resolve "Pune" to "Maharashtra" yet.
   customerState: "",
+  // NO field for this on CustomerRequestDTO (it carries city + state only), so it is held against
+  // the booking snapshot rather than invented on the customer payload — see the contract note.
+  customerCountry: "",
   birthday: "",
   anniversary: "",
   destinationId: "",
@@ -206,9 +233,12 @@ const initialForm = () => ({
   vendorPublicId: "",
   vendorCost: "",
   paidAmount: "0",
-  // Drives TCS when the tenant's policy is overseas-only. The DTO always had this field; the form
-  // never sent it, so an overseas booking silently under-collected TCS. Explicit checkbox — the
-  // package-type list (Family/Honeymoon/...) carries no domestic-vs-overseas signal to derive from.
+  // How the advance was taken. Same vocabulary as the payments ledger (see PAYMENT_METHODS).
+  paymentMethod: "",
+  // Drives TCS when the tenant's policy is overseas-only. NO LONGER EDITABLE on this form — the
+  // checkbox was removed with the rest of the TCS controls — but the field stays: it is part of the
+  // DTO, edit mode loads whatever a booking was saved with, and the payload still carries it. A new
+  // booking therefore declares itself domestic, which is what stops the server adding TCS.
   overseasTourPackage: false,
   // ── Per-booking tax overrides — TRI-STATE, and the null matters ────────────────────────────
   //
@@ -222,7 +252,15 @@ const initialForm = () => ({
   // that base as the preview's customerAmount.
   applyGst: null,
   gstInclusive: null,
-  applyTcs: null,
+  /* applyTcs is the ONE exception to the null-means-default rule above, and it is deliberate.
+     TCS was removed from this form entirely — no toggle, no overseas checkbox — so there is no
+     longer any way for a user to say "not on this one". Left as null it means "follow the tenant
+     policy", and where that policy collects TCS the booking quietly picked up a charge nobody on
+     this screen asked for or could see: budget 100 + GST 5 came out as a Total Payable of 110.
+     false says it outright — this form does not collect TCS — which is the whole point of taking
+     the controls away. The tenant's Accounting Settings are untouched and still govern every other
+     surface; this is only what THIS form asserts about the bookings it writes. */
+  applyTcs: false,
   // ── Agent / agency commission ──────────────────────────────────────────────────────────────
   // What this booking owes whoever brought it. An empty commissionType means no arrangement, which
   // is the ordinary case — the fields stay collapsed until someone says there is one.
@@ -740,6 +778,7 @@ export default function BookingFormPage() {
           customerEmail: customer?.email || "",
           customerCity: customer?.city || customer?.address?.city || "",
           customerState: customer?.state || customer?.address?.state || "",
+          customerCountry: snapshot.customerCountry || customer?.country || "",
           // A saved WhatsApp number is by definition a deliberate one, so the mirror starts OFF and
           // the stored value is shown as-is. With no stored number the mirror stays on, which is
           // also right: an older booking never captured one.
@@ -826,7 +865,14 @@ export default function BookingFormPage() {
           // LEAD_SOURCES has on the lead form.
           applyGst: booking.applyGst ?? null,
           gstInclusive: booking.gstInclusive ?? null,
-          applyTcs: booking.applyTcs ?? null,
+          /* applyTcs takes `?? false`, not `?? null`, for the reason set out in the defaults above.
+             The distinction still matters though: an EXPLICIT true was a real decision somebody
+             made about a real booking, and it survives being opened here — only the null case,
+             which means "nobody ever decided", picks up this form's stance of not collecting TCS.
+             So an old booking saved as overseas keeps its TCS (and, since there is no TCS row any
+             more, keeps it silently inside Total Payable); one that was merely inheriting the
+             tenant policy stops doing so. */
+          applyTcs: booking.applyTcs ?? false,
           commissionPayeeName: booking.commissionPayeeName || "",
           commissionType: booking.commissionType || "",
           // The agreed TERMS, not the computed rupees — a percent commission must load back as the
@@ -985,6 +1031,49 @@ export default function BookingFormPage() {
     rooms: form.roomRequirements.reduce((sum, row) => sum + (Number(row.count) || 0), 0),
     extraBeds: form.roomRequirements.reduce((sum, row) => sum + (Number(row.extraBeds) || 0), 0),
   }), [form.roomRequirements]);
+
+  /* Came across with the Travellers block from FastTravelDetails, unchanged.
+     Opening the breakdown SEEDS male/female to "0" so the two boxes render as numbers rather than
+     blanks; closing it writes null, which is what marks "no gender split recorded" as distinct from
+     a recorded 0. getAdultBreakdownError relies on that distinction. */
+  const toggleAdultBreakdown = (checked) => {
+    setField("showAdultBreakdown", checked);
+    setField("male", checked ? String(Number(form.male) || 0) : null);
+    setField("female", checked ? String(Number(form.female) || 0) : null);
+  };
+
+  /* No traveller badge came across with the block. Travel Details needed one because travellers
+     were buried among six other bands; here the block leads with its own "Total Travellers" tile,
+     so a pill in the panel header would be the same number twice — and that header slot is already
+     saying something that changes (Checking number… / Existing customer / New customer). */
+
+  /* Came across with Special assistance. Toggling a chip off removes it rather than storing a
+     false — the payload carries the list of what IS required, not a map of every option. */
+  const toggleAssistanceType = (type) => {
+    const selected = form.specialAssistanceTypes.includes(type);
+    setField(
+      "specialAssistanceTypes",
+      selected
+        ? form.specialAssistanceTypes.filter((item) => item !== type)
+        : [...form.specialAssistanceTypes, type]
+    );
+  };
+
+  // Caps the assistance passenger count — the party cannot have more people needing help than it has.
+  const totalTravellers =
+    (Number(form.totalAdults) || 0) + (Number(form.children) || 0) + (Number(form.infants) || 0);
+
+  /* The card's header badge — the same at-a-glance summary Travel Details carries for travellers.
+     Built as an array and joined so a band with nothing in it contributes no text at all: vehicle
+     rows start empty, and "0 vehicles · 2 rooms" reports an absence as if it were an answer. With
+     both empty the badge does not render, because a pill reading "0" is worse than no pill. */
+  const requirementSummary = useMemo(() => {
+    const vehicles = form.vehicleRequirements.reduce((sum, row) => sum + (Number(row.quantity) || 0), 0);
+    const parts = [];
+    if (vehicles > 0) parts.push(`${vehicles} vehicle${vehicles === 1 ? "" : "s"}`);
+    if (roomTotals.rooms > 0) parts.push(`${roomTotals.rooms} room${roomTotals.rooms === 1 ? "" : "s"}`);
+    return parts.join(" · ");
+  }, [form.vehicleRequirements, roomTotals.rooms]);
 
   const routeNights = useMemo(() => totalRouteNights(form.itinerary), [form.itinerary]);
   const tripRouteSummary = useMemo(() => routeSummary(form.itinerary), [form.itinerary]);
@@ -1344,6 +1433,27 @@ export default function BookingFormPage() {
   const blurField = (name) => {
     const rule = FIELD_RULES[name];
     if (!rule) return;
+    /* A field you have not filled in yet is BLANK, not wrong.
+       Blur fires when focus merely passes through — the caret starts in Customer Phone, and the
+       moment the clerk moved to Customer Name to start typing, the phone went red on a form nobody
+       had touched. Same for Total Budget, which greeted every new booking with "Amount must be
+       greater than 0". Errors that are already on screen before you have done anything teach people
+       to ignore red, which is what makes the real ones cost something.
+
+       So blur only ever CLEARS an error on an empty field; it never raises one. Malformed input is
+       still caught on blur (a half-typed number, a bad email), because that field is not empty, and
+       everything missing is caught by validate() on submit, which also focuses the first offender.
+       The one place this is softer than before: choose a vendor, tab past Vendor Budget, and you
+       hear about the missing cost at submit rather than immediately. */
+    if (!String(form[name] ?? "").trim()) {
+      setErrors((current) => {
+        if (!current[name]) return current;
+        const next = { ...current };
+        delete next[name];
+        return next;
+      });
+      return;
+    }
     const message = rule(form, customerMode);
     setErrors((current) => {
       if (!message && !current[name]) return current;
@@ -1449,6 +1559,9 @@ export default function BookingFormPage() {
         // — inventing a field there would 400 or be dropped silently. Held against the booking
         // until the customer entity gains one.
         customerWhatsapp: (whatsappNumber || "").trim() || null,
+        // Same reason as the WhatsApp number above: CustomerRequestDTO has city and state but no
+        // country, so sending one there would be dropped or rejected.
+        customerCountry: form.customerCountry.trim() || null,
         // ── Pickup / Drop ─────────────────────────────────────────────────────────────────────
         // Neither is validated against `destination`: a Nepal package picked up and dropped at
         // Gorakhpur is a normal booking, and pickup and drop may be the same city.
@@ -1474,7 +1587,15 @@ export default function BookingFormPage() {
         // What the trip REQUIRES. Registration, vendor, driver and status are operational facts
         // that appear after fulfilment and are deliberately absent here.
         vehicleRequirements: form.vehicleRequirements
-          .filter((row) => row.vehicleType || row.model)
+          /* A quantity ALONE is a requirement now, so it has to survive this filter.
+             This used to be `row.vehicleType || row.model`, on the reasoning that a row with
+             neither was one someone had opened and forgotten to fill. That stopped being true when
+             the vehicle rows gained a collapsed view: "3 vehicles, type decided later" is a
+             deliberate answer given through a single counter, and a row carrying it has no type and
+             no model by design. Under the old filter it was dropped in silence on save — the clerk
+             saw 3 in the box and the booking stored nothing.
+             A row only exists because someone pressed Add vehicle, so keeping it is right. */
+          .filter((row) => row.vehicleType || row.model || Number(row.quantity) > 0)
           .map((row) => ({
             vehicleType: row.vehicleType || null,
             vehicleId: row.vehicleId || null,
@@ -1563,6 +1684,11 @@ export default function BookingFormPage() {
       vendorPublicId: form.vendorPublicId || null,
       vendorCost: form.vendorCost === "" ? null : Number(form.vendorCost),
       paidAmount: Number(form.paidAmount) || 0,
+      // How that advance was taken. Same key the payments ledger uses, and only sent when there is
+      // an advance for it to describe — a mode with no payment behind it is noise on the record.
+      ...(Number(form.paidAmount) > 0 && form.paymentMethod
+        ? { paymentMethod: form.paymentMethod }
+        : {}),
       overseasTourPackage: form.overseasTourPackage,
       applyGst: form.applyGst,
       gstInclusive: form.gstInclusive,
@@ -1712,9 +1838,16 @@ export default function BookingFormPage() {
   };
 
   // ── Keyboard: Enter advances, Ctrl+Enter saves, Ctrl+Shift+Enter saves and starts the next ────
+  /* Enter-to-advance walks this list in DOM order.
+     `button` USED TO BE unqualified, which is what made Enter delete itinerary rows: a leg is
+     From → To → Nights → 🗑, so Enter from Nights focused the bin, and onFormKeyDown returns early
+     for a BUTTON — leaving the browser's native "Enter activates the focused button" to fire.
+     Two Enters after choosing a To and the row was gone.
+     Excluding tabindex="-1" buttons takes destructive actions out of the typing path entirely;
+     they stay clickable and reachable by Tab is opt-in per button. */
   const FOCUSABLE =
     'input:not([type="hidden"]):not([disabled]),select:not([disabled]),textarea:not([disabled]),' +
-    'button:not([disabled]),[tabindex]:not([tabindex="-1"])';
+    'button:not([disabled]):not([tabindex="-1"]),[tabindex]:not([tabindex="-1"])';
 
   const focusNext = (from) => {
     const root = formRef.current;
@@ -1800,10 +1933,23 @@ export default function BookingFormPage() {
   // any leftover preview/previewState from a previous amount is ignored rather than reset.
   const previewActive = Number.isFinite(previewAmount) && previewAmount > 0;
 
-  // Does this booking say anything about tax of its own, or is it simply following the tenant?
-  // Drives the "Custom" chip, so a deviation is visible without reading three controls.
-  const taxOverridden =
-    form.applyGst != null || form.gstInclusive != null || form.applyTcs != null;
+  /* Does this booking say anything about tax of its own, or is it simply following the tenant?
+     Drives the "Custom" chip, and it tracks applyGst because that is now the only tax control on
+     the screen. gstInclusive is deliberately excluded even though it is still a real stored flag:
+     it has no control of its own any more, so a booking saved tax-inclusive would light the chip
+     over a toggle sitting unset — a "Custom" nobody can see, let alone reset. applyTcs is excluded
+     for the same reason. */
+  const taxOverridden = form.applyGst != null;
+
+  /* Balance = what is owed − what has been taken.
+     Derived, never a field: two boxes for one number is how they end up disagreeing.
+     Prefers the SERVER's totalPayable (which includes GST/TCS) and falls back to the plain budget
+     until the preview lands — the label beside it says which of the two is being shown, so the
+     figure is never ambiguous. The frontend does not compute tax; it only subtracts. */
+  const balanceDue = (
+    preview?.totalPayable != null ? Number(preview.totalPayable) : (Number(form.customerAmount) || 0)
+  ) - (Number(form.paidAmount) || 0);
+
 
   /* What the commission works out to, shown live beside the control.
      Mirrors BookingCommissionCalculator deliberately — a percent is of the PRE-TAX base, never the
@@ -1852,9 +1998,18 @@ export default function BookingFormPage() {
   // flow where every field has to be typed by hand, and where the clerk was met with five dead
   // inputs. A valid phone number is now enough to open the block; the debounced lookup still runs
   // underneath and still swaps to the matched-customer card if that number is already a customer.
-  const phoneReady = phonePattern.test(String(form.customerPhone || "").trim());
-  const customerFieldsLocked = editing ||
-    (customerMode === "idle" && !phoneReady) || (customerMode === "existing" && !syncCustomer);
+  /* "idle" no longer locks anything. Gating the block on a VALID phone was the last remnant of
+     phone-first data entry, and it survived the redesign that put Customer Name first — so the very
+     first field on the page was dead until the second one was filled in correctly. On a call the
+     name is what you are told first.
+
+     Nothing is lost by unlocking it. The auto-lookup already refuses to overwrite live keystrokes
+     (`take()` in searchCustomer keeps what is typed whenever auto === true), so a name entered
+     before the match lands survives it; the explicit Search button still loads the matched
+     customer's details, because that is a deliberate "fetch this person". And a booking still
+     cannot be created without a phone — FIELD_RULES.customerPhone enforces that at submit, which
+     is where a missing required field belongs. */
+  const customerFieldsLocked = editing || (customerMode === "existing" && !syncCustomer);
 
   return (
     // OLD — replaced in create-form redesign
@@ -1935,41 +2090,54 @@ export default function BookingFormPage() {
           icon={CircleUserRound}
           title="Customer Details"
           description="Enter the phone number — an existing customer is matched automatically"
-          action={searchingCustomer ? (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
-              <LoaderCircle className="h-3 w-3 animate-spin" /> Checking number...
-            </span>
-          ) : customerMode !== "idle" && (
-            <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${customerMode === "existing" ? "bg-emerald-50 text-emerald-700" : "bg-blue-50 text-blue-700"}`}>
-              <Check className="h-3 w-3" /> {customerMode === "existing" ? "Existing customer" : "New customer"}
-            </span>
-          )}
+          action={
+            /* Two chips, not one: the lookup status is transient and the headcount is standing, so
+               they cannot take turns in the same slot. Wrapped in a flex that wraps, because on a
+               narrow viewport "Existing customer" and "6 travellers" together outrun the corner. */
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {searchingCustomer ? (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
+                  <LoaderCircle className="h-3 w-3 animate-spin" /> Checking number...
+                </span>
+              ) : customerMode !== "idle" ? (
+                <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${customerMode === "existing" ? "bg-emerald-50 text-emerald-700" : "bg-blue-50 text-blue-700"}`}>
+                  <Check className="h-3 w-3" /> {customerMode === "existing" ? "Existing customer" : "New customer"}
+                </span>
+              ) : null}
+              {/* The party size, in the corner. Guarded on > 0 so a form whose counters have been
+                  cleared shows nothing rather than "0 travellers". */}
+              {totalTravellers > 0 && (
+                <span className="inline-flex w-fit items-center rounded-full bg-teal-50 px-2.5 py-1 text-xs font-semibold text-teal-700">
+                  {totalTravellers} traveller{totalTravellers === 1 ? "" : "s"}
+                </span>
+              )}
+            </div>
+          }
         >
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
-            <div className="lg:col-span-4">
-              <Field label="Link Lead" optional>
-                <SearchableSelect
-                  options={leadOptions}
-                  value={form.leadPublicId}
-                  onChange={handleLeadChange}
-                  placeholder="Search lead code, customer or phone"
-                  searchPlaceholder="Lead code, name or phone..."
-                  loading={loadingLead}
-                  disabled={editing}
-                  icon={ClipboardList}
-                  accent="blue"
-                  advanceOnSelect
-                  /* OLD — className="rounded-lg …": this was the page's only searchable select, so
-                     it was squared off to match the plain inputs. Now there are four of them and
-                     they all render like Create Lead's. */
-                  className="hover:border-slate-300 disabled:bg-slate-50"
-                />
+          {/* Name → Phone → WhatsApp. Name leads because it is what the agent is told first on a
+              call; the phone keeps its lookup and its Search button beside it. Link Lead moved to
+              the foot of this panel: it PREFILLS the form, so it is a shortcut rather than a field,
+              and at the top it sat between the agent and the two things they actually type. */}
+          {/* Equal thirds. The old 4 / 5 / 3 split gave Customer Phone the extra column because it
+              was carrying the Search button inside its own row; with the button gone that width
+              belonged to nobody, and WhatsApp was left the narrowest of the three despite holding
+              the same kind of value as the field next to it. Three fields asking for a name and two
+              numbers have no reason to differ in width. */}
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            <div className="min-w-0">
+              <Field label="Customer Name" required={customerMode !== "existing"} error={errors.customerName}>
+                <div className="relative">
+                  <CircleUserRound className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <input name="customerName" value={form.customerName} onChange={(event) => setField("customerName", event.target.value)} onBlur={() => blurField("customerName")} disabled={customerFieldsLocked} placeholder="Full name" className={`${controlClass("customerName", true)} disabled:bg-slate-50`} />
+                </div>
               </Field>
             </div>
-            <div className="lg:col-span-5">
+
+            <div className="min-w-0">
               <Field label="Customer Phone" required={!editing} error={errors.customerPhone || errors.customer}>
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
+                {/* Plain relative box now, not a flex row. The flex existed to sit the input beside
+                    the Search button; with one child left it was a wrapper around a wrapper. */}
+                <div className="relative">
                     <Phone className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                     {/* OLD — replaced in create-form redesign
                         <input value={form.customerPhone} ... />
@@ -1996,11 +2164,35 @@ export default function BookingFormPage() {
                       placeholder="Enter phone number"
                       className={`${controlClass("customerPhone", true)} disabled:bg-slate-50 disabled:text-slate-500`}
                     />
-                  </div>
-                  {!editing && <button type="button" onClick={() => searchCustomer(form.customerPhone)} disabled={searchingCustomer} className="inline-flex min-w-24 items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 text-xs font-bold text-white hover:bg-slate-800 disabled:opacity-60">
-                    {searchingCustomer ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />} Search
-                  </button>}
                 </div>
+              </Field>
+            </div>
+
+            {/* WhatsApp completes the "how do we reach them" row. Mirrors the phone while ticked,
+                including later edits to it. */}
+            <div className="min-w-0">
+              <Field label="WhatsApp Number" optional>
+                <div className="relative">
+                  <Phone className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <input
+                    inputMode="tel"
+                    value={whatsappNumber}
+                    onChange={(event) => setField("customerWhatsapp", event.target.value)}
+                    disabled={customerFieldsLocked || form.whatsappSameAsPhone}
+                    placeholder="Same as phone"
+                    className={`${controlClass("customerWhatsapp", true)} disabled:bg-slate-50`}
+                  />
+                </div>
+                <label className="mt-1.5 flex cursor-pointer items-center gap-2 text-xs font-medium text-slate-500">
+                  <input
+                    type="checkbox"
+                    checked={form.whatsappSameAsPhone}
+                    onChange={(event) => setWhatsappSameAsPhone(event.target.checked)}
+                    disabled={customerFieldsLocked}
+                    className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-200"
+                  />
+                  Same as phone
+                </label>
               </Field>
             </div>
           </div>
@@ -2049,24 +2241,12 @@ export default function BookingFormPage() {
             </div>
           )}
 
-          {/* 4 columns, not 5. With 5 the seven fields landed as 5 + 2, which squeezed WhatsApp —
-              a field with a checkbox under it — into a fifth of the row where both its label and
-              its checkbox wrapped, and then left three empty cells on the second row.
-              At 4 with WhatsApp spanning 2, both rows fill exactly:
-                Name | Email | City | State
-                WhatsApp (×2) | Birth Date | Anniversary */}
+          {/* Rest of the customer record — one clean four-across row.
+              Birth Date and Anniversary were REMOVED from this form: they are customer-profile
+              facts, not booking facts, and they cost two fields on the fastest-typed screen in the
+              app. They stay editable on the customer record itself, and nothing is dropped from an
+              existing customer — the booking simply stops asking. */}
           <div className="mt-4 grid grid-cols-1 gap-4 border-t border-slate-100 pt-4 sm:grid-cols-2 lg:grid-cols-4">
-            {/* OLD — required={customerMode === "new"}
-                The block can now be open while the lookup is still in flight, and during that
-                window this rendered as optional before flipping to required — telling the clerk the
-                opposite of what submit will enforce. Only a matched existing customer makes the
-                name genuinely optional, so key it off that instead. */}
-            <Field label="Customer Name" required={customerMode !== "existing"} error={errors.customerName}>
-              <div className="relative">
-                <CircleUserRound className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <input name="customerName" autoComplete="name" value={form.customerName} onChange={(event) => setField("customerName", event.target.value)} onBlur={() => blurField("customerName")} disabled={customerFieldsLocked} placeholder="Full name" className={`${controlClass("customerName", true)} disabled:bg-slate-50 disabled:text-slate-500`} />
-              </div>
-            </Field>
             <Field label="Email" optional error={errors.customerEmail}>
               <div className="relative">
                 <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -2076,65 +2256,151 @@ export default function BookingFormPage() {
             <Field label="City" optional>
               <input value={form.customerCity} onChange={(event) => setField("customerCity", event.target.value)} disabled={customerFieldsLocked} placeholder="Customer city" className={`${controlClass("customerCity")} disabled:bg-slate-50`} />
             </Field>
-            {/* State is a REAL customer field (CustomerRequestDTO carries it) that this form simply
-                never sent. It is typed, not derived: the City master has no state/province column,
-                so nothing can resolve "Pune" to "Maharashtra" yet — see the backend contract note. */}
+            {/* State IS a real customer field (CustomerRequestDTO carries it) that this form simply
+                never sent. Typed, not derived: the City master has no state column, so nothing can
+                resolve "Pune" to "Maharashtra" yet. */}
             <Field label="State / Province" optional>
               <input value={form.customerState} onChange={(event) => setField("customerState", event.target.value)} disabled={customerFieldsLocked} placeholder="Maharashtra" className={`${controlClass("customerState")} disabled:bg-slate-50`} />
             </Field>
-            {/* WhatsApp opens the SECOND row and spans two columns: the number and its
-                "same as phone" toggle are one decision, and at single-column width the label and
-                the checkbox text both wrapped. The toggle sits inline beside the input on desktop
-                and drops beneath it on narrow screens. */}
-            <div className="min-w-0 lg:col-span-2">
-              <Field label="WhatsApp Number" optional>
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                  <div className="relative min-w-0 flex-1">
-                    <Phone className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                    <input
-                      inputMode="tel"
-                      value={whatsappNumber}
-                      onChange={(event) => setField("customerWhatsapp", event.target.value)}
-                      disabled={customerFieldsLocked || form.whatsappSameAsPhone}
-                      placeholder="Same as phone"
-                      className={`${controlClass("customerWhatsapp", true)} disabled:bg-slate-50`}
-                    />
-                  </div>
-                  <label className="flex shrink-0 cursor-pointer items-center gap-2 text-xs font-medium text-slate-500">
-                    <input
-                      type="checkbox"
-                      checked={form.whatsappSameAsPhone}
-                      onChange={(event) => setWhatsappSameAsPhone(event.target.checked)}
-                      disabled={customerFieldsLocked}
-                      className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-200"
-                    />
-                    Same as phone
-                  </label>
-                </div>
-              </Field>
-            </div>
-            <Field label="Birth Date" optional>
-              <input type="date" value={form.birthday} onChange={(event) => setField("birthday", event.target.value)} disabled={customerFieldsLocked} className={`${controlClass("birthday")} disabled:bg-slate-50`} />
-            </Field>
-            <Field label="Anniversary" optional>
-              <input type="date" value={form.anniversary} onChange={(event) => setField("anniversary", event.target.value)} disabled={customerFieldsLocked} className={`${controlClass("anniversary")} disabled:bg-slate-50`} />
+            {/* Country has NO field on CustomerRequestDTO, so it rides in tripSnapshot rather than
+                being invented on the customer payload — see the backend contract note. */}
+            <Field label="Country" optional>
+              <input value={form.customerCountry} onChange={(event) => setField("customerCountry", event.target.value)} disabled={customerFieldsLocked} placeholder="India" className={`${controlClass("customerCountry")} disabled:bg-slate-50`} />
             </Field>
           </div>
+
+          {/* ── Travellers ──────────────────────────────────────────────────────────────────────
+              Moved here from Travel Details, unchanged. Who is going is a fact about the PARTY, not
+              about the route — it does not depend on a destination, dates, or a pickup point, and
+              on a call it is answered in the same breath as the customer's name. In Travel Details
+              it sat between Drop and Special assistance, which put a headcount in the middle of a
+              set of questions about places.
+
+              Rooms stay suppressed here for the same reason as before: the Room Requirement rows
+              own that number, and two editors for one value is how they drift apart. */}
+          {/* Travellers on the left, Link Lead on the right — one row, not two.
+              Stacked, each occupied a full-width band to hold one narrow control, and the counters
+              are capped at max-w-sm while Link Lead is capped at max-w-md, so both left roughly
+              half the card empty. Side by side they fill it and the panel loses two rules and a
+              band of dead space. Still stacks on small screens, where a single column is right. */}
+          {/* 7/5, not 50/50. Link Lead is ONE select and was rendering nearly 600px wide with a
+              short line of text in it, while the traveller counters next to it were squeezed until
+              "Adult Female" truncated to "A…". The wider half goes to the side with five controls
+              in it. */}
+          <div className="mt-4 grid grid-cols-1 gap-x-6 gap-y-4 border-t border-slate-100 pt-4 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
+            <div className="min-w-0">
+              <div className="mb-3 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500">Travellers</h3>
+                <p className="text-[11px] text-slate-400">Click a number and type to replace it</p>
+              </div>
+              <TravellerCountFields
+                values={form}
+                onCountChange={setField}
+                onToggleBreakdown={toggleAdultBreakdown}
+                theme="teal"
+                showRooms={false}
+              />
+            </div>
+
+            {/* Link Lead keeps its place at the end of the reading order — it PREFILLS the whole
+                form, so it is a shortcut rather than a customer field, and at the top it sat
+                between the agent and the two things they actually type. */}
+            {/* <div className="min-w-0">
+              <Field label="Link Lead" optional>
+                <SearchableSelect
+                  options={leadOptions}
+                  value={form.leadPublicId}
+                  onChange={handleLeadChange}
+                  placeholder="Search lead code, customer or phone"
+                  searchPlaceholder="Lead code, name or phone..."
+                  loading={loadingLead}
+                  disabled={editing}
+                  icon={ClipboardList}
+                  accent="blue"
+                  advanceOnSelect
+                  className="hover:border-slate-300 disabled:bg-slate-50"
+                />
+              </Field>
+            </div> */}
+          </div>
+
+          {/* Special assistance moved on to the action footer — it is the last thing asked, and it
+              is off on nearly every booking, so a whole band here was a rule and a line of padding
+              spent on an unticked box. Its passenger cap still reads totalTravellers, which is
+              derived from `form` and so does not care which card the counters are in. */}
         </Panel>
 
         {/* OLD — description="Core booking, destination and commercial information"
             The money fields moved to the sticky rail, so "commercial" no longer lives here. */}
-        <Panel icon={CalendarCheck2} title="Booking Details" description="Core booking and destination information">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {/* Booking Date leads the section: it is WHEN THE BOOKING WAS TAKEN — the first fact
-                about the record, defaulted to today — and it is not a travel date. Keeping it
-                first, ahead of the trip's own details, is what stops it being read as one. */}
-            <Field label="Booking Date" optional>
-              <input type="date" value={form.bookingDate} onChange={(event) => setField("bookingDate", event.target.value)} className={controlClass("bookingDate")} />
-            </Field>
-            {/* OLD — a native <select name="destination"> with the same options. Replaced with the
-                combobox for the search; `name` stays on the trigger so validate()'s
-                querySelector('[name="destination"]').focus() still lands on this control. */}
+        {/* ── Vehicle & Room Requirement ────────────────────────────────────────────────────────
+            Occupies the slot the Booking Details card used to hold. Its fields did not disappear:
+            Destination and Package Type moved into Travel Details beside the dates they belong
+            with, and Assigned To moved to the action footer as a record-keeping fact. Nothing was
+            dropped from state or the payload.
+
+            ONE card, two bands — not two cards side by side. Both answer the same question ("what
+            does this party need booked"), they are usually filled in together, and as separate
+            cards each one sized to its own row count, so an empty Vehicle box sat next to three
+            room rows and the pair looked broken. These are also the ONLY place either is asked:
+            the duplicate bands that used to repeat inside Travel Details are gone.
+
+            STACKED, not two columns. Side by side, each band had roughly half the card to fit four
+            controls plus a bin, and both collapsed into abbreviations — "D…" for Double, "Temp…"
+            for Tempo Traveller, "Innova Crysta — …". A room type you cannot read is a room type
+            nobody checks. Full width gives each select its own words back, and these are two
+            questions asked in sequence anyway, so reading them top to bottom costs nothing. */}
+        <Panel
+          icon={Bus}
+          title="Vehicle & Room Requirement"
+          description="What the trip needs — not what is finally assigned"
+          action={requirementSummary ? (
+            <span className="inline-flex w-fit items-center rounded-full bg-teal-50 px-2.5 py-1 text-xs font-semibold text-teal-700">
+              {requirementSummary}
+            </span>
+          ) : null}
+        >
+          <div className="space-y-5">
+            <section className="min-w-0">
+              <div className="mb-3 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500">Vehicle</h3>
+                <p className="text-[11px] text-slate-400">Not the vehicle finally assigned</p>
+              </div>
+              <VehicleRequirementRows
+                rows={form.vehicleRequirements}
+                vehicles={vehicleMaster}
+                loading={loadingVehicleMaster}
+                onAdd={addRow("vehicleRequirements", emptyVehicleRow)}
+                onRemove={removeRow("vehicleRequirements", false)}
+                onUpdate={updateRow("vehicleRequirements")}
+              />
+            </section>
+            {/* A rule between the two bands, at every width now that they are stacked. */}
+            <section className="min-w-0 border-t border-slate-100 pt-5">
+              <div className="mb-3 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500">Rooms</h3>
+                <p className="text-[11px] text-slate-400">Room mix for the party</p>
+              </div>
+              <RoomRequirementRows
+                rows={form.roomRequirements}
+                onAdd={addRow("roomRequirements", emptyRoomRow)}
+                onRemove={removeRow("roomRequirements", true)}
+                onUpdate={updateRow("roomRequirements")}
+              />
+            </section>
+          </div>
+        </Panel>
+
+        {/* onBlurField added in the create-form redesign so Travel Date validates on blur like the
+            fields owned by this page, instead of waiting for submit. */}
+        {/* Dates, Pickup, Drop and Travellers are all bands INSIDE this one panel. Vehicle and Room
+            Requirement used to be bands here too and are no longer passed down — they are asked
+            once, in the card above, instead of appearing under two headings on the same page. */}
+        <FastTravelDetails
+          form={form}
+          setField={setField}
+          errors={errors}
+          onBlurField={blurField}
+          primaryFields={<>
             <Field label="Destination" required error={errors.destination}>
               <SearchableSelect
                 name="destination"
@@ -2170,63 +2436,7 @@ export default function BookingFormPage() {
                 <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               </div>
             </Field>
-            {/* OLD — native <select> over the assignee list. Same swap as Destination: a tenant with
-                a full sales floor could not type a colleague's name to find them. */}
-            <Field label="Assigned To" optional>
-              <SearchableSelect
-                options={assigneeOptions}
-                value={String(form.assignedUserId ?? "")}
-                onChange={(next) => setField("assignedUserId", next)}
-                placeholder="Current user"
-                searchPlaceholder="Search team member..."
-                icon={UserCheck}
-                accent="blue"
-                advanceOnSelect
-                className="hover:border-slate-300"
-              />
-            </Field>
-            {editing && <Field label="Booking Status" optional>
-              <div className="relative">
-                <CalendarCheck2 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <select value={form.status} onChange={(event) => setField("status", event.target.value)} className={`${controlClass("status", true)} appearance-none pr-9`}>
-                  {[...new Set([form.status, "PENDING", "CONFIRMED", "COMPLETED"])].filter(Boolean).map((status) => (
-                    <option key={status} value={status}>{status.charAt(0) + status.slice(1).toLowerCase()}</option>
-                  ))}
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              </div>
-            </Field>}
-          </div>
-
-          {/* OLD — the three money fields (Customer Amount / Vendor Cost / Advance) and the
-              client-side "Indicative preview" block sat here, inside Booking Details. Moved to the
-              sticky Money rail (right column below) when the server preview landed: the preview
-              could only say "GST / TCS calculated on save" because the browser must never guess a
-              tax rate — POST /bookings/preview now answers with the tenant's real figures, and the
-              rail keeps them in view while the clerk scrolls the trip detail. The inputs themselves
-              are unchanged (same name/onBlur/onWheel contract). */}
-        </Panel>
-
-        {/* onBlurField added in the create-form redesign so Travel Date validates on blur like the
-            fields owned by this page, instead of waiting for submit. */}
-        {/* Pickup, Drop, Vehicle Requirement, Travellers and Room Requirement are all bands INSIDE
-            this one panel. They were briefly three extra cards, which split one job — "describe the
-            trip" — across four boxes the eye had to reassemble. */}
-        <FastTravelDetails
-          form={form}
-          setField={setField}
-          errors={errors}
-          onBlurField={blurField}
-          vehicleRows={form.vehicleRequirements}
-          vehicleMaster={vehicleMaster}
-          loadingVehicleMaster={loadingVehicleMaster}
-          onAddVehicle={addRow("vehicleRequirements", emptyVehicleRow)}
-          onRemoveVehicle={removeRow("vehicleRequirements", false)}
-          onUpdateVehicle={updateRow("vehicleRequirements")}
-          roomRows={form.roomRequirements}
-          onAddRoom={addRow("roomRequirements", emptyRoomRow)}
-          onRemoveRoom={removeRow("roomRequirements", true)}
-          onUpdateRoom={updateRow("roomRequirements")}
+          </>}
         />
 
         {/* ── Services & Notes ─────────────────────────────────────────────────────────────────
@@ -2243,7 +2453,10 @@ export default function BookingFormPage() {
           <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
             {/* auto-rows-min for the same reason one level down, so the two chip rows do not
                 stretch to fill the column either. */}
-            <div className="grid auto-rows-min grid-cols-2 gap-2 sm:grid-cols-4">
+            {/* ONE row of five on desktop, wrapping to two-up on phones. Eight chips needed two
+                rows; five fit across, which is what makes this a single glance rather than a grid
+                to read. */}
+            <div className="grid auto-rows-min grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
               {SERVICES.map((service) => {
                 // OLD — replaced in create-form redesign
                 // const selected = form.services.includes(service);
@@ -2310,9 +2523,9 @@ export default function BookingFormPage() {
             onWheel contract), so focus-first-invalid and Enter-advance keep working — DOM order
             simply lands them last, right before the footer actions. */}
         <aside className="min-w-0 space-y-5 lg:sticky lg:top-[72px]">
-          <Panel icon={BadgeIndianRupee} title="Money" description="Commercials for this booking">
+          <Panel icon={BadgeIndianRupee} title="Payment Details" description="Commercials for this booking">
             <div className="space-y-4">
-              <Field label="Customer Amount (INR)" required error={errors.customerAmount}>
+              <Field label="Total Budget (INR)" required error={errors.customerAmount}>
                 <div className="relative">
                   <IndianRupee className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                   <input name="customerAmount" type="number" min="0" step="0.01" value={form.customerAmount} onChange={(event) => setField("customerAmount", event.target.value)} onBlur={() => blurField("customerAmount")} onWheel={(event) => event.currentTarget.blur()} placeholder="0.00" className={controlClass("customerAmount", true)} />
@@ -2328,65 +2541,119 @@ export default function BookingFormPage() {
                   </p>
                 )}
               </Field>
-              {/* Vendor gates Vendor Cost. The amount used to be asked for on its own and was
+              {/* Money the CUSTOMER owes, top to bottom: what the trip costs them, what they have
+                  paid and how, what is still outstanding. Vendor and Vendor Budget follow after,
+                  because they are what WE pay out — a different party and a different direction, so
+                  they no longer sit between the customer's budget and their advance. */}
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Field label="Advance (INR)" optional error={errors.paidAmount}>
+                  <div className="relative">
+                    <IndianRupee className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <input name="paidAmount" type="number" min="0" step="0.01" value={form.paidAmount} onChange={(event) => setField("paidAmount", event.target.value)} onBlur={() => blurField("paidAmount")} onWheel={(event) => event.currentTarget.blur()} placeholder="0.00" className={controlClass("paidAmount", true)} />
+                  </div>
+                </Field>
+
+                {/* How the advance came in — UPI, Cash, Bank Transfer and the rest. The list is
+                    PAYMENT_METHODS, imported from the payments page rather than retyped here: the
+                    ledger already owns this vocabulary and a second copy would drift from it.
+                    Sits beside the amount rather than appearing only once one is typed — a field
+                    that materialises mid-form is a field the agent has to notice. It is DISABLED
+                    until there is an advance, so it never asks how nothing was paid. */}
+                <Field label="Payment Mode" optional>
+                  <div className="relative">
+                    <Wallet className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <select
+                      value={form.paymentMethod}
+                      onChange={(event) => setField("paymentMethod", event.target.value)}
+                      disabled={!(Number(form.paidAmount) > 0)}
+                      className={`${controlClass("paymentMethod", true)} appearance-none pr-9`}
+                    >
+                      <option value="">{Number(form.paidAmount) > 0 ? "Select mode" : "No advance"}</option>
+                      {PAYMENT_METHODS.map((method) => <option key={method} value={method}>{method}</option>)}
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  </div>
+                </Field>
+              </div>
+
+              {/* Balance is DERIVED, never typed — two boxes for one number is how they end up
+                  disagreeing. Shown against the server's computed total payable once the preview
+                  has landed (that figure includes GST/TCS), and against the plain budget until
+                  then, so the label always says which it is. */}
+              <div className="rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2.5">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="text-xs font-semibold text-slate-500">
+                    Balance {preview?.totalPayable != null ? "(after tax)" : ""}
+                  </span>
+                  <span className={`text-sm font-extrabold tabular-nums ${balanceDue < 0 ? "text-red-600" : "text-slate-800"}`}>
+                    {inr(balanceDue)}
+                  </span>
+                </div>
+                {balanceDue < 0 && (
+                  <p className="mt-1 text-[11px] font-semibold text-red-500">
+                    Advance is more than the amount due.
+                  </p>
+                )}
+              </div>
+
+              {/* Vendor gates Vendor Budget. The amount used to be asked for on its own and was
                   REQUIRED, so every booking carried a supplier figure with no payee — and the agent
                   had to commit to one at the moment of sale, before anything was actually booked.
                   Now: pick a supplier and the amount opens up; leave it blank and the cost stays 0,
                   with the real spend itemised later in the expense ledger (which reduces profit). */}
-              <Field label="Vendor" optional error={errors.vendorPublicId}>
-                {/* appearance-none + pr-9 is load-bearing: without it the browser draws its own
-                    dropdown arrow AND the ChevronDown below renders, giving two. Same recipe as the
-                    Package Type select above — left icon, suppressed native arrow, own chevron. */}
-                <div className="relative">
-                  <Store className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                  <select
-                    name="vendorPublicId"
-                    value={form.vendorPublicId}
-                    onChange={(event) => setField("vendorPublicId", event.target.value)}
-                    disabled={loadingVendors}
-                    className={`${controlClass("vendorPublicId", true)} appearance-none pr-9`}
-                  >
-                    <option value="">
-                      {loadingVendors ? "Loading vendors…" : "No vendor selected"}
-                    </option>
-                    {vendors.map((v) => (
-                      <option key={v.publicId} value={v.publicId}>
-                        {v.vendorName}
+              <div className="space-y-4 border-t border-slate-100 pt-4">
+                <Field label="Vendor" optional error={errors.vendorPublicId}>
+                  {/* appearance-none + pr-9 is load-bearing: without it the browser draws its own
+                      dropdown arrow AND the ChevronDown below renders, giving two. Same recipe as
+                      the Package Type select — left icon, suppressed native arrow, own chevron. */}
+                  <div className="relative">
+                    <Store className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <select
+                      name="vendorPublicId"
+                      value={form.vendorPublicId}
+                      onChange={(event) => setField("vendorPublicId", event.target.value)}
+                      disabled={loadingVendors}
+                      className={`${controlClass("vendorPublicId", true)} appearance-none pr-9`}
+                    >
+                      <option value="">
+                        {loadingVendors ? "Loading vendors…" : "No vendor selected"}
                       </option>
-                    ))}
-                  </select>
-                  <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                </div>
-              </Field>
-              <Field
-                label="Vendor Cost (INR)"
-                required={Boolean(form.vendorPublicId)}
-                optional={!form.vendorPublicId}
-                error={errors.vendorCost}
-              >
-                <div className="relative">
-                  <BadgeIndianRupee className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                  <input name="vendorCost" type="number" min="0" step="0.01" value={form.vendorCost} onChange={(event) => setField("vendorCost", event.target.value)} onBlur={() => blurField("vendorCost")} onWheel={(event) => event.currentTarget.blur()} placeholder={form.vendorPublicId ? "0.00" : "Select a vendor first"} disabled={!form.vendorPublicId} className={controlClass("vendorCost", true)} />
-                </div>
-              </Field>
-              <Field label="Advance Collected (INR)" optional error={errors.paidAmount}>
-                <div className="relative">
-                  <IndianRupee className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                  <input name="paidAmount" type="number" min="0" step="0.01" value={form.paidAmount} onChange={(event) => setField("paidAmount", event.target.value)} onBlur={() => blurField("paidAmount")} onWheel={(event) => event.currentTarget.blur()} placeholder="0.00" className={controlClass("paidAmount", true)} />
-                </div>
-              </Field>
-              <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2.5">
-                <input
-                  type="checkbox"
-                  checked={form.overseasTourPackage}
-                  onChange={(event) => setField("overseasTourPackage", event.target.checked)}
-                  className="mt-0.5 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                />
-                <span className="text-xs">
-                  <span className="font-semibold text-slate-700">Overseas tour package</span>
-                  <span className="block font-normal text-slate-400">TCS is collected on overseas packages when your accounting policy says so</span>
-                </span>
-              </label>
+                      {vendors.map((v) => (
+                        <option key={v.publicId} value={v.publicId}>
+                          {v.vendorName}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  </div>
+                </Field>
+                <Field
+                  label="Vendor Budget (INR)"
+                  required={Boolean(form.vendorPublicId)}
+                  optional={!form.vendorPublicId}
+                  error={errors.vendorCost}
+                >
+                  <div className="relative">
+                    <BadgeIndianRupee className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <input name="vendorCost" type="number" min="0" step="0.01" value={form.vendorCost} onChange={(event) => setField("vendorCost", event.target.value)} onBlur={() => blurField("vendorCost")} onWheel={(event) => event.currentTarget.blur()} placeholder={form.vendorPublicId ? "0.00" : "Select a vendor first"} disabled={!form.vendorPublicId} className={controlClass("vendorCost", true)} />
+                  </div>
+                </Field>
+              </div>
+              {/* The "Overseas tour package" checkbox stood here. It was the last TCS control on
+                  this form — its only job was telling the server's 206C(1G) rule that this booking
+                  qualifies — and TCS is no longer something this screen asks about or shows.
+
+                  `overseasTourPackage` is NOT removed from the form or the payload, only from the
+                  UI. It still defaults to false and is still sent, so a new booking simply declares
+                  itself domestic; and edit mode still LOADS the saved value and sends it back
+                  untouched, so an existing overseas booking keeps its flag rather than being
+                  silently converted to a domestic one on the next save.
+
+                  Side effect worth knowing: with the flag false, the server's auto-TCS rule does
+                  not fire, so Total Payable becomes Budget + GST and the Computed panel adds up
+                  again — the unexplained ₹5 gap goes away on its own. An OLD booking that was
+                  saved as overseas still carries TCS inside its Total Payable with no line naming
+                  it, because that flag is preserved rather than cleared. */}
 
               {/* ── Agent / agency commission ────────────────────────────────────────────────
                   Collapsed to a single control until someone says there IS an arrangement, because
@@ -2448,7 +2715,7 @@ export default function BookingFormPage() {
                           percent is of the booking VALUE, not of the tax-inclusive total. */}
                       {form.commissionType === "PERCENT" && (
                         <p className="mt-1 text-[10px] font-normal leading-snug text-slate-400">
-                          Percent of the booking value ({inr(previewAmount || 0)}), before GST and TCS.
+                          Percent of the booking value ({inr(previewAmount || 0)}), before tax.
                         </p>
                       )}
                     </Field>
@@ -2481,19 +2748,24 @@ export default function BookingFormPage() {
               </div>
 
               {/* ── Tax for THIS booking ─────────────────────────────────────────────────────
-                  Each control is tri-state and starts on "Default", which means the tenant's
-                  Accounting Settings decide. Only touch one when this particular deal differs —
-                  if TCS is wrong on every booking, the fix is the tenant setting, not this.
+                  ONE question, and the only one an agent can actually answer at the point of sale:
+                  is the figure they just typed the all-in price, or does GST go on top of it?
 
-                  Stacked one per row, NOT in columns. This panel is the narrow sticky money rail,
-                  so three 3-option controls side by side gave each button about 35px and the
-                  labels were unreadable. Full width per control is the only shape that fits. */}
+                  Whether GST applies at all, and whether TCS does, are POLICY — they come from the
+                  tenant's Accounting Settings, and the per-booking overrides that used to sit here
+                  ("Charge GST", "Collect TCS") are gone. Both flags still exist on the form and in
+                  the payload as null, which is exactly what "follow Accounting Settings" means, so
+                  the contract with the server is unchanged and a saved booking that carries an
+                  explicit value keeps it. */}
               <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <p className="text-sm font-bold text-slate-700">Tax for this booking</p>
+                    {/* No longer "Leave on Default" — there is no Default BUTTON any more. Unset is
+                        still a real state (neither option lit), so the sentence describes it as
+                        what it is: nothing picked, tenant settings decide. */}
                     <p className="mt-0.5 text-xs font-normal leading-relaxed text-slate-400">
-                      Leave on Default to follow your Accounting Settings.
+                      Leave it unset to follow your Accounting Settings.
                     </p>
                   </div>
                   {taxOverridden && (
@@ -2503,54 +2775,53 @@ export default function BookingFormPage() {
                   )}
                 </div>
 
-                <div className="mt-4 space-y-4">
+                {/* ONE question: does this booking carry GST or not.
+                    "Price entered is — Excl. / Incl. GST" asked something narrower and harder: not
+                    whether tax applies but how the figure already typed should be READ. That only
+                    ever mattered on inclusive pricing, which is the rare case, and it left the
+                    common one unanswerable — there was no way to say "no GST on this booking" at
+                    all once Charge GST was removed.
+
+                    Two options, no Default BUTTON, which does not drop the default STATE: applyGst
+                    starts null, so on a fresh booking neither is lit and the tenant's Accounting
+                    Settings still decide. TriToggle shows its Reset link once one is chosen, so
+                    null stays reachable. */}
+                <div className="mt-4">
                   <TriToggle
-                    label="Price entered is"
-                    value={form.gstInclusive}
-                    onChange={(v) => setField("gstInclusive", v)}
+                    label="GST"
+                    value={form.applyGst}
+                    onChange={(v) => {
+                      setField("applyGst", v);
+                      /* gstInclusive has no control of its own now, so this drives it — carefully.
+                         Without GST: inclusive-or-exclusive is a meaningless question, so it goes
+                         back to null rather than asserting an answer about a tax that is not there.
+                         With GST: the figure typed is pre-tax, which is what an agent means — but
+                         ONLY when nothing has been said yet. A booking saved as tax-INCLUSIVE keeps
+                         that, because flipping it here would silently restate what the customer
+                         owes on a control the agent may only have clicked to confirm. */
+                      if (v !== true) setField("gstInclusive", null);
+                      else if (form.gstInclusive == null) setField("gstInclusive", false);
+                    }}
                     options={[
-                      { value: null,  label: "Default" },
-                      { value: false, label: "Excl. GST" },
-                      { value: true,  label: "Incl. GST" },
+                      { value: true,  label: "With GST" },
+                      { value: false, label: "Without GST" },
                     ]}
                     hint={
-                      form.gstInclusive === true
-                        ? "Customer Amount above is the all-in price — the taxable value is worked back out of it."
+                      form.applyGst === true && form.gstInclusive === true
+                        ? "This booking was saved tax-inclusive — Total Budget is the all-in price and the taxable value is worked back out of it."
                         : null
                     }
                   />
-                  <TriToggle
-                    label="Charge GST"
-                    value={form.applyGst}
-                    onChange={(v) => setField("applyGst", v)}
-                    options={[
-                      { value: null,  label: "Default" },
-                      { value: true,  label: "Yes" },
-                      { value: false, label: "No" },
-                    ]}
-                  />
-                  <TriToggle
-                    label="Collect TCS"
-                    value={form.applyTcs}
-                    onChange={(v) => setField("applyTcs", v)}
-                    options={[
-                      { value: null,  label: "Default" },
-                      { value: true,  label: "Yes" },
-                      { value: false, label: "No" },
-                    ]}
-                  />
                 </div>
 
-                {/* Standing advice about the tenant's POLICY, so it belongs to the block rather
-                    than to the TCS control — and it is only worth saying while that control is
-                    still inheriting the policy it is warning about. */}
-                {form.applyTcs === null && (
-                  <p className="mt-4 border-t border-slate-200 pt-3 text-xs font-normal leading-relaxed text-slate-500">
-                    Domestic packages don't attract TCS. If that is true of most of your bookings,
-                    set the policy to <span className="font-semibold">Overseas only</span> in
-                    Accounting Settings rather than overriding it here.
-                  </p>
-                )}
+                {/* TCS has no presence on this screen — no control, and no line in the Computed
+                    breakdown. Hiding it was not enough on its own: the form went on sending
+                    applyTcs: null ("follow the tenant policy"), that policy collects TCS, and a
+                    ₹100 booking with ₹5 GST came back with a Total Payable of ₹110 that nothing on
+                    screen could explain. The form now sends applyTcs: false — see the defaults —
+                    so the breakdown reconciles because there IS no other tax, not because one is
+                    being hidden. Accounting Settings are untouched and still govern every other
+                    surface. */}
               </div>
             </div>
           </Panel>
@@ -2565,7 +2836,7 @@ export default function BookingFormPage() {
           >
             {!previewActive && (
               <p className="text-xs text-slate-400">
-                Enter the customer amount to see GST, TCS, total payable and profit — computed by the
+                Enter the customer amount to see GST, total payable and profit — computed by the
                 server from your accounting settings.
               </p>
             )}
@@ -2592,10 +2863,9 @@ export default function BookingFormPage() {
                     {form.gstInclusive === true ? "incl. " : "+ "}{inr(preview.gst)}
                   </span>
                 </div>
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-semibold text-slate-400">TCS</span>
-                  <span className="font-bold text-slate-700">+ {inr(preview.tcs)}</span>
-                </div>
+                {/* No TCS row. It is not dropped from the MATH — Total Payable below is the
+                    server's figure and still has any TCS inside it — only from the breakdown, in
+                    line with TCS no longer being something this screen asks about. */}
                 <div className="flex items-center justify-between border-t border-slate-100 pt-2">
                   <span className="text-xs font-bold text-slate-600">Total Payable</span>
                   <span className="text-sm font-extrabold text-slate-900">{inr(preview.totalPayable)}</span>
@@ -2625,9 +2895,63 @@ export default function BookingFormPage() {
         </aside>
         </div>
 
-        <div className="mt-5 flex flex-col-reverse gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-xs text-slate-500"><span className="font-bold text-red-500">*</span> Required fields must be completed before {editing ? "saving" : "creating"} the booking.</p>
-          <div className="flex gap-2">
+        {/* ── Final action area ────────────────────────────────────────────────────────────────
+            Assigned To lives here rather than in a card up the page: it is a fact about the RECORD,
+            not the trip, and it is the last decision taken — who owns this. Stacks above the
+            buttons on phones.
+
+            Booking Date has no field. It is not something an agent decides, it is when the booking
+            was taken — `form.bookingDate` still defaults to today() and still goes in the payload,
+            so the record is stamped exactly as before; there is simply no box inviting someone to
+            backdate it by hand. Edit mode still loads whatever the booking was created with, and
+            sends it back unchanged.
+
+            Special assistance sits beside it. Both are last-thing-before-saving questions, and the
+            checkbox is unticked on the large majority of bookings — as a band of its own inside
+            Customer Details it cost a rule and a line of padding on every record to say "no". Here
+            it rides along in space the footer already had.
+
+            The row is a wrapper now, not the flex itself: ticking the box opens a three-field panel
+            that must NOT try to share a line with the buttons, so it renders full width underneath
+            them instead. */}
+        <div className="mt-5 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div className="grid w-full grid-cols-1 items-end gap-4 sm:grid-cols-2 lg:max-w-lg">
+            <Field label="Assigned To" optional>
+              <SearchableSelect
+                options={assigneeOptions}
+                value={String(form.assignedUserId ?? "")}
+                onChange={(next) => setField("assignedUserId", next)}
+                placeholder="Current user"
+                searchPlaceholder="Search team member..."
+                icon={UserCheck}
+                accent="blue"
+                advanceOnSelect
+                className="hover:border-slate-300"
+              />
+            </Field>
+            {/* pb-2.5 lines the checkbox up with the middle of the select beside it rather than its
+                baseline — items-end on a control that is one line tall next to one that carries a
+                label above it would otherwise leave it floating. */}
+            <label className="flex w-fit cursor-pointer items-center gap-2 pb-2.5 text-sm font-semibold text-slate-700">
+              <input type="checkbox" checked={form.specialAssistanceRequired} onChange={(event) => {
+                const checked = event.target.checked;
+                setField("specialAssistanceRequired", checked);
+                if (!checked) {
+                  setField("specialAssistanceTypes", []);
+                  setField("assistancePassengerCount", "0");
+                  setField("specialAssistanceNotes", "");
+                } else if (!(Number(form.assistancePassengerCount) > 0)) {
+                  setField("assistancePassengerCount", "1");
+                }
+              }} className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500" />
+              <Accessibility className="h-4 w-4 text-teal-600" /> Special assistance
+            </label>
+          </div>
+
+          <div className="flex w-full flex-col gap-3 lg:w-auto lg:items-end">
+            <p className="text-xs text-slate-500"><span className="font-bold text-red-500">*</span> Required fields must be completed before {editing ? "saving" : "creating"} the booking.</p>
+            <div className="flex gap-2">
             <button type="button" onClick={() => navigate(-1)} disabled={submitting} className="flex-1 rounded-lg border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50 sm:flex-none">Cancel</button>
             {/* Added in the create-form redesign — mirrors the header action so the clerk does not
                 have to scroll back up at the end of a record. */}
@@ -2638,7 +2962,33 @@ export default function BookingFormPage() {
               {submitting ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
               {submitting ? (editing ? "Saving Changes..." : "Creating Booking...") : editing ? "Save Changes" : "Create Booking"}
             </button>
+            </div>
           </div>
+          </div>
+
+          {/* Full width, below the buttons. Three fields cannot share a line with Cancel / Save &
+              New / Create Booking, and pushing the actions around every time the box is ticked
+              would move the primary button out from under the cursor. */}
+          {form.specialAssistanceRequired && (
+            <div className="mt-4 grid gap-3 rounded-lg border border-teal-100 bg-teal-50/40 p-3 lg:grid-cols-[1fr_150px_1fr]">
+              <div className="flex flex-wrap gap-2">
+                {ASSISTANCE_TYPES.map((type) => {
+                  const selected = form.specialAssistanceTypes.includes(type);
+                  return <button key={type} type="button" onClick={() => toggleAssistanceType(type)} className={`rounded-md border px-2.5 py-1.5 text-xs font-semibold ${selected ? "border-teal-600 bg-teal-600 text-white" : "border-slate-200 bg-white text-slate-600"}`}>{type}</button>;
+                })}
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-slate-600">Passengers</label>
+                {/* Capped at the party size. totalTravellers is derived from `form`, so the cap
+                    holds regardless of which card the counters themselves live in. */}
+                <input type="number" min="1" max={Math.max(totalTravellers, 1)} value={form.assistancePassengerCount} onFocus={(event) => event.target.select()} onChange={(event) => setField("assistancePassengerCount", event.target.value)} className={controlClass("assistancePassengerCount")} />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-slate-600">Assistance Notes</label>
+                <input value={form.specialAssistanceNotes} onChange={(event) => setField("specialAssistanceNotes", event.target.value)} placeholder="Specific support required" className={controlClass("specialAssistanceNotes")} />
+              </div>
+            </div>
+          )}
         </div>
       </main>
     </form>
