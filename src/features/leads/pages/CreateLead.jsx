@@ -355,7 +355,7 @@ const rebalanceRooms = (current, counts) => {
    matters is how many of them are on screen at once — every 8px of control height costs roughly one
    field off the fold. 13px text keeps that readable at a desk; going smaller would not. */
 const controlBase =
-  "w-full rounded-lg border bg-white py-2 text-[13px] text-slate-800 outline-none transition " +
+  "w-full rounded-lg border bg-white py-2.5 text-sm text-slate-800 outline-none transition " +
   "hover:border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-100";
 const control = (invalid, icon) =>
   `${controlBase} ${icon ? "pl-9 pr-3" : "px-3"} ${invalid ? "border-red-300 focus:border-red-400 focus:ring-red-100" : "border-slate-200"}`;
@@ -496,8 +496,8 @@ function SummaryRow({ icon: Icon, title, detail, onEdit }) {
 }
 function Field({ id, label, required, optional, error, hint, children }) {
   return (
-    <div className="min-w-0 space-y-1">
-      <label htmlFor={id} className="block text-[11px] font-semibold text-slate-600">
+    <div className="min-w-0 space-y-1.5">
+      <label htmlFor={id} className="block text-xs font-semibold text-slate-600">
         {label}
         {required && <span className="ml-1 text-red-500">*</span>}
         {optional && <span className="ml-1 font-normal text-slate-400">(optional)</span>}
