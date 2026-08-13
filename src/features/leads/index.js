@@ -2,6 +2,9 @@
 
 export { default as AllLeads } from "./pages/AllLeads";
 export { default as CreateLead } from "./pages/CreateLead";
+// Preview of the regrouped capture form. Routed alongside CreateLead rather than
+// replacing it, so /createlead keeps working while the layout is judged.
+export { default as LeadFormV2 } from "./pages/LeadFormV2";
 // Create and Edit routes intentionally use one mode-aware page so their UI and validation cannot drift.
 export { default as EditLead } from "./pages/CreateLead";
 export { default as AllLeadLogs } from "./pages/AllLeadLogs";

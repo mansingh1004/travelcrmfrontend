@@ -16,6 +16,7 @@ const lazyPage = (load, name) => lazy(() => load().then((m) => ({ default: m[nam
 const leads = () => import("@features/leads");
 const AllLeads = lazyPage(leads, "AllLeads");
 const CreateLead = lazyPage(leads, "CreateLead");
+const LeadFormV2 = lazyPage(leads, "LeadFormV2");
 const EditLead = lazyPage(leads, "EditLead");
 const AllLeadLogs = lazyPage(leads, "AllLeadLogs");
 const LeadAlerts = lazyPage(leads, "LeadAlerts");
@@ -349,6 +350,9 @@ const AppRouter = () => {
 
               {/* Create Lead Route */}
               <Route path="createlead" element={<Guard allow={hasPermission(P.LEAD_CREATE)}><CreateLead /></Guard>} />
+              {/* Preview of the v2 capture form. Same guard as the real one — a preview
+                  that anyone can open is a preview that ends up in a screenshot. */}
+              <Route path="createlead/v2" element={<Guard allow={hasPermission(P.LEAD_CREATE)}><LeadFormV2 /></Guard>} />
               <Route path="masters/city" element={<City />} />
               <Route path="masters/destinations" element={<Destinations />} />
               <Route path="Allbookings" element={<Allbookings />} />
