@@ -94,6 +94,7 @@ import { hasPermission, P } from "@shared/lib/access";
 import { usePdfDownload } from "@shared/hooks/usePdfDownload";
 import PdfDownloadLoader from "@shared/ui/PdfDownloadLoader";
 import { buildAdultPayload, deriveAdultBreakdown, getAdultBreakdownError } from "@shared/lib/adultBreakdown";
+import DateRangeField from "@shared/ui/DateRangeField";
 import TravellerCountFields from "@shared/ui/TravellerCountFields";
 import { useToast } from "@shared/ui/toast";
 import { getErrorMessage, getFieldErrors, isAlreadyReported } from "@shared/api/apiError";
@@ -284,11 +285,13 @@ export const blankDefaults = () => ({
   tripFor: "",
   whatsappSame: true,
   whatsappNumber: "",
-  fromCity: "",
   occasion: "",
   dateFlexibility: "EXACT",
   dateNote: "",
   decideBy: "",
+  /* "Total" or "PER_PERSON" — what the budget number MEANS. No column yet, like the rest of the
+     qualification set; it is here so the control has somewhere to live. */
+  budgetBasis: "TOTAL",
   /* Source of truth; the child COUNT follows this array, not the other way round. */
   childAges: [],
   referredByName: "",
@@ -352,7 +355,7 @@ const rebalanceRooms = (current, counts) => {
    matters is how many of them are on screen at once — every 8px of control height costs roughly one
    field off the fold. 13px text keeps that readable at a desk; going smaller would not. */
 const controlBase =
-  "w-full rounded-lg border bg-white py-2.5 text-sm text-slate-800 outline-none transition " +
+  "w-full rounded-xl border bg-white py-2.5 text-sm text-slate-800 outline-none transition " +
   "hover:border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-100";
 const control = (invalid, icon) =>
   `${controlBase} ${icon ? "pl-9 pr-3" : "px-3"} ${invalid ? "border-red-300 focus:border-red-400 focus:ring-red-100" : "border-slate-200"}`;
@@ -508,40 +511,6 @@ function Field({ id, label, required, optional, error, hint, children }) {
     </div>
   );
 }
-/**
- * A choice made by pointing, not by opening a list.
- *
- * Exists for the qualification fields specifically. An agent who has taken enquiries on paper for
- * fifteen years reads three visible options and clicks one; the same three inside a <select> are a
- * list they have to open, scan and close, on every single call. Clicking the active chip clears it.
- */
-function ChoiceChips({ options, value, onChange, ariaLabel, allowClear = true }) {
-  return (
-    <div role="radiogroup" aria-label={ariaLabel} className="flex flex-wrap gap-1.5">
-      {options.map((option) => {
-        const active = value === option.value;
-        return (
-          <button
-            key={option.value}
-            type="button"
-            role="radio"
-            aria-checked={active}
-            data-skip-enter="true"
-            onClick={() => onChange(active && allowClear ? "" : option.value)}
-            className={`rounded-lg px-3 py-1.5 text-xs font-bold transition ${
-              active
-                ? "bg-blue-600 text-white shadow-sm"
-                : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-            }`}
-          >
-            {option.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 /* Counter tile. Click-to-select on focus so the clerk overtypes instead of having to clear first —
    copied from FastTravelDetails, where it already earns its keep. */
 function Chip({ selected, onClick, children }) {
@@ -633,30 +602,56 @@ function RequirementsAssistancePanel({
       )}
     >
       <div className="space-y-4">
-        <Field id="notes" label="General Requirements" optional hint="Hotels, meals, budget, occasion and other trip-wide preferences.">
+        {/* One instruction, in one place. This field carried a hint AND a placeholder that said
+            the same thing in two different wordings — "Anything else they said — hotel, food,
+            occasion, special requests." above the box and "Preferred hotels, meals, budget,
+            occasion and other trip requirements" inside it. Two phrasings of one rule read as two
+            rules, and the agent stops to work out the difference.
+
+            The placeholder wins because it is where the eye already is when the box is empty, and
+            it disappears once there is something to read instead. */}
+        <Field id="notes" label="Notes" optional>
           <textarea
             {...register("notes")}
             id="notes"
             rows={4}
-            placeholder="Preferred hotels, meals, budget, occasion and other trip requirements"
+            placeholder="Anything else they said — hotel, food, occasion, special requests"
             className={`${control(false)} resize-y`}
           />
         </Field>
 
+        {/* No second heading: the panel is already titled "Requirements & Assistance". An
+            "Accessibility & Assistance" heading two inches below it was the same words again and
+            made one panel look like two — the checkbox says what this is. */}
         <div className="border-t border-slate-100 pt-4">
-          <div className="mb-3">
-            <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500">Accessibility &amp; Assistance</h3>
-            <p className="mt-1 text-[11px] text-slate-400">Operational support needed for one or more travellers</p>
-          </div>
-          {/* The Yes/No control moved up beside the traveller counters, where the question is
-              actually asked. It is NOT duplicated here: two editors for one boolean is how the two
-              drift, and the rail copy was several Enter stops away from the people it is about.
-              What stays here is everything that only matters once the answer is Yes. */}
-          {!assistanceRequired && (
-            <p className="text-[11px] text-slate-400">
-              No special assistance — set it beside the traveller counts if that changes.
-            </p>
-          )}
+          {/* One checkbox, and the questions it implies open directly beneath it — the booking
+              form's arrangement, and the right one. The switch briefly lived up beside the
+              traveller counters, on the reasoning that it is a question about those same people.
+              It is, but the answer is almost always no, and putting it there spent a slot in the
+              busiest row of the form on a control most enquiries never touch.
+
+              Unticking clears what it revealed: leaving a type and a passenger count behind on a
+              lead that no longer needs assistance is how a stale requirement reaches an operations
+              board weeks later. */}
+          <label className="flex w-fit cursor-pointer items-center gap-2 text-sm font-semibold text-slate-700">
+            <input
+              type="checkbox"
+              checked={Boolean(assistanceRequired)}
+              onChange={(event) => {
+                const checked = event.target.checked;
+                setValue("specialAssistanceRequired", checked, { shouldDirty: true, shouldValidate: true });
+                if (!checked) {
+                  setValue("specialAssistanceTypes", [], { shouldDirty: true });
+                  setValue("assistancePassengerCount", 0, { shouldDirty: true });
+                  setValue("specialAssistanceNotes", "", { shouldDirty: true });
+                } else if (toInt(getValues("assistancePassengerCount")) < 1) {
+                  setValue("assistancePassengerCount", 1, { shouldDirty: true });
+                }
+              }}
+              className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+            />
+            <Accessibility className="h-4 w-4 text-blue-600" /> Special assistance required
+          </label>
 
           {/* Single column on purpose — the panel lives in the 300px rail now, so the old
               full-details `md:grid-cols-[minmax(0,1fr)_130px]` split would only squeeze both. */}
@@ -716,8 +711,20 @@ function RequirementsAssistancePanel({
 }
 // Module scope, not component scope — it is a constant, and keeping it out of the components
 // means focusNext's useCallback does not need it as a dependency.
+/* `data-skip-enter` now applies to FIELDS, not just buttons.
+   It used to be honoured on button and [tabindex] only, so marking an input did nothing — which
+   meant the Enter walk had to visit every input on the form in DOM order, whether or not the agent
+   ever fills it.
+
+   The distinction it buys is between SKIPPING A FIELD IN THE WALK and HIDING IT. This form has
+   reversed a hide twice — "Full details" was retired because a note taken on the call could only be
+   recorded by reopening the lead, and the traveller-count collapse was reverted for the same
+   reason. So nothing is hidden: a skipped field is still on screen, still Tab-reachable, still
+   clickable. Enter simply does not stop there on the way down. */
 const FOCUSABLE =
-  'input:not([type="hidden"]):not([disabled]),select:not([disabled]),textarea:not([disabled]),' +
+  'input:not([type="hidden"]):not([disabled]):not([data-skip-enter="true"]),' +
+  'select:not([disabled]):not([data-skip-enter="true"]),' +
+  'textarea:not([disabled]):not([data-skip-enter="true"]),' +
   'button:not([disabled]):not([data-skip-enter="true"]),' +
   '[tabindex]:not([tabindex="-1"]):not([data-skip-enter="true"])';
 
@@ -790,6 +797,17 @@ export function LeadFormPanels({
   const showAdultBreakdown = Boolean(watch("showAdultBreakdown"));
   const totalAdults = toInt(watch("totalAdults"));
   const totalTravellers = totalAdults + toInt(watch("children")) + toInt(watch("infants"));
+  const tripStartDate = watch("travelDate");
+  const tripEndDate = watch("returnDate");
+  const tripDurationLabel = (() => {
+    if (!tripStartDate || !tripEndDate) return "";
+    const start = Date.parse(`${tripStartDate}T00:00:00Z`);
+    const end = Date.parse(`${tripEndDate}T00:00:00Z`);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return "";
+    const nights = Math.round((end - start) / 86_400_000);
+    const days = nights + 1;
+    return `${nights} ${nights === 1 ? "Night" : "Nights"} · ${days} ${days === 1 ? "Day" : "Days"}`;
+  })();
   /* `needsOriginCity` is gone with Full details: the departing city used to appear in rapid only
      when a Flight or Vehicle was ticked, which meant the field a Hotel-only enquiry still wants
      was simply not on the form. It is now always rendered, next to the departing country. */
@@ -1114,7 +1132,7 @@ export function LeadFormPanels({
         description="Phone first — an existing lead on this number is flagged as you type"
       >
         <div className="grid grid-cols-1 gap-x-3 gap-y-2 sm:grid-cols-2 xl:grid-cols-4">
-          <Field id="phone" label="Phone" required error={errors.phone?.message}>
+          <Field id="phone" label="Customer Phone" required error={errors.phone?.message}>
             <div className="relative">
               <Phone className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <input
@@ -1162,6 +1180,35 @@ export function LeadFormPanels({
             </div>
           </Field>
 
+          {/* ── Destination, where the call actually starts ─────────────────────────────────
+              Nobody rings a travel agent and opens with a date — every call opens "Manali ka
+              package chahiye". The only place to record that was the itinerary block at the foot
+              of the Trip panel, so the first word the agent heard was the last thing they could
+              type.
+
+              NOT A SECOND FIELD. It reads and writes `itinerary[0].destination` directly, through
+              the same chooseDestination() the itinerary row uses — so it sets destinationId and
+              loads that destination's cities exactly as picking it below would, and editing either
+              place moves the same value. There is no copy to fall out of step.
+
+              That distinction is the whole point: a "From" field added earlier this session DID
+              keep its own state, went nowhere on save, and sat eight fields above the real one.
+              One source of truth, two places to reach it. */}
+          {itinerary.length > 0 && (
+            <Field id="lead-destination" label="Destination" hint="Syncs with the first itinerary stop">
+              <SearchableSelect
+                name="lead-destination"
+                options={destinations}
+                value={itinerary[0].destinationId ? Number(itinerary[0].destinationId) || itinerary[0].destinationId : ""}
+                onChange={(value) => chooseDestination(itinerary[0].id, value)}
+                placeholder={itinerary[0].destination || "Where do they want to go?"}
+                loading={loadingDestinations}
+                searchable
+                advanceOnSelect
+              />
+            </Field>
+          )}
+
             </div>
 
             {belowPhone}
@@ -1195,29 +1242,68 @@ export function LeadFormPanels({
                 }}
                 onCountChange={setAdultCount}
                 onToggleBreakdown={toggleAdultBreakdown}
-                /* EVERY COUNTER VISIBLE, NO TOGGLE. Adults, Children, Infants, Rooms and Extra Beds
-                   all on screen at once, which is how this form worked until the "one headcount,
-                   breakdown on demand" change landed.
+                /* HEADCOUNT FIRST, breakdown underneath and optional — which is the order the
+                   question is actually asked in. "Kitne log hain?" gets one number back: "chaar".
+                   Only when the answer is not simply adults does the split matter, and then the
+                   agent opens it.
 
-                   That change optimises for the common enquiry — four adults, nothing else — by
-                   collapsing to a single box. It costs a click on every enquiry that is NOT that,
-                   and worse, it hides where the numbers are: an agent taking a booking on the phone
-                   is reading the whole party off the screen, not opening a panel to find it. The
-                   male/female split goes with it, which is the point — it was the least-used control
-                   in the group and the one thing the collapse existed to hide.
+                   This is the component's standard mode; the `compact` flag I had passed here was
+                   suppressing it and forcing all five counters flat. The flat row was right when
+                   the total was a DERIVED read-only tile — it is not, now that the total is the
+                   thing you type.
 
-                   `compact` is how the component already expresses this; nothing in the shared file
-                   changes, so the booking form keeps the collapsing version it was built with.
-
-                   NOT wide: the 3fr/2fr split puts Adults / Children / Infants beside Rooms / Extra
-                   Beds and gets all five counters on ONE line. Giving Travellers its own full row
-                   stacks them into two rows instead — the opposite of what is wanted here. */
-                compact
-                showExtraBedsInCompact
+                   Nothing is hidden behind a click that cannot be got back: the breakdown force-
+                   opens, and its toggle disables, the moment children or infants are non-zero, so
+                   the single box can never claim a party of four that is really six. */
                 /* `compact` is gone with Full details. It did exactly two things — hide the
                    "Specify adult gender count" toggle and hide Extra Beds — so rapid could not
                    record a male/female split or an extra bed without switching modes first. Both
                    are back for everyone; the counters are one row either way. */
+                additionalGroup={(
+                  <Field id="budget" label="Budget (roughly)" optional error={errors.budget?.message}>
+                    <div className="relative">
+                      <IndianRupee className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                      <input
+                        {...register("budget", { min: { value: 0, message: "Budget cannot be negative" } })}
+                        id="budget"
+                        type="number"
+                        min={0}
+                        step="1000"
+                        inputMode="numeric"
+                        placeholder="150000"
+                        onFocus={(event) => event.target.select()}
+                        onWheel={(event) => event.currentTarget.blur()}
+                        className={control(errors.budget, true)}
+                      />
+                    </div>
+
+                    <div className="mt-1.5 flex items-center gap-2">
+                      <span className="text-[11px] text-slate-400">Budget is</span>
+                      {[
+                        { value: "TOTAL", label: "Total" },
+                        { value: "PER_PERSON", label: "Per person" },
+                      ].map((option) => {
+                        const active = (watch("budgetBasis") || "TOTAL") === option.value;
+                        return (
+                          <button
+                            key={option.value}
+                            type="button"
+                            data-skip-enter="true"
+                            aria-pressed={active}
+                            onClick={() => setValue("budgetBasis", option.value, { shouldDirty: true })}
+                            className={`rounded-md px-2 py-0.5 text-[11px] font-bold transition ${
+                              active
+                                ? "bg-blue-600 text-white"
+                                : "border border-slate-200 text-slate-500 hover:bg-slate-50"
+                            }`}
+                          >
+                            {option.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </Field>
+                )}
               />
 
               {/* ── The total, and the one question that changes how a trip is operated ──────
@@ -1239,54 +1325,15 @@ export function LeadFormPanels({
                   asked for on the call is an age nobody can get afterwards. The ARRAY is the source
                   of truth; raising Children appends a blank rather than rebuilding the list, so
                   ages already typed are never renumbered mid-call. */}
+              {toInt(watch("children")) > 0 && (
               <div className="mt-2.5 grid grid-cols-1 gap-x-3 gap-y-2 sm:grid-cols-2 xl:grid-cols-4">
-                <Field label="Total travellers" hint="Adults + children + infants">
-                  <div className="flex h-[38px] items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3">
-                    <Users className="h-4 w-4 shrink-0 text-slate-400" />
-                    <span aria-live="polite" className="text-sm font-bold text-slate-800 tabular-nums">
-                      {totalTravellers}
-                    </span>
-                    <span className="text-xs text-slate-400">
-                      {totalTravellers === 1 ? "person" : "people"}
-                    </span>
-                  </div>
-                </Field>
+                {/* The read-only "Total travellers" tile that stood here is gone. With the
+                    headcount restored as the TYPED first box above, this was the same number a
+                    second time, four inches lower — and the two could disagree for a frame while
+                    the breakdown was being edited. One number, one place, and it is the one the
+                    agent types. */}
 
-                <Field label="Special assistance required?">
-                  <div
-                    className="inline-flex h-[38px] items-center rounded-lg border border-slate-200 bg-slate-50 p-1"
-                    role="group"
-                    aria-label="Special assistance required"
-                  >
-                    {[false, true].map((required) => {
-                      const selected = Boolean(assistanceRequired) === required;
-                      return (
-                        <button
-                          key={String(required)}
-                          type="button"
-                          data-skip-enter="true"
-                          aria-pressed={selected}
-                          onClick={() => {
-                            setValue("specialAssistanceRequired", required, { shouldDirty: true, shouldValidate: true });
-                            /* Pre-set to 1 so "Yes" never leaves a required count sitting at zero —
-                               the same nudge the rail control made. */
-                            if (required && toInt(getValues("assistancePassengerCount")) < 1) {
-                              setValue("assistancePassengerCount", 1, { shouldDirty: true });
-                            }
-                          }}
-                          className={`min-w-14 rounded-md px-3 py-1 text-xs font-bold transition ${selected
-                            ? "bg-blue-600 text-white shadow-sm"
-                            : "text-slate-500 hover:bg-white hover:text-slate-700"}`}
-                        >
-                          {required ? "Yes" : "No"}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </Field>
-
-                {toInt(watch("children")) > 0 && (
-                  <Field label="Children's ages" hint="Hotel child policy is priced on these">
+                <Field label="Children's ages" hint="Hotel child policy is priced on these">
                     <div className="flex flex-wrap items-center gap-2">
                       {Array.from({ length: toInt(watch("children")) }, (_, index) => (
                         <span
@@ -1311,8 +1358,8 @@ export function LeadFormPanels({
                       ))}
                     </div>
                   </Field>
-                )}
               </div>
+              )}
               {/* The blue Total Travellers strip is retired. TravellerCountFields' own first box is
                   now labelled "Total Travellers" and, once the breakdown is open, is the derived
                   total — so this was the same number a second time, two inches lower and in a
@@ -1330,7 +1377,19 @@ export function LeadFormPanels({
             </div>
 
 
-            {/* ── Optional details ─────────────────────────────────────────────────────
+            {/* ── Optional details · ON SCREEN, OUT OF THE ENTER WALK ──────────────────
+                Every field below carries data-skip-enter. They stay visible, Tab-reachable and
+                clickable — an agent who is told a birthday mid-call can still record it without
+                reopening the lead, which is the thing this form has twice reverted a redesign to
+                protect. What changes is that Enter no longer STOPS on them on the way from the
+                phone number to the travel date.
+
+                That gap is five stops on every enquiry, and it is worse than five keystrokes:
+                focusNext calls select() on arrival, so each pass-through field sits there with its
+                contents highlighted and one stray character overwrites a value the agent never
+                meant to touch.
+
+                ── Optional details ─────────────────────────────────────────────────────
                 Was its own "Customer Profile" panel in the rail. Same person, two boxes:
                 the agent typed a name here and a birthday three panels away, and the folded
                 summary had to carry two rows to describe one customer. Merged in, behind a
@@ -1341,44 +1400,34 @@ export function LeadFormPanels({
                 actually identifies the customer. They are all small controls; they belong on the
                 same four-column rhythm as the fields above the rule. */}
             <div className="mt-5 grid grid-cols-1 gap-4 border-t border-slate-100 pt-4 sm:grid-cols-2 xl:grid-cols-4">
-              <Field id="birthDate" label="Date of Birth" optional>
-                <input {...register("birthDate")} id="birthDate" type="date" max={today()} className={control(false)} />
-              </Field>
-              <Field id="anniversaryDate" label="Anniversary" optional>
-                <input {...register("anniversaryDate")} id="anniversaryDate" type="date" max={today()} className={control(false)} />
-              </Field>
-
-              <Field id="preferredCommunication" label="Preferred Contact Channel" optional>
+              {/* Ordered by when they come up on the call, not by what the record holds.
+                  "WhatsApp pe bhej doon?" and "kab call karun?" are asked on nearly every enquiry —
+                  the first decides where the quotation goes, the second writes a reminder. A
+                  birthday is relationship data picked up in passing, months later, and had no
+                  business being the first two boxes an agent's eye landed on down here. */}
+              <Field id="preferredCommunication" label="How to contact them" optional>
                 <div className="relative">
-                  <select {...register("preferredCommunication")} id="preferredCommunication" className={`${control(false)} appearance-none pr-9`}>
+                  <select {...register("preferredCommunication")} id="preferredCommunication" data-skip-enter="true" className={`${control(false)} appearance-none pr-9`}>
                     <option value="">Select channel</option>
                     {COMMUNICATION_PREFERENCES.map((option) => <option key={option} value={option}>{option}</option>)}
                   </select>
                   <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 </div>
               </Field>
-    
-              <Field id="budget" label="Indicative Budget (₹)" optional error={errors.budget?.message}>
-                <div className="relative">
-                  <IndianRupee className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                  <input
-                    {...register("budget", { min: { value: 0, message: "Budget cannot be negative" } })}
-                    id="budget"
-                    type="number"
-                    min={0}
-                    step="1000"
-                    inputMode="numeric"
-                    placeholder="150000"
-                    onFocus={(event) => event.target.select()}
-                    onWheel={(event) => event.currentTarget.blur()}
-                    className={control(errors.budget, true)}
-                  />
-                </div>
+
+              <Field id="followUpDate" label="Call them back on" optional hint="Creates a reminder when the lead is saved">
+                <input {...register("followUpDate")} id="followUpDate" data-skip-enter="true" type="date" min={today()} className={control(false)} />
               </Field>
-    
-              <Field id="followUpDate" label="Follow-up Date" optional hint="Creates a reminder when the lead is saved">
-                <input {...register("followUpDate")} id="followUpDate" type="date" min={today()} className={control(false)} />
+
+              <Field id="birthDate" label="Birth Date" optional>
+                <input {...register("birthDate")} id="birthDate" data-skip-enter="true" type="date" max={today()} className={control(false)} />
               </Field>
+
+              <Field id="anniversaryDate" label="Anniversary" optional>
+                <input {...register("anniversaryDate")} id="anniversaryDate" data-skip-enter="true" type="date" max={today()} className={control(false)} />
+              </Field>
+
+              {/* Budget moved up beside the traveller counts — see the note there. */}
             </div>
           </Panel>
         </div>
@@ -1391,57 +1440,25 @@ export function LeadFormPanels({
             icon={Route}
             title="Trip"
             description="Dates, travellers, departure and route in one place"
-            action={
+            action={tripDurationLabel ? (
               <span className="inline-flex w-fit flex-wrap items-center gap-x-1 rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">
-                <span>{toInt(watch("totalAdults"), 1)} Adults</span>
-                <span>· {toInt(watch("children"))} Children</span>
-                <span>· {toInt(watch("infants"))} Infants</span>
-                <span>· {toInt(watch("rooms"), 1)} Rooms</span>
+                <CalendarDays className="h-3.5 w-3.5" />
+                <span>{tripDurationLabel}</span>
               </span>
-            }
+            ) : null}
           >
-            {/* ── Where from, and what kind of trip ────────────────────────────────────────
-                Two questions the old form never asked, and the two an experienced agent asks
-                first. There is no quote without a departure city — every flight, every transfer
-                and every night's cost is measured from it — and Occasion moves more of the
-                quotation than budget does: a honeymoon, elderly parents and a friends' group buy
-                three different hotels, paces and vehicles at the same price. */}
-            <div className="mb-2.5 grid grid-cols-1 gap-x-3 gap-y-2 sm:grid-cols-2">
-              <Field
-                id="fromCity"
-                label="From (departure city)"
-                hint="Every fare and transfer is priced from here"
-              >
-                <div className="relative">
-                  <MapPin className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                  <input
-                    {...register("fromCity")}
-                    id="fromCity"
-                    placeholder="Pune"
-                    className={control(false, true)}
-                  />
-                </div>
-              </Field>
+            {/* ONE grid for the whole panel. From and Occasion used to sit in a two-up row of
+                their own above the dates, which cost a full row of height to show two fields and
+                broke the four-across rhythm the rest of the panel reads in. They are ordinary
+                fields; they flow with the others.
 
-              <Field id="occasion" label="Occasion" hint="Changes the hotel, the pace and the vehicle">
-                <ChoiceChips
-                  ariaLabel="Occasion"
-                  value={watch("occasion")}
-                  onChange={(value) => setValue("occasion", value, { shouldDirty: true })}
-                  options={[
-                    { value: "HONEYMOON", label: "Honeymoon" },
-                    { value: "FAMILY", label: "Family" },
-                    { value: "SENIOR_CITIZENS", label: "Seniors" },
-                    { value: "FRIENDS", label: "Friends" },
-                    { value: "CORPORATE", label: "Corporate" },
-                    { value: "PILGRIMAGE", label: "Pilgrimage" },
-                    { value: "SOLO", label: "Solo" },
-                  ]}
-                />
-              </Field>
-            </div>
+                Both are questions the old form never asked and the two an experienced agent asks
+                first. There is no quote without a departure city — every fare, every transfer and
+                every night is priced from it — and Occasion moves more of a quotation than budget
+                does: a honeymoon, elderly parents and a friends' group buy three different hotels,
+                paces and vehicles at the same price.
 
-            {/* Four across on a wide monitor, two on a laptop — and the breakpoint is xl, not lg,
+                Four across on a wide monitor, two on a laptop — and the breakpoint is xl, not lg,
                 which is the whole subtlety. This column always loses 320px to the rail, so at lg
                 (1024px) four columns really would be ~150px each and a date picker would not fit.
                 By xl (1280px) there is ~900px here and they are ~210px, which is comfortable.
@@ -1450,66 +1467,34 @@ export function LeadFormPanels({
                 right worry applied at the wrong breakpoint, and it doubled the height of the
                 longest panel on the form for everyone, including the wide screens this is used on. */}
             <div className="grid grid-cols-1 gap-x-3 gap-y-2 sm:grid-cols-2 xl:grid-cols-4">
-              <Field id="travelDate" label="Travel Date" required error={errors.travelDate?.message}>
-                <div className="relative">
-                  <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                  <input
-                    {...register("travelDate", { required: "Travel date is required" })}
-                    id="travelDate"
-                    type="date"
-                    aria-invalid={Boolean(errors.travelDate)}
-                    className={control(errors.travelDate, true)}
-                  />
-                </div>
-              </Field>
+              {/* This is `departCity`, promoted — NOT a second "from" field.
+                  I added one called `fromCity` and it was decorative: transformFormData whitelists
+                  the payload and never sent it, so the departure city an agent typed here went
+                  nowhere, while the real one sat eight fields lower in this same panel. Two inputs
+                  for one fact, one of them silently dead.
 
-              {/* When they come back. Optional, because a caller often has a departure in mind and
-                  no return yet — but it is the field that decides whether a converted booking is a
-                  SPAN or a single point: the backend copies it to the booking's tripEndDate, and
-                  without it the operations board can only say "End date not set".
+                  departCity is the one wired to everything — it is saved, it is in STICKY_FIELDS so
+                  it carries into the next enquiry, it seeds the quotation through draftLeadKey, and
+                  the customer lookup prefills it. It belongs where the question is actually asked:
+                  first, because every fare and transfer is priced from it. */}
+              {/* Match Booking's Pickup vocabulary and keep the three origin answers together.
+                  The city is the answer agents ask for first, so it gets the widest control; India
+                  remains prefilled and needs no action for the common case. */}
+              <div className="min-w-0 sm:col-span-2">
+                <Field id="departCity" label="Pickup City" hint="Where the journey starts">
+                  <div className="relative">
+                    <MapPin className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <input
+                      {...register("departCity")}
+                      id="departCity"
+                      placeholder="e.g. Pune"
+                      className={control(false, true)}
+                    />
+                  </div>
+                </Field>
+              </div>
 
-                  `min` is the travel date, so a return before departure cannot be typed at all
-                  rather than being rejected on save. */}
-              <Field id="returnDate" label="Return Date" optional error={errors.returnDate?.message}>
-                <div className="relative">
-                  <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                  <input
-                    {...register("returnDate")}
-                    id="returnDate"
-                    type="date"
-                    min={watch("travelDate") || undefined}
-                    aria-invalid={Boolean(errors.returnDate)}
-                    className={control(errors.returnDate, true)}
-                  />
-                </div>
-              </Field>
-
-              {/* ── When will they DECIDE ───────────────────────────────────────────────────
-                  Different question from "when do they travel", and the more useful one. Travel
-                  date sorts the calendar; this sorts the callback list, which is the list an agent
-                  actually works from — a January trip somebody wants to book this week outranks a
-                  September trip they are still daydreaming about.
-
-                  Worded the way a customer answers, not the way an enum reads. */}
-              <Field
-                id="decideBy"
-                label="Decision expected"
-                hint="Not the travel date — this sets the callback order"
-              >
-                <ChoiceChips
-                  ariaLabel="Decision timeframe"
-                  value={watch("decideBy")}
-                  onChange={(value) => setValue("decideBy", value, { shouldDirty: true })}
-                  options={[
-                    { value: "IMMEDIATE", label: "Now" },
-                    { value: "WITHIN_WEEK", label: "This week" },
-                    { value: "WITHIN_MONTH", label: "This month" },
-                    { value: "JUST_EXPLORING", label: "Just exploring" },
-                  ]}
-                />
-              </Field>
-
-              <Field id="departCountry" label="Departing Country" optional>
+              <Field id="departCountry" label="Pickup Country" optional>
                 <SearchableSelect
                   name="departCountry"
                   options={countries}
@@ -1523,14 +1508,7 @@ export function LeadFormPanels({
                 />
               </Field>
 
-              <Field id="departCity" label="Departing City" optional>
-                <div className="relative">
-                  <MapPin className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                  <input {...register("departCity")} id="departCity" placeholder="e.g. Pune" className={control(false, true)} />
-                </div>
-              </Field>
-
-              <Field id="departureMode" label="Departure Mode" optional>
+              <Field id="departureMode" label="Pickup Mode" optional>
                 <div className="relative">
                   <select {...register("departureMode")} id="departureMode" className={`${control(false)} appearance-none pr-9`}>
                     <option value="">Select mode</option>
@@ -1538,6 +1516,48 @@ export function LeadFormPanels({
                   </select>
                   <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 </div>
+              </Field>
+
+              <div className="min-w-0 sm:col-span-2">
+                <Field id="travelDateRange" label="Travel Period" required error={errors.travelDate?.message}>
+                  <input type="hidden" {...register("travelDate", { required: "Travel date is required" })} />
+                  <input type="hidden" {...register("returnDate")} />
+                  <DateRangeField
+                    id="travelDateRange"
+                    startValue={tripStartDate}
+                    endValue={tripEndDate}
+                    startLabel="Check-in"
+                    endLabel="Check-out"
+                    invalid={Boolean(errors.travelDate || errors.returnDate)}
+                    onChange={({ start, end }) => {
+                      setValue("travelDate", start, { shouldDirty: true, shouldValidate: true });
+                      setValue("returnDate", end, { shouldDirty: true });
+                    }}
+                  />
+                </Field>
+              </div>
+
+              <Field id="occasion" label="Trip Type" hint="Helps choose the hotel, pace and vehicle">
+                <select {...register("occasion")} id="occasion" className={control(false)}>
+                  <option value="">Select trip type</option>
+                  <option value="HONEYMOON">Honeymoon</option>
+                  <option value="FAMILY">Family</option>
+                  <option value="SENIOR_CITIZENS">Seniors</option>
+                  <option value="FRIENDS">Friends</option>
+                  <option value="CORPORATE">Corporate</option>
+                  <option value="PILGRIMAGE">Pilgrimage</option>
+                  <option value="SOLO">Solo</option>
+                </select>
+              </Field>
+
+              <Field id="decideBy" label="Likely to book" hint="Used to plan the follow-up — not the travel date">
+                <select {...register("decideBy")} id="decideBy" className={control(false)}>
+                  <option value="">Select timeframe</option>
+                  <option value="IMMEDIATE">Now</option>
+                  <option value="WITHIN_WEEK">This week</option>
+                  <option value="WITHIN_MONTH">This month</option>
+                  <option value="JUST_EXPLORING">Just exploring</option>
+                </select>
               </Field>
             </div>
 
@@ -1552,7 +1572,7 @@ export function LeadFormPanels({
                 <Field id="airportCode" label="Airport Code" optional>
                   <input {...register("airportCode")} id="airportCode" maxLength={8} placeholder="DEL" className={`${control(false)} uppercase`} />
                 </Field>
-                <Field id="preferredFlightTime" label="Preferred Time" optional>
+                <Field id="preferredFlightTime" label="Preferred Flight Time" optional>
                   <div className="relative">
                     <Clock3 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                     <input {...register("preferredFlightTime")} id="preferredFlightTime" type="time" className={control(false, true)} />
@@ -1572,7 +1592,7 @@ export function LeadFormPanels({
                 <Field id="trainClass" label="Train Class" optional>
                   <input {...register("trainClass")} id="trainClass" placeholder="2A, 3A, Sleeper" className={control(false)} />
                 </Field>
-                <Field id="preferredTrainTime" label="Preferred Time" optional>
+                <Field id="preferredTrainTime" label="Preferred Train Time" optional>
                   <div className="relative">
                     <Clock3 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                     <input {...register("preferredTrainTime")} id="preferredTrainTime" type="time" className={control(false, true)} />
@@ -1595,6 +1615,13 @@ export function LeadFormPanels({
               </div>
             )}
 
+
+            {/* ── The route ────────────────────────────────────────────────────────────────────
+                Stays at the foot of the panel. It was briefly moved to the top on the reasoning
+                that the customer opens the call with the destination — which is true of the CALL,
+                but not of the FORM: the itinerary is the step the whole chain hangs off (Services
+                unlock behind its confirm button), and a multi-row block with its own Add Stop and
+                Done—continue reads as the end of a panel, not the start of one. */}
             <div className="mt-5 border-t border-slate-100 pt-4">
               <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex min-w-0 items-center gap-3">
@@ -1924,7 +1951,7 @@ export function LeadFormPanels({
                   `forcedSelf` still wins, because that one is a permission, not a suggestion. */}
               <Field
                 id="assignedUserId"
-                label="Assign To"
+                label="Assigned To"
                 required
                 error={errors.assignedUserId?.message}
                 hint={forcedSelf ? undefined : usersLoading
@@ -2324,6 +2351,30 @@ export default function LeadFormPage() {
        the fold, and the agent was left looking at the picker wondering whether anything happened.
        Ticking a service IS the request to fill it in, so go there. */
     quoteSectionsRef.current?.reveal(pending.id, "[data-quick-field]");
+  }, [quoteModel]);
+
+  /* The accordion used to mount with every section shut, and the agent's first act on the pricing
+     block was a click that told it nothing it did not already know.
+
+     The cause is that a service can become ticked WITHOUT going through toggleService: sticky
+     carries the previous enquiry's picks into this one, so nothing ever queued a reveal. The
+     accordion then rendered with openSection = "" and waited.
+
+     Opened, not revealed — open() sets the section and moves neither the page nor the caret. The
+     agent may still be typing in the lead form above when the pricing block appears underneath, and
+     stealing the cursor at that moment is precisely the bug that got autoFocus removed from the
+     booking form's fast panels.
+
+     Runs once per accordion appearance: the ref latches on the first section it opens and only
+     re-arms when the block unmounts (a new enquiry, via resetInlineQuote). */
+  const quoteOpenedRef = useRef(false);
+  useEffect(() => {
+    const first = quoteModel?.enabledCore?.[0];
+    if (!first) { quoteOpenedRef.current = false; return; }
+    if (quoteOpenedRef.current) return;
+    if (pendingQuoteRevealRef.current) return;   // a real reveal is queued; let it win
+    quoteOpenedRef.current = true;
+    quoteSectionsRef.current?.open(first);
   }, [quoteModel]);
 
   /* Finishing a section just collapses it — no scrolling. The loop is tick a service → fill it →
@@ -2990,6 +3041,24 @@ export default function LeadFormPage() {
       // Once the quotation exists the lead does too, so Ctrl+Enter has to UPDATE. Re-running the
       // create path here wrote a second lead and a second quotation for the same customer.
       if (createdQuote) { updateInlineQuote(); return; }
+
+      /* "Done — continue" was the one control the flow could not finish without and the keyboard
+         could not reach. It carries data-skip-enter, has no shortcut of its own, and save() rejects
+         EVERY path while itineraryConfirmed is false — so a keyboard-driven agent pressing Ctrl+Enter
+         got a toast and a scroll, then had to take their hand off the keyboard to click a button, on
+         every single enquiry.
+
+         So Ctrl+Enter advances the chain instead of failing it: confirm, then press again to save.
+         Deliberately NOT a new chord — the quotation accordion below owns Alt+0-8, Alt+arrows and
+         Esc, and it fires inside this same form, so anything new would collide.
+
+         Only when the itinerary is genuinely shippable. If it is not, the existing guard inside
+         save() still runs and still says why. */
+      if (stepFlow && !itineraryConfirmed && itineraryConfirmable) {
+        confirmItinerary();
+        return;
+      }
+
       const addAnother = !editing && event.shiftKey; // batch-next is a create-only shortcut
       const createQuotation = !editing && !addAnother && canCreateQuotation;
       handleSubmit((data) => save(data, { addAnother, createQuotation }), onInvalid)();
@@ -3262,8 +3331,17 @@ export default function LeadFormPage() {
                 {editing ? `Edit Lead${leadCode ? ` · ${leadCode}` : ""}` : "Quick Quote"}
               </h1>
               <p className="hidden text-xs text-slate-500 sm:block">
+                {/* The legend has to name what Ctrl+Enter does RIGHT NOW, not what it does
+                    eventually. Before the itinerary is confirmed it continues the chain; after it,
+                    it prices. A legend that only ever said "create quote" was describing the second
+                    press and leaving the agent to discover the first. */}
                 <kbd className={kbdCls}>Enter</kbd> next field ·
-                <kbd className={`ml-1 ${kbdCls}`}>Ctrl+Enter</kbd> {!editing ? "create quote" : "save"}
+                <kbd className={`ml-1 ${kbdCls}`}>Ctrl+Enter</kbd>{" "}
+                {editing
+                  ? "save"
+                  : stepFlow && !itineraryConfirmed
+                    ? "continue"
+                    : "create quote"}
                 {!editing && (
                   <>
                     {" · "}<kbd className={kbdCls}>Ctrl+Shift+Enter</kbd> save &amp; next

@@ -53,6 +53,14 @@ export default function TravellerCountFields({
      untouched; the booking form turns them off because its Room Requirement rows own that number
      there, and two editors for one value is how they drift apart. */
   showRooms = true,
+  /* Narrow the single "Total Travellers" box. It is one number and the default max-w-sm gives it
+     384px, most of which is empty rule. Opt-in so the booking form, which shares this component,
+     keeps the width it was laid out against. */
+  narrowTotal = false,
+  /* Lets a host keep one closely-related control in the same responsive row without duplicating
+     the traveller and room counters. Create Lead uses this for Budget; other callers keep the
+     existing two-column layout. */
+  additionalGroup = null,
 }) {
   const tone = THEMES[theme] || THEMES.blue;
   const error = getAdultBreakdownError(values);
@@ -85,7 +93,13 @@ export default function TravellerCountFields({
      which put "Adult Male / Adult Female" under the Rooms column on a wide screen — the one place
      it must never appear to belong. */
   return (
-    <div className="grid items-start gap-3 lg:grid-cols-[3fr_2fr]">
+    <div className={`grid items-start gap-3 ${
+      additionalGroup
+        ? showRooms
+          ? "lg:grid-cols-3"
+          : "lg:grid-cols-2"
+        : "lg:grid-cols-[3fr_2fr]"
+    }`}>
       <fieldset className="min-w-0 border-0 p-0">
         <legend className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-slate-400">
           Travellers
@@ -108,7 +122,7 @@ export default function TravellerCountFields({
             disagree with them. Adults are set through Adult Male / Adult Female, which is where
             setAdultCount already recomputes totalAdults from. */}
         {showBreakdown ? (
-          <div className="max-w-sm">
+          <div className={narrowTotal ? "max-w-[240px]" : additionalGroup ? "w-full" : "max-w-sm"}>
             {expanded ? (
               <div className={`flex items-center gap-2 rounded-lg border bg-slate-50 px-2.5 py-2 ${
                 error ? "border-red-300" : "border-slate-200"
@@ -178,6 +192,8 @@ export default function TravellerCountFields({
           </div>
         )}
       </fieldset>
+
+      {additionalGroup}
 
       {showRooms && (
         <fieldset className="min-w-0 border-0 p-0">
