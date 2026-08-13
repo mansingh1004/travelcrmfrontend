@@ -22,7 +22,6 @@ import {
   Plus,
   RotateCcw,
   UserCheck,
-  Wallet,
 } from "lucide-react";
 
 import bookingService from "../api/bookingService";
@@ -66,10 +65,6 @@ const writeSticky = (values) => {
   } catch { /* private mode — sticky is a convenience, never a requirement */ }
 };
 
-/* Advance payment modes. Imported from the payments ledger rather than retyped: BookingPayments
-   already owns this vocabulary as PAYMENT_METHODS against the `paymentMethod` field, and a second
-   copy here would drift from the list every receipt is actually recorded against. */
-const PAYMENT_METHODS = ["Cash", "Bank Transfer", "UPI", "Credit Card", "Debit Card", "Cheque", "Online", "Wallet", "Other"];
 /* Five services, in the order they are usually decided: the vehicle and the hotel are settled
    first on most trips, add-ons last.
    Cruise, Visa and Passport were REMOVED from this form — they are rare enough here that they cost
@@ -252,15 +247,7 @@ const initialForm = () => ({
   // that base as the preview's customerAmount.
   applyGst: null,
   gstInclusive: null,
-  /* applyTcs is the ONE exception to the null-means-default rule above, and it is deliberate.
-     TCS was removed from this form entirely — no toggle, no overseas checkbox — so there is no
-     longer any way for a user to say "not on this one". Left as null it means "follow the tenant
-     policy", and where that policy collects TCS the booking quietly picked up a charge nobody on
-     this screen asked for or could see: budget 100 + GST 5 came out as a Total Payable of 110.
-     false says it outright — this form does not collect TCS — which is the whole point of taking
-     the controls away. The tenant's Accounting Settings are untouched and still govern every other
-     surface; this is only what THIS form asserts about the bookings it writes. */
-  applyTcs: false,
+  applyTcs: null,
   // ── Agent / agency commission ──────────────────────────────────────────────────────────────
   // What this booking owes whoever brought it. An empty commissionType means no arrangement, which
   // is the ordinary case — the fields stay collapsed until someone says there is one.
@@ -865,14 +852,7 @@ export default function BookingFormPage() {
           // LEAD_SOURCES has on the lead form.
           applyGst: booking.applyGst ?? null,
           gstInclusive: booking.gstInclusive ?? null,
-          /* applyTcs takes `?? false`, not `?? null`, for the reason set out in the defaults above.
-             The distinction still matters though: an EXPLICIT true was a real decision somebody
-             made about a real booking, and it survives being opened here — only the null case,
-             which means "nobody ever decided", picks up this form's stance of not collecting TCS.
-             So an old booking saved as overseas keeps its TCS (and, since there is no TCS row any
-             more, keeps it silently inside Total Payable); one that was merely inheriting the
-             tenant policy stops doing so. */
-          applyTcs: booking.applyTcs ?? false,
+          applyTcs: booking.applyTcs ?? null,
           commissionPayeeName: booking.commissionPayeeName || "",
           commissionType: booking.commissionType || "",
           // The agreed TERMS, not the computed rupees — a percent commission must load back as the
@@ -1933,22 +1913,8 @@ export default function BookingFormPage() {
   // any leftover preview/previewState from a previous amount is ignored rather than reset.
   const previewActive = Number.isFinite(previewAmount) && previewAmount > 0;
 
-  /* Does this booking say anything about tax of its own, or is it simply following the tenant?
-     Drives the "Custom" chip, and it tracks applyGst because that is now the only tax control on
-     the screen. gstInclusive is deliberately excluded even though it is still a real stored flag:
-     it has no control of its own any more, so a booking saved tax-inclusive would light the chip
-     over a toggle sitting unset — a "Custom" nobody can see, let alone reset. applyTcs is excluded
-     for the same reason. */
-  const taxOverridden = form.applyGst != null;
-
-  /* Balance = what is owed − what has been taken.
-     Derived, never a field: two boxes for one number is how they end up disagreeing.
-     Prefers the SERVER's totalPayable (which includes GST/TCS) and falls back to the plain budget
-     until the preview lands — the label beside it says which of the two is being shown, so the
-     figure is never ambiguous. The frontend does not compute tax; it only subtracts. */
-  const balanceDue = (
-    preview?.totalPayable != null ? Number(preview.totalPayable) : (Number(form.customerAmount) || 0)
-  ) - (Number(form.paidAmount) || 0);
+  const taxOverridden =
+    form.applyGst != null || form.gstInclusive != null || form.applyTcs != null;
 
 
   /* What the commission works out to, shown live beside the control.
@@ -2114,10 +2080,28 @@ export default function BookingFormPage() {
             </div>
           }
         >
+          {/* Link first: choosing an existing lead prefills customer, trip and traveller details,
+              so it must happen before the agent starts typing those fields. */}
+          <div className="mb-4 max-w-md">
+            <Field label="Link Lead" optional>
+              <SearchableSelect
+                options={leadOptions}
+                value={form.leadPublicId}
+                onChange={handleLeadChange}
+                placeholder="Search lead code, customer or phone"
+                searchPlaceholder="Lead code, name or phone..."
+                loading={loadingLead}
+                disabled={editing}
+                icon={ClipboardList}
+                accent="blue"
+                advanceOnSelect
+                className="hover:border-slate-300 disabled:bg-slate-50"
+              />
+            </Field>
+          </div>
+
           {/* Name → Phone → WhatsApp. Name leads because it is what the agent is told first on a
-              call; the phone keeps its lookup and its Search button beside it. Link Lead moved to
-              the foot of this panel: it PREFILLS the form, so it is a shortcut rather than a field,
-              and at the top it sat between the agent and the two things they actually type. */}
+              call; the phone keeps its lookup and its Search button beside it. */}
           {/* Equal thirds. The old 4 / 5 / 3 split gave Customer Phone the extra column because it
               was carrying the Search button inside its own row; with the button gone that width
               belonged to nobody, and WhatsApp was left the narrowest of the three despite holding
@@ -2278,16 +2262,7 @@ export default function BookingFormPage() {
 
               Rooms stay suppressed here for the same reason as before: the Room Requirement rows
               own that number, and two editors for one value is how they drift apart. */}
-          {/* Travellers on the left, Link Lead on the right — one row, not two.
-              Stacked, each occupied a full-width band to hold one narrow control, and the counters
-              are capped at max-w-sm while Link Lead is capped at max-w-md, so both left roughly
-              half the card empty. Side by side they fill it and the panel loses two rules and a
-              band of dead space. Still stacks on small screens, where a single column is right. */}
-          {/* 7/5, not 50/50. Link Lead is ONE select and was rendering nearly 600px wide with a
-              short line of text in it, while the traveller counters next to it were squeezed until
-              "Adult Female" truncated to "A…". The wider half goes to the side with five controls
-              in it. */}
-          <div className="mt-4 grid grid-cols-1 gap-x-6 gap-y-4 border-t border-slate-100 pt-4 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
+          <div className="mt-4 border-t border-slate-100 pt-4">
             <div className="min-w-0">
               <div className="mb-3 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
                 <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500">Travellers</h3>
@@ -2302,26 +2277,6 @@ export default function BookingFormPage() {
               />
             </div>
 
-            {/* Link Lead keeps its place at the end of the reading order — it PREFILLS the whole
-                form, so it is a shortcut rather than a customer field, and at the top it sat
-                between the agent and the two things they actually type. */}
-            {/* <div className="min-w-0">
-              <Field label="Link Lead" optional>
-                <SearchableSelect
-                  options={leadOptions}
-                  value={form.leadPublicId}
-                  onChange={handleLeadChange}
-                  placeholder="Search lead code, customer or phone"
-                  searchPlaceholder="Lead code, name or phone..."
-                  loading={loadingLead}
-                  disabled={editing}
-                  icon={ClipboardList}
-                  accent="blue"
-                  advanceOnSelect
-                  className="hover:border-slate-300 disabled:bg-slate-50"
-                />
-              </Field>
-            </div> */}
           </div>
 
           {/* Special assistance moved on to the action footer — it is the last thing asked, and it
@@ -2523,9 +2478,9 @@ export default function BookingFormPage() {
             onWheel contract), so focus-first-invalid and Enter-advance keep working — DOM order
             simply lands them last, right before the footer actions. */}
         <aside className="min-w-0 space-y-5 lg:sticky lg:top-[72px]">
-          <Panel icon={BadgeIndianRupee} title="Payment Details" description="Commercials for this booking">
+          <Panel icon={BadgeIndianRupee} title="Money" description="Commercials for this booking">
             <div className="space-y-4">
-              <Field label="Total Budget (INR)" required error={errors.customerAmount}>
+              <Field label="Customer Amount (INR)" required error={errors.customerAmount}>
                 <div className="relative">
                   <IndianRupee className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                   <input name="customerAmount" type="number" min="0" step="0.01" value={form.customerAmount} onChange={(event) => setField("customerAmount", event.target.value)} onBlur={() => blurField("customerAmount")} onWheel={(event) => event.currentTarget.blur()} placeholder="0.00" className={controlClass("customerAmount", true)} />
@@ -2541,68 +2496,12 @@ export default function BookingFormPage() {
                   </p>
                 )}
               </Field>
-              {/* Money the CUSTOMER owes, top to bottom: what the trip costs them, what they have
-                  paid and how, what is still outstanding. Vendor and Vendor Budget follow after,
-                  because they are what WE pay out — a different party and a different direction, so
-                  they no longer sit between the customer's budget and their advance. */}
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <Field label="Advance (INR)" optional error={errors.paidAmount}>
-                  <div className="relative">
-                    <IndianRupee className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                    <input name="paidAmount" type="number" min="0" step="0.01" value={form.paidAmount} onChange={(event) => setField("paidAmount", event.target.value)} onBlur={() => blurField("paidAmount")} onWheel={(event) => event.currentTarget.blur()} placeholder="0.00" className={controlClass("paidAmount", true)} />
-                  </div>
-                </Field>
-
-                {/* How the advance came in — UPI, Cash, Bank Transfer and the rest. The list is
-                    PAYMENT_METHODS, imported from the payments page rather than retyped here: the
-                    ledger already owns this vocabulary and a second copy would drift from it.
-                    Sits beside the amount rather than appearing only once one is typed — a field
-                    that materialises mid-form is a field the agent has to notice. It is DISABLED
-                    until there is an advance, so it never asks how nothing was paid. */}
-                <Field label="Payment Mode" optional>
-                  <div className="relative">
-                    <Wallet className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                    <select
-                      value={form.paymentMethod}
-                      onChange={(event) => setField("paymentMethod", event.target.value)}
-                      disabled={!(Number(form.paidAmount) > 0)}
-                      className={`${controlClass("paymentMethod", true)} appearance-none pr-9`}
-                    >
-                      <option value="">{Number(form.paidAmount) > 0 ? "Select mode" : "No advance"}</option>
-                      {PAYMENT_METHODS.map((method) => <option key={method} value={method}>{method}</option>)}
-                    </select>
-                    <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                  </div>
-                </Field>
-              </div>
-
-              {/* Balance is DERIVED, never typed — two boxes for one number is how they end up
-                  disagreeing. Shown against the server's computed total payable once the preview
-                  has landed (that figure includes GST/TCS), and against the plain budget until
-                  then, so the label always says which it is. */}
-              <div className="rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2.5">
-                <div className="flex items-baseline justify-between gap-2">
-                  <span className="text-xs font-semibold text-slate-500">
-                    Balance {preview?.totalPayable != null ? "(after tax)" : ""}
-                  </span>
-                  <span className={`text-sm font-extrabold tabular-nums ${balanceDue < 0 ? "text-red-600" : "text-slate-800"}`}>
-                    {inr(balanceDue)}
-                  </span>
-                </div>
-                {balanceDue < 0 && (
-                  <p className="mt-1 text-[11px] font-semibold text-red-500">
-                    Advance is more than the amount due.
-                  </p>
-                )}
-              </div>
-
-              {/* Vendor gates Vendor Budget. The amount used to be asked for on its own and was
+              {/* Vendor gates Vendor Cost. The amount used to be asked for on its own and was
                   REQUIRED, so every booking carried a supplier figure with no payee — and the agent
                   had to commit to one at the moment of sale, before anything was actually booked.
                   Now: pick a supplier and the amount opens up; leave it blank and the cost stays 0,
                   with the real spend itemised later in the expense ledger (which reduces profit). */}
-              <div className="space-y-4 border-t border-slate-100 pt-4">
-                <Field label="Vendor" optional error={errors.vendorPublicId}>
+              <Field label="Vendor" optional error={errors.vendorPublicId}>
                   {/* appearance-none + pr-9 is load-bearing: without it the browser draws its own
                       dropdown arrow AND the ChevronDown below renders, giving two. Same recipe as
                       the Package Type select — left icon, suppressed native arrow, own chevron. */}
@@ -2626,9 +2525,9 @@ export default function BookingFormPage() {
                     </select>
                     <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                   </div>
-                </Field>
-                <Field
-                  label="Vendor Budget (INR)"
+              </Field>
+              <Field
+                  label="Vendor Cost (INR)"
                   required={Boolean(form.vendorPublicId)}
                   optional={!form.vendorPublicId}
                   error={errors.vendorCost}
@@ -2637,23 +2536,25 @@ export default function BookingFormPage() {
                     <BadgeIndianRupee className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                     <input name="vendorCost" type="number" min="0" step="0.01" value={form.vendorCost} onChange={(event) => setField("vendorCost", event.target.value)} onBlur={() => blurField("vendorCost")} onWheel={(event) => event.currentTarget.blur()} placeholder={form.vendorPublicId ? "0.00" : "Select a vendor first"} disabled={!form.vendorPublicId} className={controlClass("vendorCost", true)} />
                   </div>
-                </Field>
-              </div>
-              {/* The "Overseas tour package" checkbox stood here. It was the last TCS control on
-                  this form — its only job was telling the server's 206C(1G) rule that this booking
-                  qualifies — and TCS is no longer something this screen asks about or shows.
-
-                  `overseasTourPackage` is NOT removed from the form or the payload, only from the
-                  UI. It still defaults to false and is still sent, so a new booking simply declares
-                  itself domestic; and edit mode still LOADS the saved value and sends it back
-                  untouched, so an existing overseas booking keeps its flag rather than being
-                  silently converted to a domestic one on the next save.
-
-                  Side effect worth knowing: with the flag false, the server's auto-TCS rule does
-                  not fire, so Total Payable becomes Budget + GST and the Computed panel adds up
-                  again — the unexplained ₹5 gap goes away on its own. An OLD booking that was
-                  saved as overseas still carries TCS inside its Total Payable with no line naming
-                  it, because that flag is preserved rather than cleared. */}
+              </Field>
+              <Field label="Advance Collected (INR)" optional error={errors.paidAmount}>
+                <div className="relative">
+                  <IndianRupee className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <input name="paidAmount" type="number" min="0" step="0.01" value={form.paidAmount} onChange={(event) => setField("paidAmount", event.target.value)} onBlur={() => blurField("paidAmount")} onWheel={(event) => event.currentTarget.blur()} placeholder="0.00" className={controlClass("paidAmount", true)} />
+                </div>
+              </Field>
+              <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2.5">
+                <input
+                  type="checkbox"
+                  checked={form.overseasTourPackage}
+                  onChange={(event) => setField("overseasTourPackage", event.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                />
+                <span className="text-xs">
+                  <span className="font-semibold text-slate-700">Overseas tour package</span>
+                  <span className="block font-normal text-slate-400">TCS is collected on overseas packages when your accounting policy says so</span>
+                </span>
+              </label>
 
               {/* ── Agent / agency commission ────────────────────────────────────────────────
                   Collapsed to a single control until someone says there IS an arrangement, because
@@ -2747,25 +2648,12 @@ export default function BookingFormPage() {
                 )}
               </div>
 
-              {/* ── Tax for THIS booking ─────────────────────────────────────────────────────
-                  ONE question, and the only one an agent can actually answer at the point of sale:
-                  is the figure they just typed the all-in price, or does GST go on top of it?
-
-                  Whether GST applies at all, and whether TCS does, are POLICY — they come from the
-                  tenant's Accounting Settings, and the per-booking overrides that used to sit here
-                  ("Charge GST", "Collect TCS") are gone. Both flags still exist on the form and in
-                  the payload as null, which is exactly what "follow Accounting Settings" means, so
-                  the contract with the server is unchanged and a saved booking that carries an
-                  explicit value keeps it. */}
               <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <p className="text-sm font-bold text-slate-700">Tax for this booking</p>
-                    {/* No longer "Leave on Default" — there is no Default BUTTON any more. Unset is
-                        still a real state (neither option lit), so the sentence describes it as
-                        what it is: nothing picked, tenant settings decide. */}
                     <p className="mt-0.5 text-xs font-normal leading-relaxed text-slate-400">
-                      Leave it unset to follow your Accounting Settings.
+                      Leave on Default to follow your Accounting Settings.
                     </p>
                   </div>
                   {taxOverridden && (
@@ -2775,53 +2663,51 @@ export default function BookingFormPage() {
                   )}
                 </div>
 
-                {/* ONE question: does this booking carry GST or not.
-                    "Price entered is — Excl. / Incl. GST" asked something narrower and harder: not
-                    whether tax applies but how the figure already typed should be READ. That only
-                    ever mattered on inclusive pricing, which is the rare case, and it left the
-                    common one unanswerable — there was no way to say "no GST on this booking" at
-                    all once Charge GST was removed.
-
-                    Two options, no Default BUTTON, which does not drop the default STATE: applyGst
-                    starts null, so on a fresh booking neither is lit and the tenant's Accounting
-                    Settings still decide. TriToggle shows its Reset link once one is chosen, so
-                    null stays reachable. */}
-                <div className="mt-4">
+                <div className="mt-4 space-y-4">
                   <TriToggle
-                    label="GST"
-                    value={form.applyGst}
-                    onChange={(v) => {
-                      setField("applyGst", v);
-                      /* gstInclusive has no control of its own now, so this drives it — carefully.
-                         Without GST: inclusive-or-exclusive is a meaningless question, so it goes
-                         back to null rather than asserting an answer about a tax that is not there.
-                         With GST: the figure typed is pre-tax, which is what an agent means — but
-                         ONLY when nothing has been said yet. A booking saved as tax-INCLUSIVE keeps
-                         that, because flipping it here would silently restate what the customer
-                         owes on a control the agent may only have clicked to confirm. */
-                      if (v !== true) setField("gstInclusive", null);
-                      else if (form.gstInclusive == null) setField("gstInclusive", false);
-                    }}
+                    label="Price entered is"
+                    value={form.gstInclusive}
+                    onChange={(v) => setField("gstInclusive", v)}
                     options={[
-                      { value: true,  label: "With GST" },
-                      { value: false, label: "Without GST" },
+                      { value: null,  label: "Default" },
+                      { value: false, label: "Excl. GST" },
+                      { value: true,  label: "Incl. GST" },
                     ]}
                     hint={
-                      form.applyGst === true && form.gstInclusive === true
-                        ? "This booking was saved tax-inclusive — Total Budget is the all-in price and the taxable value is worked back out of it."
+                      form.gstInclusive === true
+                        ? "Customer Amount above is the all-in price — the taxable value is worked back out of it."
                         : null
                     }
                   />
+                  <TriToggle
+                    label="Charge GST"
+                    value={form.applyGst}
+                    onChange={(v) => setField("applyGst", v)}
+                    options={[
+                      { value: null,  label: "Default" },
+                      { value: true,  label: "Yes" },
+                      { value: false, label: "No" },
+                    ]}
+                  />
+                  <TriToggle
+                    label="Collect TCS"
+                    value={form.applyTcs}
+                    onChange={(v) => setField("applyTcs", v)}
+                    options={[
+                      { value: null,  label: "Default" },
+                      { value: true,  label: "Yes" },
+                      { value: false, label: "No" },
+                    ]}
+                  />
                 </div>
 
-                {/* TCS has no presence on this screen — no control, and no line in the Computed
-                    breakdown. Hiding it was not enough on its own: the form went on sending
-                    applyTcs: null ("follow the tenant policy"), that policy collects TCS, and a
-                    ₹100 booking with ₹5 GST came back with a Total Payable of ₹110 that nothing on
-                    screen could explain. The form now sends applyTcs: false — see the defaults —
-                    so the breakdown reconciles because there IS no other tax, not because one is
-                    being hidden. Accounting Settings are untouched and still govern every other
-                    surface. */}
+                {form.applyTcs === null && (
+                  <p className="mt-4 border-t border-slate-200 pt-3 text-xs font-normal leading-relaxed text-slate-500">
+                    Domestic packages don't attract TCS. If that is true of most of your bookings,
+                    set the policy to <span className="font-semibold">Overseas only</span> in
+                    Accounting Settings rather than overriding it here.
+                  </p>
+                )}
               </div>
             </div>
           </Panel>
@@ -2836,7 +2722,7 @@ export default function BookingFormPage() {
           >
             {!previewActive && (
               <p className="text-xs text-slate-400">
-                Enter the customer amount to see GST, total payable and profit — computed by the
+                Enter the customer amount to see GST, TCS, total payable and profit — computed by the
                 server from your accounting settings.
               </p>
             )}
@@ -2863,9 +2749,10 @@ export default function BookingFormPage() {
                     {form.gstInclusive === true ? "incl. " : "+ "}{inr(preview.gst)}
                   </span>
                 </div>
-                {/* No TCS row. It is not dropped from the MATH — Total Payable below is the
-                    server's figure and still has any TCS inside it — only from the breakdown, in
-                    line with TCS no longer being something this screen asks about. */}
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-semibold text-slate-400">TCS</span>
+                  <span className="font-bold text-slate-700">+ {inr(preview.tcs)}</span>
+                </div>
                 <div className="flex items-center justify-between border-t border-slate-100 pt-2">
                   <span className="text-xs font-bold text-slate-600">Total Payable</span>
                   <span className="text-sm font-extrabold text-slate-900">{inr(preview.totalPayable)}</span>

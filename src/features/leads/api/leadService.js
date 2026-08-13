@@ -209,17 +209,16 @@ function transformFormData(formData, services = [], itinerary = []) {
     followUpDate:   formData.followUpDate            || null,
     packageType:    formData.packageType             || null,
     travelDate:     formData.travelDate             || null,
-<<<<<<< HEAD
     // When they come back. The column, the request DTO and the mapper have all carried this since
     // V9 — only this transform never sent it, so every lead written from this form had a null
     // returnDate, and every booking converted from one inherited a null tripEndDate. That is what
     // the operations board renders as "End date not set": a trip it can only draw as a point.
-    returnDate:     formData.returnDate             || null,
-=======
+    //
+    // Both branches fixed this independently and landed the identical line; the comment is the
+    // only thing that needed merging.
     returnDate:     formData.returnDate             || null,
     hotelCategory:  formData.hotelCategory?.trim()  || null,
     mealPlanPreference: formData.mealPlanPreference?.trim() || null,
->>>>>>> origin/main
     departCountry:  formData.departCountry          || "Not Specified",
     departCity:     formData.departCity             || "Not Specified",
     departureMode:  formData.departureMode          || null,
