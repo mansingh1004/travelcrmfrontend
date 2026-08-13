@@ -1910,7 +1910,7 @@ export default function LuxuryWebView({ data, pdfUrl }) {
               </section>
             )}
 
-            {/* ── 02 Day by day ───────────────────────────────────────────── */}
+            {/*  ───────────────────────────────────────────── */}
             {days.length > 0 && (
               <section>
                 <SectionHeading
