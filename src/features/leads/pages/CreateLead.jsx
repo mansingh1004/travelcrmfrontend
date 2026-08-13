@@ -28,8 +28,8 @@ import {
   ArrowLeft,
   ArrowRight,
   BedDouble,
+  UtensilsCrossed,
   BookUser,
-  CalendarDays,
   Camera,
   CarFront,
   Check,
@@ -96,6 +96,7 @@ import PdfDownloadLoader from "@shared/ui/PdfDownloadLoader";
 import { buildAdultPayload, deriveAdultBreakdown, getAdultBreakdownError } from "@shared/lib/adultBreakdown";
 import DateRangeField from "@shared/ui/DateRangeField";
 import TravellerCountFields from "@shared/ui/TravellerCountFields";
+import DateRangeField from "@shared/ui/DateRangeField";
 import { useToast } from "@shared/ui/toast";
 import { getErrorMessage, getFieldErrors, isAlreadyReported } from "@shared/api/apiError";
 import { phoneRule } from "@shared/lib/phone";
@@ -263,6 +264,11 @@ export const blankDefaults = () => ({
   assignedUserId: "", birthDate: "", anniversaryDate: "",
   preferredCommunication: "", followUpDate: "", packageType: "",
   travelDate: "", returnDate: "", departCountry: "India", departCity: "",
+<<<<<<< HEAD
+=======
+  // What the customer ASKED for, not what a quotation later picked — see the V9 migration note.
+  hotelCategory: "", mealPlanPreference: "", dropAddress: "",
+>>>>>>> origin/main
   departureMode: "", departureAirport: "", airportCode: "", preferredFlightTime: "",
   railwayStation: "", trainClass: "", preferredTrainTime: "",
   pickupAddress: "", pickupDateTime: "", vehiclePreference: "",
@@ -310,6 +316,20 @@ export const blankRow = () => ({ id: nextRowId++, destinationId: "", destination
 const hasCompleteStop = (rows) => (rows || []).some(
   (row) => String(row?.destination || "").trim() && String(row?.city || "").trim(),
 );
+
+/* What the customer ASKED for. Not the same thing as QuotationHotel.stars, which records the rating
+   of the hotel the agent eventually picked — this is the requirement, that is the fulfilment.
+   A datalist rather than a select: enquiries genuinely say "3-4 Star" and "Deluxe category", and a
+   closed list would force the agent to round the request to something the customer did not say. */
+const HOTEL_CATEGORY_SUGGESTIONS = ["Any", "2 Star", "3 Star", "3-4 Star", "4 Star", "4-5 Star", "5 Star"];
+
+/* Mirrors the quotation builder's MEAL_PLANS wording so the same phrase carries from enquiry to
+   quote. Kept local rather than imported: this is the request, quotation/Constants.js is what the
+   builder offers, and coupling them would make a change to one silently rewrite the other. */
+const MEAL_PLAN_SUGGESTIONS = [
+  "Room Only (EP)", "Breakfast Only (CP)", "Breakfast & Dinner (MAP)",
+  "Breakfast, Lunch & Dinner (AP)", "All Inclusive (AI)",
+];
 
 const ROOM_CATEGORY_OPTIONS = ["Any", "Standard", "Deluxe", "Premium", "Suite", "Family Room", "Villa"];
 const BED_PREFERENCE_OPTIONS = ["Any", "King", "Queen", "Twin", "Double", "Single", "Bunk"];
@@ -779,8 +799,17 @@ export function LeadFormPanels({
 
   const [destinations, setDestinations] = useState([]);
   const [loadingDestinations, setLoadingDestinations] = useState(true);
-  const [rowCities, setRowCities] = useState({});
-  const [loadingRows, setLoadingRows] = useState({});
+  /* Keyed by DESTINATION id, not by row id.
+     It used to be per row, which meant a five-stop itinerary through one country fired five
+     identical /cities requests and made the agent sit through five separate "Loading…" states for
+     the same list. Keying on the destination makes stops two through five instant, and the cache is
+     shared with any row that later picks the same place. */
+  const [citiesByDestination, setCitiesByDestination] = useState({});
+  const [loadingDestinationCities, setLoadingDestinationCities] = useState({});
+  /* The same cache as a ref, because loadCities is a stable useCallback with no deps and reading
+     the state inside it would see the value from the render that created it. Two rows picking the
+     same destination in quick succession would each find it "not cached" and both fetch. */
+  const citiesCacheRef = useRef({});
   const [destinationModalRow, setDestinationModalRow] = useState(null);
   const [cityModalRow, setCityModalRow] = useState(null);
   /* Retired with Full details: rapid used to show a picked Lead Source as a read-only chip with a
@@ -834,6 +863,26 @@ export function LeadFormPanels({
     watch("budget") ? `₹${Number(watch("budget")).toLocaleString("en-IN")}` : "",
   ].filter(Boolean).join(" · ");
   const summaryNights = itinerary.reduce((sum, row) => sum + toInt(row.nights), 0);
+
+  /* The whole reason returnDate is stored rather than derived: it lets the two halves of the
+     enquiry be COMPARED. An enquiry that says "14th to 20th" and an itinerary that adds up to five
+     nights disagree, and one of them is wrong — the quote gets built on whichever the agent does
+     not notice. Stated as a plain gap rather than an error, because either can legitimately be the
+     one to fix, and blocking the save would be the form deciding which. */
+  const returnGapHint = (() => {
+    const start = watch("travelDate");
+    const end = watch("returnDate");
+    if (!start || !end) return undefined;
+    const gap = Math.round((Date.parse(end) - Date.parse(start)) / 86400000);
+    if (!Number.isFinite(gap)) return undefined;
+    if (gap < 0) return "Return is before the travel date.";
+    if (gap === 0) return "Same-day return.";
+    const label = `${gap} night${gap === 1 ? "" : "s"}`;
+    if (summaryNights > 0 && gap !== summaryNights) {
+      return `${label} — but the itinerary adds up to ${summaryNights}.`;
+    }
+    return label;
+  })();
   const tripSummary = [
     itinerary.map((row) => row.city || row.destination).filter(Boolean).join(" → "),
     summaryNights > 0 ? `${summaryNights}N / ${summaryNights + 1}D` : "",
@@ -968,18 +1017,34 @@ export function LeadFormPanels({
   }, [assistanceRequired, clearErrors, setValue]);
 
   // ── Itinerary row helpers ─────────────────────────────────────────────────────────────────────
-  const loadCities = useCallback(async (rowId, destinationId) => {
-    if (!destinationId) { setRowCities((c) => ({ ...c, [rowId]: [] })); return []; }
-    setLoadingRows((c) => ({ ...c, [rowId]: true }));
+  /**
+   * Cities for one destination, fetched at most once.
+   *
+   * <p>Returns the cached list immediately when it is already there, so adding a second stop in the
+   * same country costs nothing. The cache is never invalidated within a session — a destination's
+   * city list does not change while an agent is typing one enquiry, and re-fetching to find that out
+   * is the cost this exists to remove.</p>
+   */
+  const loadCities = useCallback(async (destinationId) => {
+    if (!destinationId) return [];
+    const key = String(destinationId);
+
+    const cached = citiesCacheRef.current[key];
+    if (cached) return cached;
+
+    setLoadingDestinationCities((c) => ({ ...c, [key]: true }));
     try {
       const cities = extractArray(await geographyService.getCitiesByDestination(destinationId));
-      setRowCities((c) => ({ ...c, [rowId]: cities }));
+      citiesCacheRef.current[key] = cities;
+      setCitiesByDestination((c) => ({ ...c, [key]: cities }));
       return cities;
     } catch {
-      setRowCities((c) => ({ ...c, [rowId]: [] }));
+      // NOT cached on failure: a transient error must not pin an empty city list for the rest of
+      // the session, leaving every later row in this destination permanently unfillable.
+      setCitiesByDestination((c) => ({ ...c, [key]: [] }));
       return [];
     } finally {
-      setLoadingRows((c) => ({ ...c, [rowId]: false }));
+      setLoadingDestinationCities((c) => ({ ...c, [key]: false }));
     }
   }, []);
 
@@ -1000,7 +1065,7 @@ export function LeadFormPanels({
       if (!match) return;
       const destinationId = String(idOf(match));
       onUpdateRow(row.id, { destinationId });
-      const cities = await loadCities(row.id, destinationId);
+      const cities = await loadCities(destinationId);
       if (!row.city) return;
       const city = cities.find(
         (c) => String(c?.name || "").trim().toLowerCase() === String(row.city).trim().toLowerCase()
@@ -1017,11 +1082,12 @@ export function LeadFormPanels({
       cityId: "",
       city: "",
     });
-    await loadCities(rowId, destinationId);
+    await loadCities(destinationId);
   };
 
-  const chooseCity = (rowId, cityId) => {
-    const city = (rowCities[rowId] || []).find((c) => String(idOf(c)) === String(cityId));
+  const chooseCity = (rowId, destinationId, cityId) => {
+    const list = citiesByDestination[String(destinationId)] || [];
+    const city = list.find((c) => String(idOf(c)) === String(cityId));
     onUpdateRow(rowId, { cityId: cityId ? String(cityId) : "", city: city?.name || "" });
   };
 
@@ -1036,7 +1102,15 @@ export function LeadFormPanels({
     const rowId = cityModalRow;
     setCityModalRow(null);
     if (rowId == null) return;
-    setRowCities((c) => ({ ...c, [rowId]: [...(c[rowId] || []), saved] }));
+    // Push it into the DESTINATION's list, not this row's — a city added here is now available to
+    // every other stop in the same country, which is exactly what the agent expects after creating
+    // one mid-itinerary. The ref is updated too, or the next loadCities would serve the stale copy.
+    const key = String(itinerary.find((r) => r.id === rowId)?.destinationId || "");
+    if (key) {
+      const next = [...(citiesCacheRef.current[key] || []), saved];
+      citiesCacheRef.current[key] = next;
+      setCitiesByDestination((c) => ({ ...c, [key]: next }));
+    }
     onUpdateRow(rowId, { cityId: String(idOf(saved)), city: saved.name || "" });
   };
 
@@ -1447,10 +1521,48 @@ export function LeadFormPanels({
               </span>
             ) : null}
           >
+<<<<<<< HEAD
             {/* ONE grid for the whole panel. From and Occasion used to sit in a two-up row of
                 their own above the dates, which cost a full row of height to show two fields and
                 broke the four-across rhythm the rest of the panel reads in. They are ordinary
                 fields; they flow with the others.
+=======
+            {/* Four fields, two up. Full details ran these at lg:grid-cols-4, but that was a
+                full-width main column; the merged form always keeps the 300px rail, so four
+                across would put a date picker and two selects in ~150px each. */}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              {/* ONE control for both ends of the trip, the way every hotel site takes a stay.
+                  They were two <input type="date"> fields: two native pickers, two openings, and no
+                  way to see the trip length while choosing — while the enquiry states them as a
+                  pair ("14.07 to 20.07, 6 nights"). Spans both columns because two months of
+                  calendar do not belong under a half-width field.
+
+                  registered with RHF by hand: DateRangeField is not an <input>, so it is driven by
+                  watch/setValue like the SearchableSelects on this form. `required` still lives on
+                  travelDate so save() rejects a missing one exactly as before. */}
+              <div className="sm:col-span-2">
+                <Field
+                  id="travelDate"
+                  label="Travel Dates"
+                  required
+                  error={errors.travelDate?.message}
+                  hint={returnGapHint}
+                >
+                  <input type="hidden" {...register("travelDate", { required: "Travel date is required" })} />
+                  <input type="hidden" {...register("returnDate")} />
+                  <DateRangeField
+                    id="travelDateRange"
+                    startValue={watch("travelDate") || ""}
+                    endValue={watch("returnDate") || ""}
+                    invalid={Boolean(errors.travelDate)}
+                    onChange={({ start, end }) => {
+                      setValue("travelDate", start, { shouldDirty: true, shouldValidate: true });
+                      setValue("returnDate", end, { shouldDirty: true });
+                    }}
+                  />
+                </Field>
+              </div>
+>>>>>>> origin/main
 
                 Both are questions the old form never asked and the two an experienced agent asks
                 first. There is no quote without a departure city — every fare, every transfer and
@@ -1558,6 +1670,60 @@ export function LeadFormPanels({
                   <option value="WITHIN_MONTH">This month</option>
                   <option value="JUST_EXPLORING">Just exploring</option>
                 </select>
+              </Field>
+            </div>
+
+            {/* What the customer asked for, and where the trip ends.
+                OUTSIDE the departure-mode branches below on purpose. The server nulls each transport
+                group whose mode does not match, and the enquiry that prompted these is exactly the
+                case it breaks: the party arrives by TRAIN at Raxaul and is dropped back at Raxaul by
+                the car hired for the trip. Under the discriminator, choosing Train erases the
+                drop-off. "Where does the trip end" is true of a trip however it was reached. */}
+            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <Field id="hotelCategory" label="Hotel Category" optional hint="What the customer asked for.">
+                <div className="relative">
+                  <BedDouble className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <input
+                    {...register("hotelCategory")}
+                    id="hotelCategory"
+                    list="hotel-category-options"
+                    placeholder="e.g. 3 Star"
+                    className={control(false, true)}
+                  />
+                  {/* datalist, not select: the agent can still type "3-4 Star" or "Deluxe category"
+                      exactly as the enquiry worded it. */}
+                  <datalist id="hotel-category-options">
+                    {HOTEL_CATEGORY_SUGGESTIONS.map((option) => <option key={option} value={option} />)}
+                  </datalist>
+                </div>
+              </Field>
+
+              <Field id="mealPlanPreference" label="Meal Plan" optional hint="CP / MAP / AP / EP / AI.">
+                <div className="relative">
+                  <UtensilsCrossed className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <input
+                    {...register("mealPlanPreference")}
+                    id="mealPlanPreference"
+                    list="meal-plan-options"
+                    placeholder="e.g. Breakfast Only (CP)"
+                    className={control(false, true)}
+                  />
+                  <datalist id="meal-plan-options">
+                    {MEAL_PLAN_SUGGESTIONS.map((option) => <option key={option} value={option} />)}
+                  </datalist>
+                </div>
+              </Field>
+
+              <Field id="dropAddress" label="Drop-off Location" optional hint="Where the trip ends.">
+                <div className="relative">
+                  <MapPin className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <input
+                    {...register("dropAddress")}
+                    id="dropAddress"
+                    placeholder="e.g. Raxaul Station"
+                    className={control(false, true)}
+                  />
+                </div>
               </Field>
             </div>
 
@@ -1697,15 +1863,15 @@ export function LeadFormPanels({
                       <div className="min-w-0 flex-1">
                         <SearchableSelect
                           name={`itinerary.${index}.city`}
-                          options={rowCities[row.id] || []}
+                          options={citiesByDestination[String(row.destinationId)] || []}
                           value={row.cityId ? Number(row.cityId) || row.cityId : ""}
-                          onChange={(value) => chooseCity(row.id, value)}
+                          onChange={(value) => chooseCity(row.id, row.destinationId, value)}
                           placeholder={
                             !row.destinationId ? "Select destination first"
-                              : loadingRows[row.id] ? "Loading..."
+                              : loadingDestinationCities[String(row.destinationId)] ? "Loading..."
                                 : row.city || "Select city"
                           }
-                          loading={Boolean(loadingRows[row.id])}
+                          loading={Boolean(loadingDestinationCities[String(row.destinationId)])}
                           searchable
                           advanceOnSelect
                         />
@@ -2444,6 +2610,12 @@ export default function LeadFormPage() {
           packageType: lead.packageType ?? lead.tripType ?? "",
           travelDate: toDateInput(lead.travelDate ?? lead.tripDate ?? lead.departureDate),
           returnDate: toDateInput(lead.returnDate),
+<<<<<<< HEAD
+=======
+          hotelCategory: lead.hotelCategory ?? "",
+          mealPlanPreference: lead.mealPlanPreference ?? "",
+          dropAddress: lead.dropAddress ?? "",
+>>>>>>> origin/main
           departCountry: lead.departCountry ?? lead.departureCountry ?? "India",
           departCity: lead.departCity ?? lead.departureCity ?? "",
           departureMode: lead.departureMode ?? lead.transportMode ?? "",
@@ -2722,7 +2894,20 @@ export default function LeadFormPage() {
   // Handed to the accordion so a service can be added without leaving the panel being filled in.
   const addServiceFromQuote = (id) => toggleService(id, { fromQuote: true });
 
-  const addRow = () => setItinerary((rows) => [...rows, blankRow()]);
+  /* A new stop inherits the destination of the one above it, and nothing else.
+     Multi-stop itineraries are overwhelmingly within one country — "2N Kathmandu, 1N Pokhara, 1N
+     Muktinath" is one destination and three cities — and re-picking it per row cost two interactions
+     each plus a wait for the city list. The CITY is deliberately not carried: it is the one thing
+     that genuinely differs per stop, and pre-filling it would produce a row that looks complete and
+     is wrong, which is worse than an empty one. Nights stay at blankRow()'s default. */
+  const addRow = () => setItinerary((rows) => {
+    const previous = rows[rows.length - 1];
+    return [...rows, {
+      ...blankRow(),
+      destinationId: previous?.destinationId || "",
+      destination: previous?.destination || "",
+    }];
+  });
   const removeRow = (rowId) =>
     setItinerary((rows) => (rows.length > 1 ? rows.filter((row) => row.id !== rowId) : rows));
   const updateRow = useCallback((rowId, patch) => {
@@ -3413,6 +3598,14 @@ export default function LeadFormPage() {
             without scrolling) and a paragraph of onboarding copy re-read on every one of 50-100
             enquiries a day. */}
 
+        {/* showRoomPlanning was `editing`, which meant the room plan — and with it the ONLY
+            per-child age input in the product — did not exist on the create screen at all. Every
+            package enquiry states the child's age ("01 Child, Age 2"), because it decides whether
+            the child is free, on an extra bed, or a full berth, so a form that cannot record it on
+            the way in forces the agent to save the lead and reopen it.
+            Safe to show always: the panel is still behind its own `roomPlanEnabled` checkbox, and
+            save() only sends roomAllocations when that is ticked. Untouched, this adds one collapsed
+            checkbox to the create form and nothing else. */}
         <LeadFormPanels
           register={register}
           errors={errors}
@@ -3429,6 +3622,10 @@ export default function LeadFormPage() {
           phoneRef={phoneRef}
           belowPhone={editing ? null : duplicateStrip}
           compactRail
+<<<<<<< HEAD
+=======
+          showRoomPlanning
+>>>>>>> origin/main
           stepFlow={stepFlow}
           itineraryConfirmed={itineraryConfirmed}
           itineraryConfirmable={itineraryConfirmable}

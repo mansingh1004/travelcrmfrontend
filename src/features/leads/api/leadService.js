@@ -209,11 +209,17 @@ function transformFormData(formData, services = [], itinerary = []) {
     followUpDate:   formData.followUpDate            || null,
     packageType:    formData.packageType             || null,
     travelDate:     formData.travelDate             || null,
+<<<<<<< HEAD
     // When they come back. The column, the request DTO and the mapper have all carried this since
     // V9 — only this transform never sent it, so every lead written from this form had a null
     // returnDate, and every booking converted from one inherited a null tripEndDate. That is what
     // the operations board renders as "End date not set": a trip it can only draw as a point.
     returnDate:     formData.returnDate             || null,
+=======
+    returnDate:     formData.returnDate             || null,
+    hotelCategory:  formData.hotelCategory?.trim()  || null,
+    mealPlanPreference: formData.mealPlanPreference?.trim() || null,
+>>>>>>> origin/main
     departCountry:  formData.departCountry          || "Not Specified",
     departCity:     formData.departCity             || "Not Specified",
     departureMode:  formData.departureMode          || null,
@@ -226,7 +232,11 @@ function transformFormData(formData, services = [], itinerary = []) {
     pickupAddress:  formData.pickupAddress?.trim()   || null,
     pickupDateTime: formData.pickupDateTime          || null,
     vehiclePreference: formData.vehiclePreference?.trim() || null,
-    
+    // Outside the departureMode-gated trio above, deliberately: the server clears each transport
+    // group whose mode does not match, and a party arriving by train but dropped back by the hired
+    // car would otherwise lose this the moment the mode was set.
+    dropAddress:    formData.dropAddress?.trim()    || null,
+
     // --- Room & Extra Bed ---
     rooms:          Number(formData.rooms)          || 1,
     extraBeds:      Number(formData.extraBeds)      || 0,

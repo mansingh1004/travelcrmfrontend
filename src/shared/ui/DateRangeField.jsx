@@ -4,7 +4,11 @@ import { CalendarDays, X } from "lucide-react";
 import "react-day-picker/style.css";
 
 /**
+<<<<<<< HEAD
  * One control, one calendar, both dates — the way a hotel stay is selected.
+=======
+ * One control, one calendar, both dates — the way every hotel site takes a stay.
+>>>>>>> origin/main
  *
  * <p>Travel date and return date used to be two separate {@code <input type="date">} fields, which
  * meant two native pickers, two openings, and no way to see the trip length while choosing. An
@@ -27,8 +31,13 @@ export default function DateRangeField({
   startValue,
   endValue,
   onChange,
+<<<<<<< HEAD
   startLabel = "Check-in",
   endLabel = "Check-out",
+=======
+  startLabel = "Travel Date",
+  endLabel = "Return Date",
+>>>>>>> origin/main
   minDate,
   disabled = false,
   invalid = false,
@@ -129,14 +138,24 @@ export default function DateRangeField({
       {open && (
         <div
           role="dialog"
+<<<<<<< HEAD
           aria-label="Choose check-in and check-out dates"
+=======
+          aria-label="Choose travel and return dates"
+          /* right-0 on small screens so a field near the right edge does not push the popover off
+             the viewport; two months is wider than the field it hangs from. */
+>>>>>>> origin/main
           className="absolute left-0 top-full z-40 mt-2 max-w-[calc(100vw-2rem)] overflow-x-auto rounded-xl border border-slate-200 bg-white p-3 shadow-lg"
         >
           <DayPicker
             mode="range"
             selected={range}
             onSelect={handleSelect}
+<<<<<<< HEAD
             numberOfMonths={1}
+=======
+            numberOfMonths={2}
+>>>>>>> origin/main
             defaultMonth={from || undefined}
             startMonth={minDate ? parseLocal(minDate) : undefined}
             disabled={minDate ? { before: parseLocal(minDate) } : undefined}
@@ -150,8 +169,13 @@ export default function DateRangeField({
           />
           <div className="mt-1 flex items-center justify-between border-t border-slate-100 pt-2">
             <span className="text-[11px] text-slate-400">
+<<<<<<< HEAD
               {!from ? "Pick the check-in date"
                 : !to ? "Now pick the check-out date"
+=======
+              {!from ? "Pick the travel date"
+                : !to ? "Now pick the return date"
+>>>>>>> origin/main
                   : `${nights} night${nights === 1 ? "" : "s"}`}
             </span>
             <button

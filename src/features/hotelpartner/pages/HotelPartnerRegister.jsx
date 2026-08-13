@@ -11,11 +11,15 @@ import {
 } from "../components/partnerUi";
 
 /* ── Vocabulary. Mirrors the backend enums exactly; a mismatch here is a silent data loss. ── */
+/* Wording matches MealPlanCode.defaultLabel on the backend CHARACTER FOR CHARACTER, so the partner
+   form, the console editor and the review page all say the same thing about the same code. It had
+   drifted to sentence case here, which is how "Breakfast + 1 meal" and "Breakfast + 1 Meal" end up
+   looking like two different plans on two screens. */
 const MEAL_PLANS = [
-  { code: "EP", label: "Room only" },
+  { code: "EP", label: "Room Only" },
   { code: "CP", label: "Breakfast" },
-  { code: "MAP", label: "Breakfast + 1 meal" },
-  { code: "AP", label: "All meals" },
+  { code: "MAP", label: "Breakfast + 1 Meal" },
+  { code: "AP", label: "All Meals" },
   { code: "CUSTOM", label: "Custom" },
 ];
 const OCCUPANCY = [
@@ -189,19 +193,29 @@ function toPayload(f) {
  * than blocked by a stale copy of its rules. What this buys is that they find out while they are
  * still in the section, instead of after pressing Submit at the bottom of a very long page.
  */
+/**
+ * Every item carries `field` — the DOM id of the exact input that satisfies it.
+ *
+ * <p>Naming what is missing was never the gap; the checklist has always said "Name for room 2".
+ * The gap was that clicking it dropped the owner at the TOP of a section holding four rooms and
+ * left them to find it. A section is an address; a field is a destination.</p>
+ *
+ * <p>Items with no single input to point at (a photo, a whole room) keep `field: null` and fall
+ * back to scrolling the section, which is the honest answer for them.</p>
+ */
 function buildChecklist(form) {
   const items = [
-    { id: "name", label: "Hotel name", section: "details", done: Boolean(form.name?.trim()) },
-    { id: "city", label: "City", section: "location", done: Boolean(form.cityName?.trim()) },
-    { id: "country", label: "Country code", section: "location", done: Boolean(form.countryCode?.trim()) },
-    { id: "photo", label: "At least one hotel photo", section: "photos", done: form.images.length > 0 },
-    { id: "rooms", label: "At least one room", section: "rooms", done: form.rooms.length > 0 },
+    { id: "name", label: "Hotel name", section: "details", field: "f-name", done: Boolean(form.name?.trim()) },
+    { id: "city", label: "City", section: "location", field: "f-city", done: Boolean(form.cityName?.trim()) },
+    { id: "country", label: "Country code", section: "location", field: "f-country", done: Boolean(form.countryCode?.trim()) },
+    { id: "photo", label: "At least one hotel photo", section: "photos", field: null, done: form.images.length > 0 },
+    { id: "rooms", label: "At least one room", section: "rooms", field: null, done: form.rooms.length > 0 },
   ];
 
   form.rooms.forEach((room, i) => {
     const label = room.name?.trim() || `Room ${i + 1}`;
     items.push({
-      id: `${room._key}-name`, section: "rooms",
+      id: `${room._key}-name`, section: "rooms", field: `f-room-${room._key}`,
       label: `Name for room ${i + 1}`, done: Boolean(room.name?.trim()),
     });
     const priced = room.rates.length > 0
@@ -243,6 +257,23 @@ function useSectionSpy(ready) {
 const goToSection = (id) =>
   document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
 
+/**
+ * Take the owner to the exact input a checklist item is about, and put the caret in it.
+ *
+ * <p>Falls back to the section when the item has no single field — "at least one photo" is not a
+ * text box. Centred rather than top-aligned because the sticky submit bar and the section nav both
+ * eat screen edges, and a field scrolled to the very top can land underneath the header.</p>
+ *
+ * <p>The focus is deferred a frame: smooth scrolling and focus() fight, and focus() alone would
+ * jump the page instantly and undo the animation the owner is using to keep their bearings.</p>
+ */
+const goToField = (item) => {
+  const el = item?.field ? document.getElementById(item.field) : null;
+  if (!el) { goToSection(item?.section); return; }
+  el.scrollIntoView({ behavior: "smooth", block: "center" });
+  setTimeout(() => el.focus({ preventScroll: true }), 320);
+};
+
 export default function HotelPartnerRegister() {
   const { token } = useParams();
 
@@ -257,6 +288,10 @@ export default function HotelPartnerRegister() {
   const [saveError, setSaveError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
+  /* Fields go red only AFTER a submit has been refused — never while the form is being filled in.
+     A blank form is not a wrong form, and opening an eight-section registration already painted red
+     tells the owner they have failed before they have started. */
+  const [showErrors, setShowErrors] = useState(false);
   const [done, setDone] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(() => new Set());
@@ -357,6 +392,28 @@ export default function HotelPartnerRegister() {
 
   const setRoom = (i, changes) =>
     setForm((f) => ({ ...f, rooms: f.rooms.map((r, k) => (k === i ? { ...r, ...changes } : r)) }));
+  /**
+   * Enter walks to the next control; Ctrl/Cmd+Enter submits; Alt+R adds a room.
+   *
+   * Not inside a textarea — a policy is prose and needs its newlines — and not on a button, where
+   * Enter already means "press me". Read-only registrations are skipped entirely: a submitted form
+   * has nothing to walk through.
+   */
+  const onFormKeyDown = (e) => {
+    if (ro) return;
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); onSubmit(); return; }
+    if (e.altKey && e.key.toLowerCase() === "r") { e.preventDefault(); addRoom(); return; }
+    if (e.key !== "Enter" || e.shiftKey) return;
+    const tag = e.target.tagName;
+    if (tag === "TEXTAREA" || tag === "BUTTON") return;
+    e.preventDefault();
+    const fields = [...e.currentTarget.querySelectorAll("input,select,textarea")]
+      .filter((el) => !el.disabled && el.type !== "file" && el.offsetParent !== null);
+    const next = fields[fields.indexOf(e.target) + 1];
+    next?.focus();
+    if (next?.select) next.select();
+  };
+
   const addRoom = () =>
     setForm((f) => ({ ...f, rooms: [...f.rooms, BLANK_ROOM(f.mealPlans.map((m) => m.code))] }));
   const removeRoom = (i) => setForm((f) => ({ ...f, rooms: f.rooms.filter((_, k) => k !== i) }));
@@ -461,7 +518,19 @@ export default function HotelPartnerRegister() {
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (err) {
       setSubmitError(partnerErrorMessage(err, "Could not submit. Please try again."));
-      goToSection("rooms");
+      /* Mark the fields, then go to the first one.
+         The server answers a failed submit with every problem joined into one prose blob and no
+         field keys, so there is nothing in the response to map back onto inputs. There does not need
+         to be: the checklist already computes the same list locally, item by item, with the id of
+         the input each one is about. Marking from the checklist is not a workaround for the missing
+         field keys — it is the same knowledge, already here.
+         It used to scroll to the Rooms section unconditionally, which is wrong whenever the missing
+         thing was the hotel name. */
+      setShowErrors(true);
+      /* `checklist` is declared below this handler but read at call time, when it is assigned —
+         and onSubmit is rebuilt every render, so this is always the current one. */
+      const first = checklist.find((c) => !c.done);
+      if (first) revealField(first);
     } finally {
       setSubmitting(false);
     }
@@ -469,6 +538,33 @@ export default function HotelPartnerRegister() {
 
   const checklist = useMemo(() => (form ? buildChecklist(form) : []), [form]);
   const outstanding = checklist.filter((c) => !c.done);
+  /**
+   * Open whatever is hiding the field, then go to it.
+   *
+   * <p>A collapsed room does not render its inputs at all, so "Name for room 3" pointed at an id
+   * that was not in the document and quietly fell back to scrolling the Rooms section — the exact
+   * hunt this was meant to end. Expanding first, then deferring a frame so the input exists before
+   * anything tries to focus it.</p>
+   */
+  const revealField = useCallback((item) => {
+    const roomKey = item?.field?.startsWith("f-room-") ? item.field.slice("f-room-".length) : null;
+    if (roomKey) {
+      setCollapsed((s) => {
+        if (!s.has(roomKey)) return s;
+        const next = new Set(s);
+        next.delete(roomKey);
+        return next;
+      });
+    }
+    requestAnimationFrame(() => goToField(item));
+  }, []);
+
+  /** Which checklist items are unmet, by field id — the map the inputs read to go red. */
+  const fieldErrors = useMemo(() => {
+    if (!showErrors) return {};
+    return Object.fromEntries(
+      outstanding.filter((c) => c.field).map((c) => [c.field, "Still needed"]));
+  }, [showErrors, outstanding]);
   const doneCount = checklist.length - outstanding.length;
   const activeSection = useSectionSpy(Boolean(form) && !loading);
 
@@ -486,7 +582,7 @@ export default function HotelPartnerRegister() {
    */
   const openOutstanding = () => {
     if (!outstanding.length) return;
-    if (window.matchMedia("(min-width: 1024px)").matches) goToSection(outstanding[0].section);
+    if (window.matchMedia("(min-width: 1024px)").matches) revealField(outstanding[0]);
     else setSheetOpen(true);
   };
 
@@ -516,7 +612,7 @@ export default function HotelPartnerRegister() {
     <Page>
       {/* ── Sticky chrome ─────────────────────────────────────────────────── */}
       <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/90 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3">
+        <div className="mx-auto flex max-w-screen-2xl items-center gap-3 px-4 py-3 sm:px-6">
           <Hotel className="shrink-0 text-blue-600" size={20} />
           <div className="min-w-0 flex-1">
             <h1 className="truncate text-[15px] font-extrabold text-slate-900">Register your hotel</h1>
@@ -524,7 +620,12 @@ export default function HotelPartnerRegister() {
               <p className="truncate text-[12px] text-slate-500">Welcome, {session.contactName}</p>
             )}
           </div>
-          <SaveBadge state={saveState} editable={editable} onRetry={() => save(formRef.current)} />
+          <SaveBadge
+            state={saveState}
+            editable={editable}
+            complete={outstanding.length === 0}
+            onRetry={() => save(formRef.current)}
+          />
         </div>
 
         {/* Section nav — chips on a phone, sidebar from lg: up (rendered once, hidden per breakpoint). */}
@@ -552,7 +653,9 @@ export default function HotelPartnerRegister() {
         )}
       </header>
 
-      <div className="mx-auto flex max-w-6xl gap-8 px-4 py-5">
+      {/* max-w-screen-2xl, matching the console. It was max-w-6xl (1152px), which on a 1440 or 1920
+          laptop left a wide empty gutter on both sides while the form itself scrolled for pages. */}
+      <div className="mx-auto flex max-w-screen-2xl gap-8 px-4 py-5 sm:px-6">
         {/* ── Sidebar (laptop only) ───────────────────────────────────────── */}
         {!done && (
           <aside className="hidden w-60 shrink-0 lg:block">
@@ -585,7 +688,7 @@ export default function HotelPartnerRegister() {
                 <ul className="mt-3 space-y-1.5">
                   {checklist.map((c) => (
                     <li key={c.id}>
-                      <button type="button" onClick={() => goToSection(c.section)}
+                      <button type="button" onClick={() => revealField(c)}
                         className="flex w-full items-start gap-2 text-left text-[12.5px] leading-snug">
                         <span className={`mt-0.5 grid h-3.5 w-3.5 shrink-0 place-items-center rounded-full ${
                           c.done ? "bg-emerald-500 text-white" : "border border-slate-300"}`}>
@@ -604,7 +707,11 @@ export default function HotelPartnerRegister() {
         )}
 
         {/* ── Form ─────────────────────────────────────────────────────────── */}
-        <main className="min-w-0 flex-1 space-y-4 pb-32 lg:pb-8">
+        {/* Same keyboard contract as the console catalog editor. An owner filling this on a laptop
+            from a rate sheet should never reach for the mouse to move between fields — and it costs
+            almost nothing, unlike the density change, which is why it is here even though this form
+            is filled once rather than twenty times a day. */}
+        <main className="min-w-0 flex-1 space-y-4 pb-32 lg:pb-8" onKeyDown={onFormKeyDown}>
           {done && (
             <Notice tone="success">
               <strong>Thank you — we have your details.</strong> Our team will review them and get in
@@ -632,9 +739,15 @@ export default function HotelPartnerRegister() {
             </Notice>
           )}
 
+          {/* Two up from lg, matching the console catalog editor.
+              These four are short forms — a handful of one-line fields each — and stacking them made
+              a laptop scroll through four screens of half-empty white. Amenities, photos, meal plans
+              and rooms stay full width below, because those genuinely use it. */}
+          <div className="grid gap-4 lg:grid-cols-2">
           <Card id="details" title="Hotel details" hint="Only the name, city and country are needed to save.">
-            <Row label="Hotel name" required>
-              <input className={inputCls} value={form.name} disabled={ro} autoComplete="organization"
+            <Row label="Hotel name" required error={fieldErrors["f-name"]}>
+              <input id="f-name" className={inputCls} value={form.name} disabled={ro}
+                autoComplete="organization" aria-invalid={Boolean(fieldErrors["f-name"])}
                 onChange={(e) => patch({ name: e.target.value })} placeholder="Hotel Seaview" />
             </Row>
             <Row label="Star rating">
@@ -659,13 +772,15 @@ export default function HotelPartnerRegister() {
 
           <Card id="location" title="Location" hint="The city and country decide where travel agents find you.">
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="City" hint="required">
-                <input className={inputCls} value={form.cityName} disabled={ro} autoComplete="address-level2"
+              <Field label="City" hint="required" error={fieldErrors["f-city"]}>
+                <input id="f-city" className={inputCls} value={form.cityName} disabled={ro}
+                  autoComplete="address-level2" aria-invalid={Boolean(fieldErrors["f-city"])}
                   onChange={(e) => patch({ cityName: e.target.value })} placeholder="Goa" />
               </Field>
-              <Field label="Country code" hint="2–3 letters, e.g. IN">
-                <input className={inputCls} value={form.countryCode} disabled={ro} maxLength={3}
+              <Field label="Country code" hint="2–3 letters, e.g. IN" error={fieldErrors["f-country"]}>
+                <input id="f-country" className={inputCls} value={form.countryCode} disabled={ro} maxLength={3}
                   autoCapitalize="characters" autoComplete="country"
+                  aria-invalid={Boolean(fieldErrors["f-country"])}
                   onChange={(e) => patch({ countryCode: e.target.value.toUpperCase() })} placeholder="IN" />
               </Field>
               <Field label="State / region">
@@ -736,6 +851,8 @@ export default function HotelPartnerRegister() {
                 placeholder="Free cancellation up to 48 hours before check-in…" />
             </Row>
           </Card>
+          </div>
+
 
           <Card id="amenities" title="Amenities" hint="Tap what you have. Add anything else below.">
             <div className="flex flex-wrap gap-2">
@@ -851,6 +968,7 @@ export default function HotelPartnerRegister() {
                 onRemoveRate={(ti) => removeRate(ri, ti)}
                 onUploadPhoto={uploadPhoto}
                 offeredCodes={offeredCodes}
+                nameError={fieldErrors[`f-room-${room._key}`]}
               />
             ))}
 
@@ -870,7 +988,7 @@ export default function HotelPartnerRegister() {
         <div className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 backdrop-blur"
           style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
           <ProgressBar done={doneCount} total={checklist.length} />
-          <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3">
+          <div className="mx-auto flex max-w-screen-2xl items-center gap-3 px-4 py-3 sm:px-6">
             <div className="min-w-0 flex-1">
               {outstanding.length === 0 ? (
                 <p className="flex items-center gap-1.5 text-[13px] font-bold text-emerald-600">
@@ -912,7 +1030,7 @@ export default function HotelPartnerRegister() {
               {outstanding.map((c) => (
                 <li key={c.id}>
                   <button type="button"
-                    onClick={() => { setSheetOpen(false); goToSection(c.section); }}
+                    onClick={() => { setSheetOpen(false); revealField(c); }}
                     className="flex w-full items-center gap-2.5 rounded-xl px-3 py-3 text-left text-[14px]
                                font-medium text-slate-700 hover:bg-slate-50">
                     <span className="h-2 w-2 shrink-0 rounded-full bg-amber-400" />
@@ -937,7 +1055,7 @@ export default function HotelPartnerRegister() {
  */
 function RoomCard({
   room, index, readOnly, collapsed, onToggle, onChange, onRemove,
-  onAddRate, onChangeRate, onRemoveRate, onUploadPhoto, offeredCodes,
+  onAddRate, onChangeRate, onRemoveRate, onUploadPhoto, offeredCodes, nameError,
 }) {
   const priced = room.rates.filter((t) => t.netRate !== "" && t.netRate !== null);
   const cheapest = priced.length ? Math.min(...priced.map((t) => Number(t.netRate))) : null;
@@ -987,8 +1105,9 @@ function RoomCard({
 
       {!collapsed && (
         <div className="space-y-3 border-t border-slate-200 p-3.5 sm:p-4">
-          <Row label="Room name" required>
-            <input className={inputCls} value={room.name} disabled={readOnly}
+          <Row label="Room name" required error={nameError}>
+            <input id={`f-room-${room._key}`} className={inputCls} value={room.name} disabled={readOnly}
+              aria-invalid={Boolean(nameError)}
               onChange={(e) => onChange({ name: e.target.value })} placeholder="Deluxe Sea View" />
           </Row>
 
@@ -1142,7 +1261,7 @@ function RoomCard({
 }
 
 /** Autosave status. Silent when idle — a permanent "Saved" badge is noise, an error is not. */
-function SaveBadge({ state, editable, onRetry }) {
+function SaveBadge({ state, editable, complete, onRetry }) {
   if (!editable) return null;
   if (state === "saving") {
     return (
@@ -1151,10 +1270,21 @@ function SaveBadge({ state, editable, onRetry }) {
       </span>
     );
   }
+  /* "Draft saved", not "Saved", and slate rather than emerald when the form is still incomplete.
+     Green next to an empty form is a lie by tone: it answers "did the autosave reach the server"
+     while the owner reads it as "this is done". They are different facts, and the one the owner
+     cares about is the checklist. Emerald is kept for the case where both are true. */
   if (state === "saved") {
     return (
-      <span className="inline-flex shrink-0 items-center gap-1 text-[12px] font-semibold text-emerald-600">
-        <Check size={12} /> Saved
+      <span
+        className={`inline-flex shrink-0 items-center gap-1 text-[12px] font-semibold ${
+          complete ? "text-emerald-600" : "text-slate-500"
+        }`}
+        title={complete
+          ? "Saved, and everything we need is filled in"
+          : "Your progress is saved — but the form is not finished yet"}
+      >
+        <Check size={12} /> Draft saved
       </span>
     );
   }

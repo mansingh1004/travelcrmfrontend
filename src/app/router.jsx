@@ -126,6 +126,7 @@ const ConsoleHotelPartners = lazyPage(consoleFeature, "ConsoleHotelPartners");
 const ConsoleHotelPartnerReview = lazyPage(consoleFeature, "ConsoleHotelPartnerReview");
 const ConsoleHotelNominations = lazyPage(consoleFeature, "ConsoleHotelNominations");
 const ConsolePlatformHotelDetail = lazyPage(consoleFeature, "ConsolePlatformHotelDetail");
+const ConsolePlatformHotelEditor = lazyPage(consoleFeature, "ConsolePlatformHotelEditor");
 const ConsoleMarketplaceBookings = lazyPage(consoleFeature, "ConsoleMarketplaceBookings");
 const ConsoleMarketplaceCommissions = lazyPage(consoleFeature, "ConsoleMarketplaceCommissions");
 const ConsoleMarketplaceOccupancy = lazyPage(consoleFeature, "ConsoleMarketplaceOccupancy");
@@ -280,6 +281,9 @@ const AppRouter = () => {
               <Route path="hotel-partners/:publicId" element={<ConsoleHotelPartnerReview />} />
               <Route path="hotel-nominations" element={<ConsoleHotelNominations />} />
               <Route path="hotel-catalog" element={<ConsolePlatformHotels />} />
+              {/* new BEFORE :publicId, or "new" is read as an id and the editor never renders. */}
+              <Route path="hotel-catalog/new" element={<ConsolePlatformHotelEditor />} />
+              <Route path="hotel-catalog/:publicId/edit" element={<ConsolePlatformHotelEditor />} />
               <Route path="hotel-catalog/:publicId" element={<ConsolePlatformHotelDetail />} />
               {/* The approval queue. Only a decision taken here can confirm a tenant's hotel. */}
               <Route path="hotel-requests" element={<ConsoleMarketplaceBookings />} />
