@@ -1207,11 +1207,25 @@ export function LeadFormPanels({
                 }}
                 onCountChange={setAdultCount}
                 onToggleBreakdown={toggleAdultBreakdown}
-                /* Travellers gets the whole row here. Sharing it with Rooms at 3fr/2fr was fine
-                   before this group grew a Seniors box and a strip of child-age chips; now the
-                   breakdown has four counters to lay out inside a column that already gives 320px
-                   to the rail, and it wrapped into three cramped lines. Rooms drops underneath. */
-                wideTravellers
+                /* EVERY COUNTER VISIBLE, NO TOGGLE. Adults, Children, Infants, Rooms and Extra Beds
+                   all on screen at once, which is how this form worked until the "one headcount,
+                   breakdown on demand" change landed.
+
+                   That change optimises for the common enquiry — four adults, nothing else — by
+                   collapsing to a single box. It costs a click on every enquiry that is NOT that,
+                   and worse, it hides where the numbers are: an agent taking a booking on the phone
+                   is reading the whole party off the screen, not opening a panel to find it. The
+                   male/female split goes with it, which is the point — it was the least-used control
+                   in the group and the one thing the collapse existed to hide.
+
+                   `compact` is how the component already expresses this; nothing in the shared file
+                   changes, so the booking form keeps the collapsing version it was built with.
+
+                   NOT wide: the 3fr/2fr split puts Adults / Children / Infants beside Rooms / Extra
+                   Beds and gets all five counters on ONE line. Giving Travellers its own full row
+                   stacks them into two rows instead — the opposite of what is wanted here. */
+                compact
+                showExtraBedsInCompact
                 /* `compact` is gone with Full details. It did exactly two things — hide the
                    "Specify adult gender count" toggle and hide Extra Beds — so rapid could not
                    record a male/female split or an extra bed without switching modes first. Both
