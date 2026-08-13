@@ -40,6 +40,7 @@ import { vendorService } from "@features/vendors";
 import { geographyService } from "@shared/api/geographyService";
 import { getErrorMessage, getFieldErrors, isAlreadyReported } from "@shared/api/apiError";
 import { buildAdultPayload, deriveAdultBreakdown, getAdultBreakdownError } from "@shared/lib/adultBreakdown";
+import { hasModule } from "@shared/lib/access";
 import { useIdempotencyKey } from "@shared/lib/idempotency";
 import { useToast } from "@shared/ui/toast";
 
@@ -277,11 +278,12 @@ function TriToggle({ label, value, onChange, options, hint }) {
   // null is a real, selectable option ("Default"), so identity comparison is required —
   // a truthiness test would light Default and "No" at the same time.
   const isDefault = value === null || value === undefined;
+  const canReset = options.some((option) => option.value === null);
   return (
     <div>
       <div className="flex items-baseline justify-between gap-2">
         <span className="text-xs font-semibold text-slate-600">{label}</span>
-        {!isDefault && (
+        {canReset && !isDefault && (
           <button
             type="button"
             onClick={() => onChange(null)}
@@ -357,6 +359,9 @@ export default function BookingFormPage() {
   const [searchParams] = useSearchParams();
   const editing = Boolean(routeBookingId);
   const { showToast } = useToast();
+  // Starter does not include Accounting. Keep the explicit booking-level choices, while hiding
+  // Default/Reset and copy that sends the user to an Accounting Settings screen they cannot open.
+  const accountingDefaultsAvailable = hasModule("ACCOUNTING");
 
   // OLD — replaced in create-form redesign
   // const [form, setForm] = useState(initialForm);
@@ -2652,9 +2657,11 @@ export default function BookingFormPage() {
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <p className="text-sm font-bold text-slate-700">Tax for this booking</p>
-                    <p className="mt-0.5 text-xs font-normal leading-relaxed text-slate-400">
-                      Leave on Default to follow your Accounting Settings.
-                    </p>
+                    {accountingDefaultsAvailable && (
+                      <p className="mt-0.5 text-xs font-normal leading-relaxed text-slate-400">
+                        Leave on Default to follow your Accounting Settings.
+                      </p>
+                    )}
                   </div>
                   {taxOverridden && (
                     <span className="shrink-0 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-700">
@@ -2669,7 +2676,7 @@ export default function BookingFormPage() {
                     value={form.gstInclusive}
                     onChange={(v) => setField("gstInclusive", v)}
                     options={[
-                      { value: null,  label: "Default" },
+                      ...(accountingDefaultsAvailable ? [{ value: null, label: "Default" }] : []),
                       { value: false, label: "Excl. GST" },
                       { value: true,  label: "Incl. GST" },
                     ]}
@@ -2684,7 +2691,7 @@ export default function BookingFormPage() {
                     value={form.applyGst}
                     onChange={(v) => setField("applyGst", v)}
                     options={[
-                      { value: null,  label: "Default" },
+                      ...(accountingDefaultsAvailable ? [{ value: null, label: "Default" }] : []),
                       { value: true,  label: "Yes" },
                       { value: false, label: "No" },
                     ]}
@@ -2694,14 +2701,14 @@ export default function BookingFormPage() {
                     value={form.applyTcs}
                     onChange={(v) => setField("applyTcs", v)}
                     options={[
-                      { value: null,  label: "Default" },
+                      ...(accountingDefaultsAvailable ? [{ value: null, label: "Default" }] : []),
                       { value: true,  label: "Yes" },
                       { value: false, label: "No" },
                     ]}
                   />
                 </div>
 
-                {form.applyTcs === null && (
+                {accountingDefaultsAvailable && form.applyTcs === null && (
                   <p className="mt-4 border-t border-slate-200 pt-3 text-xs font-normal leading-relaxed text-slate-500">
                     Domestic packages don't attract TCS. If that is true of most of your bookings,
                     set the policy to <span className="font-semibold">Overseas only</span> in
