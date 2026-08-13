@@ -270,6 +270,32 @@ export const blankDefaults = () => ({
   roomPlanEnabled: false,
   specialAssistanceRequired: false, specialAssistanceTypes: [],
   assistancePassengerCount: 0, specialAssistanceNotes: "",
+
+  /* ── Qualification fields — the veteran-agent model ─────────────────────────────────────────
+     These change how a quotation is BUILT, not just what is recorded about it: a honeymoon and
+     elderly parents are different hotels at the same budget, and "when will you decide" sorts the
+     callback list that "when do you travel" cannot.
+
+     ⚠ NONE OF THESE HAVE COLUMNS YET. They live in form state and are deliberately NOT in
+     transformFormData's payload, so a lead saved today drops them rather than 400ing on an unknown
+     property. That is the agreed order — UI first, migration after — and it is safe only because
+     the transform whitelists fields instead of spreading the form object. Do not "fix" it by
+     spreading; wire each field when its column lands. */
+  tripFor: "",
+  whatsappSame: true,
+  whatsappNumber: "",
+  fromCity: "",
+  occasion: "",
+  dateFlexibility: "EXACT",
+  dateNote: "",
+  decideBy: "",
+  /* A SUBSET of totalAdults, never a fourth counter — the headcount formula
+     (adults + children + infants) must not move because one of the four is 68. */
+  seniors60Plus: 0,
+  /* Source of truth; the child COUNT follows this array, not the other way round. */
+  childAges: [],
+  referredByName: "",
+  agentVerdict: "", competingQuote: false, qualificationNote: "",
   notes: "",
 });
 
@@ -482,6 +508,40 @@ function Field({ id, label, required, optional, error, hint, children }) {
     </div>
   );
 }
+/**
+ * A choice made by pointing, not by opening a list.
+ *
+ * Exists for the qualification fields specifically. An agent who has taken enquiries on paper for
+ * fifteen years reads three visible options and clicks one; the same three inside a <select> are a
+ * list they have to open, scan and close, on every single call. Clicking the active chip clears it.
+ */
+function ChoiceChips({ options, value, onChange, ariaLabel, allowClear = true }) {
+  return (
+    <div role="radiogroup" aria-label={ariaLabel} className="flex flex-wrap gap-1.5">
+      {options.map((option) => {
+        const active = value === option.value;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            data-skip-enter="true"
+            onClick={() => onChange(active && allowClear ? "" : option.value)}
+            className={`rounded-lg px-3 py-1.5 text-xs font-bold transition ${
+              active
+                ? "bg-blue-600 text-white shadow-sm"
+                : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+            }`}
+          >
+            {option.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 /* Counter tile. Click-to-select on focus so the clerk overtypes instead of having to clear first —
    copied from FastTravelDetails, where it already earns its keep. */
 function Chip({ selected, onClick, children }) {
@@ -1057,6 +1117,11 @@ export function LeadFormPanels({
         </div>
       )}
 
+      {/* No Domestic / International switch, and so no passport block either. The two exist to
+          gate each other: the switch's only job was to open the passport questions, and asking a
+          Manali enquiry about visas is how a form teaches an agent to skip questions. One form for
+          both, and the destination already says which kind of trip it is. */}
+
       {/* ── 1 · Customer ──────────────────────────────────────────────────────────────────────── */}
       {!foldEnquiry && (
       <div className={`min-w-0 ${compactRail ? "lg:col-start-1" : "lg:col-span-2"}`}>
@@ -1144,6 +1209,68 @@ export function LeadFormPanels({
                    record a male/female split or an extra bed without switching modes first. Both
                    are back for everyone; the counters are one row either way. */
               />
+
+              {/* ── Who they are, not just how many ─────────────────────────────────────────
+                  Seniors is a SUBSET of the adults above, never a fourth counter: the headcount
+                  is adults + children + infants and must not move because one of the four is 68.
+                  Clamped to the adult count rather than validated after the fact — a number that
+                  cannot be wrong needs no error message.
+
+                  Child ages are here because the hotel's child policy runs on them, and an age
+                  nobody asked for on the call is an age nobody can get afterwards. The ARRAY is
+                  the source of truth; raising Children appends a blank rather than rebuilding the
+                  list, so ages already typed are never renumbered mid-call. */}
+              <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Field
+                  id="seniors60Plus"
+                  label="Seniors 60+"
+                  hint="Part of the adult count, not added to it"
+                >
+                  <input
+                    {...register("seniors60Plus")}
+                    id="seniors60Plus"
+                    type="number"
+                    min={0}
+                    max={toInt(watch("totalAdults"), 1)}
+                    onFocus={(event) => event.target.select()}
+                    onChange={(event) => {
+                      const cap = toInt(watch("totalAdults"), 1);
+                      setValue("seniors60Plus", Math.max(0, Math.min(cap, toInt(event.target.value))), {
+                        shouldDirty: true,
+                      });
+                    }}
+                    className={control(false)}
+                  />
+                </Field>
+
+                {toInt(watch("children")) > 0 && (
+                  <Field label="Children's ages" hint="Hotel child policy is priced on these">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {Array.from({ length: toInt(watch("children")) }, (_, index) => (
+                        <span
+                          key={index}
+                          className="flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1.5 text-xs font-bold text-amber-800"
+                        >
+                          <input
+                            value={(watch("childAges") || [])[index] ?? ""}
+                            onChange={(event) => {
+                              const ages = [...(getValues("childAges") || [])];
+                              ages[index] = event.target.value;
+                              setValue("childAges", ages, { shouldDirty: true });
+                            }}
+                            type="number"
+                            min={0}
+                            max={17}
+                            aria-label={`Child ${index + 1} age`}
+                            className="w-9 bg-transparent text-center outline-none"
+                          />
+                          yrs
+                        </span>
+                      ))}
+                    </div>
+                  </Field>
+                )}
+              </div>
               {/* The blue Total Travellers strip is retired. TravellerCountFields' own first box is
                   now labelled "Total Travellers" and, once the breakdown is open, is the derived
                   total — so this was the same number a second time, two inches lower and in a
@@ -1231,6 +1358,47 @@ export function LeadFormPanels({
               </span>
             }
           >
+            {/* ── Where from, and what kind of trip ────────────────────────────────────────
+                Two questions the old form never asked, and the two an experienced agent asks
+                first. There is no quote without a departure city — every flight, every transfer
+                and every night's cost is measured from it — and Occasion moves more of the
+                quotation than budget does: a honeymoon, elderly parents and a friends' group buy
+                three different hotels, paces and vehicles at the same price. */}
+            <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Field
+                id="fromCity"
+                label="From (departure city)"
+                hint="Every fare and transfer is priced from here"
+              >
+                <div className="relative">
+                  <MapPin className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <input
+                    {...register("fromCity")}
+                    id="fromCity"
+                    placeholder="Pune"
+                    className={control(false, true)}
+                  />
+                </div>
+              </Field>
+
+              <Field id="occasion" label="Occasion" hint="Changes the hotel, the pace and the vehicle">
+                <ChoiceChips
+                  ariaLabel="Occasion"
+                  value={watch("occasion")}
+                  onChange={(value) => setValue("occasion", value, { shouldDirty: true })}
+                  options={[
+                    { value: "HONEYMOON", label: "Honeymoon" },
+                    { value: "FAMILY", label: "Family" },
+                    { value: "SENIOR_CITIZENS", label: "Seniors" },
+                    { value: "FRIENDS", label: "Friends" },
+                    { value: "CORPORATE", label: "Corporate" },
+                    { value: "PILGRIMAGE", label: "Pilgrimage" },
+                    { value: "SOLO", label: "Solo" },
+                  ]}
+                />
+              </Field>
+            </div>
+
             {/* Four fields, two up. Full details ran these at lg:grid-cols-4, but that was a
                 full-width main column; the merged form always keeps the 300px rail, so four
                 across would put a date picker and two selects in ~150px each. */}
@@ -1267,6 +1435,31 @@ export function LeadFormPanels({
                     className={control(errors.returnDate, true)}
                   />
                 </div>
+              </Field>
+
+              {/* ── When will they DECIDE ───────────────────────────────────────────────────
+                  Different question from "when do they travel", and the more useful one. Travel
+                  date sorts the calendar; this sorts the callback list, which is the list an agent
+                  actually works from — a January trip somebody wants to book this week outranks a
+                  September trip they are still daydreaming about.
+
+                  Worded the way a customer answers, not the way an enum reads. */}
+              <Field
+                id="decideBy"
+                label="Decision expected"
+                hint="Not the travel date — this sets the callback order"
+              >
+                <ChoiceChips
+                  ariaLabel="Decision timeframe"
+                  value={watch("decideBy")}
+                  onChange={(value) => setValue("decideBy", value, { shouldDirty: true })}
+                  options={[
+                    { value: "IMMEDIATE", label: "Now" },
+                    { value: "WITHIN_WEEK", label: "This week" },
+                    { value: "WITHIN_MONTH", label: "This month" },
+                    { value: "JUST_EXPLORING", label: "Just exploring" },
+                  ]}
+                />
               </Field>
 
               <Field id="departCountry" label="Departing Country" optional>
