@@ -2720,6 +2720,21 @@ export default function LeadFormPage() {
       createQuotation = false,
     } = {},
   ) => {
+    /* Once a quotation exists, so does its lead — createdQuote.lead IS the saved record. Running
+       the create path again writes a SECOND lead for the same customer, with no quotation attached,
+       and resetInlineQuote() then discards the priced model.
+
+       Ctrl+Enter has guarded this since the inline quote landed (see the handler below), and the
+       Create Quote button guards it too — but both "Save & New" buttons called straight through,
+       and "Save & New" is the natural gesture for the next caller the moment a quote is finished.
+       So the most likely path to the bug was the one path without the guard.
+
+       Not an error: the agent's intent is "I am done, next caller". The lead is already written, so
+       honour it by starting the next enquiry rather than refusing. */
+    if (createdQuote && addAnother) {
+      startNextEnquiry();
+      return;
+    }
     /* Checked in the order the rapid chain presents them — itinerary, then services, then the quote.
        The services rule used to run first, which now dead-ends: with the picker locked until a stop
        exists, "Select at least one service" would scroll to a control the agent cannot operate. The
@@ -3108,8 +3123,16 @@ export default function LeadFormPage() {
           </div>
         </div>
         <div className="flex shrink-0 gap-2">
+          {/* data-skip-enter, and the reason is worth stating: this strip is INJECTED
+              ASYNCHRONOUSLY, after the debounced phone probe returns. Without the marker its
+              buttons join FOCUSABLE, so the Enter walk's next target changes under the agent's
+              fingers between one keystroke and the next — and onFormKeyDown passes Enter through
+              on a BUTTON, which activates it. Two of the three buttons below navigate AWAY. A
+              half-typed enquiry, with the caller still on the phone, was one stray Enter from
+              being gone. They stay fully Tab- and click-reachable. */}
           <button
             type="button"
+            data-skip-enter="true"
             onClick={useMatchedCustomer}
             className="rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-xs font-bold text-emerald-800 hover:bg-emerald-100"
           >
@@ -3143,6 +3166,7 @@ export default function LeadFormPage() {
         {canCreateQuotation && (
           <button
             type="button"
+            data-skip-enter="true"
             onClick={() => navigate(
               `/createquotation?leadId=${encodeURIComponent(String(duplicate.publicId || duplicate.id))}`,
               { state: { lead: duplicate, quickQuote: true } },
@@ -3154,6 +3178,7 @@ export default function LeadFormPage() {
         )}
         <button
           type="button"
+          data-skip-enter="true"
           onClick={() => navigate(`/EditLead/${duplicate.publicId || duplicate.id}`)}
           className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-bold text-amber-800 hover:bg-amber-100"
         >
