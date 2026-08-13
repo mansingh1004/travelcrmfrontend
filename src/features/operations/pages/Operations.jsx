@@ -21,7 +21,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Radar, RefreshCw, Layers, PackageSearch, Wallet, PlaneTakeoff, CalendarRange,
-  Rows3, CalendarDays,
+  Rows3, CalendarDays, ClipboardList,
 } from "lucide-react";
 
 import { usePagedList } from "@shared/api/usePagedList";
@@ -42,6 +42,10 @@ const COLS = "132px 1.5fr 1fr 1.3fr 176px 104px";
 
 const TABS = [
   { key: "ALL",             label: "All",          icon: Layers },
+  // Nothing broken into service lines yet. These rows always showed "needs attention" but were
+  // reachable from no tab but All — Unconfirmed is an EXISTS over pending lines, and a booking
+  // with no lines has none of those either.
+  { key: "NOT_PLANNED",     label: "Not planned",  icon: ClipboardList, danger: true },
   { key: "UNCONFIRMED",     label: "Unconfirmed",  icon: PackageSearch, danger: true },
   // "Balance pending", not "Payment due" — there is no customer payment schedule anywhere in
   // this product, so nothing here is DUE on a date. It means money still owing.

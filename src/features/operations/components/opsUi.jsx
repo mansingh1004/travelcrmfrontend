@@ -15,7 +15,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import {
   Inbox, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
-  Bed, Car, FileText, Camera, Wallet, User,
+  Bed, Car, FileText, Camera, Wallet, User, Boxes,
 } from "lucide-react";
 
 const FONT = "'Plus Jakarta Sans',system-ui,sans-serif";
@@ -235,6 +235,10 @@ export const DIMENSIONS = [
   { key: "TRANSPORT",  label: "Transport",  Icon: Car },
   { key: "DOCUMENTS",  label: "Documents",  Icon: FileText },
   { key: "ACTIVITIES", label: "Activities", Icon: Camera },
+  // Everything the server's service-type tokens do not recognise — meals, cruises, whatever an
+  // agency invents. It has to be listed here or it is computed and then never drawn, which is
+  // the state it was invisible in before.
+  { key: "OTHER",      label: "Other",      Icon: Boxes },
   { key: "GUIDE",      label: "Guide",      Icon: User },
   { key: "PAYMENT",    label: "Payment",    Icon: Wallet },
 ];
