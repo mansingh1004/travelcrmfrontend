@@ -15,9 +15,8 @@ import { useNavigate } from "react-router-dom";
 import { BedDouble, Building2, MapPin, Plus, Search, Users } from "lucide-react";
 import {
   PageShell, PageHeader, GlassCard, HotelStyles,
-  Input, Label, Button, Badge, Select,
+  Input, Button,
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogBody, DialogFooter,
   EmptyState, SkeletonCards, Pager, ChipBar, ViewToggle, useViewMode,
   StarRating, useToast, errMsg, cn,
 } from "../components/hotelUi";
@@ -43,7 +42,6 @@ export default function PlatformHotels() {
   const [status, setStatus] = useState("");
   const [q, setQ] = useState("");
   const [view, setView] = useViewMode("platform-hotels", "grid");
-  const [creating, setCreating] = useState(false);
 
   // Debounced so typing does not fire a request per keystroke; resets to page 0 because a filtered
   // result set has no page 3 to stay on.
@@ -89,7 +87,7 @@ export default function PlatformHotels() {
         subtitle="Hotels the platform sells to every tenant"
         icon={Building2}
       >
-        <Button size="sm" onClick={() => setCreating(true)}>
+        <Button size="sm" onClick={() => navigate("/console/hotel-catalog/new")}>
           <Plus className="h-4 w-4" /> Add Hotel
         </Button>
       </PageHeader>
@@ -124,7 +122,7 @@ export default function PlatformHotels() {
             icon={Building2}
             title="No hotels in the catalog"
             hint={q || status ? "Try a different search or filter." : "Add the first hotel to start selling it to tenants."}
-            action={!q && !status ? <Button size="sm" onClick={() => setCreating(true)}><Plus className="h-4 w-4" /> Add Hotel</Button> : null}
+            action={!q && !status ? <Button size="sm" onClick={() => navigate("/console/hotel-catalog/new")}><Plus className="h-4 w-4" /> Add Hotel</Button> : null}
           />
         </GlassCard>
       ) : view === "grid" ? (
@@ -187,15 +185,6 @@ export default function PlatformHotels() {
         </GlassCard>
       )}
 
-      {creating && (
-        <CreateHotelDialog
-          onClose={() => setCreating(false)}
-          onCreated={(publicId) => {
-            setCreating(false);
-            navigate(`/console/hotel-catalog/${publicId}`);
-          }}
-        />
-      )}
     </PageShell>
   );
 }
@@ -257,96 +246,3 @@ function Metric({ icon: Icon, label, value }) {
   );
 }
 
-/**
- * Minimal create form. Only the three fields the backend requires plus the two that make the row
- * findable — everything else is edited on the detail page, which is where the operator lands next.
- *
- * `countryCode` is an ISO code and it is load-bearing: the tenant-side import matches a tenant's
- * Country on exactly this value, so a wrong or blank code is why an import later fails with
- * LOCATION_MAPPING_REQUIRED.
- */
-function CreateHotelDialog({ onClose, onCreated }) {
-  const { showToast } = useToast();
-  const [form, setForm] = useState({ name: "", cityName: "", countryCode: "IN", stateName: "", stars: "" });
-  const [saving, setSaving] = useState(false);
-
-  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
-  const valid = form.name.trim() && form.cityName.trim();
-
-  const submit = async (e) => {
-    e.preventDefault();
-    if (!valid || saving) return;
-    setSaving(true);
-    try {
-      const created = await platformHotelService.create({
-        name: form.name.trim(),
-        cityName: form.cityName.trim(),
-        countryCode: form.countryCode.trim().toUpperCase() || null,
-        stateName: form.stateName.trim() || null,
-        stars: form.stars === "" ? null : Number(form.stars),
-      });
-      showToast(`${created.name} created as a draft.`, "success");
-      onCreated(created.publicId);
-    } catch (err) {
-      showToast(errMsg(err, "Could not create the hotel."), "error");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <Dialog open onOpenChange={(o) => { if (!o && !saving) onClose(); }}>
-      <DialogContent onClose={() => { if (!saving) onClose(); }}>
-        <form onSubmit={submit}>
-          <DialogHeader>
-            <DialogTitle>Add a catalog hotel</DialogTitle>
-            <DialogDescription>
-              Created as a draft — no tenant sees it until you publish.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogBody className="space-y-4 py-2">
-            <div>
-              <Label required htmlFor="ph-name">Hotel name</Label>
-              <Input id="ph-name" value={form.name} onChange={set("name")} autoFocus placeholder="The Goa Bay Resort" />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label required htmlFor="ph-city">City</Label>
-                <Input id="ph-city" value={form.cityName} onChange={set("cityName")} placeholder="Goa" />
-              </div>
-              <div>
-                <Label htmlFor="ph-country">Country code (ISO)</Label>
-                <Input
-                  id="ph-country"
-                  value={form.countryCode}
-                  onChange={(e) => setForm((f) => ({ ...f, countryCode: e.target.value.toUpperCase().slice(0, 3) }))}
-                  placeholder="IN"
-                />
-                <p className="mt-1 text-[11px] text-muted">
-                  Tenants' geography is matched on this code when they import.
-                </p>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label htmlFor="ph-state">State / region</Label>
-                <Input id="ph-state" value={form.stateName} onChange={set("stateName")} placeholder="Goa" />
-              </div>
-              <div>
-                <Label htmlFor="ph-stars">Star rating</Label>
-                <Select id="ph-stars" value={form.stars} onChange={set("stars")}>
-                  <option value="">—</option>
-                  {[1, 2, 3, 4, 5, 6, 7].map((s) => <option key={s} value={s}>{s}</option>)}
-                </Select>
-              </div>
-            </div>
-          </DialogBody>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
-            <Button type="submit" disabled={!valid || saving}>{saving ? "Creating…" : "Create draft"}</Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}

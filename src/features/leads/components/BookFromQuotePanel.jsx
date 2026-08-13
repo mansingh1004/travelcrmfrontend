@@ -113,8 +113,18 @@ export default function BookFromQuotePanel({ lead, quotationId, quotedAmount, on
     return () => { alive = false; clearTimeout(timer); };
   }, [amount, cost, paid, booking, form.applyGst, form.gstInclusive, form.applyTcs]);
 
+  /* customerName, customerPhone and destination are all @NotBlank on the server. A lead with no
+     phone, or an itinerary whose first leg has no destination, would otherwise submit "" and come
+     back a 400 — naming a field this panel does not show, from a form the agent cannot fix it in. */
+  const customerName = (lead?.customerName || "").trim();
+  const customerPhone = (lead?.phone || "").trim();
+  const destination = (lead?.itinerary?.[0]?.destination || lead?.destination || "").trim();
+
   const problem =
     !(amount > 0) ? "This quotation has no value to book against."
+      : !customerName ? "This enquiry has no customer name — add one before booking it."
+      : !customerPhone ? "This enquiry has no phone number — add one before booking it."
+      : !destination ? "This enquiry has no destination — add one before booking it."
       : !travelDate ? "Add a travel date to this enquiry before booking it."
         : form.vendorPublicId && !(cost > 0) ? "Enter what this vendor is owed, or clear the vendor."
           : cost > 0 && !form.vendorPublicId ? "Choose the vendor this cost is owed to."
@@ -132,10 +142,10 @@ export default function BookFromQuotePanel({ lead, quotationId, quotedAmount, on
         lead.publicId || lead.id,
         {
           quotationPublicId: quotationId || null,
-          customerName: lead.customerName || "",
-          customerPhone: lead.phone || "",
+          customerName,
+          customerPhone,
           customerEmail: lead.email || "",
-          destination: lead.itinerary?.[0]?.destination || lead.destination || "",
+          destination,
           travelDate,
           customerAmount: amount,
           // Only alongside a vendor — the server accepts a bare figure, but a cost with no payee is
@@ -166,7 +176,8 @@ export default function BookFromQuotePanel({ lead, quotationId, quotedAmount, on
     } finally {
       setSubmitting(false);
     }
-  }, [problem, submitting, lead, quotationId, travelDate, amount, cost, paid, form, showToast, onBooked]);
+  }, [problem, submitting, lead, quotationId, customerName, customerPhone, destination,
+      travelDate, amount, cost, paid, form, showToast, onBooked]);
 
   /* Booked. The panel does NOT collapse back to the form — the agent's next words are the booking
      number, and the customer is still standing there. */

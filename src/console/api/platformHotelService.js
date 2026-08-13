@@ -83,6 +83,48 @@ export const platformHotelService = {
 
   // ── Meal plans (likewise no price — a meal plan is an inclusion, not a rate) ──
 
+  /**
+   * Rates, nested under the room they price.
+   *
+   * <p>New: a catalog rate could previously only be born by promoting an approved partner
+   * submission, so a hotel a SuperAdmin created by hand could hold rooms and never a price — a
+   * listing that cannot be sold. `netRate` is required (zero allowed: a complimentary child rate is
+   * a real answer), unlike its partner-side twin, which is nullable because that form autosaves a
+   * half-typed draft and enforces completeness only at submit.</p>
+   */
+  /**
+   * Upload a catalog photo, get its public URL back.
+   *
+   * Its own endpoint because every other upload in the app sits on the TENANT chain behind a tenant
+   * permission, which a SuperAdmin on the sa_token chain does not carry — the console could only
+   * take a URL typed by hand. Returns the URL rather than attaching it, since the operator may be
+   * filling a hotel that does not exist yet.
+   */
+  uploadImage: (file, onProgress) => {
+    const body = new FormData();
+    body.append("file", file);
+    return ConsoleAPI.post(`${BASE}/hotels/upload-image`, body, {
+      headers: { "Content-Type": "multipart/form-data" },
+      // Generous: a 10 MB photo on a slow uplink beats the shared 30s default, and an axios timeout
+      // produces no error.response at all, so it would surface as an unexplained failure.
+      timeout: 120000,
+      onUploadProgress: (e) => {
+        if (onProgress && e.total) onProgress(Math.round((e.loaded / e.total) * 100));
+      },
+    }).then((res) => unwrap(res)?.imagePath);
+  },
+
+  addRate: (hotelPublicId, roomPublicId, payload) =>
+    ConsoleAPI.post(`${BASE}/hotels/${hotelPublicId}/rooms/${roomPublicId}/rates`, payload).then(unwrap),
+
+  updateRate: (hotelPublicId, roomPublicId, ratePublicId, payload) =>
+    ConsoleAPI.put(`${BASE}/hotels/${hotelPublicId}/rooms/${roomPublicId}/rates/${ratePublicId}`, payload)
+      .then(unwrap),
+
+  deleteRate: (hotelPublicId, roomPublicId, ratePublicId) =>
+    ConsoleAPI.delete(`${BASE}/hotels/${hotelPublicId}/rooms/${roomPublicId}/rates/${ratePublicId}`)
+      .then(unwrap),
+
   addMealPlan: (hotelPublicId, payload) =>
     ConsoleAPI.post(`${BASE}/hotels/${hotelPublicId}/meal-plans`, payload).then(unwrap),
 
