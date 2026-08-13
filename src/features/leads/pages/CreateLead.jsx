@@ -289,9 +289,6 @@ export const blankDefaults = () => ({
   dateFlexibility: "EXACT",
   dateNote: "",
   decideBy: "",
-  /* A SUBSET of totalAdults, never a fourth counter — the headcount formula
-     (adults + children + infants) must not move because one of the four is 68. */
-  seniors60Plus: 0,
   /* Source of truth; the child COUNT follows this array, not the other way round. */
   childAges: [],
   referredByName: "",
@@ -651,32 +648,15 @@ function RequirementsAssistancePanel({
             <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500">Accessibility &amp; Assistance</h3>
             <p className="mt-1 text-[11px] text-slate-400">Operational support needed for one or more travellers</p>
           </div>
-          <div>
-            <p className="mb-1.5 text-xs font-semibold text-slate-600">Special assistance required?</p>
-            <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1" role="group" aria-label="Special assistance required">
-              {[false, true].map((required) => {
-                const selected = Boolean(assistanceRequired) === required;
-                return (
-                  <button
-                    key={String(required)}
-                    type="button"
-                    aria-pressed={selected}
-                    onClick={() => {
-                      setValue("specialAssistanceRequired", required, { shouldDirty: true, shouldValidate: true });
-                      if (required && toInt(getValues("assistancePassengerCount")) < 1) {
-                        setValue("assistancePassengerCount", 1, { shouldDirty: true });
-                      }
-                    }}
-                    className={`min-w-16 rounded-md px-3 py-1.5 text-xs font-bold transition ${selected
-                      ? "bg-blue-600 text-white shadow-sm"
-                      : "text-slate-500 hover:bg-white hover:text-slate-700"}`}
-                  >
-                    {required ? "Yes" : "No"}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+          {/* The Yes/No control moved up beside the traveller counters, where the question is
+              actually asked. It is NOT duplicated here: two editors for one boolean is how the two
+              drift, and the rail copy was several Enter stops away from the people it is about.
+              What stays here is everything that only matters once the answer is Yes. */}
+          {!assistanceRequired && (
+            <p className="text-[11px] text-slate-400">
+              No special assistance — set it beside the traveller counts if that changes.
+            </p>
+          )}
 
           {/* Single column on purpose — the panel lives in the 300px rail now, so the old
               full-details `md:grid-cols-[minmax(0,1fr)_130px]` split would only squeeze both. */}
@@ -1240,37 +1220,69 @@ export function LeadFormPanels({
                    are back for everyone; the counters are one row either way. */
               />
 
-              {/* ── Who they are, not just how many ─────────────────────────────────────────
-                  Seniors is a SUBSET of the adults above, never a fourth counter: the headcount
-                  is adults + children + infants and must not move because one of the four is 68.
-                  Clamped to the adult count rather than validated after the fact — a number that
-                  cannot be wrong needs no error message.
+              {/* ── The total, and the one question that changes how a trip is operated ──────
+                  Seniors 60+ stood here and is gone. It was a subset of the adults above, which
+                  made it the one number on the row that did NOT add up — an agent reading the line
+                  had to know it was already counted. What actually belongs beside the counters is
+                  their SUM, which is the number the agent reads back to the customer.
 
-                  Child ages are here because the hotel's child policy runs on them, and an age
-                  nobody asked for on the call is an age nobody can get afterwards. The ARRAY is
-                  the source of truth; raising Children appends a blank rather than rebuilding the
-                  list, so ages already typed are never renumbered mid-call. */}
+                  Derived, never typed: adults + children + infants, the same formula the booking
+                  side uses. Infants are in it here because this is "how many people are coming",
+                  not "how many seats" — the seat question is the counters themselves.
+
+                  Special assistance sits next to it because it is a question about these same
+                  people, asked in the same breath, and because it changes the whole operation of
+                  the trip — vehicle, hotel room, airline notification. It used to be reachable
+                  only in the right rail, several stops away in the Enter walk.
+
+                  Child ages stay: the hotel's child policy is priced on them, and an age nobody
+                  asked for on the call is an age nobody can get afterwards. The ARRAY is the source
+                  of truth; raising Children appends a blank rather than rebuilding the list, so
+                  ages already typed are never renumbered mid-call. */}
               <div className="mt-2.5 grid grid-cols-1 gap-x-3 gap-y-2 sm:grid-cols-2 xl:grid-cols-4">
-                <Field
-                  id="seniors60Plus"
-                  label="Seniors 60+"
-                  hint="Part of the adult count, not added to it"
-                >
-                  <input
-                    {...register("seniors60Plus")}
-                    id="seniors60Plus"
-                    type="number"
-                    min={0}
-                    max={toInt(watch("totalAdults"), 1)}
-                    onFocus={(event) => event.target.select()}
-                    onChange={(event) => {
-                      const cap = toInt(watch("totalAdults"), 1);
-                      setValue("seniors60Plus", Math.max(0, Math.min(cap, toInt(event.target.value))), {
-                        shouldDirty: true,
-                      });
-                    }}
-                    className={control(false)}
-                  />
+                <Field label="Total travellers" hint="Adults + children + infants">
+                  <div className="flex h-[38px] items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3">
+                    <Users className="h-4 w-4 shrink-0 text-slate-400" />
+                    <span aria-live="polite" className="text-sm font-bold text-slate-800 tabular-nums">
+                      {totalTravellers}
+                    </span>
+                    <span className="text-xs text-slate-400">
+                      {totalTravellers === 1 ? "person" : "people"}
+                    </span>
+                  </div>
+                </Field>
+
+                <Field label="Special assistance required?">
+                  <div
+                    className="inline-flex h-[38px] items-center rounded-lg border border-slate-200 bg-slate-50 p-1"
+                    role="group"
+                    aria-label="Special assistance required"
+                  >
+                    {[false, true].map((required) => {
+                      const selected = Boolean(assistanceRequired) === required;
+                      return (
+                        <button
+                          key={String(required)}
+                          type="button"
+                          data-skip-enter="true"
+                          aria-pressed={selected}
+                          onClick={() => {
+                            setValue("specialAssistanceRequired", required, { shouldDirty: true, shouldValidate: true });
+                            /* Pre-set to 1 so "Yes" never leaves a required count sitting at zero —
+                               the same nudge the rail control made. */
+                            if (required && toInt(getValues("assistancePassengerCount")) < 1) {
+                              setValue("assistancePassengerCount", 1, { shouldDirty: true });
+                            }
+                          }}
+                          className={`min-w-14 rounded-md px-3 py-1 text-xs font-bold transition ${selected
+                            ? "bg-blue-600 text-white shadow-sm"
+                            : "text-slate-500 hover:bg-white hover:text-slate-700"}`}
+                        >
+                          {required ? "Yes" : "No"}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </Field>
 
                 {toInt(watch("children")) > 0 && (
