@@ -1527,11 +1527,16 @@ export function LeadFormPanels({
   const childCount = toInt(watch("children"));
   const infantCount = toInt(watch("infants"));
   const roomCount = toInt(watch("rooms")) || 1;
+  /* One line for one person. Customer Profile used to fold to a row of its own, so a single
+     customer produced two summary rows that each described a different half of them. Budget rides
+     along here because it is the only optional field the quotation below reacts to; the rest are
+     recorded rather than priced and do not earn space on a folded line. */
   const customerSummary = [
     watch("customerName") || "Unnamed customer",
     watch("phone"),
     `${totalAdults}A${childCount ? ` ${childCount}C` : ""}${infantCount ? ` ${infantCount}I` : ""}`,
     `${roomCount} ${roomCount === 1 ? "room" : "rooms"}`,
+    watch("budget") ? `₹${Number(watch("budget")).toLocaleString("en-IN")}` : "",
   ].filter(Boolean).join(" · ");
   const summaryNights = itinerary.reduce((sum, row) => sum + toInt(row.nights), 0);
   const tripSummary = [
@@ -1550,15 +1555,6 @@ export function LeadFormPanels({
     leadSourceLabel ? `Source: ${leadSourceLabel}` : "Source not set",
     users.find((user) => String(user.value) === String(assignedUserValue))?.label,
   ].filter(Boolean).join(" · ");
-  /* Customer Profile's folded line. Budget leads because it is the only field on the panel the
-     quotation below reacts to; the rest are recorded, not priced. An untouched panel says so
-     explicitly — an empty string would fall through to the description and read as "not filled in
-     yet" on a panel where filling nothing in is the normal outcome. */
-  const customerProfileSummary = [
-    watch("budget") ? `Budget ₹${Number(watch("budget")).toLocaleString("en-IN")}` : "",
-    watch("followUpDate") ? `Follow-up ${watch("followUpDate")}` : "",
-    watch("preferredCommunication"),
-  ].filter(Boolean).join(" · ") || "Optional — nothing added";
   /* Lifted out of RequirementsAssistancePanel because the folded rail needs the same line the panel
      shows when collapsed, and two copies of "what does this panel currently say" is exactly how a
      summary starts lying about the form. */
@@ -2009,6 +2005,55 @@ export function LeadFormPanels({
               )}
             </div>
 
+
+            {/* ── Optional details ─────────────────────────────────────────────────────
+                Was its own "Customer Profile" panel in the rail. Same person, two boxes:
+                the agent typed a name here and a birthday three panels away, and the folded
+                summary had to carry two rows to describe one customer. Merged in, behind a
+                rule rather than a second heading — everything above identifies the customer,
+                everything below is what you learn about them on the call. */}
+            <div className="mt-5 space-y-3 border-t border-slate-100 pt-4">
+              <div className="grid grid-cols-2 gap-3">
+                <Field id="birthDate" label="Date of Birth" optional>
+                  <input {...register("birthDate")} id="birthDate" type="date" max={today()} className={control(false)} />
+                </Field>
+                <Field id="anniversaryDate" label="Anniversary" optional>
+                  <input {...register("anniversaryDate")} id="anniversaryDate" type="date" max={today()} className={control(false)} />
+                </Field>
+              </div>
+    
+              <Field id="preferredCommunication" label="Preferred Contact Channel" optional>
+                <div className="relative">
+                  <select {...register("preferredCommunication")} id="preferredCommunication" className={`${control(false)} appearance-none pr-9`}>
+                    <option value="">Select channel</option>
+                    {COMMUNICATION_PREFERENCES.map((option) => <option key={option} value={option}>{option}</option>)}
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                </div>
+              </Field>
+    
+              <Field id="budget" label="Indicative Budget (₹)" optional error={errors.budget?.message}>
+                <div className="relative">
+                  <IndianRupee className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <input
+                    {...register("budget", { min: { value: 0, message: "Budget cannot be negative" } })}
+                    id="budget"
+                    type="number"
+                    min={0}
+                    step="1000"
+                    inputMode="numeric"
+                    placeholder="150000"
+                    onFocus={(event) => event.target.select()}
+                    onWheel={(event) => event.currentTarget.blur()}
+                    className={control(errors.budget, true)}
+                  />
+                </div>
+              </Field>
+    
+              <Field id="followUpDate" label="Follow-up Date" optional hint="Creates a reminder when the lead is saved">
+                <input {...register("followUpDate")} id="followUpDate" type="date" min={today()} className={control(false)} />
+              </Field>
+            </div>
           </Panel>
         </div>
         )}
@@ -2402,7 +2447,6 @@ export function LeadFormPanels({
               {/* Same order as the panels below — a folded row and the panel it restores must sit
                   in the same place, or continuing puts the agent somewhere they did not expect. */}
               <SummaryRow icon={UserCheck} title="Lead Setup" detail={leadSetupSummary} onEdit={onExpandEnquiry} />
-              <SummaryRow icon={CircleUserRound} title="Customer Profile" detail={customerProfileSummary} onEdit={onExpandEnquiry} />
               <SummaryRow icon={Accessibility} title="Special Assistance" detail={assistanceSummary} onEdit={onExpandEnquiry} />
             </>
           )}
@@ -2559,61 +2603,6 @@ export function LeadFormPanels({
                   <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 </div>
               </Field>}
-            </div>
-          </Panel>}
-
-          {!foldEnquiry && <Panel
-            icon={CircleUserRound}
-            title="Customer Profile"
-            description="Optional personal and contact details"
-            collapsible={rapidEntry}
-            defaultOpen
-            summary={customerProfileSummary}
-            /* Budget is the one field here that can fail validation, and onInvalid cannot scroll to
-               an unmounted input. */
-            forceOpen={Boolean(errors.budget)}
-          >
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <Field id="birthDate" label="Date of Birth" optional>
-                  <input {...register("birthDate")} id="birthDate" type="date" max={today()} className={control(false)} />
-                </Field>
-                <Field id="anniversaryDate" label="Anniversary" optional>
-                  <input {...register("anniversaryDate")} id="anniversaryDate" type="date" max={today()} className={control(false)} />
-                </Field>
-              </div>
-
-              <Field id="preferredCommunication" label="Preferred Contact Channel" optional>
-                <div className="relative">
-                  <select {...register("preferredCommunication")} id="preferredCommunication" className={`${control(false)} appearance-none pr-9`}>
-                    <option value="">Select channel</option>
-                    {COMMUNICATION_PREFERENCES.map((option) => <option key={option} value={option}>{option}</option>)}
-                  </select>
-                  <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                </div>
-              </Field>
-
-              <Field id="budget" label="Indicative Budget (₹)" optional error={errors.budget?.message}>
-                <div className="relative">
-                  <IndianRupee className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                  <input
-                    {...register("budget", { min: { value: 0, message: "Budget cannot be negative" } })}
-                    id="budget"
-                    type="number"
-                    min={0}
-                    step="1000"
-                    inputMode="numeric"
-                    placeholder="150000"
-                    onFocus={(event) => event.target.select()}
-                    onWheel={(event) => event.currentTarget.blur()}
-                    className={control(errors.budget, true)}
-                  />
-                </div>
-              </Field>
-
-              <Field id="followUpDate" label="Follow-up Date" optional hint="Creates a reminder when the lead is saved">
-                <input {...register("followUpDate")} id="followUpDate" type="date" min={today()} className={control(false)} />
-              </Field>
             </div>
           </Panel>}
 
