@@ -17,7 +17,7 @@ const fmt = (n) => "₹" + Number(n || 0).toLocaleString("en-IN", { minimumFract
 const fmtDate = (d) => (d ? new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—");
 const TYPE_LABEL = { TAX_INVOICE: "Tax Invoice", BILL_OF_SUPPLY: "Bill of Supply", SIMPLE_INVOICE: "Simple Invoice" };
 
-export default function BookingInvoiceModal({ bookingId, bookingCode, onClose }) {
+export default function BookingInvoiceModal({ bookingId, bookingCode, overseasTourPackage, onClose }) {
   const { showToast } = useToast();
   const canManage = hasPermission(P.ACCOUNTING_INVOICE_MANAGE);
 
@@ -67,7 +67,7 @@ export default function BookingInvoiceModal({ bookingId, bookingCode, onClose })
           {/* Generate */}
           {canManage ? (
             showForm ? (
-              <GenerateForm bookingId={bookingId} onClose={() => setShowForm(false)}
+              <GenerateForm bookingId={bookingId} overseasTourPackage={overseasTourPackage} onClose={() => setShowForm(false)}
                 onDone={() => { setShowForm(false); load(); }} />
             ) : (
               <button onClick={() => setShowForm(true)}
@@ -133,9 +133,12 @@ export default function BookingInvoiceModal({ bookingId, bookingCode, onClose })
   );
 }
 
-function GenerateForm({ bookingId, onClose, onDone }) {
+function GenerateForm({ bookingId, overseasTourPackage, onClose, onDone }) {
   const { showToast } = useToast();
-  const [form, setForm] = useState({ invoiceType: "TAX_INVOICE", overseasTourPackage: false, recipientGstin: "", placeOfSupplyState: "", invoiceDate: "" });
+  /* Seeded from the BOOKING, not hardcoded false. The server applies 206C(1G) TCS from this flag
+     alone and never consults the stored booking, so a false default quietly under-taxed every
+     overseas package invoiced from the detail page. Still editable — the operator can correct it. */
+  const [form, setForm] = useState({ invoiceType: "TAX_INVOICE", overseasTourPackage: Boolean(overseasTourPackage), recipientGstin: "", placeOfSupplyState: "", invoiceDate: "" });
   const [saving, setSaving] = useState(false);
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const inputCls = "w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm text-slate-700 focus:border-blue-400 focus:ring-2 focus:ring-blue-50 outline-none transition-all";
