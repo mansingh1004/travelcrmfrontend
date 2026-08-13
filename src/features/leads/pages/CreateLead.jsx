@@ -1133,7 +1133,7 @@ export function LeadFormPanels({
         title="Customer"
         description="Phone first — an existing lead on this number is flagged as you type"
       >
-        <div className="grid grid-cols-1 gap-x-3 gap-y-2 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-x-3 gap-y-2 sm:grid-cols-2 xl:grid-cols-4">
           <Field id="phone" label="Phone" required error={errors.phone?.message}>
             <div className="relative">
               <Phone className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -1228,7 +1228,7 @@ export function LeadFormPanels({
                   nobody asked for on the call is an age nobody can get afterwards. The ARRAY is
                   the source of truth; raising Children appends a blank rather than rebuilding the
                   list, so ages already typed are never renumbered mid-call. */}
-              <div className="mt-2.5 grid grid-cols-1 gap-x-3 gap-y-2 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="mt-2.5 grid grid-cols-1 gap-x-3 gap-y-2 sm:grid-cols-2 xl:grid-cols-4">
                 <Field
                   id="seniors60Plus"
                   label="Seniors 60+"
@@ -1306,7 +1306,7 @@ export function LeadFormPanels({
                 fields, which made the optional half of the panel twice as tall as the half that
                 actually identifies the customer. They are all small controls; they belong on the
                 same four-column rhythm as the fields above the rule. */}
-            <div className="mt-5 grid grid-cols-1 gap-4 border-t border-slate-100 pt-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="mt-5 grid grid-cols-1 gap-4 border-t border-slate-100 pt-4 sm:grid-cols-2 xl:grid-cols-4">
               <Field id="birthDate" label="Date of Birth" optional>
                 <input {...register("birthDate")} id="birthDate" type="date" max={today()} className={control(false)} />
               </Field>
@@ -1407,12 +1407,15 @@ export function LeadFormPanels({
               </Field>
             </div>
 
-            {/* Four across, which is what this panel ran at a week ago. It was cut to two on the
-                reasoning that the 320px rail left only ~150px a column — that arithmetic was wrong:
-                1400px of page, less the rail, less padding, leaves ~1000px here, so four columns are
-                ~240px each and a date picker sits in that comfortably. Two columns doubled the
-                height of the longest panel on the form for no gain. */}
-            <div className="grid grid-cols-1 gap-x-3 gap-y-2 sm:grid-cols-2 lg:grid-cols-4">
+            {/* Four across on a wide monitor, two on a laptop — and the breakpoint is xl, not lg,
+                which is the whole subtlety. This column always loses 320px to the rail, so at lg
+                (1024px) four columns really would be ~150px each and a date picker would not fit.
+                By xl (1280px) there is ~900px here and they are ~210px, which is comfortable.
+
+                The panel ran at four across a week ago and I cut it to two outright; that was the
+                right worry applied at the wrong breakpoint, and it doubled the height of the
+                longest panel on the form for everyone, including the wide screens this is used on. */}
+            <div className="grid grid-cols-1 gap-x-3 gap-y-2 sm:grid-cols-2 xl:grid-cols-4">
               <Field id="travelDate" label="Travel Date" required error={errors.travelDate?.message}>
                 <div className="relative">
                   <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
