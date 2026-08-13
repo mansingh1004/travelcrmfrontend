@@ -53,6 +53,12 @@ export default function TravellerCountFields({
      untouched; the booking form turns them off because its Room Requirement rows own that number
      there, and two editors for one value is how they drift apart. */
   showRooms = true,
+  /* Give Travellers a row of its own instead of sharing one with Rooms.
+     Default false, so the booking form and every other caller keep the 3fr/2fr split they were
+     built against. The lead form turns it on: its Travellers group grew a Seniors box and a strip
+     of child-age chips, and at 3fr of a column that already loses 320px to the rail, the breakdown
+     wrapped into three cramped lines. */
+  wideTravellers = false,
 }) {
   const tone = THEMES[theme] || THEMES.blue;
   const error = getAdultBreakdownError(values);
@@ -85,7 +91,7 @@ export default function TravellerCountFields({
      which put "Adult Male / Adult Female" under the Rooms column on a wide screen — the one place
      it must never appear to belong. */
   return (
-    <div className="grid items-start gap-3 lg:grid-cols-[3fr_2fr]">
+    <div className={`grid items-start gap-3 ${wideTravellers ? "" : "lg:grid-cols-[3fr_2fr]"}`}>
       <fieldset className="min-w-0 border-0 p-0">
         <legend className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-slate-400">
           Travellers
@@ -108,7 +114,7 @@ export default function TravellerCountFields({
             disagree with them. Adults are set through Adult Male / Adult Female, which is where
             setAdultCount already recomputes totalAdults from. */}
         {showBreakdown ? (
-          <div className="max-w-sm">
+          <div className={wideTravellers ? "" : "max-w-sm"}>
             {expanded ? (
               <div className={`flex items-center gap-2 rounded-lg border bg-slate-50 px-2.5 py-2 ${
                 error ? "border-red-300" : "border-slate-200"
@@ -166,7 +172,7 @@ export default function TravellerCountFields({
                 other way. The max-width lands them between the two — longer than the original
                 tiles, not as long as the Total box above. 2×2 also stays tidy, which a 3-column
                 layout of four counters does not. */}
-            <div className="grid max-w-sm grid-cols-2 gap-2.5">
+            <div className={`grid gap-2.5 ${wideTravellers ? "grid-cols-2 sm:grid-cols-4" : "max-w-sm grid-cols-2"}`}>
               <CountInput name="male" label="Adult Male" icon={Mars} value={values.male} onChange={onCountChange} invalid={Boolean(error)} focusClass={tone.focus} />
               <CountInput name="female" label="Adult Female" icon={Venus} value={values.female} onChange={onCountChange} invalid={Boolean(error)} focusClass={tone.focus} />
               <CountInput name="children" label="Children" icon={Users} value={values.children} onChange={onCountChange} focusClass={tone.focus} />

@@ -351,8 +351,11 @@ const rebalanceRooms = (current, counts) => {
 };
 
 // ── Local presentational primitives — same shapes as CreateBookingClean's Panel/Field ──────────
+/* 34px, not 42. This form is 30-odd fields taken while somebody is on the phone, so the thing that
+   matters is how many of them are on screen at once — every 8px of control height costs roughly one
+   field off the fold. 13px text keeps that readable at a desk; going smaller would not. */
 const controlBase =
-  "w-full rounded-lg border bg-white py-2.5 text-sm text-slate-800 outline-none transition " +
+  "w-full rounded-lg border bg-white py-2 text-[13px] text-slate-800 outline-none transition " +
   "hover:border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-100";
 const control = (invalid, icon) =>
   `${controlBase} ${icon ? "pl-9 pr-3" : "px-3"} ${invalid ? "border-red-300 focus:border-red-400 focus:ring-red-100" : "border-slate-200"}`;
@@ -417,7 +420,7 @@ function Panel({
   return (
     <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
       <div
-        className={`flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5 ${expanded ? "border-b border-slate-100" : ""}`}
+        className={`flex flex-col gap-2 px-4 py-2.5 sm:flex-row sm:items-center sm:justify-between ${expanded ? "border-b border-slate-100" : ""}`}
       >
         {collapsible ? (
           // data-skip-enter: Enter walks the form field to field (see FOCUSABLE); a header toggle is
@@ -436,7 +439,7 @@ function Panel({
         )}
         {action}
       </div>
-      {expanded && <div className="p-4 sm:p-5">{children}</div>}
+      {expanded && <div className="px-4 pb-3.5 pt-3">{children}</div>}
     </section>
   );
 }
@@ -493,8 +496,8 @@ function SummaryRow({ icon: Icon, title, detail, onEdit }) {
 }
 function Field({ id, label, required, optional, error, hint, children }) {
   return (
-    <div className="min-w-0 space-y-1.5">
-      <label htmlFor={id} className="block text-xs font-semibold text-slate-600">
+    <div className="min-w-0 space-y-1">
+      <label htmlFor={id} className="block text-[11px] font-semibold text-slate-600">
         {label}
         {required && <span className="ml-1 text-red-500">*</span>}
         {optional && <span className="ml-1 font-normal text-slate-400">(optional)</span>}
@@ -1105,7 +1108,7 @@ export function LeadFormPanels({
           getting better above ~320px. As `3fr` it took ~30% of a 1400px page, so on a wide monitor
           it grew into 420px of half-empty panel while the Customer and Trip fields — the ones that
           actually want width — wrapped a column earlier than they needed to. */}
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
+      <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
       {/* ── 1 + 2 folded · what the enquiry says, in two lines ─────────────────────────────────
           Not a third rendering of these fields — just their values, so there is nothing here that
           can drift out of step with the panels below. Either the panels are mounted or these rows
@@ -1130,7 +1133,7 @@ export function LeadFormPanels({
         title="Customer"
         description="Phone first — an existing lead on this number is flagged as you type"
       >
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-x-3 gap-y-2 sm:grid-cols-2 lg:grid-cols-4">
           <Field id="phone" label="Phone" required error={errors.phone?.message}>
             <div className="relative">
               <Phone className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -1183,7 +1186,7 @@ export function LeadFormPanels({
 
             {belowPhone}
 
-            <div className="mt-4 border-t border-slate-100 pt-4">
+            <div className="mt-3 border-t border-slate-100 pt-3">
               {/* The "Travellers & Rooms" heading that sat here is gone: TravellerCountFields now
                   carries its own "Travellers" and "Rooms" legends over the two groups, so this was
                   the same words a second time, one line above them. The hint stays — it is the one
@@ -1204,6 +1207,11 @@ export function LeadFormPanels({
                 }}
                 onCountChange={setAdultCount}
                 onToggleBreakdown={toggleAdultBreakdown}
+                /* Travellers gets the whole row here. Sharing it with Rooms at 3fr/2fr was fine
+                   before this group grew a Seniors box and a strip of child-age chips; now the
+                   breakdown has four counters to lay out inside a column that already gives 320px
+                   to the rail, and it wrapped into three cramped lines. Rooms drops underneath. */
+                wideTravellers
                 /* `compact` is gone with Full details. It did exactly two things — hide the
                    "Specify adult gender count" toggle and hide Extra Beds — so rapid could not
                    record a male/female split or an extra bed without switching modes first. Both
@@ -1220,7 +1228,7 @@ export function LeadFormPanels({
                   nobody asked for on the call is an age nobody can get afterwards. The ARRAY is
                   the source of truth; raising Children appends a blank rather than rebuilding the
                   list, so ages already typed are never renumbered mid-call. */}
-              <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="mt-2.5 grid grid-cols-1 gap-x-3 gap-y-2 sm:grid-cols-2">
                 <Field
                   id="seniors60Plus"
                   label="Seniors 60+"
@@ -1364,7 +1372,7 @@ export function LeadFormPanels({
                 and every night's cost is measured from it — and Occasion moves more of the
                 quotation than budget does: a honeymoon, elderly parents and a friends' group buy
                 three different hotels, paces and vehicles at the same price. */}
-            <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="mb-2.5 grid grid-cols-1 gap-x-3 gap-y-2 sm:grid-cols-2">
               <Field
                 id="fromCity"
                 label="From (departure city)"
@@ -1402,7 +1410,7 @@ export function LeadFormPanels({
             {/* Four fields, two up. Full details ran these at lg:grid-cols-4, but that was a
                 full-width main column; the merged form always keeps the 300px rail, so four
                 across would put a date picker and two selects in ~150px each. */}
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-x-3 gap-y-2 sm:grid-cols-2">
               <Field id="travelDate" label="Travel Date" required error={errors.travelDate?.message}>
                 <div className="relative">
                   <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -1794,7 +1802,7 @@ export function LeadFormPanels({
             One instance now, at the foot of the rail, so the `notes` textarea can never be in the
             document twice. */}
 
-        <aside className={`min-w-0 ${compactRail ? "space-y-4 lg:sticky lg:top-[72px] lg:col-start-2 lg:row-start-1 lg:row-span-3" : "space-y-5 lg:col-start-2 lg:row-start-3"}`}>
+        <aside className={`min-w-0 ${compactRail ? "space-y-3.5 lg:sticky lg:top-[72px] lg:col-start-2 lg:row-start-1 lg:row-span-3" : "space-y-5 lg:col-start-2 lg:row-start-3"}`}>
           {/* ── The rail, folded · the same retirement Customer and Trip get ──────────────────────
               Three panels in, three lines out, on the SAME `foldEnquiry` flag rather than one of
               their own. That is the point: Edit here and Edit on the Customer row have to restore
