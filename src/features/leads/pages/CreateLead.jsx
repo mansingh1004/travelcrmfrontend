@@ -2399,8 +2399,10 @@ export function LeadFormPanels({
               document twice. */}
           {foldEnquiry && (
             <>
-              <SummaryRow icon={CircleUserRound} title="Customer Profile" detail={customerProfileSummary} onEdit={onExpandEnquiry} />
+              {/* Same order as the panels below — a folded row and the panel it restores must sit
+                  in the same place, or continuing puts the agent somewhere they did not expect. */}
               <SummaryRow icon={UserCheck} title="Lead Setup" detail={leadSetupSummary} onEdit={onExpandEnquiry} />
+              <SummaryRow icon={CircleUserRound} title="Customer Profile" detail={customerProfileSummary} onEdit={onExpandEnquiry} />
               <SummaryRow icon={Accessibility} title="Special Assistance" detail={assistanceSummary} onEdit={onExpandEnquiry} />
             </>
           )}
@@ -2410,61 +2412,6 @@ export function LeadFormPanels({
               of the fast path meant reopening the lead afterwards to type them in, which is slower
               than the panel it was meant to save. It differs from full details in one way only:
               rapid lets the agent hand-fold it, because it shares the rail with two other panels. */}
-          {!foldEnquiry && <Panel
-            icon={CircleUserRound}
-            title="Customer Profile"
-            description="Optional personal and contact details"
-            collapsible={rapidEntry}
-            defaultOpen
-            summary={customerProfileSummary}
-            /* Budget is the one field here that can fail validation, and onInvalid cannot scroll to
-               an unmounted input. */
-            forceOpen={Boolean(errors.budget)}
-          >
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <Field id="birthDate" label="Date of Birth" optional>
-                  <input {...register("birthDate")} id="birthDate" type="date" max={today()} className={control(false)} />
-                </Field>
-                <Field id="anniversaryDate" label="Anniversary" optional>
-                  <input {...register("anniversaryDate")} id="anniversaryDate" type="date" max={today()} className={control(false)} />
-                </Field>
-              </div>
-
-              <Field id="preferredCommunication" label="Preferred Contact Channel" optional>
-                <div className="relative">
-                  <select {...register("preferredCommunication")} id="preferredCommunication" className={`${control(false)} appearance-none pr-9`}>
-                    <option value="">Select channel</option>
-                    {COMMUNICATION_PREFERENCES.map((option) => <option key={option} value={option}>{option}</option>)}
-                  </select>
-                  <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                </div>
-              </Field>
-
-              <Field id="budget" label="Indicative Budget (₹)" optional error={errors.budget?.message}>
-                <div className="relative">
-                  <IndianRupee className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                  <input
-                    {...register("budget", { min: { value: 0, message: "Budget cannot be negative" } })}
-                    id="budget"
-                    type="number"
-                    min={0}
-                    step="1000"
-                    inputMode="numeric"
-                    placeholder="150000"
-                    onFocus={(event) => event.target.select()}
-                    onWheel={(event) => event.currentTarget.blur()}
-                    className={control(errors.budget, true)}
-                  />
-                </div>
-              </Field>
-
-              <Field id="followUpDate" label="Follow-up Date" optional hint="Creates a reminder when the lead is saved">
-                <input {...register("followUpDate")} id="followUpDate" type="date" min={today()} className={control(false)} />
-              </Field>
-            </div>
-          </Panel>}
-
           {!foldEnquiry && <Panel
             icon={UserCheck}
             title="Lead Setup"
@@ -2614,6 +2561,62 @@ export function LeadFormPanels({
               </Field>}
             </div>
           </Panel>}
+
+          {!foldEnquiry && <Panel
+            icon={CircleUserRound}
+            title="Customer Profile"
+            description="Optional personal and contact details"
+            collapsible={rapidEntry}
+            defaultOpen
+            summary={customerProfileSummary}
+            /* Budget is the one field here that can fail validation, and onInvalid cannot scroll to
+               an unmounted input. */
+            forceOpen={Boolean(errors.budget)}
+          >
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <Field id="birthDate" label="Date of Birth" optional>
+                  <input {...register("birthDate")} id="birthDate" type="date" max={today()} className={control(false)} />
+                </Field>
+                <Field id="anniversaryDate" label="Anniversary" optional>
+                  <input {...register("anniversaryDate")} id="anniversaryDate" type="date" max={today()} className={control(false)} />
+                </Field>
+              </div>
+
+              <Field id="preferredCommunication" label="Preferred Contact Channel" optional>
+                <div className="relative">
+                  <select {...register("preferredCommunication")} id="preferredCommunication" className={`${control(false)} appearance-none pr-9`}>
+                    <option value="">Select channel</option>
+                    {COMMUNICATION_PREFERENCES.map((option) => <option key={option} value={option}>{option}</option>)}
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                </div>
+              </Field>
+
+              <Field id="budget" label="Indicative Budget (₹)" optional error={errors.budget?.message}>
+                <div className="relative">
+                  <IndianRupee className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <input
+                    {...register("budget", { min: { value: 0, message: "Budget cannot be negative" } })}
+                    id="budget"
+                    type="number"
+                    min={0}
+                    step="1000"
+                    inputMode="numeric"
+                    placeholder="150000"
+                    onFocus={(event) => event.target.select()}
+                    onWheel={(event) => event.currentTarget.blur()}
+                    className={control(errors.budget, true)}
+                  />
+                </div>
+              </Field>
+
+              <Field id="followUpDate" label="Follow-up Date" optional hint="Creates a reminder when the lead is saved">
+                <input {...register("followUpDate")} id="followUpDate" type="date" min={today()} className={control(false)} />
+              </Field>
+            </div>
+          </Panel>}
+
 
           {/* Rail copy — full details and EditLead only. Rapid renders the card grid in the main
               column instead (see above); the identical subtree behind a boolean is the cheapest
@@ -2789,13 +2792,20 @@ export default function LeadFormPage() {
 
      Only rapid, only create, only with QUOTATION_CREATE — everything above the Services panel keeps
      working exactly as it did for every other combination. */
-  const quoteInline = !editing && rapidEntry && canCreateQuotation;
+  /* BOTH modes price on this page now. Full details used to hand off to /quick-quote, which meant
+     a single phone call spanned two screens and a page load — the exact cost Rapid was built to
+     remove, still being paid by the mode that collects the most detail. */
+  const quoteInline = !editing && canCreateQuotation;
   /* The step chain — itinerary → services → quotation — exists to feed the quote, so it is scoped to
      exactly the agents who get a quote: same condition as quoteInline, deliberately not a looser
      one. Without QUOTATION_CREATE there is no pricing block to protect, and gating Services there
      would only add a lock to a form that has nothing behind it. Full details and edit are untouched
      for the same reason: neither locks anything today, and neither should start. */
-  const stepFlow = quoteInline;
+  /* The LOCKING chain — itinerary must be confirmed before Services opens — stays Rapid-only. It is
+     what makes Rapid a guided run; Full details is the mode you choose when you want every field at
+     once, and gating its panels behind a "Done — continue" button would take that away. So Full gets
+     the inline quote WITHOUT the locks. */
+  const stepFlow = !editing && rapidEntry && canCreateQuotation;
   /* The agent's explicit "I am done adding stops". Nothing infers this — the form can always take
      one more stop, so a rule like "every row is filled" would open Services after the first one and
      then slam it shut the moment Add Stop appended a blank row, tearing a half-priced quotation off
@@ -2816,6 +2826,13 @@ export default function LeadFormPage() {
   /* Both halves of the latch fire together: the picker unlocks and the enquiry folds, so the screen
      belongs to the step that just became actionable. Scrolled, not focused — the service cards are
      buttons, and landing focus on the first one would make a stray Enter tick it. */
+  /* "There is enough here to price." In Rapid that is the agent pressing "Done — continue", which
+     is a deliberate step in the chain. Full details has no chain and never renders that button, so
+     asking for itineraryConfirmed there would leave the quotation a locked stub forever — the block
+     would be mounted, gated on a flag nothing could ever set. Full uses the same underlying test the
+     confirm button itself is offered on. */
+  const quoteReady = stepFlow ? itineraryConfirmed : itineraryReady;
+
   const confirmItinerary = useCallback(() => {
     setItineraryConfirmed(true);
     setEnquiryCollapsed(true);
@@ -2964,7 +2981,16 @@ export default function LeadFormPage() {
     if (!pending) return;
     if (!quoteModel?.enabledCore?.includes(pending.id)) return;
     pendingQuoteRevealRef.current = null;
-    quoteSectionsRef.current?.reveal(pending.id, pending.focus ? "[data-quick-field]" : null);
+    /* Always with a field selector, which is what asks reveal() to SCROLL — and to land the cursor
+       in the section's first input.
+
+       This used to pass null when the tick came from the Services picker, on the reasoning that the
+       picker and the section beneath it were both already on screen so moving the page would be
+       jarring. That holds on a short form and stops holding on this one: with the trip details, the
+       itinerary rows and eight service cards above it, the section a tick creates is routinely below
+       the fold, and the agent was left looking at the picker wondering whether anything happened.
+       Ticking a service IS the request to fill it in, so go there. */
+    quoteSectionsRef.current?.reveal(pending.id, "[data-quick-field]");
   }, [quoteModel]);
 
   /* Finishing a section just collapses it — no scrolling. The loop is tick a service → fill it →
@@ -3838,11 +3864,25 @@ export default function LeadFormPage() {
     </div>
   ) : null;
 
+  /* Same digit test the probe effect uses to decide the number is worth looking up. Repeated
+     rather than shared because the effect's copy is scoped to the raw value it debounced; both
+     answer "is this a phone number yet", and if that rule ever changes it must change in both. */
+  const phoneProbed = String(phone || "").replace(/\D/g, "").length >= 7;
+
   const duplicateStrip = (customerCard || leadCard) ? (
     <>{customerCard}{leadCard}</>
   ) : checkingContact ? (
     <p className="mt-2 flex items-center gap-1.5 text-[11px] text-slate-400">
       <LoaderCircle className="h-3 w-3 animate-spin" /> Checking existing leads and customers…
+    </p>
+  ) : phoneProbed ? (
+    /* The other half of the answer, which this form never gave. A match showed a card; NO match
+       showed nothing at all, so "we looked and this is someone new" was indistinguishable from
+       "we have not looked yet" — and the agent had no way to know whether saving would attach to
+       an existing customer or create one. The booking form has always said which of the two it is;
+       this now does too. */
+    <p className="mt-2 flex items-center gap-1.5 text-[11px] font-bold text-emerald-700">
+      <CircleUserRound className="h-3 w-3" /> New customer — saving will create a new profile.
     </p>
   ) : null;
 
@@ -4066,19 +4106,21 @@ export default function LeadFormPage() {
             an empty accordion. Sticky pre-ticks Hotel from the previous enquiry, so services.length
             alone would have opened the whole pricing block on a blank form, which is the thing the
             chain exists to prevent; itineraryReady is what actually holds it shut. */}
-        {quoteInline && !(quoteModel && itineraryConfirmed && services.length > 0) && (
+        {quoteInline && !(quoteModel && quoteReady && services.length > 0) && (
           <section className="space-y-3">
             <p className="pt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">Quotation</p>
             <LockedStep
               title="Pricing"
-              hint={itineraryConfirmed
+              hint={quoteReady
                 ? "Tick a service above and its section opens here, seeded from the trip details."
-                : "Finish the itinerary and continue — services come first."}
+                : stepFlow
+                  ? "Finish the itinerary and continue — services come first."
+                  : "Add an itinerary stop, then tick a service to price it here."}
             />
           </section>
         )}
 
-        {quoteInline && quoteModel && itineraryConfirmed && services.length > 0 && (
+        {quoteInline && quoteModel && quoteReady && services.length > 0 && (
           <section id="quick-quote-builder" className="space-y-3">
             <p className="pt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">Quotation</p>
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4">
