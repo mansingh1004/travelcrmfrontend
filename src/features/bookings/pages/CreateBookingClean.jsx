@@ -4,7 +4,12 @@ import {
   Accessibility,
   ArrowLeft,
   BadgeIndianRupee,
+  BedDouble,
   Bus,
+  Camera,
+  CarFront,
+  Plane,
+  Sparkles,
   Route,
   Calculator,
   Check,
@@ -15,7 +20,6 @@ import {
   IndianRupee,
   LoaderCircle,
   Mail,
-  MapPin,
   PackageCheck,
   Phone,
   Store,
@@ -78,6 +82,19 @@ const PAYMENT_METHODS = ["Cash", "Bank Transfer", "UPI", "Credit Card", "Debit C
    "Visa" keeps it, and the toggle below matches case-insensitively so nothing already selected is
    silently dropped on edit. */
 const SERVICES = ["Vehicle", "Hotel", "Flight", "Sightseeing", "Add-on"];
+
+/* Glyph and tile per service, matching the picker on Create Lead (CreateLead.jsx:133) so the same
+   service is the same colour wherever it is offered — an agent moving between the two screens reads
+   the strip by colour before reading the labels. Add-on has no counterpart there and takes the one
+   hue the other four leave free. Keyed off the SERVICES strings so that list stays the single place
+   the set is decided. */
+const SERVICE_TILES = {
+  Vehicle: { icon: CarFront, tile: "bg-amber-50 text-amber-700" },
+  Hotel: { icon: BedDouble, tile: "bg-emerald-50 text-emerald-600" },
+  Flight: { icon: Plane, tile: "bg-blue-50 text-blue-600" },
+  Sightseeing: { icon: Camera, tile: "bg-violet-50 text-violet-600" },
+  "Add-on": { icon: Sparkles, tile: "bg-rose-50 text-rose-600" },
+};
 
 /* Came across with the Special assistance block from FastTravelDetails, unchanged — these strings
    are stored verbatim in tripSnapshot.specialAssistance.types, so editing the list would orphan the
@@ -330,12 +347,20 @@ function TriToggle({ label, value, onChange, options, hint }) {
 }
 
 
-function Panel({ icon: Icon, title, description, action, children }) {
+/* `iconTile` is optional and defaults to the neutral grey every panel already had — a Panel used
+   anywhere else keeps the old look without being told to.
+
+   On this form every card passes one. A booking is entered top to bottom in one sitting, and six
+   identical grey glyphs gave the eye nothing to scroll back to; a distinct hue per card turns the
+   page into landmarks. They stay in the 100-200 band so they read as tinted paper rather than as
+   status: none of these mean anything, they only tell the cards apart. Yellow sits a step deeper
+   than the rest because at 100 it is indistinguishable from white. */
+function Panel({ icon: Icon, title, description, action, iconTile = "bg-slate-100 text-slate-700", children }) {
   return (
     <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
       <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
         <div className="flex min-w-0 items-center gap-3">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
+          <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${iconTile}`}>
             <Icon className="h-4 w-4" />
           </span>
           <div className="min-w-0">
@@ -359,6 +384,28 @@ function Field({ label, required, optional, error, children }) {
       </label>
       {children}
       {error && <p className="text-xs text-red-500">{error}</p>}
+    </div>
+  );
+}
+
+/* A Field shaped like one cell of the Travel Date box: caption above value, both inside the
+   border, same padding — which is what makes the three boxes come out the same height without
+   any of them being told what that height is. The leading blank line stands in for the label
+   Field would have drawn, so the box starts level with Travel Date's. */
+function PrimaryBox({ caption, required, optional, error, hint, children }) {
+  return (
+    <div className="min-w-0">
+      <span aria-hidden="true" className="mb-1.5 block text-xs font-semibold">&nbsp;</span>
+      <div className={`rounded-lg border bg-white px-3 py-2 ${error ? "border-red-300" : "border-slate-200"}`}>
+        <span className="block text-[10px] font-bold uppercase tracking-widest text-slate-400">
+          {caption}
+          {required && <span className="ml-0.5 text-red-500">*</span>}
+          {optional && <span className="ml-1 font-medium normal-case tracking-normal text-slate-300">(optional)</span>}
+        </span>
+        <div className="relative">{children}</div>
+      </div>
+      {error && <p className="mt-1 text-xs text-red-500">{error}</p>}
+      {hint && !error && <p className="mt-1 text-xs text-amber-600">{hint}</p>}
     </div>
   );
 }
@@ -1063,17 +1110,20 @@ export default function BookingFormPage() {
   const totalTravellers =
     (Number(form.totalAdults) || 0) + (Number(form.children) || 0) + (Number(form.infants) || 0);
 
-  /* The card's header badge — the same at-a-glance summary Travel Details carries for travellers.
-     Built as an array and joined so a band with nothing in it contributes no text at all: vehicle
-     rows start empty, and "0 vehicles · 2 rooms" reports an absence as if it were an answer. With
-     both empty the badge does not render, because a pill reading "0" is worse than no pill. */
-  const requirementSummary = useMemo(() => {
-    const vehicles = form.vehicleRequirements.reduce((sum, row) => sum + (Number(row.quantity) || 0), 0);
-    const parts = [];
-    if (vehicles > 0) parts.push(`${vehicles} vehicle${vehicles === 1 ? "" : "s"}`);
-    if (roomTotals.rooms > 0) parts.push(`${roomTotals.rooms} room${roomTotals.rooms === 1 ? "" : "s"}`);
-    return parts.join(" · ");
-  }, [form.vehicleRequirements, roomTotals.rooms]);
+  /* Counts for the two bands' own headings — the same at-a-glance summary Travel Details carries
+     for travellers, but one per band rather than one for the card.
+
+     They were a single joined pill in the card header. Two figures under one label made the reader
+     work out which number belonged to which band, and the zero rule below could only be applied to
+     the pair: vehicle rows start empty, and "0 vehicles · 2 rooms" reports an absence as if it were
+     an answer. Split, each band answers for itself — an empty vehicle list hides its own count and
+     leaves the room count standing. The rule itself is unchanged: a pill reading "0" is worse than
+     no pill, so a count of zero renders nothing at all. */
+  const vehicleCount = useMemo(
+    () => form.vehicleRequirements.reduce((sum, row) => sum + (Number(row.quantity) || 0), 0),
+    [form.vehicleRequirements]
+  );
+  const roomCount = roomTotals.rooms;
 
   const routeNights = useMemo(() => totalRouteNights(form.itinerary), [form.itinerary]);
   const tripRouteSummary = useMemo(() => routeSummary(form.itinerary), [form.itinerary]);
@@ -2088,6 +2138,7 @@ export default function BookingFormPage() {
             before the Existing/New chip appears reads as progress rather than as nothing. */}
         <Panel
           icon={CircleUserRound}
+          iconTile="bg-blue-100 text-blue-700"
           title="Customer Details"
           description="Enter the phone number — an existing customer is matched automatically"
           action={
@@ -2107,7 +2158,7 @@ export default function BookingFormPage() {
               {/* The party size, in the corner. Guarded on > 0 so a form whose counters have been
                   cleared shows nothing rather than "0 travellers". */}
               {totalTravellers > 0 && (
-                <span className="inline-flex w-fit items-center rounded-full bg-teal-50 px-2.5 py-1 text-xs font-semibold text-teal-700">
+                <span className="inline-flex w-fit items-center rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">
                   {totalTravellers} traveller{totalTravellers === 1 ? "" : "s"}
                 </span>
               )}
@@ -2323,7 +2374,7 @@ export default function BookingFormPage() {
               </Field>
             </div> */}
           </div>
-
+ 
           {/* Special assistance moved on to the action footer — it is the last thing asked, and it
               is off on nearly every booking, so a whole band here was a rule and a line of padding
               spent on an unticked box. Its passenger cap still reads totalTravellers, which is
@@ -2351,19 +2402,30 @@ export default function BookingFormPage() {
             questions asked in sequence anyway, so reading them top to bottom costs nothing. */}
         <Panel
           icon={Bus}
-          title="Vehicle & Room Requirement"
+          // Yellow rather than amber, and with enough chroma to read as a colour at all:
+          // amber-50 is 0.022 — a cream that looked like an unstyled tile — and amber's
+          // hue sits far enough toward orange that darkening it alone never reads yellow.
+          // The tile is the softer 200; the glyph stays at 900 so it holds its contrast.
+          iconTile="bg-yellow-200 text-yellow-900"
+          title="Vehicle"
           description="What the trip needs — not what is finally assigned"
-          action={requirementSummary ? (
-            <span className="inline-flex w-fit items-center rounded-full bg-teal-50 px-2.5 py-1 text-xs font-semibold text-teal-700">
-              {requirementSummary}
-            </span>
-          ) : null}
         >
           <div className="space-y-5">
             <section className="min-w-0">
+              {/* The count sits with the band it counts. ml-auto pushes it right on a wide row and
+                  the existing flex-wrap drops it to its own line on a narrow one.
+                  The glyph carries the Services picker's colour for the same service, and takes
+                  self-center because the row aligns on the text baseline — an icon left on that
+                  baseline hangs below the heading it belongs to. */}
               <div className="mb-3 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                <CarFront className="h-4 w-4 shrink-0 self-center text-amber-700" aria-hidden="true" />
                 <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500">Vehicle</h3>
                 <p className="text-[11px] text-slate-400">Not the vehicle finally assigned</p>
+                {vehicleCount > 0 && (
+                  <span className="ml-auto inline-flex w-fit items-center rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">
+                    {vehicleCount} vehicle{vehicleCount === 1 ? "" : "s"}
+                  </span>
+                )}
               </div>
               <VehicleRequirementRows
                 rows={form.vehicleRequirements}
@@ -2377,8 +2439,14 @@ export default function BookingFormPage() {
             {/* A rule between the two bands, at every width now that they are stacked. */}
             <section className="min-w-0 border-t border-slate-100 pt-5">
               <div className="mb-3 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                <BedDouble className="h-4 w-4 shrink-0 self-center text-emerald-600" aria-hidden="true" />
                 <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500">Rooms</h3>
                 <p className="text-[11px] text-slate-400">Room mix for the party</p>
+                {roomCount > 0 && (
+                  <span className="ml-auto inline-flex w-fit items-center rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">
+                    {roomCount} room{roomCount === 1 ? "" : "s"}
+                  </span>
+                )}
               </div>
               <RoomRequirementRows
                 rows={form.roomRequirements}
@@ -2401,7 +2469,23 @@ export default function BookingFormPage() {
           errors={errors}
           onBlurField={blurField}
           primaryFields={<>
-            <Field label="Destination" required error={errors.destination}>
+            {/* These two mirror the Travel Date box rather than sitting beside it as short
+                single-line controls: a mini uppercase caption over the value, inside one bordered
+                cell built the same way, so the row reads as three matching boxes. The height is
+                not set anywhere — the cell is the same caption line over the same text line with
+                the same padding, so it comes out the same height on its own.
+
+                Their Field label is gone: it would print the same word twice, once above the box
+                and once inside it. PrimaryBox puts an invisible line in its place so all three
+                boxes still start level, since Travel Date carries its label above its box. The
+                icons went with the label for the same reason — the caption already names the
+                field, and Travel Date's cells carry no icons either.
+
+                The controls themselves are stripped of their own border, radius and padding with
+                important utilities. The box owns that chrome now, and SearchableSelect's own
+                comment warns that two border utilities in one class string are settled by
+                stylesheet order — so this does not leave it to chance. */}
+            <PrimaryBox caption="Destination" required error={errors.destination} hint={destinationError}>
               <SearchableSelect
                 name="destination"
                 options={destinationOptions}
@@ -2419,23 +2503,22 @@ export default function BookingFormPage() {
                 searchPlaceholder="Type a destination..."
                 loading={loadingDestinations}
                 invalid={Boolean(errors.destination)}
-                icon={MapPin}
                 accent="blue"
                 advanceOnSelect
-                className="hover:border-slate-300"
+                className="border-0! bg-transparent! rounded-none! p-0! pr-6! focus:ring-0!"
               />
-              {destinationError && <p className="text-xs text-amber-600">{destinationError}</p>}
-            </Field>
-            <Field label="Package Type" optional>
-              <div className="relative">
-                <PackageCheck className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <select value={form.packageType} onChange={(event) => setField("packageType", event.target.value)} className={`${controlClass("packageType", true)} appearance-none pr-9`}>
-                  <option value="">Select package</option>
-                  {PACKAGE_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              </div>
-            </Field>
+            </PrimaryBox>
+            <PrimaryBox caption="Package Type" optional>
+              <select
+                value={form.packageType}
+                onChange={(event) => setField("packageType", event.target.value)}
+                className="w-full appearance-none border-0 bg-transparent p-0 pr-6 text-sm text-slate-800 outline-none"
+              >
+                <option value="">Select package</option>
+                {PACKAGE_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}
+              </select>
+              <ChevronDown className="pointer-events-none absolute right-0 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            </PrimaryBox>
           </>}
         />
 
@@ -2445,7 +2528,7 @@ export default function BookingFormPage() {
             squeezed into 7/10ths of the row — the source of most of the empty space on this page.
             Laid out horizontally, the eight chips fit one or two rows and the notes sit beside
             them instead of underneath. */}
-        <Panel icon={PackageCheck} title="Services & Notes" description="Confirmed inclusions and instructions">
+        <Panel icon={PackageCheck} iconTile="bg-violet-100 text-violet-700" title="Services & Notes" description="Confirmed inclusions and instructions">
           {/* items-start is the fix for the oversized chips: without it the grid stretches every
               cell to the tallest one — the notes textarea — so each service button grew to ~90px
               tall. Now the chip block keeps its natural height and the textarea is free to be
@@ -2468,9 +2551,33 @@ export default function BookingFormPage() {
                 const selected = form.services.some(
                   (item) => String(item).toLowerCase() === service.toLowerCase()
                 );
+                /* Same card as Create Lead's picker: a coloured glyph tile over the label, with the
+                   tick in the corner instead of pushing the text sideways. The tile keeps its
+                   colour when selected — the blue ring and the tick say "picked", the colour says
+                   which service, and painting the whole card blue threw that second signal away. */
+                const { icon: Icon, tile } = SERVICE_TILES[service] || {};
                 return (
-                  <button key={service} type="button" onClick={() => toggleService(service)} className={`inline-flex h-9 min-w-0 items-center justify-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition ${selected ? "border-blue-600 bg-blue-600 text-white" : "border-slate-200 bg-white text-slate-600 hover:border-blue-300 hover:bg-blue-50"}`}>
-                    {selected && <Check className="h-3.5 w-3.5 shrink-0" />}<span className="truncate">{service}</span>
+                  <button
+                    key={service}
+                    type="button"
+                    onClick={() => toggleService(service)}
+                    aria-pressed={selected}
+                    title={service}
+                    className={`group relative flex flex-col items-center justify-center gap-1.5 rounded-xl border bg-white px-1 py-3 text-center transition focus:outline-none focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-100 ${selected ? "border-blue-500 ring-1 ring-blue-500" : "border-slate-200 hover:border-slate-300"}`}
+                  >
+                    <span
+                      className={`absolute right-1.5 top-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full transition ${selected ? "bg-blue-600 text-white" : "border border-slate-200 bg-white text-transparent group-hover:border-slate-300"}`}
+                    >
+                      <Check className="h-2 w-2" strokeWidth={3.5} />
+                    </span>
+                    {Icon && (
+                      <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${tile}`}>
+                        <Icon className="h-4 w-4" />
+                      </span>
+                    )}
+                    <span className={`w-full truncate text-[10px] font-semibold leading-tight ${selected ? "text-slate-900" : "text-slate-600"}`}>
+                      {service}
+                    </span>
                   </button>
                 );
               })}
@@ -2489,6 +2596,7 @@ export default function BookingFormPage() {
             city pickers were the narrowest controls on the page. */}
         <Panel
           icon={Route}
+          iconTile="bg-sky-100 text-sky-700"
           title="Travel Itinerary"
           description="The route, leg by leg — nights are spent at the To city"
           action={
@@ -2523,7 +2631,7 @@ export default function BookingFormPage() {
             onWheel contract), so focus-first-invalid and Enter-advance keep working — DOM order
             simply lands them last, right before the footer actions. */}
         <aside className="min-w-0 space-y-5 lg:sticky lg:top-[72px]">
-          <Panel icon={BadgeIndianRupee} title="Payment Details" description="Commercials for this booking">
+          <Panel icon={BadgeIndianRupee} iconTile="bg-emerald-100 text-emerald-700" title="Payment Details" description="Commercials for this booking">
             <div className="space-y-4">
               <Field label="Total Budget (INR)" required error={errors.customerAmount}>
                 <div className="relative">
@@ -2828,6 +2936,7 @@ export default function BookingFormPage() {
 
           <Panel
             icon={Calculator}
+            iconTile="bg-indigo-100 text-indigo-700"
             title="Computed"
             description="What the server will stamp on save"
             action={previewActive && previewState === "loading" ? (
@@ -2979,7 +3088,7 @@ export default function BookingFormPage() {
               </div>
               <div>
                 <label className="mb-1.5 block text-xs font-semibold text-slate-600">Passengers</label>
-                {/* Capped at the party size. totalTravellers is derived from `form`, so the cap
+                {/* Capped at the  totalTravellers is derived from `form`, so the cap
                     holds regardless of which card the counters themselves live in. */}
                 <input type="number" min="1" max={Math.max(totalTravellers, 1)} value={form.assistancePassengerCount} onFocus={(event) => event.target.select()} onChange={(event) => setField("assistancePassengerCount", event.target.value)} className={controlClass("assistancePassengerCount")} />
               </div>

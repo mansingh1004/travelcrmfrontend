@@ -17,9 +17,10 @@
 //   stuck open the way the old mouseenter version did.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
-import { ChevronDown, LayoutGrid, PanelLeftClose, PanelLeftOpen, Pin, X } from "lucide-react";
+import { ChevronDown, LayoutGrid, Pin, X } from "lucide-react";
 
 import { companyService } from "@features/settings";
 
@@ -60,8 +61,9 @@ export default function Sidebar() {
     activeDestination,
     pinnedDestinations,
     togglePin,
+    // Reads `railCollapsed` but no longer writes it: the header chevron owns opening
+    // and closing, and a collapsed group now opens a flyout rather than the rail.
     railCollapsed,
-    setRailCollapsed,
     openLauncher,
     mobileNavOpen,
     setMobileNavOpen,
@@ -72,11 +74,15 @@ export default function Sidebar() {
   // open" is not a state this rail can be in at all.
   const [openGroupId, setOpenGroupId] = useState(() => activeTrail.itemId ?? null);
 
-  // Hover-to-open. The rail rests as a 68px icon strip and widens while the
-  // pointer is over it, closing again as soon as it leaves — unless it has been
-  // pinned open from the footer button (or ⌘B), in which case hover does nothing.
-  const [hovered, setHovered] = useState(false);
-  const hoverTimer = useRef(null);
+  // REMOVED: hover-to-open. The rail used to widen whenever the pointer crossed it
+  // and shut again on the way out, with a 140ms grace period so a diagonal reach
+  // toward a menu item did not snap it closed.
+  //
+  // It is the header chevron alone now. Hover meant the rail changed width without
+  // anyone asking it to — passing over it on the way to the page opened a 260px
+  // panel across the content, and the state it appeared to be in was never the
+  // state it would be in a moment later. One control, one explicit click, and the
+  // rail stays where it was put.
 
   // Tenant branding. Reloads on the "company-updated" event the profile page
   // fires after a save, so a new logo lands here without a page reload.
@@ -96,27 +102,82 @@ export default function Sidebar() {
     return () => window.removeEventListener("company-updated", loadCompany);
   }, []);
 
-  useEffect(() => () => window.clearTimeout(hoverTimer.current), []);
-
   const activeId = activeDestination?.id ?? null;
 
-  // Hovering counts as expanded: `compact` drives both the width and the labels.
-  const compact = railCollapsed && !hovered;
+  // `compact` is now exactly what the chevron last set — the rail has no second,
+  // transient way of being open.
+  const compact = railCollapsed;
 
-  // Pointer-driven, so touch never triggers it: a tap on a phone fires a synthetic
-  // mouseenter that would otherwise leave the rail stuck open with no way to close.
-  const onPointerEnter = (e) => {
-    if (e.pointerType !== "mouse" || !railCollapsed) return;
-    window.clearTimeout(hoverTimer.current);
-    setHovered(true);
-  };
-  const onPointerLeave = (e) => {
-    if (e.pointerType && e.pointerType !== "mouse") return;
-    // A small grace period: crossing the 68px strip diagonally toward a menu item
-    // briefly leaves the element, and snapping shut mid-reach is maddening.
-    window.clearTimeout(hoverTimer.current);
-    hoverTimer.current = window.setTimeout(() => setHovered(false), 140);
-  };
+  /* ── Icon-rail tooltips ────────────────────────────────────────────────────
+     The collapsed rail is 68px of unlabelled glyphs, so each one names itself on
+     hover. `title` cannot do it: it waits about a second, lands wherever the
+     cursor is rather than beside the icon, and its dark-on-light system styling
+     is the one thing on this rail that cannot be themed.
+
+     Rendered through a portal into <body> for the reason the note at the top of
+     the <aside> already gives — the nav scrolls (`overflow-y-auto
+     overflow-x-hidden`) and the chrome row above it is `overflow-hidden`, so a
+     tip positioned at `left-full` would be cut off at the rail's own edge. Fixed
+     coordinates measured off the row escape both. AllLeads' CityTip solves the
+     same problem the same way.
+
+     Mouse only. A tap fires a synthetic pointerenter, and on a phone that would
+     leave a tooltip stranded with nothing to dismiss it — and the phone rail is
+     the full-width drawer anyway, where every row is already labelled. */
+  const [tip, setTip] = useState(null);
+
+  /* ── Icon-rail flyout ──────────────────────────────────────────────────────
+     A group in the collapsed rail used to widen the whole sidebar just to show
+     five links — you asked for one module and got the entire navigation, over the
+     page you were reading. Clicking one now opens its children beside the icon and
+     leaves the rail alone.
+
+     Same portal, and for the same clipping reason as the tooltip. It also holds
+     the item rather than an index, so a nav tree that reorders under it cannot
+     leave the panel showing one module's name over another's links. */
+  const [flyout, setFlyout] = useState(null);
+
+  useEffect(() => {
+    if (!tip && !flyout) return undefined;
+    const close = () => { setTip(null); setFlyout(null); };
+    // Capture, so the nav's own scroll closes them too — the coordinates go stale
+    // the moment anything moves.
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => {
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
+  }, [tip, flyout]);
+
+  /* The flyout is a click-opened surface, so it needs the two dismissals every
+     menu needs and a tooltip does not: anywhere else, and Escape. */
+  useEffect(() => {
+    if (!flyout) return undefined;
+    const onDown = (event) => {
+      if (!event.target.closest?.("[data-rail-flyout]")) setFlyout(null);
+    };
+    const onKey = (event) => { if (event.key === "Escape") setFlyout(null); };
+    document.addEventListener("pointerdown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [flyout]);
+
+  // Expanded rail already prints every label, so it gets no handlers at all.
+  const tipProps = (label) =>
+    !compact || !label
+      ? {}
+      : {
+          onPointerEnter: (event) => {
+            if (event.pointerType !== "mouse") return;
+            const rect = event.currentTarget.getBoundingClientRect();
+            setTip({ label, top: rect.top + rect.height / 2, left: rect.right + 10 });
+          },
+          onPointerLeave: () => setTip(null),
+        };
 
   // The group owning the current route opens itself — but as a SEED, not an
   // override. The old rail OR-ed `activeTrail.itemId` into the open test, which
@@ -144,10 +205,10 @@ export default function Sidebar() {
     if (window.innerWidth < 768) setMobileNavOpen(false);
   };
 
-  // Following a link ends the peek — otherwise the rail hangs open over the page
-  // you just navigated to until the pointer happens to move away.
+  // Used to also end the hover peek, which no longer exists — a rail opened by the
+  // chevron is meant to stay open across navigations, so only the mobile drawer
+  // closes here.
   const handleNavigate = () => {
-    setHovered(false);
     closeOnMobile();
   };
 
@@ -253,8 +314,6 @@ export default function Sidebar() {
           absolutely-positioned child at the rail's own width, so the expanded panel
           simply never appeared.) */}
       <aside
-        onPointerEnter={onPointerEnter}
-        onPointerLeave={onPointerLeave}
         className={`fixed inset-y-0 left-0 z-50 flex h-screen shrink-0 flex-col border-r border-white/[0.07] bg-[#1a1f26] font-sans text-slate-300 transition-[width,transform] duration-200 ease-out md:relative md:h-auto md:translate-x-0 ${
           mobileNavOpen ? "translate-x-0" : "-translate-x-full"
         } ${compact ? "w-[260px] md:w-[68px]" : "w-[260px]"}`}
@@ -285,26 +344,11 @@ export default function Sidebar() {
           >
             {brandName}
           </p>
-          {/* Pin / unpin, in the header where the rail's own controls belong.
-              Reads `railCollapsed`, NOT `compact` — while you are hovering a
-              collapsed rail it LOOKS open, but what this toggles is whether it
-              stays open once the pointer leaves. Hidden in the resting icon rail,
-              which has no room for it; it appears as soon as the rail opens. */}
-          <button
-            type="button"
-            onClick={() => {
-              setRailCollapsed(!railCollapsed);
-              setHovered(false);
-            }}
-            title={railCollapsed ? "Keep sidebar open" : "Collapse to icons"}
-            aria-label={railCollapsed ? "Keep sidebar open" : "Collapse to icons"}
-            aria-pressed={!railCollapsed}
-            className={`hidden shrink-0 rounded-lg p-1.5 text-slate-500 transition-colors hover:bg-white/[0.06] hover:text-white md:block ${
-              compact ? "md:hidden" : ""
-            }`}
-          >
-            {railCollapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
-          </button>
+          {/* The pin / unpin button used to sit here. It moved to the header
+              (Navbar.jsx) because in the rail it was only half a switch — the resting
+              icon rail has no room for it, so the control that collapsed the sidebar
+              was not there to bring it back. One chevron in the header now does both
+              directions off the same `railCollapsed` this used to write. */}
 
           <button
             type="button"
@@ -331,8 +375,24 @@ export default function Sidebar() {
                   {hasChildren ? (
                     <button
                       type="button"
-                      onClick={() => (compact ? setRailCollapsed(false) : toggleGroup(item.id))}
-                      title={item.label}
+                      onClick={(event) => {
+                        if (!compact) return toggleGroup(item.id);
+                        // Collapsed: open the group beside its icon instead of
+                        // expanding the whole rail over the page.
+                        const rect = event.currentTarget.getBoundingClientRect();
+                        setTip(null);
+                        setFlyout((current) =>
+                          current?.item.id === item.id
+                            ? null
+                            : { item, top: rect.top, left: rect.right + 10 }
+                        );
+                        return undefined;
+                      }}
+                      {...tipProps(item.label)}
+                      // `title` only where the tooltip is not doing the job, so the two
+                      // never stack up on the same row.
+                      title={compact ? undefined : item.label}
+                      aria-label={item.label}
                       aria-expanded={open}
                       className={`${ROW} ${active ? ROW_ACTIVE : ROW_IDLE} ${
                         compact ? "justify-center px-2 py-2.5 md:px-0" : "gap-3 px-3 py-2.5"
@@ -357,7 +417,9 @@ export default function Sidebar() {
                     <Link
                       to={item.path}
                       onClick={handleNavigate}
-                      title={item.label}
+                      {...tipProps(item.label)}
+                      title={compact ? undefined : item.label}
+                      aria-label={item.label}
                       aria-current={active ? "page" : undefined}
                       className={`${ROW} ${active ? ROW_ACTIVE : ROW_IDLE} ${
                         compact ? "justify-center px-2 py-2.5 md:px-0" : "gap-3 px-3 py-2.5"
@@ -374,8 +436,11 @@ export default function Sidebar() {
                     </Link>
                   )}
 
-                  {/* Children inline in the expanded rail; the collapsed rail
-                      rail opens on hover, so there is nothing to serve separately. */}
+                  {/* Children inline in the expanded rail only. The note that used to
+                      stand here said the collapsed rail served them by opening on
+                      hover — it no longer opens on hover at all, so in the icon rail a
+                      group is a single button that expands the rail when clicked, and
+                      its children appear once it is open. */}
                   {hasChildren && open && !compact && (
                     <ul className="mt-1 space-y-0.5 pb-1">
                       {item.children.map((child) => {
@@ -541,7 +606,9 @@ export default function Sidebar() {
                       <Link
                         to={d.path}
                         onClick={handleNavigate}
-                        title={d.label}
+                        {...tipProps(d.label)}
+                        title={compact ? undefined : d.label}
+                        aria-label={d.label}
                         aria-current={on ? "page" : undefined}
                         className={`${ROW} ${on ? ROW_ACTIVE : ROW_IDLE} ${
                           compact ? "justify-center px-2 py-2.5 md:px-0" : "gap-3 px-3 py-2.5"
@@ -596,6 +663,58 @@ export default function Sidebar() {
           </button>
         </div>
       </aside>
+
+      {/* A group's children, beside its icon. Light surface on purpose: it sits over
+          the page, not over the rail, and a dark panel there reads as part of the
+          navigation that has come loose. Capped and scrollable so a long module
+          cannot run off the bottom of the screen. */}
+      {flyout && createPortal(
+        <div
+          data-rail-flyout=""
+          style={{ position: "fixed", top: flyout.top, left: flyout.left, zIndex: 9998 }}
+          className="max-h-[70vh] w-56 overflow-y-auto rounded-xl border border-slate-200 bg-white py-2 shadow-xl shadow-slate-900/10"
+        >
+          <p className="px-4 pb-2 pt-1 text-sm font-bold text-slate-800">{flyout.item.label}</p>
+          <ul>
+            {flyout.item.children.map((child) => (
+              <li key={child.id}>
+                <Link
+                  to={child.path}
+                  onClick={() => { setFlyout(null); handleNavigate(); }}
+                  aria-current={activeId === child.id ? "page" : undefined}
+                  // Dark hover, not a grey tint: the row runs the full width of the
+                  // panel with no border to separate it from its neighbours, and a
+                  // faint wash at that size is easy to miss. Applied to the active row
+                  // too, so pointing at it never looks like less feedback than
+                  // pointing at any other.
+                  className={`block px-4 py-2.5 text-sm transition-colors hover:bg-slate-900 hover:text-white ${
+                    activeId === child.id
+                      ? "bg-slate-100 font-semibold text-slate-900"
+                      : "font-medium text-slate-600"
+                  }`}
+                >
+                  {child.label}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>,
+        document.body
+      )}
+
+      {/* The icon rail's label, beside the icon it names. pointer-events-none so it
+          can never sit between the cursor and the row it describes — moving onto the
+          tip would otherwise read as leaving the row and blink it away. */}
+      {tip && !flyout && createPortal(
+        <div
+          role="tooltip"
+          style={{ position: "fixed", top: tip.top, left: tip.left, transform: "translateY(-50%)", zIndex: 9999 }}
+          className="pointer-events-none whitespace-nowrap rounded-md bg-[#0f1319] px-2.5 py-1.5 text-xs font-semibold text-white shadow-lg shadow-black/30 ring-1 ring-white/10"
+        >
+          {tip.label}
+        </div>,
+        document.body
+      )}
 
       {/* Rail-local scrollbar. Deliberately not the app-wide `custom-scrollbar`
           class, which is only ever injected by individual feature pages. */}
