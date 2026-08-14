@@ -311,17 +311,17 @@ const Navbar = memo(function Navbar({
   // VENDOR deliberately stays a list link: VendorController's /{id} is a @PathVariable **Long**,
   // so feeding it a referencePublicId would 400. Give Vendor a UUID lookup before changing this.
   // REMINDER and TASK have no detail route at all yet.
-  const NOTIF_ROUTE_MAP = {
-    LEAD: (ref) => (ref ? `/EditLead/${ref}` : "/allleads"),
-    BOOKING: (ref) => (ref ? `/BookingDetails/${ref}` : "/Allbookings"),
-    CUSTOMER: (ref) => (ref ? `/CustomerDetails/${ref}` : "/AllCustomers"),
-    VENDOR: () => "/AllVendors",
-    REMINDER: () => "/Reminders",
-    // An unmapped referenceType makes the notification silently unclickable. Task notifications
-    // have been published with referenceType "TASK" since the task module shipped, but the backend
-    // enum did not list it, so they persisted as null and never reached this map at all.
-    TASK: () => "/tasks",
-  };
+  /* The referenceType → record map that used to live here is gone; clicking a notification opens
+     the Notifications page instead (see handleClickNotif). Keeping the routing knowledge, because
+     it is the expensive part to rediscover if per-record links are ever wanted again — as a link
+     from the Notifications LIST, where a deliberate "open this lead" action reads correctly, rather
+     than as the default destination of the bell:
+       • LEAD     → /EditLead/:id       leadService is publicId-keyed throughout
+       • BOOKING  → /BookingDetails/:id bookingService: "a booking id is its publicId (UUID)"
+       • CUSTOMER → /CustomerDetails/:id CustomerController @PathVariable UUID id
+       • VENDOR   → list only. VendorController's /{id} is a @PathVariable **Long**, so a
+                    referencePublicId would 400. Needs a UUID lookup before it can deep-link.
+       • REMINDER → /Reminders,  TASK → /tasks — neither has a detail route. */
 
   const handleClickNotif = async (notif) => {
     if (notif.status === "UNREAD") {
@@ -344,11 +344,18 @@ const Navbar = memo(function Navbar({
         toast.error(getErrorMessage(err, "Couldn't mark that notification as read."));
       }
     }
-    const resolve = NOTIF_ROUTE_MAP[notif.referenceType];
-    if (resolve) {
-      setNotifOpen(false);
-      navigate(resolve(notif.referencePublicId));
-    }
+    /* Every notification opens the Notifications page — it no longer jumps to the record.
+       Deep-linking sounded helpful and read badly in practice: "New Lead: SURESH PREMSAGAR" landed
+       the user in the lead EDIT FORM. Nobody clicking a new-lead alert wants to start editing that
+       lead; they want to see what came in, and an edit form is a poor place to find out — one
+       stray keystroke and Save is a change nobody meant to make.
+
+       It also put the bell out of step with the two beside it: the reminder bells have always gone
+       to /Reminders and /BookingReminders, their lists, not to individual records.
+
+       The notification is still marked read above, so the badge behaves exactly as before. */
+    setNotifOpen(false);
+    navigate("/Notifications");
   };
 
   const closeAll = () => { setDropdownOpen(false); setNotifOpen(false); setCreateOpen(false); };
