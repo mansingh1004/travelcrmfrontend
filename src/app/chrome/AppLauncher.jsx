@@ -25,6 +25,10 @@ export default function AppLauncher() {
       sections={sections}
       isPinned={isPinned}
       togglePin={togglePin}
+      // Tenant-only: NavProvider resolves pins against destinations + flattenGroups,
+      // so a module pinned whole comes back as a real sidebar row. The console has
+      // no such resolution — see the prop's note in the shared sheet.
+      allowGroupPins
       activeId={activeDestination?.id}
       anchor={launcherAnchor}
       tone={TILE_TONE}

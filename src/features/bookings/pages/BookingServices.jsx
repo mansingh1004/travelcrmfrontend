@@ -64,15 +64,28 @@ const SVC_META = {
 };
 const svcMeta = (t) => SVC_META[t] || SVC_META.Other;
 
-// Backend enum is PENDING / CONFIRMED / CANCELLED (ServiceItemStatus); the UI
+// Backend enum is PENDING / REQUESTED / CONFIRMED / CANCELLED (ServiceItemStatus); the UI
 // shows Title case and bookingService.toEnum uppercases on the way out.
+//
+// REQUESTED is load-bearing and was MISSING here, which lost data rather than merely
+// mis-labelling: the drawer seeds form.status from statusMeta(...).label and always sends it,
+// so an unknown status fell through to the PENDING fallback and opening + saving a REQUESTED
+// line silently downgraded it to "nobody has contacted anybody". Same class as the
+// LEAD_SOURCES select that rewrites a lead's source on save. Any value added to
+// ServiceItemStatus must be added here in the same commit.
 const STATUS_META = {
   PENDING:   { label:"Pending",   chip:"bg-amber-50 text-amber-700 border-amber-200",       dot:"bg-amber-500"   },
+  REQUESTED: { label:"Requested", chip:"bg-sky-50 text-sky-700 border-sky-200",             dot:"bg-sky-500"     },
   CONFIRMED: { label:"Confirmed", chip:"bg-emerald-50 text-emerald-700 border-emerald-200", dot:"bg-emerald-500" },
   CANCELLED: { label:"Cancelled", chip:"bg-rose-50 text-rose-600 border-rose-200",          dot:"bg-rose-500"    },
 };
 const statusMeta = (s) => STATUS_META[String(s || "PENDING").toUpperCase()] || STATUS_META.PENDING;
-const SERVICE_STATUS = ["Pending","Confirmed","Cancelled"];
+const SERVICE_STATUS = ["Pending","Requested","Confirmed","Cancelled"];
+
+/** The two the server refuses without a supplier — you cannot have asked nobody, and a
+ *  confirmation with no supplier is evidence of nothing.
+ *  (BookingServiceItemServiceImpl.requireVendorBeforeConfirming) */
+const STATUS_NEEDS_VENDOR = new Set(["Requested", "Confirmed"]);
 
 /* ─── HELPERS ────────────────────────────────────────────────── */
 const fmtINR = n => n != null
@@ -478,10 +491,19 @@ function ServiceDrawer({ booking, editSvc, onClose, onSaved, showToast }) {
               {SERVICE_STATUS.map(s => {
                 const meta = statusMeta(s);
                 const on = form.status === s;
+                // Offering a status the server is going to refuse means the operator fills the
+                // whole drawer, saves, and gets a 400 — with the vendor they picked in the same
+                // form not yet assigned, because the assign call runs AFTER the update.
+                const blocked = STATUS_NEEDS_VENDOR.has(s)
+                  && !form.vendorPublicId && !editSvc?.vendorPublicId;
                 return (
-                  <button key={s} type="button" onClick={()=>set("status", s)}
+                  <button key={s} type="button" disabled={blocked}
+                    title={blocked ? "Pick a supplier first — the server refuses this without one" : undefined}
+                    onClick={()=>set("status", s)}
                     className={`flex-1 inline-flex items-center justify-center gap-1.5 py-2 rounded-xl border text-[12px] font-bold transition-all ${
-                      on ? meta.chip + " ring-2 ring-blue-100" : "bg-white border-slate-200 text-slate-500 hover:border-slate-300"}`}>
+                      on ? meta.chip + " ring-2 ring-blue-100"
+                         : blocked ? "bg-slate-50 border-slate-200 text-slate-300 cursor-not-allowed"
+                                   : "bg-white border-slate-200 text-slate-500 hover:border-slate-300"}`}>
                     <span className={`w-1.5 h-1.5 rounded-full ${on ? meta.dot : "bg-slate-300"}`}/>{s}
                   </button>
                 );

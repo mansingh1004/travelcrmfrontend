@@ -50,6 +50,8 @@ import {
   BellRing,
   Inbox,
   CircleUser,
+  Radar,
+  MessageCircle,
 } from "lucide-react";
 
 import {
@@ -123,6 +125,17 @@ export const NAV_SECTIONS = [
         // showed on a plan that excludes COMMUNICATION and every call behind it answered 403.
         can: () => hasPermission(P.COMM_READ) && hasModule("COMMUNICATION"),
         path: "/Mailbox",
+      },
+      {
+        id: "whatsapp",
+        label: "WhatsApp",
+        Icon: MessageCircle,
+        tone: "emerald",
+        keywords: "chat supplier vendor messages interakt",
+        // Same authority and the same plan module as Mailbox — it reads the same
+        // comm_conversations rows through the same COMM_READ endpoints.
+        can: () => hasPermission(P.COMM_READ) && hasModule("COMMUNICATION"),
+        path: "/WhatsApp",
       },
       {
         id: "reminders",
@@ -243,6 +256,21 @@ export const NAV_SECTIONS = [
     id: "operations",
     label: "Operations",
     items: [
+      {
+        // First in the section because it is where the day starts: not "show me a
+        // booking" but "of the parties travelling soon, which are not ready".
+        id: "ops.board",
+        // Appended rather than slotted in: 1-9 are taken and renumbering the rail is a
+        // product decision, not a side effect of adding a screen. Move it up if operations
+        // should outrank quotations on the rail.
+        primary: 10,
+        label: "Operations",
+        path: "/operations",
+        Icon: Radar,
+        tone: "blue",
+        keywords: "ops board departures readiness suppliers unconfirmed pending checklist",
+        can: () => hasPermission(P.BOOKING_READ) && hasModule("BOOKINGS"),
+      },
       {
         id: "bookings",
         primary: 6,
@@ -684,7 +712,7 @@ export function buildQuickActions(navigate) {
       tone: "violet",
       keywords: "create lead enquiry add fast rapid full prospect quote",
       can: () => hasPermission(P.LEAD_CREATE) && hasModule("LEADS"),
-      run: () => navigate("/createlead"),
+      run: () => navigate("/leads/incoming"),
     },
     // "New quotation" and "Quick quote" were both here, and both are gone.
     //

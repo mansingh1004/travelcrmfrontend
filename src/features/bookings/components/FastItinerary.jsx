@@ -229,6 +229,17 @@
 // }
 
 
+
+
+
+
+
+
+
+
+
+
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MapPinned, Plus, Trash2 } from "lucide-react";
 
@@ -548,7 +559,7 @@ export default function FastItinerary({ hydrationKey, itinerary, onAdd, onRemove
 
       <div className="p-4 sm:p-5">
         {/* Destination, once, above the stops it governs. It used to sit on every row, which meant
-            picking "Nepal" as many times as the trip had stops — the country is a property of the
+            times as the trip had stops — the country is a property of the
             trip, the city is what actually differs stop to stop. */}
         <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
           <span className="shrink-0 text-xs font-semibold text-slate-500">Trip destination</span>
@@ -608,10 +619,30 @@ export default function FastItinerary({ hydrationKey, itinerary, onAdd, onRemove
             );
             const cityValue = selectedCity ? String(cityIdOf(selectedCity)) : row.city ? "__saved__" : "";
 
+
             /* A row can name a city that is not in the current list — either because it left the
                master data, or because the trip destination was just switched out from under it.
                Either way it keeps showing as "(saved)" instead of the combobox falling back to its
                placeholder and silently blanking a row that has data in it. */
+
+            /* A row loaded from a lead or a booking snapshot can name a place that is no longer in
+               the master list. The native selects carried a "(saved)" option for exactly that, and
+              
+               placeholder — i.e. silently show an empty row over saved data. */
+            const rowDestinationOptions = destinationValue === "__saved__"
+              ? [{ value: "__saved__", label: `${row.destination} (saved)` }, ...destinationOptions]
+              : destinationOptions;
+
+            const cityOptions = cities.map((item) => ({ value: String(cityIdOf(item)), label: item.name || "" }));
+
+            /* A row can name a city that is not in the current list — either because it left the
+               master data, or because the trip destination was just switched out from under it.
+               Either way it keeps showing as "(saved)" instead of the combobox falling back to its
+               placeholder and silently blanking a row that has data in it. */
+
+
+            const cityOptions = cities.map((item) => ({ value: String(cityIdOf(item)), label: item.name || "" }))
+
             const rowCityOptions = cityValue === "__saved__"
               ? [{ value: "__saved__", label: `${row.city} (saved)` }, ...cityOptions]
               : cityOptions;
@@ -668,15 +699,26 @@ export default function FastItinerary({ hydrationKey, itinerary, onAdd, onRemove
 
                 <label>
                   <span className="mb-1 block text-xs font-semibold text-slate-500 md:hidden">Nights</span>
+                  {/* stopPropagation, not just preventDefault: without it this Enter adds the stop
+                      AND the page's form-level Enter-advance runs on the same keystroke, so one
+                      press did two things and only landed right because the new row's focus timer
+                      happened to fire last. One key, one action. */}
                   <input type="number" min="0" step="1" value={row.nights} onFocus={(event) => event.target.select()} onChange={(event) => onUpdate(row.id, "nights", event.target.value)} onKeyDown={(event) => {
                     if (event.key === "Enter") {
                       event.preventDefault();
+                      event.stopPropagation();
                       if (index === itinerary.length - 1) onAdd();
                     }
                   }} className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
                 </label>
 
-                <button type="button" onClick={() => onRemove(row.id)} disabled={itinerary.length === 1} className="flex h-9 w-full items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-30 md:w-9" aria-label={`Remove stop ${index + 1}`}>
+                {/* tabIndex={-1} keeps Delete off the Enter path. The page advances focus on Enter
+                    and its handler deliberately ignores buttons (a focused button's Enter IS its
+                    click), so a clerk holding Enter down the form would land here and silently
+                    destroy the row they had just filled — no prompt, no undo. Deleting a stop is
+                    rare and irreversible; it should cost a deliberate click, not a keystroke you
+                    were already pressing. */}
+                <button type="button" tabIndex={-1} onClick={() => onRemove(row.id)} disabled={itinerary.length === 1} className="flex h-9 w-full items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-30 md:w-9" aria-label={`Remove stop ${index + 1}`}>
                   <Trash2 className="h-4 w-4" />
                 </button>
               </div>

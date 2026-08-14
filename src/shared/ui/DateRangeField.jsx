@@ -4,7 +4,7 @@ import { CalendarDays, X } from "lucide-react";
 import "react-day-picker/style.css";
 
 /**
- * One control, one calendar, both dates — the way every hotel site takes a stay.
+ * One control, one calendar, both dates — the way a hotel stay is selected.
  *
  * <p>Travel date and return date used to be two separate {@code <input type="date">} fields, which
  * meant two native pickers, two openings, and no way to see the trip length while choosing. An
@@ -27,8 +27,8 @@ export default function DateRangeField({
   startValue,
   endValue,
   onChange,
-  startLabel = "Travel Date",
-  endLabel = "Return Date",
+  startLabel = "Check-in",
+  endLabel = "Check-out",
   minDate,
   disabled = false,
   invalid = false,
@@ -129,16 +129,14 @@ export default function DateRangeField({
       {open && (
         <div
           role="dialog"
-          aria-label="Choose travel and return dates"
-          /* right-0 on small screens so a field near the right edge does not push the popover off
-             the viewport; two months is wider than the field it hangs from. */
+          aria-label="Choose check-in and check-out dates"
           className="absolute left-0 top-full z-40 mt-2 max-w-[calc(100vw-2rem)] overflow-x-auto rounded-xl border border-slate-200 bg-white p-3 shadow-lg"
         >
           <DayPicker
             mode="range"
             selected={range}
             onSelect={handleSelect}
-            numberOfMonths={2}
+            numberOfMonths={1}
             defaultMonth={from || undefined}
             startMonth={minDate ? parseLocal(minDate) : undefined}
             disabled={minDate ? { before: parseLocal(minDate) } : undefined}
@@ -152,8 +150,8 @@ export default function DateRangeField({
           />
           <div className="mt-1 flex items-center justify-between border-t border-slate-100 pt-2">
             <span className="text-[11px] text-slate-400">
-              {!from ? "Pick the travel date"
-                : !to ? "Now pick the return date"
+              {!from ? "Pick the check-in date"
+                : !to ? "Now pick the check-out date"
                   : `${nights} night${nights === 1 ? "" : "s"}`}
             </span>
             <button

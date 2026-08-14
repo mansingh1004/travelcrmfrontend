@@ -56,8 +56,10 @@ const VendorDetails = lazyPage(vendors, "VendorDetails");
 
 const reminders = () => import("@features/reminders");
 const mailbox = () => import("@features/mailbox");
+const whatsapp = () => import("@features/whatsapp");
 const Reminders = lazyPage(reminders, "Reminders");
 const Mailbox = lazyPage(mailbox, "Mailbox");
+const WhatsAppInbox = lazyPage(whatsapp, "WhatsAppInbox");
 const CreateReminder = lazyPage(reminders, "CreateReminder");
 const BookingReminders = lazyPage(reminders, "BookingReminders");
 const Notifications = lazyPage(reminders, "Notifications");
@@ -99,6 +101,7 @@ const Dashboard = lazyPage(() => import("@features/dashboard"), "Dashboard");
 const TrashPage = lazyPage(() => import("@features/trash"), "TrashPage");
 const Calendar = lazyPage(() => import("@features/calendar"), "Calendar");
 const AllTasks = lazyPage(() => import("@features/calendar"), "AllTasks");
+const Operations = lazyPage(() => import("@features/operations"), "Operations");
 
 // ── Platform SuperAdmin Console — SEPARATE realm (own token "sa_token", violet/dark theme) ──
 const consoleFeature = () => import("@/console");
@@ -332,6 +335,7 @@ const AppRouter = () => {
                 element={
                   isFleetOnly() ? <Navigate to="/fleet" replace />
                     : isSubAgent() ? <Navigate to="/allleads" replace />
+                    : !hasModule("DASHBOARD") ? <Navigate to={hasPermission(P.BOOKING_READ) ? "/Allbookings" : hasPermission(P.LEAD_READ) ? "/allleads" : "/CompanyProfile"} replace />
                     : <Dashboard />
                 }
               />
@@ -373,11 +377,21 @@ const AppRouter = () => {
               <Route path="CreateVendor" element={<CreateVendor />} />
               <Route path="Reminders" element={<Reminders />} />
               <Route path="Mailbox" element={<Guard allow={hasPermission(P.COMM_READ) && hasModule("COMMUNICATION")}><Mailbox /></Guard>} />
+              {/* Same gate as Mailbox: it reads the same conversations table behind the same
+                  COMM_READ authority and the same plan module. */}
+              <Route path="WhatsApp" element={<Guard allow={hasPermission(P.COMM_READ) && hasModule("COMMUNICATION")}><WhatsAppInbox /></Guard>} />
               {/* Task & Team Calendar (gated by TASK_READ; sub-agents get a row-scoped personal calendar) */}
               <Route path="calendar" element={<Guard allow={hasPermission(P.TASK_READ)}><Calendar /></Guard>} />
               {/* All Tasks list — same TASK_READ gate and the same TASKS module as the calendar.
               Rows are scoped per caller by the backend, so a sub-agent sees their own slice. */}
               <Route path="tasks" element={<Guard allow={hasPermission(P.TASK_READ)}><AllTasks /></Guard>} />
+
+              {/* Booking Operations — deliberately SEPARATE from the team calendar above.
+              Different consumer (ops executive, not the selling agent) and different date
+              semantics: a booking is a span, a task is a point. Gated on BOOKING_READ because
+              the board shows booking data and nothing else — a new OPS_* permission would be a
+              second name for the same access. */}
+              <Route path="operations" element={<Guard allow={hasPermission(P.BOOKING_READ) && hasModule("BOOKINGS")}><Operations /></Guard>} />
 
               <Route path="createquotation" element={<Guard allow={(hasPermission(P.QUOTATION_CREATE) || hasPermission(P.QUOTATION_UPDATE)) && hasPermission(P.LEAD_READ)}><CreateQuotation /></Guard>} />
               {/*
@@ -424,7 +438,7 @@ const AppRouter = () => {
               <Route path="WhatsAppConfiguration" element={<Guard allow={hasPermission(P.SETTINGS_MANAGE)}><WhatsAppConfiguration /></Guard>} />
               <Route path="LeadSources" element={<Guard allow={hasPermission(P.SETTINGS_MANAGE)}><LeadSources /></Guard>} />
               <Route path="SubscriptionInfo" element={<Guard allow={!isSubAgent()}><SubscriptionInfo /></Guard>} />
-              <Route path="Dashboard" element={<Guard allow={!isSubAgent()}><Dashboard /></Guard>} />
+              <Route path="Dashboard" element={<Guard allow={!isSubAgent() && hasModule("DASHBOARD")}><Dashboard /></Guard>} />
               <Route path="trash" element={<Guard allow={hasPermission(P.TRASH_VIEW)}><TrashPage /></Guard>} />
               <Route path="/EditVendor/:id" element={<EditVendor />} />
               <Route path="/EditCustomer/:id" element={<EditCustomer />} />

@@ -53,6 +53,14 @@ export default function TravellerCountFields({
      untouched; the booking form turns them off because its Room Requirement rows own that number
      there, and two editors for one value is how they drift apart. */
   showRooms = true,
+  /* Narrow the single "Total Travellers" box. It is one number and the default max-w-sm gives it
+     384px, most of which is empty rule. Opt-in so the booking form, which shares this component,
+     keeps the width it was laid out against. */
+  narrowTotal = false,
+  /* Lets a host keep one closely-related control in the same responsive row without duplicating
+     the traveller and room counters. Create Lead uses this for Budget; other callers keep the
+     existing two-column layout. */
+  additionalGroup = null,
 }) {
   const tone = THEMES[theme] || THEMES.blue;
   const error = getAdultBreakdownError(values);
@@ -85,14 +93,21 @@ export default function TravellerCountFields({
      which put "Adult Male / Adult Female" under the Rooms column on a wide screen — the one place
      it must never appear to belong.
 
-     The 3:2 template is applied ONLY when the Rooms group is actually rendered. It used to be
-     unconditional, so with showRooms={false} the grid still reserved two fifths of the row for a
-     column containing nothing — the traveller counters were laid out in 60% of the space with 40%
-     held empty beside them. That is what was truncating "Adult Female" to "Adult…": not the
-     max-width cap, which never even came into play, but a phantom Rooms column. Booking is the
-     caller that turns rooms off, which is why only that form showed it. */
+     The 3:2 template applies ONLY when the Rooms group is actually rendered. Unconditional, it left
+     showRooms={false} reserving two fifths of the row for a column containing nothing — the
+     traveller counters laid out in 60% of the space with 40% held empty beside them. That phantom
+     Rooms column, not the max-width cap, is what truncated "Adult Female" to "Adult…". Booking is
+     the caller that turns rooms off, which is why only that form showed it. */
   return (
-    <div className={`grid items-start gap-3 ${showRooms ? "lg:grid-cols-[3fr_2fr]" : ""}`}>
+    <div className={`grid items-start gap-3 ${
+      additionalGroup
+        ? showRooms
+          ? "lg:grid-cols-3"
+          : "lg:grid-cols-2"
+        : showRooms
+          ? "lg:grid-cols-[3fr_2fr]"
+          : ""
+    }`}>
       <fieldset className="min-w-0 border-0 p-0">
         <legend className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-slate-400">
           Travellers
@@ -114,14 +129,15 @@ export default function TravellerCountFields({
             breakdown adding up to 5. Read-only, computed from the four counters below, it cannot
             disagree with them. Adults are set through Adult Male / Adult Female, which is where
             setAdultCount already recomputes totalAdults from. */}
-        {/* max-w-md, was max-w-sm (384px).
-            At 384 a 2-up tile is ~187px, and once the icon, the gaps and the number box take their
-            ~100px the label is left with about 85 — which is under what "Adult Female" needs at
-            text-xs semibold, so it truncated to "A…". Two counters that both read "A…" are not a
-            breakdown. 448px puts the label budget over 110px and every label fits with room to
-            spare; the tiles stay capped so they never stretch into one long bar on a wide column. */}
         {showBreakdown ? (
-          <div className="max-w-md">
+          <div className={
+            /* max-w-md, not max-w-sm (384px), on the plain path. At 384 a 2-up tile is ~187px, and
+               once the icon, the gaps and the number box take their ~100px the label is left with
+               about 85 — under what "Adult Female" needs at text-xs semibold. 448px puts the label
+               budget over 110px and every label fits. narrowTotal and additionalGroup callers set
+               their own width and are unaffected. */
+            narrowTotal ? "max-w-[240px]" : additionalGroup ? "w-full" : "max-w-md"
+          }>
             {expanded ? (
               <div className={`flex items-center gap-2 rounded-lg border bg-slate-50 px-2.5 py-2 ${
                 error ? "border-red-300" : "border-slate-200"
@@ -179,7 +195,7 @@ export default function TravellerCountFields({
                 other way. The max-width lands them between the two — longer than the original
                 tiles, not as long as the Total box above. 2×2 also stays tidy, which a 3-column
                 layout of four counters does not. */}
-            <div className="grid max-w-md grid-cols-2 gap-2.5">
+            <div className={`grid grid-cols-2 gap-2.5 ${additionalGroup ? "max-w-sm" : "max-w-md"}`}>
               <CountInput name="male" label="Adult Male" icon={Mars} value={values.male} onChange={onCountChange} invalid={Boolean(error)} focusClass={tone.focus} />
               <CountInput name="female" label="Adult Female" icon={Venus} value={values.female} onChange={onCountChange} invalid={Boolean(error)} focusClass={tone.focus} />
               <CountInput name="children" label="Children" icon={Users} value={values.children} onChange={onCountChange} focusClass={tone.focus} />
@@ -191,6 +207,8 @@ export default function TravellerCountFields({
           </div>
         )}
       </fieldset>
+
+      {additionalGroup}
 
       {showRooms && (
         <fieldset className="min-w-0 border-0 p-0">

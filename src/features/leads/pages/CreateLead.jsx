@@ -1,770 +1,3 @@
-// import { useState, useCallback } from "react";
-// import { useForm ,useWatch} from "react-hook-form";
-// import { useNavigate } from "react-router-dom";
-// import { ArrowLeft as FiArrowLeft, Save as FiSave, CircleCheck as FiCheckCircle, Loader as FiLoader, FileText as FiFileText } from "lucide-react";
-// import { leadService } from "../api/leadService";
-// import { useToast } from "@shared/ui/toast";
-// import { getErrorMessage, getFieldErrors, isAlreadyReported } from "@shared/api/apiError";
-
-// import LeadInformation from "../components/LeadInformation";
-// import TravelDetails from "../components/TravelDetails";
-// import ServicesSection from "../components/ServicesSection";
-// import ItinerarySection from "../components/ItinerarySection";
-// import LeadSummary from "../components/LeadSummary";
-
-// let nextId = 1;
-
-// export default function CreateLead() {
-//   const navigate = useNavigate();
-
-//   const {
-//     register, handleSubmit, watch, setValue, setError, getValues,
-//     formState: { errors },
-//     reset,
-//   } = useForm({
-//     // ── SMART DEFAULTS: form khulte hi ye auto-selected honge ──
-//     // User change kar sakta hai; reset() ke baad bhi yehi defaults aayenge.
-//     defaultValues: {
-//       customerName: "", phone: "", email: "",
-//       // ── budget field ──
-//       budget: "",
-//       leadSource: "Direct Call",   // ← default: Direct Call
-//       leadType: "Fresh Lead",      // ← default: Fresh Lead
-//       leadStage: "New Lead",
-//       assignTo: "",
-//       assignedUserId: "",          // ← logged-in user auto-select hota hai (LeadInformation mein)
-//       birthDate: "",
-//       travelDate: "", departCountry: "India", departCity: "",
-//       // adults ab derived hai (male + female) — TravelDetails ise auto set karta hai
-//       rooms: 1, male: 1, female: 1, adults: 2, children: 0, handicap: 0, infants: 0, extraBeds: 0,
-//       notes: "",
-//     },
-//   });
-
-//   console.log(handleSubmit)
-//   const [selectedServices, setSelectedServices] = useState(["hotel"]);
-//   const [itinerary, setItinerary] = useState([{ id: nextId++, destination: "", city: "", nights: 2 }]);
-//   const [submitting, setSubmitting] = useState(false);
-//   const [savingDraft, setSavingDraft] = useState(false);
-//   const [searching, setSearching] = useState(false);
-
-//   // Centralized toaster: <ToastHost/> (mounted beside the router in App.jsx) renders it.
-//   // Argument order is (message, type) everywhere — see shared/ui/toast.jsx.
-//   const { showToast } = useToast();
-
-//   const toggleService = useCallback((id) => {
-//     setSelectedServices((prev) =>
-//       prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]
-//     );
-//   }, []);
-
-//   const addItineraryRow = () => {
-//     setItinerary((prev) => [...prev, { id: nextId++, destination: "", city: "", nights: 2 }]);
-//   };
-
-//   const removeItineraryRow = (id) => {
-//     setItinerary((prev) => prev.filter((r) => r.id !== id));
-//   };
-
-//   const updateItineraryRow = (id, field, value) => {
-//     setItinerary((prev) => prev.map((r) => r.id === id ? { ...r, [field]: value } : r));
-//   };
-
-//   /**
-//    * A 400 VALIDATION_ERROR carries `fieldErrors`, and those belong beside the input that caused
-//    * them — never in a toast. Anything the form doesn't actually render (an unknown key, or a
-//    * non-validation failure) still has to be said out loud, so that falls back to the toast.
-//    */
-//   const applyServerFieldErrors = (error, fallback) => {
-//     const fieldErrors = getFieldErrors(error) || {};
-//     const formFields = getValues();
-//     const inline = Object.keys(fieldErrors).filter((name) => name in formFields);
-
-//     inline.forEach((name) => setError(name, { type: "server", message: fieldErrors[name] }));
-
-//     if (inline.length === 0) showToast(getErrorMessage(error, fallback), "error");
-//   };
-
-//   const onSubmit = async (data) => {
-//     if (selectedServices.length === 0) {
-//       showToast("Please select at least one service.", "error");
-//       return;
-//     }
-
-//     setSubmitting(true);
-
-//     try {
-//       // ── budget is already inside `data` via register("budget") ──
-//       // normalize empty string → null so the backend doesn't receive ""
-//       const payload = {
-//         ...data,
-//         budget: data.budget === "" || data.budget == null ? null : Number(data.budget),
-//       };
-
-//       const response = await leadService.createLead(
-//         payload,
-//         selectedServices,
-//         itinerary
-//       );
-
-//       console.log("Lead Created:", response.data);
-
-//       showToast(`Lead for "${data.customerName}" created successfully!`, "success");
-
-//       reset();
-//       setSelectedServices(["hotel"]);
-//       setItinerary([{ id: nextId++, destination: "", city: "", nights: 2 }]);
-
-//       // ── Navigate to All Leads after 1.2s so user sees the success toast ──
-//       setTimeout(() => navigate("/allleads"), 1200);
-
-//     } catch (error) {
-//       if (isAlreadyReported(error)) return;   // the interceptor's toast already said it
-
-//       applyServerFieldErrors(error, "Failed to create lead. Try again.");
-
-//     } finally {
-//       setSubmitting(false);
-//     }
-//   };
-
-//   const onSaveDraft = async () => {
-//     const data = watch();
-//     setSavingDraft(true);
-//     await new Promise((r) => setTimeout(r, 1000));
-//     console.log("Draft saved:", data);
-//     setSavingDraft(false);
-//     showToast("Draft saved successfully!", "success");
-//   };
-
-//   const handlePhoneSearch = async (phone) => {
-//     if (!phone?.trim()) return;
-
-//     setSearching(true);
-
-//     try {
-//       const res = await leadService.searchByPhone(phone);
-
-//       const lead = res.data;
-
-//       setValue("customerName", lead.customerName || "");
-//       setValue("email", lead.email || "");
-//       setValue("leadSource", lead.leadSource || "");
-//       setValue("leadType", lead.leadType || "");
-//       setValue("leadStage", lead.leadStage || "");
-//       setValue("assignTo", lead.assignTo || "");
-//       // ── prefill budget on phone-match too ──
-//       if (lead.budget != null) setValue("budget", lead.budget);
-
-//       showToast(`Lead found: ${lead.customerName}`, "success");
-
-//     } catch (error) {
-//       if (isAlreadyReported(error)) return;
-
-//       // "No match" is the expected 404 and is not a failure the user needs alarming about.
-//       // Anything else (a 400, a conflict) must not be disguised as an empty result.
-//       const notFound = error?.response?.status === 404;
-//       showToast(
-//         notFound
-//           ? "No existing lead found for this phone number."
-//           : getErrorMessage(error, "Couldn't search by phone number."),
-//         notFound ? "info" : "error"
-//       );
-
-//     } finally {
-//       setSearching(false);
-//     }
-//   };
-
-//   return (
-//     <div className="min-h-screen bg-slate-50 font-sans">
-//       {/* Page Header */}
-//       <div className="bg-white border-b border-slate-100">
-//         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5">
-//           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-//             <div className="flex items-center gap-4">
-//               <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-blue-600 to-blue-400 flex items-center justify-center shadow-md shadow-blue-200">
-//                 <FiFileText className="w-5 h-5 text-white" />
-//               </div>
-//               <div>
-//                 <h1 className="text-xl font-extrabold text-slate-800 tracking-tight">Create New Lead</h1>
-//                 <p className="text-sm text-slate-500 mt-0.5">Manage customer travel enquiries efficiently</p>
-//               </div>
-//             </div>
-//             <button onClick={() => navigate("/allleads")}
-//               type="button"
-//               className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 hover:border-blue-300
-//                 text-sm font-semibold text-slate-600 hover:text-blue-600 bg-white hover:bg-blue-50 transition-all shadow-sm"
-//             >
-//               <FiArrowLeft className="w-4 h-4" />
-//               Back to Leads
-//             </button>
-//           </div>
-//         </div>
-//       </div>
-
-//       {/* Main Content */}
-//       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-//         <form onSubmit={handleSubmit(onSubmit)} noValidate>
-//           <div className="flex flex-col lg:flex-row gap-6">
-//             {/* Left Column */}
-//             <div className="flex-1 min-w-0 space-y-6">
-//               <LeadInformation
-//                 mode="create"
-//                 register={register}
-//                 errors={errors}
-//                 watch={watch}
-//                 setValue={setValue}
-//                 onPhoneSearch={handlePhoneSearch}
-//                 searching={searching}
-//               />
-//               <TravelDetails
-//                 register={register}
-//                 watch={watch}
-//                 setValue={setValue}
-//                 getValues={getValues}
-//               />
-//               <ServicesSection
-//                 selectedServices={selectedServices}
-//                 onToggle={toggleService}
-//               />
-//               <ItinerarySection
-//                 itinerary={itinerary}
-//                 onAdd={addItineraryRow}
-//                 onRemove={removeItineraryRow}
-//                 onUpdate={updateItineraryRow}
-//               />
-
-//               {/* Notes */}
-//               <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-//                 <div className="bg-gradient-to-r from-amber-500 to-orange-400 px-6 py-4 flex items-center gap-3">
-//                   <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center">
-//                     <FiFileText className="w-4 h-4 text-white" />
-//                   </div>
-//                   <div>
-//                     <h2 className="text-white font-bold text-base">Customer Notes</h2>
-//                     <p className="text-amber-100 text-xs">Special requirements, budget, preferences</p>
-//                   </div>
-//                 </div>
-//                 <div className="p-6">
-//                   <textarea
-//                     {...register("notes")}
-//                     rows={5}
-//                     placeholder="Enter customer requirements, special requests, budget, preferred hotels, destinations, dietary needs, accessibility requirements, etc."
-//                     className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white text-sm text-slate-700 placeholder-slate-400
-//                       focus:border-amber-400 focus:ring-2 focus:ring-amber-50 outline-none transition-all resize-none"
-//                   />
-//                 </div>
-//               </div>
-
-//               {/* Submit Buttons */}
-//               <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
-//                 <div className="flex flex-col sm:flex-row items-center gap-3">
-//                   <button
-//                     type="button"
-//                     onClick={onSaveDraft}
-//                     disabled={savingDraft || submitting}
-//                     className="w-full sm:w-auto flex items-center justify-center gap-2.5 px-6 py-3 rounded-xl
-//                       border-2 border-slate-300 hover:border-slate-400 text-slate-600 hover:text-slate-800
-//                       font-semibold text-sm transition-all disabled:opacity-50 bg-white hover:bg-slate-50"
-//                   >
-//                     {savingDraft ? (
-//                       <FiLoader className="w-4 h-4 animate-spin" />
-//                     ) : (
-//                       <FiSave className="w-4 h-4" />
-//                     )}
-//                     {savingDraft ? "Saving Draft..." : "Save Draft"}
-//                   </button>
-
-//                   <button
-//                     type="submit"
-//                     disabled={submitting || savingDraft}
-//                     className="w-full sm:flex-1 flex items-center justify-center gap-2.5 px-8 py-3 rounded-xl
-//                       bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold text-sm
-//                       transition-all shadow-md shadow-blue-200 hover:shadow-lg hover:shadow-blue-300
-//                       disabled:opacity-60 disabled:cursor-not-allowed"
-//                   >
-//                     {submitting ? (
-//                       <>
-//                         <FiLoader className="w-4 h-4 animate-spin" />
-//                         Creating Lead...
-//                       </>
-//                     ) : (
-//                       <>
-//                         <FiCheckCircle className="w-4 h-4" />
-//                         Create Lead
-//                       </>
-//                     )}
-//                   </button>
-//                 </div>
-
-//                 <p className="text-center text-xs text-slate-400 mt-3">
-//                   Fields marked with <span className="text-red-500">*</span> are required.
-//                   Customer name and phone are mandatory.
-//                 </p>
-//               </div>
-//             </div>
-
-//             {/* Right Sidebar */}
-//             <div className="w-full lg:w-72 xl:w-80 flex-shrink-0">
-//               <div className="lg:sticky lg:top-20">
-//                 <LeadSummary
-//                   watch={watch}
-//                   selectedServices={selectedServices}
-//                   itinerary={itinerary}
-//                 />
-//               </div>
-//             </div>
-//           </div>
-//         </form>
-//       </div>
-
-//       <style>{`
-//         @keyframes slide-in {
-//           from { transform: translateX(100%); opacity: 0; }
-//           to { transform: translateX(0); opacity: 1; }
-//         }
-//         .animate-slide-in { animation: slide-in 0.3s ease-out; }
-//       `}</style>
-//     </div>
-//   );
-// }
-
-
-
-
-
-
-
-
-
-// ─────────────────────────────────────────────────────────────────────────────
-// OLD — replaced in create-form redesign. Kept verbatim, commented, for review/rollback.
-//
-// Why it was replaced (see the audit): validation only fired on submit (useForm had no mode),
-// the duplicate lookup hung off a SECOND phone box and read the wrong envelope level so a match
-// blanked the form, "Save Draft" toasted success while persisting nothing, there was no
-// save-and-add-another, no autofocus, and the page ran ~3.5 screens tall behind six differently
-// coloured gradient headers. The replacement lives directly below this block.
-// ─────────────────────────────────────────────────────────────────────────────
-
-// import { useState, useCallback } from "react";
-// import { useForm } from "react-hook-form";
-// import { useNavigate } from "react-router-dom";
-// import {
-//   ArrowLeft as FiArrowLeft,
-//   Save as FiSave,
-//   CircleCheck as FiCheckCircle,
-//   Loader as FiLoader,
-//   FileText as FiFileText,
-// } from "lucide-react";
-// import { leadService } from "../api/leadService";
-// import { useToast } from "@shared/ui/toast";
-// import { getErrorMessage, getFieldErrors, isAlreadyReported } from "@shared/api/apiError";
-//
-// import LeadInformation from "../components/LeadInformation";
-// import TravelDetails from "../components/TravelDetails";
-// import ServicesSection from "../components/ServicesSection";
-// import ItinerarySection from "../components/ItinerarySection";
-// import LeadSummary from "../components/LeadSummary";
-//
-// let nextId = 1;
-//
-// const toPayloadCount = (value, min = 0) => {
-//   const numberValue = Number(value);
-//
-//   if (!Number.isFinite(numberValue)) {
-//     return min;
-//   }
-//
-//   return Math.max(min, Math.floor(numberValue));
-// };
-//
-// const getCreateLeadPassengerTotals = (values = {}) => {
-//   const male = toPayloadCount(values.male);
-//   const female = toPayloadCount(values.female);
-//   const totalAdults = male + female;
-//   const children = toPayloadCount(values.children);
-//   const infants = toPayloadCount(values.infants);
-//
-//   return {
-//     totalAdults,
-//     children,
-//     infants,
-//     rooms: toPayloadCount(values.rooms, 1),
-//     extraBeds: toPayloadCount(values.extraBeds),
-//   };
-// };
-//
-// export default function CreateLead() {
-//   const navigate = useNavigate();
-//
-//   const {
-//     register, handleSubmit, watch, setValue, setError, getValues, clearErrors, trigger,
-//     formState: { errors },
-//     reset,
-//   } = useForm({
-//     // ── SMART DEFAULTS: form khulte hi ye auto-selected honge ──
-//     // User change kar sakta hai; reset() ke baad bhi yehi defaults aayenge.
-//     defaultValues: {
-//       customerName: "", phone: "", email: "",
-//       // ── budget field ──
-//       budget: "",
-//       leadSource: "Direct Call",   // ← default: Direct Call
-//       leadType: "Fresh Lead",      // ← default: Fresh Lead
-//       leadStage: "New Lead",
-//       assignTo: "",
-//       assignedUserId: "",          // ← logged-in user auto-select hota hai (LeadInformation mein)
-//       birthDate: "",
-//       anniversaryDate: "",
-//       preferredCommunication: "",
-//       followUpDate: "",
-//       packageType: "",
-//       travelDate: "", departCountry: "India", departCity: "",
-//       departureMode: "",
-//       departureAirport: "", airportCode: "", preferredFlightTime: "",
-//       railwayStation: "", trainClass: "", preferredTrainTime: "",
-//       pickupAddress: "", pickupDateTime: "", vehiclePreference: "",
-//       male: 1,
-//       female: 1,
-//       totalAdults: 2,
-//       children: 0,
-//       infants: 0,
-//       rooms: 1,
-//       extraBeds: 0,
-//       specialAssistanceRequired: false,
-//       specialAssistanceTypes: [],
-//       assistancePassengerCount: 0,
-//       specialAssistanceNotes: "",
-//       notes: "",
-//     },
-//   });
-//
-//   /* LeadSummary used to need a translating shim here, because this form called the fields
-//      male/female/totalAdults while the summary read male/female/adults. The form and
-//      the summary now share one set of names, so the shim is gone and `watch` goes straight in. */
-//
-//   const [selectedServices, setSelectedServices] = useState(["hotel"]);
-//   const [itinerary, setItinerary] = useState([{ id: nextId++, destination: "", city: "", nights: 2 }]);
-//   const [submitting, setSubmitting] = useState(false);
-//   const [savingDraft, setSavingDraft] = useState(false);
-//   const [searching, setSearching] = useState(false);
-//
-//   // Centralized toaster: <ToastHost/> (mounted beside the router in App.jsx) renders it.
-//   // Argument order is (message, type) everywhere — see shared/ui/toast.jsx.
-//   const { showToast } = useToast();
-//
-//   const toggleService = useCallback((id) => {
-//     setSelectedServices((prev) =>
-//       prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]
-//     );
-//   }, []);
-//
-//   const addItineraryRow = () => {
-//     setItinerary((prev) => [...prev, { id: nextId++, destination: "", city: "", nights: 2 }]);
-//   };
-//
-//   const removeItineraryRow = (id) => {
-//     setItinerary((prev) => prev.filter((r) => r.id !== id));
-//   };
-//
-//   const updateItineraryRow = (id, field, value) => {
-//     setItinerary((prev) => prev.map((r) => r.id === id ? { ...r, [field]: value } : r));
-//   };
-//
-//   /**
-//    * A 400 VALIDATION_ERROR carries `fieldErrors`, and those belong beside the input that caused
-//    * them — never in a toast. Anything the form doesn't actually render (an unknown key, or a
-//    * non-validation failure) still has to be said out loud, so that falls back to the toast.
-//    */
-//   const applyServerFieldErrors = (error, fallback) => {
-//     const fieldErrors = getFieldErrors(error) || {};
-//     const formFields = getValues();
-//     const inline = Object.keys(fieldErrors).filter((name) => name in formFields);
-//
-//     inline.forEach((name) => setError(name, { type: "server", message: fieldErrors[name] }));
-//
-//     if (inline.length === 0) showToast(getErrorMessage(error, fallback), "error");
-//   };
-//
-//   const onSubmit = async (data) => {
-//     if (selectedServices.length === 0) {
-//       showToast("Please select at least one service.", "error");
-//       return;
-//     }
-//
-//     setSubmitting(true);
-//
-//     try {
-//       const passengerTotals = getCreateLeadPassengerTotals(data);
-//
-//       // Backend payload wiring for adult gender split and special assistance
-//       // details will be added after the API contract exists.
-//       // leadService keeps only currently supported lead fields before POST.
-//       const payload = {
-//         ...data,
-//         rooms: passengerTotals.rooms,
-//         adults: passengerTotals.totalAdults,
-//         children: passengerTotals.children,
-//         infants: passengerTotals.infants,
-//         extraBeds: passengerTotals.extraBeds,
-//         budget: data.budget === "" || data.budget == null ? null : Number(data.budget),
-//       };
-//
-//       const response = await leadService.createLead(
-//         payload,
-//         selectedServices,
-//         itinerary
-//       );
-//
-//       console.log("Lead Created:", response.data);
-//
-//       // ── Follow-up date → LeadLog → Reminder ──
-//       // Follow-up has no column on Lead, deliberately: the durable record is a LeadLog, and it is
-//       // LeadLogServiceImpl that raises the Reminder. The lead payload drops the `followUpDate`
-//       // key entirely, so this second call is the only reason the form's Follow-up Date field does
-//       // anything at all. Avoids a second source of truth for the same fact.
-//       const created = response?.data?.data ?? response?.data;
-//       const leadPublicId = created?.id || created?.publicId;
-//       if (leadPublicId && data.followUpDate) {
-//         try {
-//           await leadService.addLog(leadPublicId, {
-//             comment: `Follow-up scheduled for ${data.followUpDate} at lead creation.`,
-//             createReminder: true,
-//             followUpDate: data.followUpDate,
-//             stage: data.leadStage || null,
-//           });
-//         } catch {
-//           // The lead itself is already saved — a failed follow-up log must not be reported as a
-//           // failed create, or the agent re-submits and duplicates the lead.
-//           showToast("Lead created, but the follow-up reminder could not be scheduled.", "warning");
-//         }
-//       }
-//
-//       showToast(`Lead for "${data.customerName}" created successfully!`, "success");
-//
-//       reset();
-//       setSelectedServices(["hotel"]);
-//       setItinerary([{ id: nextId++, destination: "", city: "", nights: 2 }]);
-//
-//       // ── Navigate to All Leads after 1.2s so user sees the success toast ──
-//       setTimeout(() => navigate("/allleads"), 1200);
-//
-//     } catch (error) {
-//       if (isAlreadyReported(error)) return;   // the interceptor's toast already said it
-//
-//       applyServerFieldErrors(error, "Failed to create lead. Try again.");
-//
-//     } finally {
-//       setSubmitting(false);
-//     }
-//   };
-//
-//   const onSaveDraft = async () => {
-//     const data = getValues();
-//     setSavingDraft(true);
-//     await new Promise((r) => setTimeout(r, 1000));
-//     console.log("Draft saved:", data);
-//     setSavingDraft(false);
-//     showToast("Draft saved successfully!", "success");
-//   };
-//
-//   const handlePhoneSearch = async (phone) => {
-//     if (!phone?.trim()) return;
-//
-//     setSearching(true);
-//
-//     try {
-//       const res = await leadService.searchByPhone(phone);
-//
-//       const lead = res.data;
-//
-//       setValue("customerName", lead.customerName || "");
-//       setValue("email", lead.email || "");
-//       setValue("leadSource", lead.leadSource || "");
-//       setValue("leadType", lead.leadType || "");
-//       setValue("leadStage", lead.leadStage || "");
-//       setValue("assignTo", lead.assignTo || "");
-//       // ── prefill budget on phone-match too ──
-//       if (lead.budget != null) setValue("budget", lead.budget);
-//
-//       showToast(`Lead found: ${lead.customerName}`, "success");
-//
-//     } catch (error) {
-//       if (isAlreadyReported(error)) return;
-//
-//       // "No match" is the expected 404 and is not a failure the user needs alarming about.
-//       // Anything else (a 400, a conflict) must not be disguised as an empty result.
-//       const notFound = error?.response?.status === 404;
-//       showToast(
-//         notFound
-//           ? "No existing lead found for this phone number."
-//           : getErrorMessage(error, "Couldn't search by phone number."),
-//         notFound ? "info" : "error"
-//       );
-//
-//     } finally {
-//       setSearching(false);
-//     }
-//   };
-//
-//   return (
-//     <div className="min-h-screen bg-slate-50 font-sans">
-//       {/* Page Header */}
-//       <div className="bg-white border-b border-slate-100">
-//         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5">
-//           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-//             <div className="flex items-center gap-4">
-//               <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-blue-600 to-blue-400 flex items-center justify-center shadow-md shadow-blue-200">
-//                 <FiFileText className="w-5 h-5 text-white" />
-//               </div>
-//               <div>
-//                 <h1 className="text-xl font-extrabold text-slate-800 tracking-tight">Create New Lead</h1>
-//                 <p className="text-sm text-slate-500 mt-0.5">Manage customer travel enquiries efficiently</p>
-//               </div>
-//             </div>
-//             <button onClick={() => navigate("/allleads")}
-//               type="button"
-//               className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 hover:border-blue-300
-//                 text-sm font-semibold text-slate-600 hover:text-blue-600 bg-white hover:bg-blue-50 transition-all shadow-sm"
-//             >
-//               <FiArrowLeft className="w-4 h-4" />
-//               Back to Leads
-//             </button>
-//           </div>
-//         </div>
-//       </div>
-//
-//       {/* Main Content */}
-//       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-//         <form onSubmit={handleSubmit(onSubmit)} noValidate>
-//           <div className="flex flex-col lg:flex-row gap-6">
-//             {/* Left Column */}
-//             <div className="flex-1 min-w-0 space-y-6">
-//               <LeadInformation
-//                 mode="create"
-//                 register={register}
-//                 errors={errors}
-//                 watch={watch}
-//                 setValue={setValue}
-//                 onPhoneSearch={handlePhoneSearch}
-//                 searching={searching}
-//               />
-//               <TravelDetails
-//                 register={register}
-//                 watch={watch}
-//                 setValue={setValue}
-//                 getValues={getValues}
-//                 errors={errors}
-//                 clearErrors={clearErrors}
-//                 trigger={trigger}
-//               />
-//               <ServicesSection
-//                 selectedServices={selectedServices}
-//                 onToggle={toggleService}
-//               />
-//               <ItinerarySection
-//                 itinerary={itinerary}
-//                 onAdd={addItineraryRow}
-//                 onRemove={removeItineraryRow}
-//                 onUpdate={updateItineraryRow}
-//               />
-//
-//               {/* Notes */}
-//               <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-//                 <div className="bg-gradient-to-r from-amber-500 to-orange-400 px-6 py-4 flex items-center gap-3">
-//                   <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center">
-//                     <FiFileText className="w-4 h-4 text-white" />
-//                   </div>
-//                   <div>
-//                     <h2 className="text-white font-bold text-base">Customer Notes</h2>
-//                     <p className="text-amber-100 text-xs">Special requirements, budget, preferences</p>
-//                   </div>
-//                 </div>
-//                 <div className="p-6">
-//                   <textarea
-//                     {...register("notes")}
-//                     rows={5}
-//                     placeholder="Enter customer requirements, special requests, budget, preferred hotels, destinations, dietary needs, accessibility requirements, etc."
-//                     className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white text-sm text-slate-700 placeholder-slate-400
-//                       focus:border-amber-400 focus:ring-2 focus:ring-amber-50 outline-none transition-all resize-none"
-//                   />
-//                 </div>
-//               </div>
-//
-//               {/* Submit Buttons */}
-//               <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
-//                 <div className="flex flex-col sm:flex-row items-center gap-3">
-//                   <button
-//                     type="button"
-//                     onClick={onSaveDraft}
-//                     disabled={savingDraft || submitting}
-//                     className="w-full sm:w-auto flex items-center justify-center gap-2.5 px-6 py-3 rounded-xl
-//                       border-2 border-slate-300 hover:border-slate-400 text-slate-600 hover:text-slate-800
-//                       font-semibold text-sm transition-all disabled:opacity-50 bg-white hover:bg-slate-50"
-//                   >
-//                     {savingDraft ? (
-//                       <FiLoader className="w-4 h-4 animate-spin" />
-//                     ) : (
-//                       <FiSave className="w-4 h-4" />
-//                     )}
-//                     {savingDraft ? "Saving Draft..." : "Save Draft"}
-//                   </button>
-//
-//                   <button
-//                     type="submit"
-//                     disabled={submitting || savingDraft}
-//                     className="w-full sm:flex-1 flex items-center justify-center gap-2.5 px-8 py-3 rounded-xl
-//                       bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold text-sm
-//                       transition-all shadow-md shadow-blue-200 hover:shadow-lg hover:shadow-blue-300
-//                       disabled:opacity-60 disabled:cursor-not-allowed"
-//                   >
-//                     {submitting ? (
-//                       <>
-//                         <FiLoader className="w-4 h-4 animate-spin" />
-//                         Creating Lead...
-//                       </>
-//                     ) : (
-//                       <>
-//                         <FiCheckCircle className="w-4 h-4" />
-//                         Create Lead
-//                       </>
-//                     )}
-//                   </button>
-//                 </div>
-//
-//                 <p className="text-center text-xs text-slate-400 mt-3">
-//                   Fields marked with <span className="text-red-500">*</span> are required.
-//                   Customer name and phone are mandatory.
-//                 </p>
-//               </div>
-//             </div>
-//
-//             {/* Right Sidebar */}
-//             <div className="w-full lg:w-72 xl:w-80 flex-shrink-0">
-//               <div className="lg:sticky lg:top-20">
-//                 <LeadSummary
-//                   watch={watch}
-//                   selectedServices={selectedServices}
-//                   itinerary={itinerary}
-//                 />
-//               </div>
-//             </div>
-//           </div>
-//         </form>
-//       </div>
-//
-//       <style>{`
-//         @keyframes slide-in {
-//           from { transform: translateX(100%); opacity: 0; }
-//           to { transform: translateX(0); opacity: 1; }
-//         }
-//         .animate-slide-in { animation: slide-in 0.3s ease-out; }
-//       `}</style>
-//     </div>
-//   );
-// }
-
 // ─────────────────────────────────────────────────────────────────────────────
 // NEW — create-form redesign.
 //
@@ -795,8 +28,8 @@ import {
   ArrowLeft,
   ArrowRight,
   BedDouble,
-  UtensilsCrossed,
   BookUser,
+  CalendarDays,
   Camera,
   CarFront,
   Check,
@@ -861,8 +94,8 @@ import { hasPermission, P } from "@shared/lib/access";
 import { usePdfDownload } from "@shared/hooks/usePdfDownload";
 import PdfDownloadLoader from "@shared/ui/PdfDownloadLoader";
 import { buildAdultPayload, deriveAdultBreakdown, getAdultBreakdownError } from "@shared/lib/adultBreakdown";
-import TravellerCountFields from "@shared/ui/TravellerCountFields";
 import DateRangeField from "@shared/ui/DateRangeField";
+import TravellerCountFields from "@shared/ui/TravellerCountFields";
 import { useToast } from "@shared/ui/toast";
 import { getErrorMessage, getFieldErrors, isAlreadyReported } from "@shared/api/apiError";
 import { phoneRule } from "@shared/lib/phone";
@@ -1026,12 +259,13 @@ const readSessionCount = () => {
 
 export const blankDefaults = () => ({
   customerName: "", phone: "", email: "", budget: "",
-  leadSource: "", leadType: "Fresh", leadStage: "New Lead",
+  // A lead created by a staff member starts as Manual Entry, so the required source dropdown is
+  // useful immediately instead of opening blank. Sticky state still overrides this with the last
+  // source used during the current entry session, and edit mode always loads the saved source.
+  leadSource: "Manual Entry", leadType: "Fresh", leadStage: "New Lead",
   assignedUserId: "", birthDate: "", anniversaryDate: "",
   preferredCommunication: "", followUpDate: "", packageType: "",
   travelDate: "", returnDate: "", departCountry: "India", departCity: "",
-  // What the customer ASKED for, not what a quotation later picked — see the V9 migration note.
-  hotelCategory: "", mealPlanPreference: "", dropAddress: "",
   departureMode: "", departureAirport: "", airportCode: "", preferredFlightTime: "",
   railwayStation: "", trainClass: "", preferredTrainTime: "",
   pickupAddress: "", pickupDateTime: "", vehiclePreference: "",
@@ -1040,6 +274,31 @@ export const blankDefaults = () => ({
   roomPlanEnabled: false,
   specialAssistanceRequired: false, specialAssistanceTypes: [],
   assistancePassengerCount: 0, specialAssistanceNotes: "",
+
+  /* ── Qualification fields — the veteran-agent model ─────────────────────────────────────────
+     These change how a quotation is BUILT, not just what is recorded about it: a honeymoon and
+     elderly parents are different hotels at the same budget, and "when will you decide" sorts the
+     callback list that "when do you travel" cannot.
+
+     ⚠ NONE OF THESE HAVE COLUMNS YET. They live in form state and are deliberately NOT in
+     transformFormData's payload, so a lead saved today drops them rather than 400ing on an unknown
+     property. That is the agreed order — UI first, migration after — and it is safe only because
+     the transform whitelists fields instead of spreading the form object. Do not "fix" it by
+     spreading; wire each field when its column lands. */
+  tripFor: "",
+  whatsappSame: true,
+  whatsappNumber: "",
+  occasion: "",
+  dateFlexibility: "EXACT",
+  dateNote: "",
+  decideBy: "",
+  /* "Total" or "PER_PERSON" — what the budget number MEANS. No column yet, like the rest of the
+     qualification set; it is here so the control has somewhere to live. */
+  budgetBasis: "TOTAL",
+  /* Source of truth; the child COUNT follows this array, not the other way round. */
+  childAges: [],
+  referredByName: "",
+  agentVerdict: "", competingQuote: false, qualificationNote: "",
   notes: "",
 });
 
@@ -1054,20 +313,6 @@ export const blankRow = () => ({ id: nextRowId++, destinationId: "", destination
 const hasCompleteStop = (rows) => (rows || []).some(
   (row) => String(row?.destination || "").trim() && String(row?.city || "").trim(),
 );
-
-/* What the customer ASKED for. Not the same thing as QuotationHotel.stars, which records the rating
-   of the hotel the agent eventually picked — this is the requirement, that is the fulfilment.
-   A datalist rather than a select: enquiries genuinely say "3-4 Star" and "Deluxe category", and a
-   closed list would force the agent to round the request to something the customer did not say. */
-const HOTEL_CATEGORY_SUGGESTIONS = ["Any", "2 Star", "3 Star", "3-4 Star", "4 Star", "4-5 Star", "5 Star"];
-
-/* Mirrors the quotation builder's MEAL_PLANS wording so the same phrase carries from enquiry to
-   quote. Kept local rather than imported: this is the request, quotation/Constants.js is what the
-   builder offers, and coupling them would make a change to one silently rewrite the other. */
-const MEAL_PLAN_SUGGESTIONS = [
-  "Room Only (EP)", "Breakfast Only (CP)", "Breakfast & Dinner (MAP)",
-  "Breakfast, Lunch & Dinner (AP)", "All Inclusive (AI)",
-];
 
 const ROOM_CATEGORY_OPTIONS = ["Any", "Standard", "Deluxe", "Premium", "Suite", "Family Room", "Villa"];
 const BED_PREFERENCE_OPTIONS = ["Any", "King", "Queen", "Twin", "Double", "Single", "Bunk"];
@@ -1109,8 +354,11 @@ const rebalanceRooms = (current, counts) => {
 };
 
 // ── Local presentational primitives — same shapes as CreateBookingClean's Panel/Field ──────────
+/* 34px, not 42. This form is 30-odd fields taken while somebody is on the phone, so the thing that
+   matters is how many of them are on screen at once — every 8px of control height costs roughly one
+   field off the fold. 13px text keeps that readable at a desk; going smaller would not. */
 const controlBase =
-  "w-full rounded-lg border bg-white py-2.5 text-sm text-slate-800 outline-none transition " +
+  "w-full rounded-xl border bg-white py-2.5 text-sm text-slate-800 outline-none transition " +
   "hover:border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-100";
 const control = (invalid, icon) =>
   `${controlBase} ${icon ? "pl-9 pr-3" : "px-3"} ${invalid ? "border-red-300 focus:border-red-400 focus:ring-red-100" : "border-slate-200"}`;
@@ -1175,7 +423,7 @@ function Panel({
   return (
     <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
       <div
-        className={`flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5 ${expanded ? "border-b border-slate-100" : ""}`}
+        className={`flex flex-col gap-2 px-4 py-2.5 sm:flex-row sm:items-center sm:justify-between ${expanded ? "border-b border-slate-100" : ""}`}
       >
         {collapsible ? (
           // data-skip-enter: Enter walks the form field to field (see FOCUSABLE); a header toggle is
@@ -1194,7 +442,7 @@ function Panel({
         )}
         {action}
       </div>
-      {expanded && <div className="p-4 sm:p-5">{children}</div>}
+      {expanded && <div className="px-4 pb-3.5 pt-3">{children}</div>}
     </section>
   );
 }
@@ -1357,47 +605,56 @@ function RequirementsAssistancePanel({
       )}
     >
       <div className="space-y-4">
-        <Field id="notes" label="General Requirements" optional hint="Hotels, meals, budget, occasion and other trip-wide preferences.">
+        {/* One instruction, in one place. This field carried a hint AND a placeholder that said
+            the same thing in two different wordings — "Anything else they said — hotel, food,
+            occasion, special requests." above the box and "Preferred hotels, meals, budget,
+            occasion and other trip requirements" inside it. Two phrasings of one rule read as two
+            rules, and the agent stops to work out the difference.
+
+            The placeholder wins because it is where the eye already is when the box is empty, and
+            it disappears once there is something to read instead. */}
+        <Field id="notes" label="Notes" optional>
           <textarea
             {...register("notes")}
             id="notes"
             rows={4}
-            placeholder="Preferred hotels, meals, budget, occasion and other trip requirements"
+            placeholder="Anything else they said — hotel, food, occasion, special requests"
             className={`${control(false)} resize-y`}
           />
         </Field>
 
+        {/* No second heading: the panel is already titled "Requirements & Assistance". An
+            "Accessibility & Assistance" heading two inches below it was the same words again and
+            made one panel look like two — the checkbox says what this is. */}
         <div className="border-t border-slate-100 pt-4">
-          <div className="mb-3">
-            <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500">Accessibility &amp; Assistance</h3>
-            <p className="mt-1 text-[11px] text-slate-400">Operational support needed for one or more travellers</p>
-          </div>
-          <div>
-            <p className="mb-1.5 text-xs font-semibold text-slate-600">Special assistance required?</p>
-            <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1" role="group" aria-label="Special assistance required">
-              {[false, true].map((required) => {
-                const selected = Boolean(assistanceRequired) === required;
-                return (
-                  <button
-                    key={String(required)}
-                    type="button"
-                    aria-pressed={selected}
-                    onClick={() => {
-                      setValue("specialAssistanceRequired", required, { shouldDirty: true, shouldValidate: true });
-                      if (required && toInt(getValues("assistancePassengerCount")) < 1) {
-                        setValue("assistancePassengerCount", 1, { shouldDirty: true });
-                      }
-                    }}
-                    className={`min-w-16 rounded-md px-3 py-1.5 text-xs font-bold transition ${selected
-                      ? "bg-blue-600 text-white shadow-sm"
-                      : "text-slate-500 hover:bg-white hover:text-slate-700"}`}
-                  >
-                    {required ? "Yes" : "No"}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+          {/* One checkbox, and the questions it implies open directly beneath it — the booking
+              form's arrangement, and the right one. The switch briefly lived up beside the
+              traveller counters, on the reasoning that it is a question about those same people.
+              It is, but the answer is almost always no, and putting it there spent a slot in the
+              busiest row of the form on a control most enquiries never touch.
+
+              Unticking clears what it revealed: leaving a type and a passenger count behind on a
+              lead that no longer needs assistance is how a stale requirement reaches an operations
+              board weeks later. */}
+          <label className="flex w-fit cursor-pointer items-center gap-2 text-sm font-semibold text-slate-700">
+            <input
+              type="checkbox"
+              checked={Boolean(assistanceRequired)}
+              onChange={(event) => {
+                const checked = event.target.checked;
+                setValue("specialAssistanceRequired", checked, { shouldDirty: true, shouldValidate: true });
+                if (!checked) {
+                  setValue("specialAssistanceTypes", [], { shouldDirty: true });
+                  setValue("assistancePassengerCount", 0, { shouldDirty: true });
+                  setValue("specialAssistanceNotes", "", { shouldDirty: true });
+                } else if (toInt(getValues("assistancePassengerCount")) < 1) {
+                  setValue("assistancePassengerCount", 1, { shouldDirty: true });
+                }
+              }}
+              className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+            />
+            <Accessibility className="h-4 w-4 text-blue-600" /> Special assistance required
+          </label>
 
           {/* Single column on purpose — the panel lives in the 300px rail now, so the old
               full-details `md:grid-cols-[minmax(0,1fr)_130px]` split would only squeeze both. */}
@@ -1457,8 +714,20 @@ function RequirementsAssistancePanel({
 }
 // Module scope, not component scope — it is a constant, and keeping it out of the components
 // means focusNext's useCallback does not need it as a dependency.
+/* `data-skip-enter` now applies to FIELDS, not just buttons.
+   It used to be honoured on button and [tabindex] only, so marking an input did nothing — which
+   meant the Enter walk had to visit every input on the form in DOM order, whether or not the agent
+   ever fills it.
+
+   The distinction it buys is between SKIPPING A FIELD IN THE WALK and HIDING IT. This form has
+   reversed a hide twice — "Full details" was retired because a note taken on the call could only be
+   recorded by reopening the lead, and the traveller-count collapse was reverted for the same
+   reason. So nothing is hidden: a skipped field is still on screen, still Tab-reachable, still
+   clickable. Enter simply does not stop there on the way down. */
 const FOCUSABLE =
-  'input:not([type="hidden"]):not([disabled]),select:not([disabled]),textarea:not([disabled]),' +
+  'input:not([type="hidden"]):not([disabled]):not([data-skip-enter="true"]),' +
+  'select:not([disabled]):not([data-skip-enter="true"]),' +
+  'textarea:not([disabled]):not([data-skip-enter="true"]),' +
   'button:not([disabled]):not([data-skip-enter="true"]),' +
   '[tabindex]:not([tabindex="-1"]):not([data-skip-enter="true"])';
 
@@ -1484,16 +753,12 @@ export function LeadFormPanels({
   services,
   onToggleService,
   itinerary,
-  roomAllocations,
-  onUpdateRoomAllocation,
-  onRebalanceRoomAllocations,
   onAddRow,
   onRemoveRow,
   onUpdateRow,
   phoneRef,
   belowPhone = null,
   compactRail = false,
-  showRoomPlanning = false,
   /* Progressive disclosure, CREATE with QUOTATION_CREATE only: Customer → Trip → Itinerary is
      one step, and it hands over to Services only when the agent says it is done. Off everywhere else
      — edit must never lock a field on a record that already exists (a saved lead may legitimately
@@ -1517,17 +782,8 @@ export function LeadFormPanels({
 
   const [destinations, setDestinations] = useState([]);
   const [loadingDestinations, setLoadingDestinations] = useState(true);
-  /* Keyed by DESTINATION id, not by row id.
-     It used to be per row, which meant a five-stop itinerary through one country fired five
-     identical /cities requests and made the agent sit through five separate "Loading…" states for
-     the same list. Keying on the destination makes stops two through five instant, and the cache is
-     shared with any row that later picks the same place. */
-  const [citiesByDestination, setCitiesByDestination] = useState({});
-  const [loadingDestinationCities, setLoadingDestinationCities] = useState({});
-  /* The same cache as a ref, because loadCities is a stable useCallback with no deps and reading
-     the state inside it would see the value from the render that created it. Two rows picking the
-     same destination in quick succession would each find it "not cached" and both fetch. */
-  const citiesCacheRef = useRef({});
+  const [rowCities, setRowCities] = useState({});
+  const [loadingRows, setLoadingRows] = useState({});
   const [destinationModalRow, setDestinationModalRow] = useState(null);
   const [cityModalRow, setCityModalRow] = useState(null);
   /* Retired with Full details: rapid used to show a picked Lead Source as a read-only chip with a
@@ -1544,6 +800,17 @@ export function LeadFormPanels({
   const showAdultBreakdown = Boolean(watch("showAdultBreakdown"));
   const totalAdults = toInt(watch("totalAdults"));
   const totalTravellers = totalAdults + toInt(watch("children")) + toInt(watch("infants"));
+  const tripStartDate = watch("travelDate");
+  const tripEndDate = watch("returnDate");
+  const tripDurationLabel = (() => {
+    if (!tripStartDate || !tripEndDate) return "";
+    const start = Date.parse(`${tripStartDate}T00:00:00Z`);
+    const end = Date.parse(`${tripEndDate}T00:00:00Z`);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return "";
+    const nights = Math.round((end - start) / 86_400_000);
+    const days = nights + 1;
+    return `${nights} ${nights === 1 ? "Night" : "Nights"} · ${days} ${days === 1 ? "Day" : "Days"}`;
+  })();
   /* `needsOriginCity` is gone with Full details: the departing city used to appear in rapid only
      when a Flight or Vehicle was ticked, which meant the field a Hotel-only enquiry still wants
      was simply not on the form. It is now always rendered, next to the departing country. */
@@ -1558,33 +825,18 @@ export function LeadFormPanels({
   const childCount = toInt(watch("children"));
   const infantCount = toInt(watch("infants"));
   const roomCount = toInt(watch("rooms")) || 1;
+  /* One line for one person. Customer Profile used to fold to a row of its own, so a single
+     customer produced two summary rows that each described a different half of them. Budget rides
+     along here because it is the only optional field the quotation below reacts to; the rest are
+     recorded rather than priced and do not earn space on a folded line. */
   const customerSummary = [
     watch("customerName") || "Unnamed customer",
     watch("phone"),
     `${totalAdults}A${childCount ? ` ${childCount}C` : ""}${infantCount ? ` ${infantCount}I` : ""}`,
     `${roomCount} ${roomCount === 1 ? "room" : "rooms"}`,
+    watch("budget") ? `₹${Number(watch("budget")).toLocaleString("en-IN")}` : "",
   ].filter(Boolean).join(" · ");
   const summaryNights = itinerary.reduce((sum, row) => sum + toInt(row.nights), 0);
-
-  /* The whole reason returnDate is stored rather than derived: it lets the two halves of the
-     enquiry be COMPARED. An enquiry that says "14th to 20th" and an itinerary that adds up to five
-     nights disagree, and one of them is wrong — the quote gets built on whichever the agent does
-     not notice. Stated as a plain gap rather than an error, because either can legitimately be the
-     one to fix, and blocking the save would be the form deciding which. */
-  const returnGapHint = (() => {
-    const start = watch("travelDate");
-    const end = watch("returnDate");
-    if (!start || !end) return undefined;
-    const gap = Math.round((Date.parse(end) - Date.parse(start)) / 86400000);
-    if (!Number.isFinite(gap)) return undefined;
-    if (gap < 0) return "Return is before the travel date.";
-    if (gap === 0) return "Same-day return.";
-    const label = `${gap} night${gap === 1 ? "" : "s"}`;
-    if (summaryNights > 0 && gap !== summaryNights) {
-      return `${label} — but the itinerary adds up to ${summaryNights}.`;
-    }
-    return label;
-  })();
   const tripSummary = [
     itinerary.map((row) => row.city || row.destination).filter(Boolean).join(" → "),
     summaryNights > 0 ? `${summaryNights}N / ${summaryNights + 1}D` : "",
@@ -1601,15 +853,6 @@ export function LeadFormPanels({
     leadSourceLabel ? `Source: ${leadSourceLabel}` : "Source not set",
     users.find((user) => String(user.value) === String(assignedUserValue))?.label,
   ].filter(Boolean).join(" · ");
-  /* Customer Profile's folded line. Budget leads because it is the only field on the panel the
-     quotation below reacts to; the rest are recorded, not priced. An untouched panel says so
-     explicitly — an empty string would fall through to the description and read as "not filled in
-     yet" on a panel where filling nothing in is the normal outcome. */
-  const customerProfileSummary = [
-    watch("budget") ? `Budget ₹${Number(watch("budget")).toLocaleString("en-IN")}` : "",
-    watch("followUpDate") ? `Follow-up ${watch("followUpDate")}` : "",
-    watch("preferredCommunication"),
-  ].filter(Boolean).join(" · ") || "Optional — nothing added";
   /* Lifted out of RequirementsAssistancePanel because the folded rail needs the same line the panel
      shows when collapsed, and two copies of "what does this panel currently say" is exactly how a
      summary starts lying about the form. It covers BOTH halves of the panel now that the General
@@ -1728,34 +971,18 @@ export function LeadFormPanels({
   }, [assistanceRequired, clearErrors, setValue]);
 
   // ── Itinerary row helpers ─────────────────────────────────────────────────────────────────────
-  /**
-   * Cities for one destination, fetched at most once.
-   *
-   * <p>Returns the cached list immediately when it is already there, so adding a second stop in the
-   * same country costs nothing. The cache is never invalidated within a session — a destination's
-   * city list does not change while an agent is typing one enquiry, and re-fetching to find that out
-   * is the cost this exists to remove.</p>
-   */
-  const loadCities = useCallback(async (destinationId) => {
-    if (!destinationId) return [];
-    const key = String(destinationId);
-
-    const cached = citiesCacheRef.current[key];
-    if (cached) return cached;
-
-    setLoadingDestinationCities((c) => ({ ...c, [key]: true }));
+  const loadCities = useCallback(async (rowId, destinationId) => {
+    if (!destinationId) { setRowCities((c) => ({ ...c, [rowId]: [] })); return []; }
+    setLoadingRows((c) => ({ ...c, [rowId]: true }));
     try {
       const cities = extractArray(await geographyService.getCitiesByDestination(destinationId));
-      citiesCacheRef.current[key] = cities;
-      setCitiesByDestination((c) => ({ ...c, [key]: cities }));
+      setRowCities((c) => ({ ...c, [rowId]: cities }));
       return cities;
     } catch {
-      // NOT cached on failure: a transient error must not pin an empty city list for the rest of
-      // the session, leaving every later row in this destination permanently unfillable.
-      setCitiesByDestination((c) => ({ ...c, [key]: [] }));
+      setRowCities((c) => ({ ...c, [rowId]: [] }));
       return [];
     } finally {
-      setLoadingDestinationCities((c) => ({ ...c, [key]: false }));
+      setLoadingRows((c) => ({ ...c, [rowId]: false }));
     }
   }, []);
 
@@ -1776,7 +1003,7 @@ export function LeadFormPanels({
       if (!match) return;
       const destinationId = String(idOf(match));
       onUpdateRow(row.id, { destinationId });
-      const cities = await loadCities(destinationId);
+      const cities = await loadCities(row.id, destinationId);
       if (!row.city) return;
       const city = cities.find(
         (c) => String(c?.name || "").trim().toLowerCase() === String(row.city).trim().toLowerCase()
@@ -1793,12 +1020,11 @@ export function LeadFormPanels({
       cityId: "",
       city: "",
     });
-    await loadCities(destinationId);
+    await loadCities(rowId, destinationId);
   };
 
-  const chooseCity = (rowId, destinationId, cityId) => {
-    const list = citiesByDestination[String(destinationId)] || [];
-    const city = list.find((c) => String(idOf(c)) === String(cityId));
+  const chooseCity = (rowId, cityId) => {
+    const city = (rowCities[rowId] || []).find((c) => String(idOf(c)) === String(cityId));
     onUpdateRow(rowId, { cityId: cityId ? String(cityId) : "", city: city?.name || "" });
   };
 
@@ -1813,15 +1039,7 @@ export function LeadFormPanels({
     const rowId = cityModalRow;
     setCityModalRow(null);
     if (rowId == null) return;
-    // Push it into the DESTINATION's list, not this row's — a city added here is now available to
-    // every other stop in the same country, which is exactly what the agent expects after creating
-    // one mid-itinerary. The ref is updated too, or the next loadCities would serve the stale copy.
-    const key = String(itinerary.find((r) => r.id === rowId)?.destinationId || "");
-    if (key) {
-      const next = [...(citiesCacheRef.current[key] || []), saved];
-      citiesCacheRef.current[key] = next;
-      setCitiesByDestination((c) => ({ ...c, [key]: next }));
-    }
+    setRowCities((c) => ({ ...c, [rowId]: [...(c[rowId] || []), saved] }));
     onUpdateRow(rowId, { cityId: String(idOf(saved)), city: saved.name || "" });
   };
 
@@ -1855,15 +1073,9 @@ export function LeadFormPanels({
     } else if (name !== "totalAdults") {
       setValue("totalAdults", getValues("totalAdults"), { shouldValidate: true });
     }
-    if (["adults", "children", "infants", "rooms", "extraBeds"].includes(roomField)) {
-      onRebalanceRoomAllocations({
-        rooms: roomField === "rooms" ? roomValue : getValues("rooms"),
-        adults: roomField === "adults" ? roomValue : getValues("totalAdults"),
-        children: roomField === "children" ? roomValue : getValues("children"),
-        infants: roomField === "infants" ? roomValue : getValues("infants"),
-        extraBeds: roomField === "extraBeds" ? roomValue : getValues("extraBeds"),
-      });
-    }
+    /* The re-split of the party across room rows went with the room-by-room editor. `rooms` is a
+       plain count on the form and feeds the quotation directly; nothing downstream needs the
+       per-room breakdown any more. */
   };
 
   const toggleAdultBreakdown = (checked) => {
@@ -1892,7 +1104,12 @@ export function LeadFormPanels({
 
   return (
     <>
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,7fr)_minmax(300px,3fr)] lg:items-start">
+      {/* Fixed rail, proportional main — the booking form's split, for the same reason. The rail
+          holds Lead Setup, Services and Assistance: short panels of small controls that stop
+          getting better above ~320px. As `3fr` it took ~30% of a 1400px page, so on a wide monitor
+          it grew into 420px of half-empty panel while the Customer and Trip fields — the ones that
+          actually want width — wrapped a column earlier than they needed to. */}
+      <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
       {/* ── 1 + 2 folded · what the enquiry says, in two lines ─────────────────────────────────
           Not a third rendering of these fields — just their values, so there is nothing here that
           can drift out of step with the panels below. Either the panels are mounted or these rows
@@ -1904,6 +1121,11 @@ export function LeadFormPanels({
         </div>
       )}
 
+      {/* No Domestic / International switch, and so no passport block either. The two exist to
+          gate each other: the switch's only job was to open the passport questions, and asking a
+          Manali enquiry about visas is how a form teaches an agent to skip questions. One form for
+          both, and the destination already says which kind of trip it is. */}
+
       {/* ── 1 · Customer ──────────────────────────────────────────────────────────────────────── */}
       {!foldEnquiry && (
       <div className={`min-w-0 ${compactRail ? "lg:col-start-1" : "lg:col-span-2"}`}>
@@ -1912,8 +1134,8 @@ export function LeadFormPanels({
         title="Customer"
         description="Phone first — an existing lead on this number is flagged as you type"
       >
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <Field id="phone" label="Phone" required error={errors.phone?.message}>
+        <div className="grid grid-cols-1 gap-x-3 gap-y-2 sm:grid-cols-2 xl:grid-cols-4">
+          <Field id="phone" label="Customer Phone" required error={errors.phone?.message}>
             <div className="relative">
               <Phone className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <input
@@ -1961,15 +1183,52 @@ export function LeadFormPanels({
             </div>
           </Field>
 
+          {/* ── Destination, where the call actually starts ─────────────────────────────────
+              Nobody rings a travel agent and opens with a date — every call opens "Manali ka
+              package chahiye". The only place to record that was the itinerary block at the foot
+              of the Trip panel, so the first word the agent heard was the last thing they could
+              type.
+
+              NOT A SECOND FIELD. It reads and writes `itinerary[0].destination` directly, through
+              the same chooseDestination() the itinerary row uses — so it sets destinationId and
+              loads that destination's cities exactly as picking it below would, and editing either
+              place moves the same value. There is no copy to fall out of step.
+
+              That distinction is the whole point: a "From" field added earlier this session DID
+              keep its own state, went nowhere on save, and sat eight fields above the real one.
+              One source of truth, two places to reach it. */}
+          {itinerary.length > 0 && (
+            <Field id="lead-destination" label="Destination" hint="Syncs with the first itinerary stop">
+              <SearchableSelect
+                name="lead-destination"
+                options={destinations}
+                value={itinerary[0].destinationId ? Number(itinerary[0].destinationId) || itinerary[0].destinationId : ""}
+                onChange={(value) => chooseDestination(itinerary[0].id, value)}
+                placeholder={itinerary[0].destination || "Where do they want to go?"}
+                loading={loadingDestinations}
+                searchable
+                advanceOnSelect
+              />
+            </Field>
+          )}
+
             </div>
 
             {belowPhone}
 
-            <div className="mt-4 border-t border-slate-100 pt-4">
-              {/* The "Travellers & Rooms" heading that sat here is gone: TravellerCountFields now
-                  carries its own "Travellers" and "Rooms" legends over the two groups, so this was
-                  the same words a second time, one line above them. The hint stays — it is the one
-                  thing that row said which the legends do not. */}
+            {/* No rule between the contact fields and the counters. Who is calling and how many of
+                them are travelling are ONE answer taken in one breath — "Sharma ji, four adults, two
+                kids" — and the hairline was splitting that into two blocks the eye had to cross.
+
+                The rule stays further down, before Optional details, because THAT is a real seam:
+                everything above it is asked on every call, everything below it is asked when there
+                is time.
+
+                The "Travellers & Rooms" heading that sat here is gone too: TravellerCountFields
+                carries its own "Travellers" and "Rooms" legends, so this was the same words a second
+                time, one line above them. The hint stays — it is the one thing that row said which
+                the legends do not. */}
+            <div className="mt-3">
               <div className="mb-2 flex justify-end">
                 <p className="text-[11px] text-slate-400">Click a number and type to replace it</p>
               </div>
@@ -1986,11 +1245,124 @@ export function LeadFormPanels({
                 }}
                 onCountChange={setAdultCount}
                 onToggleBreakdown={toggleAdultBreakdown}
+                /* HEADCOUNT FIRST, breakdown underneath and optional — which is the order the
+                   question is actually asked in. "Kitne log hain?" gets one number back: "chaar".
+                   Only when the answer is not simply adults does the split matter, and then the
+                   agent opens it.
+
+                   This is the component's standard mode; the `compact` flag I had passed here was
+                   suppressing it and forcing all five counters flat. The flat row was right when
+                   the total was a DERIVED read-only tile — it is not, now that the total is the
+                   thing you type.
+
+                   Nothing is hidden behind a click that cannot be got back: the breakdown force-
+                   opens, and its toggle disables, the moment children or infants are non-zero, so
+                   the single box can never claim a party of four that is really six. */
                 /* `compact` is gone with Full details. It did exactly two things — hide the
                    "Specify adult gender count" toggle and hide Extra Beds — so rapid could not
                    record a male/female split or an extra bed without switching modes first. Both
                    are back for everyone; the counters are one row either way. */
+                additionalGroup={(
+                  <Field id="budget" label="Budget (roughly)" optional error={errors.budget?.message}>
+                    <div className="relative">
+                      <IndianRupee className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                      <input
+                        {...register("budget", { min: { value: 0, message: "Budget cannot be negative" } })}
+                        id="budget"
+                        type="number"
+                        min={0}
+                        step="1000"
+                        inputMode="numeric"
+                        placeholder="150000"
+                        onFocus={(event) => event.target.select()}
+                        onWheel={(event) => event.currentTarget.blur()}
+                        className={control(errors.budget, true)}
+                      />
+                    </div>
+
+                    <div className="mt-1.5 flex items-center gap-2">
+                      <span className="text-[11px] text-slate-400">Budget is</span>
+                      {[
+                        { value: "TOTAL", label: "Total" },
+                        { value: "PER_PERSON", label: "Per person" },
+                      ].map((option) => {
+                        const active = (watch("budgetBasis") || "TOTAL") === option.value;
+                        return (
+                          <button
+                            key={option.value}
+                            type="button"
+                            data-skip-enter="true"
+                            aria-pressed={active}
+                            onClick={() => setValue("budgetBasis", option.value, { shouldDirty: true })}
+                            className={`rounded-md px-2 py-0.5 text-[11px] font-bold transition ${
+                              active
+                                ? "bg-blue-600 text-white"
+                                : "border border-slate-200 text-slate-500 hover:bg-slate-50"
+                            }`}
+                          >
+                            {option.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </Field>
+                )}
               />
+
+              {/* ── The total, and the one question that changes how a trip is operated ──────
+                  Seniors 60+ stood here and is gone. It was a subset of the adults above, which
+                  made it the one number on the row that did NOT add up — an agent reading the line
+                  had to know it was already counted. What actually belongs beside the counters is
+                  their SUM, which is the number the agent reads back to the customer.
+
+                  Derived, never typed: adults + children + infants, the same formula the booking
+                  side uses. Infants are in it here because this is "how many people are coming",
+                  not "how many seats" — the seat question is the counters themselves.
+
+                  Special assistance sits next to it because it is a question about these same
+                  people, asked in the same breath, and because it changes the whole operation of
+                  the trip — vehicle, hotel room, airline notification. It used to be reachable
+                  only in the right rail, several stops away in the Enter walk.
+
+                  Child ages stay: the hotel's child policy is priced on them, and an age nobody
+                  asked for on the call is an age nobody can get afterwards. The ARRAY is the source
+                  of truth; raising Children appends a blank rather than rebuilding the list, so
+                  ages already typed are never renumbered mid-call. */}
+              {toInt(watch("children")) > 0 && (
+              <div className="mt-2.5 grid grid-cols-1 gap-x-3 gap-y-2 sm:grid-cols-2 xl:grid-cols-4">
+                {/* The read-only "Total travellers" tile that stood here is gone. With the
+                    headcount restored as the TYPED first box above, this was the same number a
+                    second time, four inches lower — and the two could disagree for a frame while
+                    the breakdown was being edited. One number, one place, and it is the one the
+                    agent types. */}
+
+                <Field label="Children's ages" hint="Hotel child policy is priced on these">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {Array.from({ length: toInt(watch("children")) }, (_, index) => (
+                        <span
+                          key={index}
+                          className="flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1.5 text-xs font-bold text-amber-800"
+                        >
+                          <input
+                            value={(watch("childAges") || [])[index] ?? ""}
+                            onChange={(event) => {
+                              const ages = [...(getValues("childAges") || [])];
+                              ages[index] = event.target.value;
+                              setValue("childAges", ages, { shouldDirty: true });
+                            }}
+                            type="number"
+                            min={0}
+                            max={17}
+                            aria-label={`Child ${index + 1} age`}
+                            className="w-9 bg-transparent text-center outline-none"
+                          />
+                          yrs
+                        </span>
+                      ))}
+                    </div>
+                  </Field>
+              </div>
+              )}
               {/* The blue Total Travellers strip is retired. TravellerCountFields' own first box is
                   now labelled "Total Travellers" and, once the breakdown is open, is the derived
                   total — so this was the same number a second time, two inches lower and in a
@@ -2000,99 +1372,66 @@ export function LeadFormPanels({
                 <span …>Total Travellers</span><span …>{totalTravellers}</span>
               </div> */}
 
-              {showRoomPlanning && (
-                <div id="room-allocation-group" className="mt-4 border-t border-slate-100 pt-4">
-                <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 bg-slate-50/60 p-3 transition hover:border-violet-200 hover:bg-violet-50/40">
-                  <input
-                    {...register("roomPlanEnabled")}
-                    type="checkbox"
-                    className="mt-0.5 h-4 w-4 rounded border-slate-300 text-violet-600 focus:ring-violet-500"
-                  />
-                  <span className="min-w-0">
-                    <span className="block text-xs font-bold text-slate-700">Add room-wise plan</span>
-                    <span className="mt-0.5 block text-[11px] text-slate-400">
-                      Optional — use only when specific room categories, beds or child ages are needed.
-                    </span>
-                  </span>
-                </label>
-
-                {roomPlanEnabled && (
-                  <div className="mt-3">
-                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500">Room-wise plan</h3>
-                    <p className="mt-0.5 text-[11px] text-slate-400">Used to create room lines automatically in Quick Quote</p>
-                  </div>
-                  <span className="rounded-full bg-violet-50 px-2.5 py-1 text-[11px] font-bold text-violet-700">
-                    {roomAllocations.length} room{roomAllocations.length === 1 ? "" : "s"}
-                  </span>
-                </div>
-                <div className="space-y-2.5">
-                  {roomAllocations.map((room) => (
-                    <div key={room.id} className="rounded-lg border border-slate-200 bg-slate-50/60 p-3">
-                      <div className="mb-2 flex items-center justify-between">
-                        <span className="text-xs font-bold text-slate-700">Room {room.roomNumber}</span>
-                        <span className="text-[11px] font-semibold text-slate-400">
-                          {toInt(room.adults) + toInt(room.children) + toInt(room.infants)} travellers
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-                        <label className="text-[11px] font-semibold text-slate-500">
-                          Category
-                          <select value={room.roomCategoryPreference} onChange={(event) => onUpdateRoomAllocation(room.id, { roomCategoryPreference: event.target.value })} className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2 py-2 text-xs font-semibold text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100">
-                            {ROOM_CATEGORY_OPTIONS.map((option) => <option key={option}>{option}</option>)}
-                          </select>
-                        </label>
-                        <label className="text-[11px] font-semibold text-slate-500">
-                          Bed
-                          <select value={room.bedPreference} onChange={(event) => onUpdateRoomAllocation(room.id, { bedPreference: event.target.value })} className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2 py-2 text-xs font-semibold text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100">
-                            {BED_PREFERENCE_OPTIONS.map((option) => <option key={option}>{option}</option>)}
-                          </select>
-                        </label>
-                        {[
-                          ["adults", "Adults", 6],
-                          ["children", "Children", 4],
-                          ["infants", "Infants", 3],
-                          ["extraBeds", "Extra beds", 3],
-                        ].map(([field, label, max]) => (
-                          <label key={field} className="text-[11px] font-semibold text-slate-500">
-                            {label}
-                            <select value={room[field]} onChange={(event) => onUpdateRoomAllocation(room.id, { [field]: Number(event.target.value) })} className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2 py-2 text-xs font-semibold text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100">
-                              {Array.from({ length: max + 1 }, (_, value) => <option key={value} value={value}>{value}</option>)}
-                            </select>
-                          </label>
-                        ))}
-                      </div>
-                      {toInt(room.children) > 0 && (
-                        <div className="mt-2 flex flex-wrap items-end gap-2">
-                          {Array.from({ length: toInt(room.children) }, (_, index) => (
-                            <label key={index} className="text-[11px] font-semibold text-slate-500">
-                              Child {index + 1} age
-                              <select
-                                value={room.childAges?.[index] ?? ""}
-                                onChange={(event) => {
-                                  const childAges = [...(room.childAges || [])];
-                                  childAges[index] = event.target.value === "" ? "" : Number(event.target.value);
-                                  onUpdateRoomAllocation(room.id, { childAges });
-                                }}
-                                className="mt-1 block rounded-md border border-slate-200 bg-white px-2 py-2 text-xs font-semibold text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                              >
-                                <option value="">Not set</option>
-                                {Array.from({ length: 18 }, (_, age) => <option key={age} value={age}>{age}</option>)}
-                              </select>
-                            </label>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-                  </div>
-                )}
-                </div>
-              )}
+              {/* The room-by-room plan is gone. It asked for a room category, a bed preference and
+                  an age per child, per room — on a form whose whole purpose is to take an enquiry
+                  in one pass. It was already edit-only, so no new lead ever carried one; leads that
+                  do keep theirs (see the save payload) because the backend regroups them into the
+                  booking room mix at conversion. */}
             </div>
 
+
+            {/* ── Optional details · ON SCREEN, OUT OF THE ENTER WALK ──────────────────
+                Every field below carries data-skip-enter. They stay visible, Tab-reachable and
+                clickable — an agent who is told a birthday mid-call can still record it without
+                reopening the lead, which is the thing this form has twice reverted a redesign to
+                protect. What changes is that Enter no longer STOPS on them on the way from the
+                phone number to the travel date.
+
+                That gap is five stops on every enquiry, and it is worse than five keystrokes:
+                focusNext calls select() on arrival, so each pass-through field sits there with its
+                contents highlighted and one stray character overwrites a value the agent never
+                meant to touch.
+
+                ── Optional details ─────────────────────────────────────────────────────
+                Was its own "Customer Profile" panel in the rail. Same person, two boxes:
+                the agent typed a name here and a birthday three panels away, and the folded
+                summary had to carry two rows to describe one customer. Merged in, behind a
+                rule rather than a second heading — everything above identifies the customer,
+                everything below is what you learn about them on the call. */}
+            {/* One grid, not a stack. These five were a 2-up row followed by three full-width
+                fields, which made the optional half of the panel twice as tall as the half that
+                actually identifies the customer. They are all small controls; they belong on the
+                same four-column rhythm as the fields above the rule. */}
+            <div className="mt-5 grid grid-cols-1 gap-4 border-t border-slate-100 pt-4 sm:grid-cols-2 xl:grid-cols-4">
+              {/* Ordered by when they come up on the call, not by what the record holds.
+                  "WhatsApp pe bhej doon?" and "kab call karun?" are asked on nearly every enquiry —
+                  the first decides where the quotation goes, the second writes a reminder. A
+                  birthday is relationship data picked up in passing, months later, and had no
+                  business being the first two boxes an agent's eye landed on down here. */}
+              <Field id="preferredCommunication" label="How to contact them" optional>
+                <div className="relative">
+                  <select {...register("preferredCommunication")} id="preferredCommunication" data-skip-enter="true" className={`${control(false)} appearance-none pr-9`}>
+                    <option value="">Select channel</option>
+                    {COMMUNICATION_PREFERENCES.map((option) => <option key={option} value={option}>{option}</option>)}
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                </div>
+              </Field>
+
+              <Field id="followUpDate" label="Call them back on" optional hint="Creates a reminder when the lead is saved">
+                <input {...register("followUpDate")} id="followUpDate" data-skip-enter="true" type="date" min={today()} className={control(false)} />
+              </Field>
+
+              <Field id="birthDate" label="Birth Date" optional>
+                <input {...register("birthDate")} id="birthDate" data-skip-enter="true" type="date" max={today()} className={control(false)} />
+              </Field>
+
+              <Field id="anniversaryDate" label="Anniversary" optional>
+                <input {...register("anniversaryDate")} id="anniversaryDate" data-skip-enter="true" type="date" max={today()} className={control(false)} />
+              </Field>
+
+              {/* Budget moved up beside the traveller counts — see the note there. */}
+            </div>
           </Panel>
         </div>
         )}
@@ -2104,52 +1443,61 @@ export function LeadFormPanels({
             icon={Route}
             title="Trip"
             description="Dates, travellers, departure and route in one place"
-            action={
+            action={tripDurationLabel ? (
               <span className="inline-flex w-fit flex-wrap items-center gap-x-1 rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">
-                <span>{toInt(watch("totalAdults"), 1)} Adults</span>
-                <span>· {toInt(watch("children"))} Children</span>
-                <span>· {toInt(watch("infants"))} Infants</span>
-                <span>· {toInt(watch("rooms"), 1)} Rooms</span>
+                <CalendarDays className="h-3.5 w-3.5" />
+                <span>{tripDurationLabel}</span>
               </span>
-            }
+            ) : null}
           >
-            {/* Four fields, two up. Full details ran these at lg:grid-cols-4, but that was a
-                full-width main column; the merged form always keeps the 300px rail, so four
-                across would put a date picker and two selects in ~150px each. */}
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              {/* ONE control for both ends of the trip, the way every hotel site takes a stay.
-                  They were two <input type="date"> fields: two native pickers, two openings, and no
-                  way to see the trip length while choosing — while the enquiry states them as a
-                  pair ("14.07 to 20.07, 6 nights"). Spans both columns because two months of
-                  calendar do not belong under a half-width field.
+            {/* ONE grid for the whole panel. From and Occasion used to sit in a two-up row of
+                their own above the dates, which cost a full row of height to show two fields and
+                broke the four-across rhythm the rest of the panel reads in. They are ordinary
+                fields; they flow with the others.
 
-                  registered with RHF by hand: DateRangeField is not an <input>, so it is driven by
-                  watch/setValue like the SearchableSelects on this form. `required` still lives on
-                  travelDate so save() rejects a missing one exactly as before. */}
-              <div className="sm:col-span-2">
-                <Field
-                  id="travelDate"
-                  label="Travel Dates"
-                  required
-                  error={errors.travelDate?.message}
-                  hint={returnGapHint}
-                >
-                  <input type="hidden" {...register("travelDate", { required: "Travel date is required" })} />
-                  <input type="hidden" {...register("returnDate")} />
-                  <DateRangeField
-                    id="travelDateRange"
-                    startValue={watch("travelDate") || ""}
-                    endValue={watch("returnDate") || ""}
-                    invalid={Boolean(errors.travelDate)}
-                    onChange={({ start, end }) => {
-                      setValue("travelDate", start, { shouldDirty: true, shouldValidate: true });
-                      setValue("returnDate", end, { shouldDirty: true });
-                    }}
-                  />
+                Both are questions the old form never asked and the two an experienced agent asks
+                first. There is no quote without a departure city — every fare, every transfer and
+                every night is priced from it — and Occasion moves more of a quotation than budget
+                does: a honeymoon, elderly parents and a friends' group buy three different hotels,
+                paces and vehicles at the same price.
+
+                Four across on a wide monitor, two on a laptop — and the breakpoint is xl, not lg,
+                which is the whole subtlety. This column always loses 320px to the rail, so at lg
+                (1024px) four columns really would be ~150px each and a date picker would not fit.
+                By xl (1280px) there is ~900px here and they are ~210px, which is comfortable.
+
+                The panel ran at four across a week ago and I cut it to two outright; that was the
+                right worry applied at the wrong breakpoint, and it doubled the height of the
+                longest panel on the form for everyone, including the wide screens this is used on. */}
+            <div className="grid grid-cols-1 gap-x-3 gap-y-2 sm:grid-cols-2 xl:grid-cols-4">
+              {/* This is `departCity`, promoted — NOT a second "from" field.
+                  I added one called `fromCity` and it was decorative: transformFormData whitelists
+                  the payload and never sent it, so the departure city an agent typed here went
+                  nowhere, while the real one sat eight fields lower in this same panel. Two inputs
+                  for one fact, one of them silently dead.
+
+                  departCity is the one wired to everything — it is saved, it is in STICKY_FIELDS so
+                  it carries into the next enquiry, it seeds the quotation through draftLeadKey, and
+                  the customer lookup prefills it. It belongs where the question is actually asked:
+                  first, because every fare and transfer is priced from it. */}
+              {/* Match Booking's Pickup vocabulary and keep the three origin answers together.
+                  The city is the answer agents ask for first, so it gets the widest control; India
+                  remains prefilled and needs no action for the common case. */}
+              <div className="min-w-0 sm:col-span-2">
+                <Field id="departCity" label="Pickup City" hint="Where the journey starts">
+                  <div className="relative">
+                    <MapPin className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <input
+                      {...register("departCity")}
+                      id="departCity"
+                      placeholder="e.g. Pune"
+                      className={control(false, true)}
+                    />
+                  </div>
                 </Field>
               </div>
 
-              <Field id="departCountry" label="Departing Country" optional>
+              <Field id="departCountry" label="Pickup Country" optional>
                 <SearchableSelect
                   name="departCountry"
                   options={countries}
@@ -2163,14 +1511,7 @@ export function LeadFormPanels({
                 />
               </Field>
 
-              <Field id="departCity" label="Departing City" optional>
-                <div className="relative">
-                  <MapPin className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                  <input {...register("departCity")} id="departCity" placeholder="e.g. Pune" className={control(false, true)} />
-                </div>
-              </Field>
-
-              <Field id="departureMode" label="Departure Mode" optional>
+              <Field id="departureMode" label="Pickup Mode" optional>
                 <div className="relative">
                   <select {...register("departureMode")} id="departureMode" className={`${control(false)} appearance-none pr-9`}>
                     <option value="">Select mode</option>
@@ -2179,59 +1520,47 @@ export function LeadFormPanels({
                   <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 </div>
               </Field>
-            </div>
 
-            {/* What the customer asked for, and where the trip ends.
-                OUTSIDE the departure-mode branches below on purpose. The server nulls each transport
-                group whose mode does not match, and the enquiry that prompted these is exactly the
-                case it breaks: the party arrives by TRAIN at Raxaul and is dropped back at Raxaul by
-                the car hired for the trip. Under the discriminator, choosing Train erases the
-                drop-off. "Where does the trip end" is true of a trip however it was reached. */}
-            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
-              <Field id="hotelCategory" label="Hotel Category" optional hint="What the customer asked for.">
-                <div className="relative">
-                  <BedDouble className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                  <input
-                    {...register("hotelCategory")}
-                    id="hotelCategory"
-                    list="hotel-category-options"
-                    placeholder="e.g. 3 Star"
-                    className={control(false, true)}
+              <div className="min-w-0 sm:col-span-2">
+                <Field id="travelDateRange" label="Travel Period" required error={errors.travelDate?.message}>
+                  <input type="hidden" {...register("travelDate", { required: "Travel date is required" })} />
+                  <input type="hidden" {...register("returnDate")} />
+                  <DateRangeField
+                    id="travelDateRange"
+                    startValue={tripStartDate}
+                    endValue={tripEndDate}
+                    startLabel="Check-in"
+                    endLabel="Check-out"
+                    invalid={Boolean(errors.travelDate || errors.returnDate)}
+                    onChange={({ start, end }) => {
+                      setValue("travelDate", start, { shouldDirty: true, shouldValidate: true });
+                      setValue("returnDate", end, { shouldDirty: true });
+                    }}
                   />
-                  {/* datalist, not select: the agent can still type "3-4 Star" or "Deluxe category"
-                      exactly as the enquiry worded it. */}
-                  <datalist id="hotel-category-options">
-                    {HOTEL_CATEGORY_SUGGESTIONS.map((option) => <option key={option} value={option} />)}
-                  </datalist>
-                </div>
+                </Field>
+              </div>
+
+              <Field id="occasion" label="Trip Type" hint="Helps choose the hotel, pace and vehicle">
+                <select {...register("occasion")} id="occasion" className={control(false)}>
+                  <option value="">Select trip type</option>
+                  <option value="HONEYMOON">Honeymoon</option>
+                  <option value="FAMILY">Family</option>
+                  <option value="SENIOR_CITIZENS">Seniors</option>
+                  <option value="FRIENDS">Friends</option>
+                  <option value="CORPORATE">Corporate</option>
+                  <option value="PILGRIMAGE">Pilgrimage</option>
+                  <option value="SOLO">Solo</option>
+                </select>
               </Field>
 
-              <Field id="mealPlanPreference" label="Meal Plan" optional hint="CP / MAP / AP / EP / AI.">
-                <div className="relative">
-                  <UtensilsCrossed className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                  <input
-                    {...register("mealPlanPreference")}
-                    id="mealPlanPreference"
-                    list="meal-plan-options"
-                    placeholder="e.g. Breakfast Only (CP)"
-                    className={control(false, true)}
-                  />
-                  <datalist id="meal-plan-options">
-                    {MEAL_PLAN_SUGGESTIONS.map((option) => <option key={option} value={option} />)}
-                  </datalist>
-                </div>
-              </Field>
-
-              <Field id="dropAddress" label="Drop-off Location" optional hint="Where the trip ends.">
-                <div className="relative">
-                  <MapPin className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                  <input
-                    {...register("dropAddress")}
-                    id="dropAddress"
-                    placeholder="e.g. Raxaul Station"
-                    className={control(false, true)}
-                  />
-                </div>
+              <Field id="decideBy" label="Likely to book" hint="Used to plan the follow-up — not the travel date">
+                <select {...register("decideBy")} id="decideBy" className={control(false)}>
+                  <option value="">Select timeframe</option>
+                  <option value="IMMEDIATE">Now</option>
+                  <option value="WITHIN_WEEK">This week</option>
+                  <option value="WITHIN_MONTH">This month</option>
+                  <option value="JUST_EXPLORING">Just exploring</option>
+                </select>
               </Field>
             </div>
 
@@ -2246,7 +1575,7 @@ export function LeadFormPanels({
                 <Field id="airportCode" label="Airport Code" optional>
                   <input {...register("airportCode")} id="airportCode" maxLength={8} placeholder="DEL" className={`${control(false)} uppercase`} />
                 </Field>
-                <Field id="preferredFlightTime" label="Preferred Time" optional>
+                <Field id="preferredFlightTime" label="Preferred Flight Time" optional>
                   <div className="relative">
                     <Clock3 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                     <input {...register("preferredFlightTime")} id="preferredFlightTime" type="time" className={control(false, true)} />
@@ -2266,7 +1595,7 @@ export function LeadFormPanels({
                 <Field id="trainClass" label="Train Class" optional>
                   <input {...register("trainClass")} id="trainClass" placeholder="2A, 3A, Sleeper" className={control(false)} />
                 </Field>
-                <Field id="preferredTrainTime" label="Preferred Time" optional>
+                <Field id="preferredTrainTime" label="Preferred Train Time" optional>
                   <div className="relative">
                     <Clock3 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                     <input {...register("preferredTrainTime")} id="preferredTrainTime" type="time" className={control(false, true)} />
@@ -2289,6 +1618,13 @@ export function LeadFormPanels({
               </div>
             )}
 
+
+            {/* ── The route ────────────────────────────────────────────────────────────────────
+                Stays at the foot of the panel. It was briefly moved to the top on the reasoning
+                that the customer opens the call with the destination — which is true of the CALL,
+                but not of the FORM: the itinerary is the step the whole chain hangs off (Services
+                unlock behind its confirm button), and a multi-row block with its own Add Stop and
+                Done—continue reads as the end of a panel, not the start of one. */}
             <div className="mt-5 border-t border-slate-100 pt-4">
               <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex min-w-0 items-center gap-3">
@@ -2364,15 +1700,15 @@ export function LeadFormPanels({
                       <div className="min-w-0 flex-1">
                         <SearchableSelect
                           name={`itinerary.${index}.city`}
-                          options={citiesByDestination[String(row.destinationId)] || []}
+                          options={rowCities[row.id] || []}
                           value={row.cityId ? Number(row.cityId) || row.cityId : ""}
-                          onChange={(value) => chooseCity(row.id, row.destinationId, value)}
+                          onChange={(value) => chooseCity(row.id, value)}
                           placeholder={
                             !row.destinationId ? "Select destination first"
-                              : loadingDestinationCities[String(row.destinationId)] ? "Loading..."
+                              : loadingRows[row.id] ? "Loading..."
                                 : row.city || "Select city"
                           }
-                          loading={Boolean(loadingDestinationCities[String(row.destinationId)])}
+                          loading={Boolean(loadingRows[row.id])}
                           searchable
                           advanceOnSelect
                         />
@@ -2531,17 +1867,11 @@ export function LeadFormPanels({
           </div>
         )}
 
-        {/* Full details rendered a SECOND copy of Requirements & Assistance here, in the main
-            column, while rapid rendered it in the rail. Retired: there is one instance now, at the
-            foot of the rail with the other optional panels, so the `notes` textarea can never be in
-            the document twice.
-        {!rapidEntry && (
-          <div className="min-w-0 lg:col-start-1">
-            <RequirementsAssistancePanel rapidEntry={false} … />
-          </div>
-        )} */}
+        {/* Requirements & Assistance had a second copy here, in the main column, for Full details.
+            One instance now, at the foot of the rail, so the `notes` textarea can never be in the
+            document twice. */}
 
-        <aside className={`min-w-0 ${compactRail ? "space-y-4 lg:sticky lg:top-[72px] lg:col-start-2 lg:row-start-1 lg:row-span-3" : "space-y-5 lg:col-start-2 lg:row-start-3"}`}>
+        <aside className={`min-w-0 ${compactRail ? "space-y-3.5 lg:sticky lg:top-[72px] lg:col-start-2 lg:row-start-1 lg:row-span-3" : "space-y-5 lg:col-start-2 lg:row-start-3"}`}>
           {/* ── The rail, folded · the same retirement Customer and Trip get ──────────────────────
               Three panels in, three lines out, on the SAME `foldEnquiry` flag rather than one of
               their own. That is the point: Edit here and Edit on the Customer row have to restore
@@ -2550,70 +1880,15 @@ export function LeadFormPanels({
               document twice. */}
           {foldEnquiry && (
             <>
-              <SummaryRow icon={CircleUserRound} title="Customer Profile" detail={customerProfileSummary} onEdit={onExpandEnquiry} />
+              {/* Same order as the panels below — a folded row and the panel it restores must sit
+                  in the same place, or continuing puts the agent somewhere they did not expect. */}
               <SummaryRow icon={UserCheck} title="Lead Setup" detail={leadSetupSummary} onEdit={onExpandEnquiry} />
               <SummaryRow icon={Accessibility} title="Requirements" detail={requirementsSummary} onEdit={onExpandEnquiry} />
             </>
           )}
 
-          {/* Birthday, anniversary, budget and the follow-up date are all things the customer says
-              once, on the call. Hand-foldable, because it shares the rail with two other panels —
-              and it retires to its SummaryRow with them once the itinerary is confirmed. */}
-          {!foldEnquiry && <Panel
-            icon={CircleUserRound}
-            title="Customer Profile"
-            description="Optional personal and contact details"
-            collapsible
-            defaultOpen
-            summary={customerProfileSummary}
-            /* Budget is the one field here that can fail validation, and onInvalid cannot scroll to
-               an unmounted input. */
-            forceOpen={Boolean(errors.budget)}
-          >
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <Field id="birthDate" label="Date of Birth" optional>
-                  <input {...register("birthDate")} id="birthDate" type="date" max={today()} className={control(false)} />
-                </Field>
-                <Field id="anniversaryDate" label="Anniversary" optional>
-                  <input {...register("anniversaryDate")} id="anniversaryDate" type="date" max={today()} className={control(false)} />
-                </Field>
-              </div>
-
-              <Field id="preferredCommunication" label="Preferred Contact Channel" optional>
-                <div className="relative">
-                  <select {...register("preferredCommunication")} id="preferredCommunication" className={`${control(false)} appearance-none pr-9`}>
-                    <option value="">Select channel</option>
-                    {COMMUNICATION_PREFERENCES.map((option) => <option key={option} value={option}>{option}</option>)}
-                  </select>
-                  <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                </div>
-              </Field>
-
-              <Field id="budget" label="Indicative Budget (₹)" optional error={errors.budget?.message}>
-                <div className="relative">
-                  <IndianRupee className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                  <input
-                    {...register("budget", { min: { value: 0, message: "Budget cannot be negative" } })}
-                    id="budget"
-                    type="number"
-                    min={0}
-                    step="1000"
-                    inputMode="numeric"
-                    placeholder="150000"
-                    onFocus={(event) => event.target.select()}
-                    onWheel={(event) => event.currentTarget.blur()}
-                    className={control(errors.budget, true)}
-                  />
-                </div>
-              </Field>
-
-              <Field id="followUpDate" label="Follow-up Date" optional hint="Creates a reminder when the lead is saved">
-                <input {...register("followUpDate")} id="followUpDate" type="date" min={today()} className={control(false)} />
-              </Field>
-            </div>
-          </Panel>}
-
+          {/* Hand-foldable, because it shares the rail with the other panels — and it retires to
+              its SummaryRow with them once the itinerary is confirmed. */}
           {!foldEnquiry && <Panel
             icon={UserCheck}
             title="Lead Setup"
@@ -2634,17 +1909,19 @@ export function LeadFormPanels({
                 required
                 error={errors.leadSource?.message || (sourcesError ? "Couldn't load sources — showing the current value only." : undefined)}
               >
-                <input type="hidden" {...register("leadSource", { required: "Lead source is required" })} />
-                <SearchableSelect
-                  name="leadSource"
-                  options={sourceOptionsFor(leadSourceValue)}
-                  value={leadSourceValue}
-                  onChange={(value) => setValue("leadSource", value, { shouldDirty: true, shouldValidate: true })}
-                  placeholder="Select source"
-                  loading={sourcesLoading}
-                  searchable
-                  advanceOnSelect
-                />
+                <div className="relative">
+                  <select
+                    {...register("leadSource", { required: "Lead source is required" })}
+                    id="leadSource"
+                    className={`${control(errors.leadSource)} appearance-none pr-9`}
+                  >
+                    <option value="">{sourcesLoading ? "Loading sources…" : "Select source"}</option>
+                    {sourceOptionsFor(leadSourceValue).map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                </div>
               </Field>
 
               {/* Type and Stage used to be two hidden inputs in rapid — registered so their rules
@@ -2679,7 +1956,7 @@ export function LeadFormPanels({
                   `forcedSelf` still wins, because that one is a permission, not a suggestion. */}
               <Field
                 id="assignedUserId"
-                label="Assign To"
+                label="Assigned To"
                 required
                 error={errors.assignedUserId?.message}
                 hint={forcedSelf ? undefined : usersLoading
@@ -2726,13 +2003,10 @@ export function LeadFormPanels({
             </div>
           </Panel>}
 
-          {/* The rail's Chip copy of the services picker is retired with Full details. It was the
-              second `services-group` node in the file, and the only reason save()'s scrollIntoView
-              had to rely on exactly one of the two being mounted. The card grid in the main column
-              is now the single picker.
-          {!rapidEntry && <Panel icon={Search} title="Services" description="What this quotation should include">
-            <div id="services-group"> … Chip grid … </div>
-          </Panel>} */}
+          {/* The rail's Chip copy of the services picker went with Full details. It was the second
+              `services-group` node in the file, and the only reason save()'s scrollIntoView had to
+              rely on exactly one of the two being mounted. The card grid in the main column is now
+              the single picker. */}
 
           {!foldEnquiry && (
             <RequirementsAssistancePanel
@@ -2794,6 +2068,11 @@ export default function LeadFormPage() {
      and by save(). One derivation for all three, so the page can never lock a step it is about to
      demand — the classic dead end where "Select at least one service" points at a locked picker. */
   const itineraryReady = useMemo(() => hasCompleteStop(itinerary), [itinerary]);
+  /* A lead's saved room-by-room plan, held exactly as it arrived. There is no editor for it any
+     more, so this is the only thing standing between an old lead's plan and being wiped by the
+     next save. Empty on create — that form never produced one. */
+  const loadedRoomAllocationsRef = useRef([]);
+
   const [roomAllocations, setRoomAllocations] = useState(() => rebalanceRooms([], {
     rooms: 1, adults: 2, children: 0, infants: 0, extraBeds: 0,
   }));
@@ -2819,15 +2098,7 @@ export default function LeadFormPage() {
      itinerary → services → quotation chain with its fold, Ctrl+Enter to price and
      Ctrl+Shift+Enter to save-and-start-the-next. The extra fields ride in the collapsible rail
      panels, which retire to their summary rows the moment the itinerary is confirmed — so the fast
-     path is the same number of keystrokes it was.
-
-  // const [rapidEntry, setRapidEntry] = useState(false);
-  // const [rapidEntry, setRapidEntry] = useState(() => !editing && requestedMode !== "full");
-  // useEffect(() => {
-  //   if (editing) return;
-  //   if (requestedMode === "rapid") setRapidEntry(true);
-  //   if (requestedMode === "full") setRapidEntry(false);
-  // }, [editing, requestedMode]); */
+     path is the same number of keystrokes it was. */
 
   const [savedThisSession, setSavedThisSession] = useState(readSessionCount);
 
@@ -2921,6 +2192,12 @@ export default function LeadFormPage() {
   /* Both halves of the latch fire together: the picker unlocks and the enquiry folds, so the screen
      belongs to the step that just became actionable. Scrolled, not focused — the service cards are
      buttons, and landing focus on the first one would make a stray Enter tick it. */
+  /* "There is enough here to price" — the agent pressing "Done — continue", which is a deliberate
+     step in the chain rather than anything the form infers. With one mode this is exactly
+     itineraryConfirmed; it keeps a name of its own because the two gates below read better asking
+     whether the quote is ready than asking about the itinerary. */
+  const quoteReady = itineraryConfirmed;
+
   const confirmItinerary = useCallback(() => {
     setItineraryConfirmed(true);
     setEnquiryCollapsed(true);
@@ -3069,7 +2346,40 @@ export default function LeadFormPage() {
     if (!pending) return;
     if (!quoteModel?.enabledCore?.includes(pending.id)) return;
     pendingQuoteRevealRef.current = null;
-    quoteSectionsRef.current?.reveal(pending.id, pending.focus ? "[data-quick-field]" : null);
+    /* Always with a field selector, which is what asks reveal() to SCROLL — and to land the cursor
+       in the section's first input.
+
+       This used to pass null when the tick came from the Services picker, on the reasoning that the
+       picker and the section beneath it were both already on screen so moving the page would be
+       jarring. That holds on a short form and stops holding on this one: with the trip details, the
+       itinerary rows and eight service cards above it, the section a tick creates is routinely below
+       the fold, and the agent was left looking at the picker wondering whether anything happened.
+       Ticking a service IS the request to fill it in, so go there. */
+    quoteSectionsRef.current?.reveal(pending.id, "[data-quick-field]");
+  }, [quoteModel]);
+
+  /* The accordion used to mount with every section shut, and the agent's first act on the pricing
+     block was a click that told it nothing it did not already know.
+
+     The cause is that a service can become ticked WITHOUT going through toggleService: sticky
+     carries the previous enquiry's picks into this one, so nothing ever queued a reveal. The
+     accordion then rendered with openSection = "" and waited.
+
+     Opened, not revealed — open() sets the section and moves neither the page nor the caret. The
+     agent may still be typing in the lead form above when the pricing block appears underneath, and
+     stealing the cursor at that moment is precisely the bug that got autoFocus removed from the
+     booking form's fast panels.
+
+     Runs once per accordion appearance: the ref latches on the first section it opens and only
+     re-arms when the block unmounts (a new enquiry, via resetInlineQuote). */
+  const quoteOpenedRef = useRef(false);
+  useEffect(() => {
+    const first = quoteModel?.enabledCore?.[0];
+    if (!first) { quoteOpenedRef.current = false; return; }
+    if (quoteOpenedRef.current) return;
+    if (pendingQuoteRevealRef.current) return;   // a real reveal is queued; let it win
+    quoteOpenedRef.current = true;
+    quoteSectionsRef.current?.open(first);
   }, [quoteModel]);
 
   /* Finishing a section just collapses it — no scrolling. The loop is tick a service → fill it →
@@ -3139,9 +2449,6 @@ export default function LeadFormPage() {
           packageType: lead.packageType ?? lead.tripType ?? "",
           travelDate: toDateInput(lead.travelDate ?? lead.tripDate ?? lead.departureDate),
           returnDate: toDateInput(lead.returnDate),
-          hotelCategory: lead.hotelCategory ?? "",
-          mealPlanPreference: lead.mealPlanPreference ?? "",
-          dropAddress: lead.dropAddress ?? "",
           departCountry: lead.departCountry ?? lead.departureCountry ?? "India",
           departCity: lead.departCity ?? lead.departureCity ?? "",
           departureMode: lead.departureMode ?? lead.transportMode ?? "",
@@ -3188,6 +2495,11 @@ export default function LeadFormPage() {
         setItinerary(rows.length > 0 ? rows : [blankRow()]);
 
         const savedAllocations = Array.isArray(lead.roomAllocations) ? lead.roomAllocations : [];
+        /* The room-by-room plan has no editor on this form any more, but a lead saved when it did
+           still carries one, and the backend regroups it into the booking's room MIX at conversion
+           time. Held verbatim so saving an old lead cannot silently destroy it — an edit form that
+           deletes what it chose not to show you is worse than one that shows too much. */
+        loadedRoomAllocationsRef.current = savedAllocations;
         setValue("roomPlanEnabled", savedAllocations.length > 0, { shouldDirty: false });
         if (savedAllocations.length > 0) {
           setRoomAllocations(savedAllocations.map((room, index) => blankRoomAllocation(index + 1, {
@@ -3415,20 +2727,7 @@ export default function LeadFormPage() {
   // Handed to the accordion so a service can be added without leaving the panel being filled in.
   const addServiceFromQuote = (id) => toggleService(id, { fromQuote: true });
 
-  /* A new stop inherits the destination of the one above it, and nothing else.
-     Multi-stop itineraries are overwhelmingly within one country — "2N Kathmandu, 1N Pokhara, 1N
-     Muktinath" is one destination and three cities — and re-picking it per row cost two interactions
-     each plus a wait for the city list. The CITY is deliberately not carried: it is the one thing
-     that genuinely differs per stop, and pre-filling it would produce a row that looks complete and
-     is wrong, which is worse than an empty one. Nights stay at blankRow()'s default. */
-  const addRow = () => setItinerary((rows) => {
-    const previous = rows[rows.length - 1];
-    return [...rows, {
-      ...blankRow(),
-      destinationId: previous?.destinationId || "",
-      destination: previous?.destination || "",
-    }];
-  });
+  const addRow = () => setItinerary((rows) => [...rows, blankRow()]);
   const removeRow = (rowId) =>
     setItinerary((rows) => (rows.length > 1 ? rows.filter((row) => row.id !== rowId) : rows));
   const updateRow = useCallback((rowId, patch) => {
@@ -3489,7 +2788,6 @@ export default function LeadFormPage() {
     showToast(formErrors[first]?.message || "Please fix the highlighted fields.", "error");
   };
 
-  // const save = async (data, { addAnother } = {}) => {
 
   const save = async (
     data,
@@ -3498,6 +2796,21 @@ export default function LeadFormPage() {
       createQuotation = false,
     } = {},
   ) => {
+    /* Once a quotation exists, so does its lead — createdQuote.lead IS the saved record. Running
+       the create path again writes a SECOND lead for the same customer, with no quotation attached,
+       and resetInlineQuote() then discards the priced model.
+
+       Ctrl+Enter has guarded this since the inline quote landed (see the handler below), and the
+       Create Quote button guards it too — but both "Save & New" buttons called straight through,
+       and "Save & New" is the natural gesture for the next caller the moment a quote is finished.
+       So the most likely path to the bug was the one path without the guard.
+
+       Not an error: the agent's intent is "I am done, next caller". The lead is already written, so
+       honour it by starting the next enquiry rather than refusing. */
+    if (createdQuote && addAnother) {
+      startNextEnquiry();
+      return;
+    }
     /* Checked in the order the rapid chain presents them — itinerary, then services, then the quote.
        The services rule used to run first, which now dead-ends: with the picker locked until a stop
        exists, "Select at least one service" would scroll to a control the agent cannot operate. The
@@ -3571,15 +2884,9 @@ export default function LeadFormPage() {
       }
     }
 
-    if (data.roomPlanEnabled) {
-      const emptyRoomIndex = roomAllocations.findIndex((room) =>
-        toInt(room.adults) + toInt(room.children) + toInt(room.infants) === 0);
-      if (emptyRoomIndex >= 0) {
-        showToast(`Room ${emptyRoomIndex + 1} must contain at least one traveller.`, "error");
-        document.getElementById("room-allocation-group")?.scrollIntoView({ block: "center", behavior: "smooth" });
-        return;
-      }
-    }
+    /* The "every room holds at least one traveller" check went with the editor. It guarded input
+       this form no longer takes, and a validation that can fail on a field nobody can see is a
+       dead end: the toast pointed at #room-allocation-group, which is not in the document. */
 
     clearErrors("services");
     setSubmitting(true);
@@ -3598,22 +2905,10 @@ export default function LeadFormPage() {
         children: toInt(data.children),
         infants: toInt(data.infants),
         assistancePassengerCount: data.specialAssistanceRequired ? toInt(data.assistancePassengerCount) : 0,
-        roomAllocations: data.roomPlanEnabled ? roomAllocations.map((room, index) => {
-          const childAges = Array.isArray(room.childAges) && room.childAges.length === toInt(room.children)
-            && room.childAges.every((age) => age !== "" && age != null)
-            ? room.childAges.map((age) => toInt(age))
-            : [];
-          return {
-            roomNumber: index + 1,
-            roomCategoryPreference: room.roomCategoryPreference || "Any",
-            bedPreference: room.bedPreference || "Any",
-            adults: toInt(room.adults),
-            children: toInt(room.children),
-            infants: toInt(room.infants),
-            extraBeds: toInt(room.extraBeds),
-            childAges,
-          };
-        }) : [],
+        /* Passed straight through, never rebuilt. Nothing on this form edits the room-by-room plan
+           now; a new lead sends [] (as it always did — the editor was edit-only), and an old lead
+           sends back exactly what it arrived with. */
+        roomAllocations: loadedRoomAllocationsRef.current,
         budget: data.budget === "" || data.budget == null || Number.isNaN(Number(data.budget))
           ? null
           : Number(data.budget),
@@ -3716,7 +3011,7 @@ export default function LeadFormPage() {
         reset({ ...blankDefaults(), ...readSticky() });
         setServices(readStickyServices());
         setItinerary([blankRow()]);
-        setRoomAllocations(rebalanceRooms([], { rooms: 1, adults: 2, children: 0, infants: 0, extraBeds: 0 }));
+        loadedRoomAllocationsRef.current = [];
         resetContactMatch();
         // The quote belongs to the lead that was just written, not to the blank one now on screen.
         resetInlineQuote();
@@ -3751,6 +3046,24 @@ export default function LeadFormPage() {
       // Once the quotation exists the lead does too, so Ctrl+Enter has to UPDATE. Re-running the
       // create path here wrote a second lead and a second quotation for the same customer.
       if (createdQuote) { updateInlineQuote(); return; }
+
+      /* "Done — continue" was the one control the flow could not finish without and the keyboard
+         could not reach. It carries data-skip-enter, has no shortcut of its own, and save() rejects
+         EVERY path while itineraryConfirmed is false — so a keyboard-driven agent pressing Ctrl+Enter
+         got a toast and a scroll, then had to take their hand off the keyboard to click a button, on
+         every single enquiry.
+
+         So Ctrl+Enter advances the chain instead of failing it: confirm, then press again to save.
+         Deliberately NOT a new chord — the quotation accordion below owns Alt+0-8, Alt+arrows and
+         Esc, and it fires inside this same form, so anything new would collide.
+
+         Only when the itinerary is genuinely shippable. If it is not, the existing guard inside
+         save() still runs and still says why. */
+      if (stepFlow && !itineraryConfirmed && itineraryConfirmable) {
+        confirmItinerary();
+        return;
+      }
+
       const addAnother = !editing && event.shiftKey; // batch-next is a create-only shortcut
       const createQuotation = !editing && !addAnother && canCreateQuotation;
       handleSubmit((data) => save(data, { addAnother, createQuotation }), onInvalid)();
@@ -3770,7 +3083,7 @@ export default function LeadFormPage() {
     reset({ ...blankDefaults(), ...readSticky() });
     setServices(readStickyServices());
     setItinerary([blankRow()]);
-    setRoomAllocations(rebalanceRooms([], { rooms: 1, adults: 2, children: 0, infants: 0, extraBeds: 0 }));
+    loadedRoomAllocationsRef.current = [];
     resetContactMatch();
     resetInlineQuote();
     /* Deferred, unlike before: clearing from a folded enquiry means the Phone input is not in the
@@ -3904,8 +3217,16 @@ export default function LeadFormPage() {
           </div>
         </div>
         <div className="flex shrink-0 gap-2">
+          {/* data-skip-enter, and the reason is worth stating: this strip is INJECTED
+              ASYNCHRONOUSLY, after the debounced phone probe returns. Without the marker its
+              buttons join FOCUSABLE, so the Enter walk's next target changes under the agent's
+              fingers between one keystroke and the next — and onFormKeyDown passes Enter through
+              on a BUTTON, which activates it. Two of the three buttons below navigate AWAY. A
+              half-typed enquiry, with the caller still on the phone, was one stray Enter from
+              being gone. They stay fully Tab- and click-reachable. */}
           <button
             type="button"
+            data-skip-enter="true"
             onClick={useMatchedCustomer}
             className="rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-xs font-bold text-emerald-800 hover:bg-emerald-100"
           >
@@ -3939,6 +3260,7 @@ export default function LeadFormPage() {
         {canCreateQuotation && (
           <button
             type="button"
+            data-skip-enter="true"
             onClick={() => navigate(
               `/createquotation?leadId=${encodeURIComponent(String(duplicate.publicId || duplicate.id))}`,
               { state: { lead: duplicate, quickQuote: true } },
@@ -3950,6 +3272,7 @@ export default function LeadFormPage() {
         )}
         <button
           type="button"
+          data-skip-enter="true"
           onClick={() => navigate(`/EditLead/${duplicate.publicId || duplicate.id}`)}
           className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-bold text-amber-800 hover:bg-amber-100"
         >
@@ -3959,11 +3282,25 @@ export default function LeadFormPage() {
     </div>
   ) : null;
 
+  /* Same digit test the probe effect uses to decide the number is worth looking up. Repeated
+     rather than shared because the effect's copy is scoped to the raw value it debounced; both
+     answer "is this a phone number yet", and if that rule ever changes it must change in both. */
+  const phoneProbed = String(phone || "").replace(/\D/g, "").length >= 7;
+
   const duplicateStrip = (customerCard || leadCard) ? (
     <>{customerCard}{leadCard}</>
   ) : checkingContact ? (
     <p className="mt-2 flex items-center gap-1.5 text-[11px] text-slate-400">
       <LoaderCircle className="h-3 w-3 animate-spin" /> Checking existing leads and customers…
+    </p>
+  ) : phoneProbed ? (
+    /* The other half of the answer, which this form never gave. A match showed a card; NO match
+       showed nothing at all, so "we looked and this is someone new" was indistinguishable from
+       "we have not looked yet" — and the agent had no way to know whether saving would attach to
+       an existing customer or create one. The booking form has always said which of the two it is;
+       this now does too. */
+    <p className="mt-2 flex items-center gap-1.5 text-[11px] font-bold text-emerald-700">
+      <CircleUserRound className="h-3 w-3" /> New customer — saving will create a new profile.
     </p>
   ) : null;
 
@@ -3999,8 +3336,17 @@ export default function LeadFormPage() {
                 {editing ? `Edit Lead${leadCode ? ` · ${leadCode}` : ""}` : "Quick Quote"}
               </h1>
               <p className="hidden text-xs text-slate-500 sm:block">
+                {/* The legend has to name what Ctrl+Enter does RIGHT NOW, not what it does
+                    eventually. Before the itinerary is confirmed it continues the chain; after it,
+                    it prices. A legend that only ever said "create quote" was describing the second
+                    press and leaving the agent to discover the first. */}
                 <kbd className={kbdCls}>Enter</kbd> next field ·
-                <kbd className={`ml-1 ${kbdCls}`}>Ctrl+Enter</kbd> {!editing ? "create quote" : "save"}
+                <kbd className={`ml-1 ${kbdCls}`}>Ctrl+Enter</kbd>{" "}
+                {editing
+                  ? "save"
+                  : stepFlow && !itineraryConfirmed
+                    ? "continue"
+                    : "create quote"}
                 {!editing && (
                   <>
                     {" · "}<kbd className={kbdCls}>Ctrl+Shift+Enter</kbd> save &amp; next
@@ -4067,25 +3413,11 @@ export default function LeadFormPage() {
 
         <p className="pt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">Enquiry details</p>
 
-        {/* The blue intro banner is retired with Full details. It carried three things: the mode
-            toggle (nothing left to toggle), the session counter (moved into the sticky header, where
-            a batch clerk can see it without scrolling) and a paragraph of onboarding copy that was
-            re-read on every one of 50-100 enquiries a day.
-        {!rapidEntry && (
-          <div className="… bg-blue-50/70 …">
-            … "Full lead details" / "All customer, transport and assistance fields are available."
-            … <div role="group" aria-label="Lead entry mode"> Rapid | Full details </div>
-          </div>
-        )} */}
+        {/* The blue intro banner went with Full details. It carried the mode toggle (nothing left
+            to toggle), the session counter (now in the sticky header, where a batch clerk sees it
+            without scrolling) and a paragraph of onboarding copy re-read on every one of 50-100
+            enquiries a day. */}
 
-        {/* showRoomPlanning was `editing`, which meant the room plan — and with it the ONLY
-            per-child age input in the product — did not exist on the create screen at all. Every
-            package enquiry states the child's age ("01 Child, Age 2"), because it decides whether
-            the child is free, on an extra bed, or a full berth, so a form that cannot record it on
-            the way in forces the agent to save the lead and reopen it.
-            Safe to show always: the panel is still behind its own `roomPlanEnabled` checkbox, and
-            save() only sends roomAllocations when that is ticked. Untouched, this adds one collapsed
-            checkbox to the create form and nothing else. */}
         <LeadFormPanels
           register={register}
           errors={errors}
@@ -4096,16 +3428,12 @@ export default function LeadFormPage() {
           services={services}
           onToggleService={toggleService}
           itinerary={itinerary}
-          roomAllocations={roomAllocations}
-          onUpdateRoomAllocation={updateRoomAllocation}
-          onRebalanceRoomAllocations={rebalanceRoomAllocations}
           onAddRow={addRow}
           onRemoveRow={removeRow}
           onUpdateRow={updateRow}
           phoneRef={phoneRef}
           belowPhone={editing ? null : duplicateStrip}
           compactRail
-          showRoomPlanning
           stepFlow={stepFlow}
           itineraryConfirmed={itineraryConfirmed}
           itineraryConfirmable={itineraryConfirmable}
@@ -4126,19 +3454,19 @@ export default function LeadFormPage() {
             an empty accordion. Sticky pre-ticks Hotel from the previous enquiry, so services.length
             alone would have opened the whole pricing block on a blank form, which is the thing the
             chain exists to prevent; itineraryReady is what actually holds it shut. */}
-        {quoteInline && !(quoteModel && itineraryConfirmed && services.length > 0) && (
+        {quoteInline && !(quoteModel && quoteReady && services.length > 0) && (
           <section className="space-y-3">
             <p className="pt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">Quotation</p>
             <LockedStep
               title="Pricing"
-              hint={itineraryConfirmed
+              hint={quoteReady
                 ? "Tick a service above and its section opens here, seeded from the trip details."
                 : "Finish the itinerary and continue — services come first."}
             />
           </section>
         )}
 
-        {quoteInline && quoteModel && itineraryConfirmed && services.length > 0 && (
+        {quoteInline && quoteModel && quoteReady && services.length > 0 && (
           <section id="quick-quote-builder" className="space-y-3">
             <p className="pt-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">Quotation</p>
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4">

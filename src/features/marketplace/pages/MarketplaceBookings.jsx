@@ -15,11 +15,13 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Building2, Search } from "lucide-react";
+import {
+  AlertCircle, BedDouble, Building2, CalendarDays, ChevronRight, Search, WalletCards,
+} from "lucide-react";
 import { marketplaceService } from "../api/marketplaceService";
 import {
-  BOOKING_STATUS, Button, Card, Empty, Notice, Page, PageHeader, Pager, SkeletonRows, StatusDot,
-  Tabs, errMsg, fmtDate, fmtMoney, useToast,
+  BOOKING_STATUS, Button, Empty, Notice, Page, PageHeader, Pager, SkeletonRows, StatusDot,
+  Tabs, cn, errMsg, fmtDate, fmtMoney, useToast,
 } from "../components/marketplaceUi";
 
 const PAGE_SIZE = 20;
@@ -104,13 +106,17 @@ export function MarketplaceBookings() {
     })),
   ];
 
+  const activeLabel = status ? (BOOKING_STATUS[status]?.label ?? status) : "All requests";
+  const resultCount = pagination?.totalElements ?? rows.length;
+
   return (
-    <Page>
+    <Page width="max-w-6xl">
       <PageHeader
         title="Hotel booking requests"
         subtitle="Requests you've sent to the platform. Only the platform can confirm a hotel."
+        className="mb-6"
         actions={
-          <Button onClick={() => navigate("/marketplace")}>
+          <Button variant="primary" onClick={() => navigate("/marketplace")}>
             <Search /> Browse catalog
           </Button>
         }
@@ -120,83 +126,43 @@ export function MarketplaceBookings() {
       {awaitingCount > 0 && status !== AWAITING && (
         <Notice tone="warn" className="mb-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <span>
-              {awaitingCount === 1
-                ? "One request has a revised price waiting for your answer."
-                : `${awaitingCount} requests have a revised price waiting for your answer.`}{" "}
-              Nothing moves until you accept or decline.
-            </span>
-            <Button size="sm" onClick={() => changeStatus(AWAITING)}>Show them</Button>
+            <div className="flex min-w-0 items-start gap-2.5">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+              <div>
+                <p className="font-medium">
+                  {awaitingCount === 1
+                    ? "One request needs your approval"
+                    : `${awaitingCount} requests need your approval`}
+                </p>
+                <p className="mt-0.5 text-amber-800">
+                  The platform has proposed a revised price. Nothing moves until you accept or decline.
+                </p>
+              </div>
+            </div>
+            <Button size="sm" onClick={() => changeStatus(AWAITING)}>Review now</Button>
           </div>
         </Notice>
       )}
 
-      <CreditStrip credit={credit} />
+      <CreditSummary credit={credit} />
 
-      <Tabs options={tabs} value={status} onChange={changeStatus} className="mb-4" />
+      <Tabs
+        options={tabs}
+        value={status}
+        onChange={changeStatus}
+        className="mb-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      />
 
-      <Card flush>
-        {loading ? (
-          <div className="px-4 py-2"><SkeletonRows count={6} /></div>
-        ) : rows.length === 0 ? (
-          status ? (
-            <Empty
-              icon={Building2}
-              title={`No ${(BOOKING_STATUS[status]?.label ?? status).toLowerCase()} requests`}
-              hint="Nothing of yours is in this state right now."
-              action={<Button onClick={() => changeStatus("")}>Show all requests</Button>}
-            />
-          ) : (
-            <Empty
-              icon={Building2}
-              title="No booking requests yet"
-              hint="Find a hotel in the platform catalog and send a request. The platform confirms it with the supplier."
-              action={<Button variant="primary" onClick={() => navigate("/marketplace")}>Browse catalog</Button>}
-            />
-          )
-        ) : (
-          <ul className="divide-y divide-slate-100">
-            {rows.map((r) => (
-              <li key={r.publicId}>
-                <button
-                  type="button"
-                  onClick={() => navigate(`/marketplace/bookings/${r.publicId}`)}
-                  className="flex w-full items-center gap-4 px-4 py-3 text-left transition-colors hover:bg-slate-50 focus:outline-none focus-visible:bg-slate-50"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-slate-900">{r.hotelName}</p>
-                    <p className="mt-0.5 truncate text-[13px] text-slate-500">
-                      {[r.cityName, r.bookingCode].filter(Boolean).join(" · ")}
-                    </p>
-                  </div>
-
-                  <div className="hidden w-44 shrink-0 sm:block">
-                    <p className="text-[13px] text-slate-700">
-                      {fmtDate(r.checkIn)} → {fmtDate(r.checkOut)}
-                    </p>
-                    <p className="mt-0.5 text-[11px] text-slate-400">
-                      {r.nights} night{r.nights === 1 ? "" : "s"} · {r.rooms} room{r.rooms === 1 ? "" : "s"}
-                    </p>
-                  </div>
-
-                  <div className="hidden w-32 shrink-0 text-right md:block">
-                    {/* Only ever the tenant's payable — supplierTotal and platformEarning are absent
-                        from MarketplaceBookingTenantDto by design, not hidden by the UI. */}
-                    <p className="text-[13px] tabular-nums text-slate-700">
-                      {fmtMoney(r.tenantPayable, r.currency)}
-                    </p>
-                    <p className="mt-0.5 text-[11px] text-slate-400">you owe</p>
-                  </div>
-
-                  <div className="w-36 shrink-0 text-right">
-                    <StatusDot status={r.status} className="justify-end" />
-                  </div>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
+      <RequestList
+        activeLabel={activeLabel}
+        loading={loading}
+        rows={rows}
+        status={status}
+        total={resultCount}
+        onBrowse={() => navigate("/marketplace")}
+        onClear={() => changeStatus("")}
+        onOpen={(publicId) => navigate(`/marketplace/bookings/${publicId}`)}
+      />
 
       <Pager
         page={pagination?.page ?? page}
@@ -205,6 +171,156 @@ export function MarketplaceBookings() {
         onPage={setPage}
       />
     </Page>
+  );
+}
+
+function RequestList({ activeLabel, loading, rows, status, total, onBrowse, onClear, onOpen }) {
+  return (
+    <section
+      aria-label={activeLabel}
+      aria-busy={loading}
+      className="overflow-hidden rounded-xl border border-slate-200 bg-white"
+    >
+      <div className="flex min-h-14 items-center justify-between gap-4 border-b border-slate-100 px-4 py-3 sm:px-5">
+        <div>
+          <h2 className="text-sm font-semibold text-slate-900">{activeLabel}</h2>
+          <p className="mt-0.5 text-[11px] text-slate-400">Open a request to see its full timeline and actions.</p>
+        </div>
+        {!loading && (
+          <span className="shrink-0 text-xs tabular-nums text-slate-400">
+            {total} request{total === 1 ? "" : "s"}
+          </span>
+        )}
+      </div>
+
+      {loading ? (
+        <div className="px-5 py-2"><SkeletonRows count={6} /></div>
+      ) : rows.length === 0 ? (
+        status ? (
+          <Empty
+            icon={Building2}
+            title={`No ${(BOOKING_STATUS[status]?.label ?? status).toLowerCase()} requests`}
+            hint="Nothing of yours is in this state right now."
+            action={<Button onClick={onClear}>Show all requests</Button>}
+          />
+        ) : (
+          <Empty
+            icon={Building2}
+            title="No booking requests yet"
+            hint="Find a hotel in the platform catalog and send a request. The platform confirms it with the supplier."
+            action={<Button variant="primary" onClick={onBrowse}>Browse catalog</Button>}
+          />
+        )
+      ) : (
+        <ul className="divide-y divide-slate-100">
+          {rows.map((booking) => (
+            <li key={booking.publicId}>
+              <BookingRow booking={booking} onOpen={() => onOpen(booking.publicId)} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function BookingRow({ booking: b, onOpen }) {
+  const needsApproval = b.status === AWAITING;
+  const payable = needsApproval && b.revisedTenantPayable != null
+    ? b.revisedTenantPayable
+    : b.tenantPayable;
+  const roomSummary = [
+    `${b.nights} night${b.nights === 1 ? "" : "s"}`,
+    `${b.rooms} room${b.rooms === 1 ? "" : "s"}`,
+  ].join(" · ");
+
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      aria-label={`Open ${b.hotelName || "hotel"} request${b.bookingCode ? ` ${b.bookingCode}` : ""}`}
+      className={cn(
+        "group w-full px-4 py-4 text-left transition-colors focus:outline-none focus-visible:bg-slate-50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-slate-900/10 sm:px-5",
+        needsApproval ? "bg-amber-50/30 hover:bg-amber-50/60" : "hover:bg-slate-50/80",
+      )}
+    >
+      <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-3 md:grid-cols-[auto_minmax(0,1.25fr)_minmax(170px,1fr)_minmax(105px,.6fr)_minmax(125px,.7fr)_18px] lg:grid-cols-[auto_minmax(0,1.3fr)_minmax(175px,.95fr)_minmax(135px,.75fr)_minmax(105px,.55fr)_minmax(125px,.65fr)_18px]">
+        <span
+          className={cn(
+            "grid h-9 w-9 place-items-center rounded-lg border",
+            needsApproval
+              ? "border-amber-200 bg-amber-50 text-amber-700"
+              : "border-slate-200 bg-slate-50 text-slate-500",
+          )}
+          aria-hidden="true"
+        >
+          <Building2 className="h-4 w-4" />
+        </span>
+
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-slate-900 group-hover:text-slate-950">{b.hotelName}</p>
+          <p className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[12px] text-slate-500">
+            {b.cityName && <span className="truncate">{b.cityName}</span>}
+            {b.cityName && b.bookingCode && <span className="text-slate-300">·</span>}
+            {b.bookingCode && <span className="shrink-0 font-mono text-[11px] text-slate-400">{b.bookingCode}</span>}
+          </p>
+        </div>
+
+        <div className="col-start-2 col-end-4 grid items-end gap-2 min-[420px]:grid-cols-[minmax(0,1fr)_auto] min-[420px]:gap-3 md:hidden">
+          <div className="min-w-0">
+            <p className="flex items-center gap-1.5 whitespace-nowrap text-[11px] font-medium text-slate-600">
+              <CalendarDays className="h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden="true" />
+              {fmtDate(b.checkIn)} <span className="text-slate-300">→</span> {fmtDate(b.checkOut)}
+            </p>
+            <p className="mt-1 flex items-center gap-1.5 text-[11px] text-slate-400">
+              <BedDouble className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <span className="truncate">{roomSummary}{b.roomName ? ` · ${b.roomName}` : ""}</span>
+            </p>
+          </div>
+          <div className="text-left min-[420px]:text-right">
+            <p className="whitespace-nowrap text-[13px] font-semibold tabular-nums text-slate-900">
+              {fmtMoney(payable, b.currency)}
+            </p>
+            <p className="mt-0.5 whitespace-nowrap text-[10px] text-slate-400">
+              {needsApproval ? "proposed payable" : "platform payable"}
+            </p>
+          </div>
+        </div>
+
+        <div className="hidden md:col-start-3 md:block">
+          <p className="whitespace-nowrap text-[12px] font-medium text-slate-700">
+            {fmtDate(b.checkIn)} <span className="text-slate-300">→</span> {fmtDate(b.checkOut)}
+          </p>
+          <p className="mt-0.5 text-[11px] text-slate-400">{roomSummary}</p>
+        </div>
+
+        <div className="hidden min-w-0 lg:col-start-4 lg:block">
+          <p className="truncate text-[12px] text-slate-700">{b.roomName || "Room to advise"}</p>
+          <p className="mt-0.5 truncate text-[11px] text-slate-400">{b.leadGuestName || "Guest not added"}</p>
+        </div>
+
+        <div className="hidden text-right md:col-start-4 md:block lg:col-start-5">
+          {/* Only ever the tenant's payable — supplierTotal and platformEarning are absent from the
+              tenant DTO by design, not merely hidden by the UI. */}
+          <p className="whitespace-nowrap text-[13px] font-semibold tabular-nums text-slate-900">
+            {fmtMoney(payable, b.currency)}
+          </p>
+          <p className="mt-0.5 whitespace-nowrap text-[11px] text-slate-400">
+            {needsApproval ? "proposed payable" : "platform payable"}
+          </p>
+        </div>
+
+        <div className="col-start-3 row-start-1 flex items-center justify-end gap-1 md:col-start-5 md:row-auto lg:col-start-6">
+          <StatusDot status={b.status} className="justify-end" />
+          <ChevronRight className="h-4 w-4 text-slate-300 md:hidden" aria-hidden="true" />
+        </div>
+
+        <ChevronRight
+          className="hidden h-4 w-4 text-slate-300 transition-transform group-hover:translate-x-0.5 group-hover:text-slate-500 md:col-start-6 md:block lg:col-start-7"
+          aria-hidden="true"
+        />
+      </div>
+    </button>
   );
 }
 
@@ -226,7 +342,7 @@ export function MarketplaceBookings() {
  * Nothing renders at all when there is no balance and no ceiling: a debt-free tenant does not need
  * a panel telling them so.
  */
-function CreditStrip({ credit }) {
+function CreditSummary({ credit }) {
   if (!credit) return null;
 
   const outstanding = Number(credit.outstanding ?? 0);
@@ -235,38 +351,73 @@ function CreditStrip({ credit }) {
 
   const limit = Number(credit.creditLimit ?? 0);
   const available = Number(credit.available ?? 0);
-  // "Nearly out of room" is worth a warning; "already out" is worth a strong one, because the next
-  // request will be refused rather than merely tight.
-  const tone = !enforced ? "info" : available <= 0 ? "warn" : available < limit * 0.15 ? "warn" : "info";
+  const tight = enforced && (available <= 0 || available < limit * 0.15);
+  const availablePercent = limit > 0
+    ? Math.min(100, Math.max(0, (available / limit) * 100))
+    : 0;
 
   return (
-    <Notice tone={tone} className="mb-5">
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-1">
-        <span>
-          <span className="text-slate-500">Outstanding with the platform</span>{" "}
-          <span className="font-medium tabular-nums">{fmtMoney(outstanding, credit.currency)}</span>
-          {credit.unsettledBookings > 0 && (
-            <span className="text-slate-500">
-              {" "}across {credit.unsettledBookings} booking{credit.unsettledBookings === 1 ? "" : "s"}
-            </span>
-          )}
-        </span>
+    <section
+      aria-label="Platform balance"
+      className={cn(
+        "mb-5 overflow-hidden rounded-xl border bg-slate-50/70",
+        tight ? "border-amber-200" : "border-slate-200",
+      )}
+    >
+      <div className="grid gap-4 px-4 py-3.5 sm:grid-cols-[minmax(0,1fr)_minmax(220px,.7fr)] sm:items-center sm:px-5">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-slate-200 bg-white text-slate-500">
+            <WalletCards className="h-4 w-4" aria-hidden="true" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-[11px] font-medium text-slate-500">Outstanding with the platform</p>
+            <div className="mt-0.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+              <p className="text-lg font-semibold tabular-nums tracking-[-0.02em] text-slate-900">
+                {fmtMoney(outstanding, credit.currency)}
+              </p>
+              {credit.unsettledBookings > 0 && (
+                <p className="text-[11px] text-slate-400">
+                  across {credit.unsettledBookings} booking{credit.unsettledBookings === 1 ? "" : "s"}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
 
         {enforced && (
-          <span>
-            <span className="text-slate-500">Available credit</span>{" "}
-            <span className="font-medium tabular-nums">{fmtMoney(available, credit.currency)}</span>
-            <span className="text-slate-500"> of {fmtMoney(limit, credit.currency)}</span>
-          </span>
+          <div className="border-t border-slate-200 pt-3 sm:border-l sm:border-t-0 sm:pl-5 sm:pt-0">
+            <div className="flex items-baseline justify-between gap-3">
+              <p className="text-[11px] font-medium text-slate-500">Available credit</p>
+              <p className={cn("text-sm font-semibold tabular-nums", tight ? "text-amber-800" : "text-slate-800")}>
+                {fmtMoney(available, credit.currency)}
+              </p>
+            </div>
+            <div
+              className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200"
+              role="progressbar"
+              aria-label="Available marketplace credit"
+              aria-valuemin={0}
+              aria-valuemax={limit}
+              aria-valuenow={Math.max(0, available)}
+            >
+              <div
+                className={cn("h-full rounded-full", tight ? "bg-amber-500" : "bg-slate-500")}
+                style={{ width: `${availablePercent}%` }}
+              />
+            </div>
+            <p className="mt-1.5 text-right text-[10px] text-slate-400">
+              Limit {fmtMoney(limit, credit.currency)}
+            </p>
+          </div>
         )}
       </div>
+
       {enforced && available <= 0 && (
-        <p className="mt-1 text-slate-600">
-          New requests may be declined until some of this is settled. Talk to the platform if you
-          need the limit raised.
-        </p>
+        <div className="border-t border-amber-200 bg-amber-50 px-4 py-2.5 text-[12px] text-amber-900 sm:px-5">
+          New requests may be declined until part of this balance is settled. Contact the platform if you need more credit.
+        </div>
       )}
-    </Notice>
+    </section>
   );
 }
 

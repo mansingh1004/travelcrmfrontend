@@ -2222,6 +2222,20 @@ export const QuickQuoteSections = forwardRef(function QuickQuoteSections({
 
   useImperativeHandle(ref, () => ({
     reveal: revealSection,
+    /**
+     * Open a section WITHOUT travelling to it — no scroll, no focus.
+     *
+     * <p>Distinct from reveal() on purpose. reveal() is "the agent just asked for this section, put
+     * them in it", and it moves the caret. This is "this section should already be open when the
+     * accordion appears" — which happens when services were pre-ticked from the previous enquiry
+     * rather than clicked, so nothing ever queued a reveal and the whole block mounted collapsed.
+     *
+     * <p>It works because the focus/scroll effect bails while {@code revealTick === 0}: setting
+     * openSection alone changes what is rendered and nothing else. Calling this AFTER a real reveal
+     * would focus, so it is only safe as an initial state — which is the only thing it is for.
+     * Stealing the caret on mount is exactly what was removed from the booking form's fast panels.
+     */
+    open: (id) => setOpenSection(id),
     close: () => setOpenSection(""),
     /* Explicit, rather than piggy-backing on reveal(): reveal is also how a newly ticked service
        gets opened, and turning the whole accordion red because the agent picked "Cruise" would

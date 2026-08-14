@@ -92,9 +92,16 @@ export default function InclusionsExclusionsTab({ onDataChange, initialData = nu
   const addExc = () => { if (newExc.trim()) { setExclusions(p => [...p, newExc.trim()]); setNewExc(""); } };
 
   /* Payment Policies */
+  // Three stages rather than two, and each one states its share, because the
+  // quotation views read these lines back as the payment plan: a stage without a
+  // percentage cannot be placed on the schedule, and the shares have to total 100
+  // for it to be a schedule at all. The payment-method line carries no percentage
+  // on purpose — it is a note, and the views leave it out of the plan.
+  // Starting point only; the agent edits or removes any of it per quotation.
   const [paymentPolicies, setPaymentPolicies] = useState([
-    "50% advance payment required at the time of booking.",
-    "Remaining 50% to be paid 7 days before departure.",
+    "Advance Payment — 35% at the time of booking.",
+    "Installment After Receiving Voucher — 35%.",
+    "3 Days Before Arrival — 30%.",
     "Payments accepted via Bank Transfer, UPI, or Credit Card.",
   ]);
   const [newPayment, setNewPayment] = useState("");
