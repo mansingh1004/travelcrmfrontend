@@ -2,7 +2,7 @@
 import { memo, useState, useEffect, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
-  Menu, Plane, Bell, User, ChevronDown, ChevronRight,
+  Plane, Bell, User, ChevronDown, ChevronLeft, ChevronRight,
   LogOut, HelpCircle, CheckCheck, Search, Plus,
 } from "lucide-react";
 import { useNav } from "../nav/NavProvider";
@@ -135,7 +135,8 @@ const Navbar = memo(function Navbar({
     breadcrumb: autoBreadcrumb,
     activeDestination,
     setPaletteOpen,
-    openLauncher,
+    railCollapsed,
+    setRailCollapsed,
   } = useNav();
 
   // An explicit `breadcrumb` prop still wins — a page that knows something the
@@ -377,16 +378,27 @@ const Navbar = memo(function Navbar({
       {/* ── Left: toggle + context (logo on mobile, page title on desktop) ───── */}
       <div className="flex items-center gap-2 md:gap-4 min-w-0">
 
-        {/* The 3-line button opens "All apps". Collapsing the rail lives on the rail
-            itself (and ⌘B); opening the mobile drawer lives on the bottom tab bar —
-            so this one keeps a single, predictable job at every width. */}
+        {/* The rail's collapse control, moved out of the rail and into the header.
+            Inside the rail it could only ever be half a switch: the resting icon rail
+            has no room for it, so the button that closed the sidebar was not there to
+            reopen it. Here it is in the same place either way, and the chevron points
+            the direction the rail will move.
+
+            Desktop only. On phones the rail is a drawer opened from the bottom tab
+            bar, and `railCollapsed` does not describe it — a chevron there would be a
+            control that does nothing visible.
+
+            The 3-line "All apps" button that used to sit here is gone; the rail still
+            carries its own launcher trigger (Sidebar.jsx:396), so nothing is stranded. */}
         <button
-          onClick={(e) => openLauncher(e.currentTarget)}
-          className="p-2 -ml-2 rounded-xl text-slate-500 hover:text-slate-800 hover:bg-slate-100 active:scale-95 transition-all"
-          aria-label="All apps"
-          title="All apps"
+          type="button"
+          onClick={() => setRailCollapsed(!railCollapsed)}
+          className="hidden p-2 -ml-2 rounded-xl text-slate-500 hover:text-slate-800 hover:bg-slate-100 active:scale-95 transition-all md:block"
+          aria-label={railCollapsed ? "Open sidebar" : "Close sidebar"}
+          aria-pressed={!railCollapsed}
+          title={railCollapsed ? "Open sidebar" : "Close sidebar"}
         >
-          <Menu size={20} />
+          {railCollapsed ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
         </button>
 
         {/* Logo — phones only. On desktop the sidebar already carries the brand, so
