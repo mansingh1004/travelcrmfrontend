@@ -3088,7 +3088,7 @@ export default function BookingFormPage() {
               </div>
               <div>
                 <label className="mb-1.5 block text-xs font-semibold text-slate-600">Passengers</label>
-                {/* Capped at the  totalTravellers is derived from `form`, so the cap
+                {/*   totalTravellers is derived from `form`, so the cap
                     holds regardless of which card the counters themselves live in. */}
                 <input type="number" min="1" max={Math.max(totalTravellers, 1)} value={form.assistancePassengerCount} onFocus={(event) => event.target.select()} onChange={(event) => setField("assistancePassengerCount", event.target.value)} className={controlClass("assistancePassengerCount")} />
               </div>
