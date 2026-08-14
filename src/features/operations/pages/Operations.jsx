@@ -33,7 +33,6 @@ import {
   Page, Panel, GridEmpty, Pager, SummaryCard, DimensionCell, OverallBadge,
   DaysBadge, COLUMN_DIMENSIONS,
 } from "../components/opsUi";
-import OpsDetailPanel from "../components/OpsDetailPanel";
 import OpsRowDetail from "../components/OpsRowDetail";
 import operationsService, { isoDate, addDays } from "../api/operationsService";
 
@@ -78,13 +77,29 @@ export default function Operations() {
 
   const [summary, setSummary] = useState(null);
   const [summaryLoading, setSummaryLoading] = useState(true);
+  // Counts for the tabs no card carries. The endpoint has always returned all seven; the screen
+  // only ever reached five of them, so two states the server can select were unreachable.
+  const [tabCounts, setTabCounts] = useState({});
 
   const [expandedId, setExpandedId] = useState(null);
-  const [drawerEntry, setDrawerEntry] = useState(null);
   const [cursor, setCursor] = useState(-1);
 
   const searchRef = useRef(null);
   const bodyRef = useRef(null);
+  const scrollRef = useRef(null);
+  // Visible width of the table's horizontal scroller. The expanded row is a <td> inside a
+  // min-w-[1180px] table, so without this its content is 1180px wide too and has to be
+  // scrolled sideways to be read on any screen narrower than the table. Pinning it to the
+  // scroller's own width is what keeps the detail readable where the board is not.
+  const [viewportWidth, setViewportWidth] = useState(0);
+  // Set while the expanded row has an inline editor open. The row owns Escape then — both
+  // listeners sit on window, so stopPropagation cannot arbitrate between them and this
+  // handler has to be the one that stands down.
+  const editingRef = useRef(false);
+  // A write happened under the open row. The board is refreshed when the row closes rather
+  // than on every change: reloading mid-edit flips usePagedList's `loading`, which unmounts
+  // every row — including the one being worked in — and replaces it with skeletons.
+  const staleRef = useRef(false);
 
   /* ── Window ─────────────────────────────────────────────────────────────── */
   const { from, to, label } = useMemo(() => {
@@ -137,7 +152,15 @@ export default function Operations() {
     if (!allowed) return;
     setSummaryLoading(true);
     try {
-      setSummary(await operationsService.summary({ from, to, search: search || undefined }));
+      const params = { from, to, search: search || undefined };
+      // Both describe the same window; fetching them together keeps the cards and the tab
+      // chips from ever showing counts taken a moment apart.
+      const [figures, counts] = await Promise.all([
+        operationsService.summary(params),
+        operationsService.tabCounts(params).catch(() => ({})),
+      ]);
+      setSummary(figures);
+      setTabCounts(counts ?? {});
     } catch (err) {
       // A failed card degrades silently: the interceptor already surfaced anything actionable,
       // and broken figures are not worth a toast on top of a working list.
@@ -158,9 +181,32 @@ export default function Operations() {
 
   // Collapse and reset the cursor whenever the underlying set changes. Leaving a row expanded
   // across a filter change points the panel at a booking that is no longer in the list.
-  useEffect(() => { setExpandedId(null); setCursor(-1); }, [tab, from, to, search, page]);
+  useEffect(() => {
+    setExpandedId(null);
+    setCursor(-1);
+    // The list is being refetched anyway by the filter change itself.
+    staleRef.current = false;
+  }, [tab, from, to, search, page]);
 
-  const refreshAll = useCallback(() => { reload(); loadSummary(); }, [reload, loadSummary]);
+  const refreshAll = useCallback(() => {
+    staleRef.current = false;
+    reload();
+    loadSummary();
+  }, [reload, loadSummary]);
+
+  /**
+   * A line changed inside the open row.
+   *
+   * The cards are reloaded straight away — they are counted over the whole window and are
+   * what the tabs are read against, so leaving them wrong is worse than a moment's flicker
+   * on five numbers. The ROWS are only marked stale: the row being edited is the one the
+   * reload would unmount, and a booking that has just become ready should leave the
+   * Action-needed tab when the user closes it, not while they are still working in it.
+   */
+  const markStale = useCallback(() => {
+    staleRef.current = true;
+    loadSummary();
+  }, [loadSummary]);
 
   /* ── Table ──────────────────────────────────────────────────────────────
      TanStack drives the row model and expansion only; the markup below renders
@@ -252,9 +298,21 @@ export default function Operations() {
 
   const tableRows = table.getRowModel().rows;
 
+  /**
+   * Open a row, or close it and settle up.
+   *
+   * Closing is where a deferred board refresh lands: the user has finished with that
+   * booking, so this is the one moment the list may safely re-sort or drop it from the tab.
+   */
   const toggleRow = useCallback((id) => {
-    setExpandedId((current) => (current === id ? null : id));
-  }, []);
+    if (expandedId === id) {
+      setExpandedId(null);
+      editingRef.current = false;
+      if (staleRef.current) refreshAll();
+    } else {
+      setExpandedId(id);
+    }
+  }, [expandedId, refreshAll]);
 
   /* ── Keyboard ────────────────────────────────────────────────────────────
      j/k and the arrows move a cursor, Enter opens it, Esc closes. Ignored while
@@ -266,9 +324,11 @@ export default function Operations() {
 
       if (e.key === "/" && !typing) { e.preventDefault(); searchRef.current?.focus(); return; }
       if (e.key === "Escape") {
+        // The expanded row owns Escape while it has an editor open, so a half-typed
+        // confirmation number is not thrown away by collapsing the row underneath it.
+        if (editingRef.current) return;
         if (typing) { document.activeElement.blur(); return; }
-        if (drawerEntry) { setDrawerEntry(null); return; }
-        if (expandedId) { setExpandedId(null); return; }
+        if (expandedId) { toggleRow(expandedId); return; }
         return;
       }
       if (typing || !tableRows.length) return;
@@ -286,7 +346,17 @@ export default function Operations() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [tableRows, cursor, expandedId, drawerEntry, toggleRow]);
+  }, [tableRows, cursor, expandedId, toggleRow]);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return undefined;
+    const measure = () => setViewportWidth(el.clientWidth);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   // Keep the cursor row in view when it moves off-screen under the sticky header.
   useEffect(() => {
@@ -424,9 +494,62 @@ export default function Operations() {
                        active={tab === "PAYMENT_PENDING"} onClick={() => setTab(tab === "PAYMENT_PENDING" ? "ALL" : "PAYMENT_PENDING")} />
         </div>
 
+        {/* ── The two states no card carries ────────────────────────────────
+            NOT_PLANNED and UNCONFIRMED are selectable server-side and were counted on every
+            request, but nothing on screen could reach them. They are narrower questions than
+            the five figures above — "which bookings has nobody broken down yet" is where a
+            morning starts — so they read as filters rather than headline numbers. */}
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider">Quick filters</span>
+          {[
+            { key: "NOT_PLANNED", label: "Not planned yet" },
+            { key: "UNCONFIRMED", label: "Has unconfirmed lines" },
+            // The two chase queues. "Unconfirmed" mixes work nobody has started with work sitting
+            // in a supplier's inbox, and those want opposite actions — one wants an email sent,
+            // the other wants patience or a nudge. These split them.
+            { key: "AWAITING_SUPPLIER", label: "Waiting on supplier" },
+            // The only filter that catches a failure nobody sees coming: a hotel releases held
+            // rooms at its cut-off and tells no one, so the booking looks unchanged until
+            // check-in. Red rather than blue because it is a deadline, not a view.
+            { key: "HOLD_EXPIRING", label: "Hold expiring", urgent: true },
+          ].map(({ key, label, urgent }) => {
+            const count = tabCounts?.[key];
+            const on = tab === key;
+            // A zero here is information, not clutter — "nothing is about to lapse" is the
+            // answer an operator opens this row to get. But an urgent chip that is always
+            // visible stops being urgent, so it only colours itself when it has rows.
+            const hot = urgent && count > 0;
+            return (
+              <button
+                key={key}
+                type="button"
+                aria-pressed={on}
+                onClick={() => setTab(on ? "ALL" : key)}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
+                  on
+                    ? hot
+                      ? "bg-rose-600 border-rose-600 text-white shadow-sm"
+                      : "bg-blue-600 border-blue-600 text-white shadow-sm"
+                    : hot
+                      ? "bg-rose-50 border-rose-200 text-rose-700 hover:border-rose-300"
+                      : "bg-white border-slate-200 text-slate-500 hover:text-blue-600 hover:border-blue-300"
+                }`}
+              >
+                {label}
+                {count != null && (
+                  <span className={`tabular-nums ${
+                    on ? (hot ? "text-rose-100" : "text-blue-100")
+                       : hot ? "text-rose-500" : "text-slate-400"
+                  }`}>{count}</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
         {/* ── The board ────────────────────────────────────────────────────── */}
         <Panel className="overflow-hidden">
-          <div className="overflow-x-auto">
+          <div ref={scrollRef} className="overflow-x-auto">
             <table className="w-full min-w-[1180px] border-collapse">
               <thead className="sticky top-0 z-10 bg-slate-50/95 backdrop-blur">
                 <tr>
@@ -505,9 +628,12 @@ export default function Operations() {
                           <td colSpan={columns.length + 1} className="p-0">
                             <OpsRowDetail
                               entry={row.original}
-                              onClose={() => setExpandedId(null)}
-                              onOpenDrawer={setDrawerEntry}
+                              width={viewportWidth}
+                              onClose={() => toggleRow(row.id)}
+                              onChanged={markStale}
+                              onEditingChange={(editing) => { editingRef.current = editing; }}
                               onOpenLedger={(e) => navigate(`/BookingPayments/${e.bookingPublicId}`)}
+                              onOpenBooking={(e) => navigate(`/BookingDetails/${e.bookingPublicId}`)}
                             />
                           </td>
                         </tr>
@@ -544,15 +670,6 @@ export default function Operations() {
           <kbd className="px-1 rounded bg-slate-100 ml-1">Esc</kbd> close
         </p>
 
-        {/* The supplier workflow keeps its own drawer: editing where a row is being read
-            is how the two end up disagreeing about what was just changed. */}
-        {drawerEntry && (
-          <OpsDetailPanel
-            entry={drawerEntry}
-            onClose={() => setDrawerEntry(null)}
-            onChanged={refreshAll}
-          />
-        )}
       </div>
     </Page>
   );

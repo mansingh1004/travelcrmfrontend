@@ -259,7 +259,10 @@ const readSessionCount = () => {
 
 export const blankDefaults = () => ({
   customerName: "", phone: "", email: "", budget: "",
-  leadSource: "", leadType: "Fresh", leadStage: "New Lead",
+  // A lead created by a staff member starts as Manual Entry, so the required source dropdown is
+  // useful immediately instead of opening blank. Sticky state still overrides this with the last
+  // source used during the current entry session, and edit mode always loads the saved source.
+  leadSource: "Manual Entry", leadType: "Fresh", leadStage: "New Lead",
   assignedUserId: "", birthDate: "", anniversaryDate: "",
   preferredCommunication: "", followUpDate: "", packageType: "",
   travelDate: "", returnDate: "", departCountry: "India", departCity: "",
@@ -1906,17 +1909,19 @@ export function LeadFormPanels({
                 required
                 error={errors.leadSource?.message || (sourcesError ? "Couldn't load sources — showing the current value only." : undefined)}
               >
-                <input type="hidden" {...register("leadSource", { required: "Lead source is required" })} />
-                <SearchableSelect
-                  name="leadSource"
-                  options={sourceOptionsFor(leadSourceValue)}
-                  value={leadSourceValue}
-                  onChange={(value) => setValue("leadSource", value, { shouldDirty: true, shouldValidate: true })}
-                  placeholder="Select source"
-                  loading={sourcesLoading}
-                  searchable
-                  advanceOnSelect
-                />
+                <div className="relative">
+                  <select
+                    {...register("leadSource", { required: "Lead source is required" })}
+                    id="leadSource"
+                    className={`${control(errors.leadSource)} appearance-none pr-9`}
+                  >
+                    <option value="">{sourcesLoading ? "Loading sources…" : "Select source"}</option>
+                    {sourceOptionsFor(leadSourceValue).map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                </div>
               </Field>
 
               {/* Type and Stage used to be two hidden inputs in rapid — registered so their rules

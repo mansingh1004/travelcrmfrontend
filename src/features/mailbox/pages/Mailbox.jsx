@@ -395,7 +395,10 @@ export default function Mailbox() {
         <section
           ref={listRef}
           className={`min-h-0 overflow-y-auto border-slate-200 ${
-            openUid ? "hidden w-[380px] shrink-0 border-r md:block" : "w-full"
+            // `|| draft` matters as much as `openUid`: composing also needs the right-hand pane, and
+            // while this said `openUid` alone the list kept `w-full`, leaving the flex-1 compose
+            // pane with zero free space to grow into — Compose "did nothing" at 0px wide.
+            openUid || draft ? "hidden w-[380px] shrink-0 border-r md:block" : "w-full"
           }`}
         >
           {loading ? (

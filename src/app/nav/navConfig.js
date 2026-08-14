@@ -51,6 +51,7 @@ import {
   Inbox,
   CircleUser,
   Radar,
+  MessageCircle,
 } from "lucide-react";
 
 import {
@@ -124,6 +125,17 @@ export const NAV_SECTIONS = [
         // showed on a plan that excludes COMMUNICATION and every call behind it answered 403.
         can: () => hasPermission(P.COMM_READ) && hasModule("COMMUNICATION"),
         path: "/Mailbox",
+      },
+      {
+        id: "whatsapp",
+        label: "WhatsApp",
+        Icon: MessageCircle,
+        tone: "emerald",
+        keywords: "chat supplier vendor messages interakt",
+        // Same authority and the same plan module as Mailbox — it reads the same
+        // comm_conversations rows through the same COMM_READ endpoints.
+        can: () => hasPermission(P.COMM_READ) && hasModule("COMMUNICATION"),
+        path: "/WhatsApp",
       },
       {
         id: "reminders",

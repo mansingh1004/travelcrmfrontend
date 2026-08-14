@@ -56,8 +56,10 @@ const VendorDetails = lazyPage(vendors, "VendorDetails");
 
 const reminders = () => import("@features/reminders");
 const mailbox = () => import("@features/mailbox");
+const whatsapp = () => import("@features/whatsapp");
 const Reminders = lazyPage(reminders, "Reminders");
 const Mailbox = lazyPage(mailbox, "Mailbox");
+const WhatsAppInbox = lazyPage(whatsapp, "WhatsAppInbox");
 const CreateReminder = lazyPage(reminders, "CreateReminder");
 const BookingReminders = lazyPage(reminders, "BookingReminders");
 const Notifications = lazyPage(reminders, "Notifications");
@@ -374,6 +376,9 @@ const AppRouter = () => {
               <Route path="CreateVendor" element={<CreateVendor />} />
               <Route path="Reminders" element={<Reminders />} />
               <Route path="Mailbox" element={<Guard allow={hasPermission(P.COMM_READ) && hasModule("COMMUNICATION")}><Mailbox /></Guard>} />
+              {/* Same gate as Mailbox: it reads the same conversations table behind the same
+                  COMM_READ authority and the same plan module. */}
+              <Route path="WhatsApp" element={<Guard allow={hasPermission(P.COMM_READ) && hasModule("COMMUNICATION")}><WhatsAppInbox /></Guard>} />
               {/* Task & Team Calendar (gated by TASK_READ; sub-agents get a row-scoped personal calendar) */}
               <Route path="calendar" element={<Guard allow={hasPermission(P.TASK_READ)}><Calendar /></Guard>} />
               {/* All Tasks list — same TASK_READ gate and the same TASKS module as the calendar.
@@ -385,7 +390,7 @@ const AppRouter = () => {
               semantics: a booking is a span, a task is a point. Gated on BOOKING_READ because
               the board shows booking data and nothing else — a new OPS_* permission would be a
               second name for the same access. */}
-              <Route path="operations" element={<Guard allow={hasPermission(P.BOOKING_READ)}><Operations /></Guard>} />
+              <Route path="operations" element={<Guard allow={hasPermission(P.BOOKING_READ) && hasModule("BOOKINGS")}><Operations /></Guard>} />
 
               <Route path="createquotation" element={<Guard allow={(hasPermission(P.QUOTATION_CREATE) || hasPermission(P.QUOTATION_UPDATE)) && hasPermission(P.LEAD_READ)}><CreateQuotation /></Guard>} />
               {/*
