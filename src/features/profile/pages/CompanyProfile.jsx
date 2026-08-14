@@ -5,11 +5,13 @@ import {
   taxRateService,
 } from "@features/settings";
 import { hasPermission, P } from "@shared/lib/access";
-import { Pen as FiEdit2, Save as FiSave, MapPin as FiMapPin, Calendar as FiCalendar, Key as FiKey, ChevronDown as FiChevronDown, Upload as FiUpload, Plus as FiPlus, Trash2 as FiTrash2, TriangleAlert as FiAlertTriangle, Info as FiInfo, CircleCheck as FiCheckCircle, RefreshCw as FiRefreshCw, ExternalLink as FiExternalLink, CircleAlert as FiAlertCircle, Building2 as FaBuilding, ReceiptText as FaFileInvoiceDollar, Crown as FaCrown, BriefcaseBusiness as MdBusinessCenter, Building as MdLocationCity, Sparkles as HiSparkles } from "lucide-react";
+import { SOCIAL_NETWORKS, EMPTY_SOCIAL, connectedSocials } from "../lib/socialNetworks";
+import { Pen as FiEdit2, Save as FiSave, MapPin as FiMapPin, Calendar as FiCalendar, Key as FiKey, ChevronDown as FiChevronDown, Upload as FiUpload, Plus as FiPlus, Trash2 as FiTrash2, TriangleAlert as FiAlertTriangle, Info as FiInfo, CircleCheck as FiCheckCircle, RefreshCw as FiRefreshCw, ExternalLink as FiExternalLink, Share2 as FiShare2, CircleAlert as FiAlertCircle, Building2 as FaBuilding, ReceiptText as FaFileInvoiceDollar, Crown as FaCrown, BriefcaseBusiness as MdBusinessCenter, Building as MdLocationCity, Sparkles as HiSparkles } from "lucide-react";
 
 
 /* ─── EMPTY COMPANY STATE ───────────────────────────────────── */
 const EMPTY_COMPANY = {
+  ...EMPTY_SOCIAL,
   name: "",
   prefix: "",
   email: "",
@@ -425,6 +427,44 @@ function OverviewTab({
         </div>
       </SectionCard>
 
+      {/* ── Social Media ─────────────────────────────────────────────────────────────────────
+          Only the networks actually filled in, as tiles that open. A row per network with "—"
+          against the four nobody set up says less than two tiles that work, and it makes the card
+          look like a form rather than a summary. The whole card is hidden while none are set, with
+          one line pointing at where to add them — an empty card is a dead end. */}
+      <SectionCard
+        title="Social Media"
+        icon={<FiShare2 className="w-4 h-4" />}
+        subtitle="Where customers can find and message you"
+        delay={90}
+      >
+        {connectedSocials(company).length === 0 ? (
+          <p className="text-sm text-slate-400">
+            No social accounts added yet — add them under{" "}
+            <span className="font-semibold text-slate-500">Edit Profile → Social Media</span>.
+          </p>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {connectedSocials(company).map(({ key, label, Icon, tone, url, display }) => (
+              <a
+                key={key}
+                href={url}
+                target="_blank"
+                rel="noreferrer"
+                className="group flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3.5 py-3 transition-all hover:border-blue-300 hover:shadow-sm"
+              >
+                <span className={`flex-shrink-0 ${tone}`}><Icon className="w-5 h-5" /></span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-xs font-extrabold uppercase tracking-wide text-slate-500">{label}</span>
+                  <span className="block truncate text-sm font-semibold text-slate-800">{display}</span>
+                </span>
+                <FiExternalLink className="w-3.5 h-3.5 flex-shrink-0 text-slate-300 transition-colors group-hover:text-blue-500" />
+              </a>
+            ))}
+          </div>
+        )}
+      </SectionCard>
+
       <AdminSettings />
     </div>
   );
@@ -445,6 +485,13 @@ function EditProfileTab({
     operatingSince: company.operatingSince, totalReviews: company.totalReviews,
     tripsSold: company.tripsSold || 0, gstin: company.gstin || "",
     tan: company.tan || "", address: company.address || "", state: company.state || "",
+    // Every social key is seeded from EMPTY_SOCIAL first, so a company saved before these existed
+    // still gets "" rather than undefined — an undefined value would flip the input to uncontrolled
+    // on first render and React would warn the moment anyone typed into it.
+    ...EMPTY_SOCIAL,
+    ...Object.fromEntries(
+      SOCIAL_NETWORKS.map((n) => [n.field, company[n.field] || ""])
+    ),
   });
   const [errs, setErrs] = useState({});
   const [saving, setSaving] = useState(false);
@@ -462,7 +509,27 @@ function EditProfileTab({
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) e.email = "Enter a valid email";
     if (!form.prefix.trim()) e.prefix = "Prefix is required";
     if (!form.state) e.state = "State is required";
+    // Social links are all optional, so only a value that was actually typed is checked. Only
+    // WhatsApp carries a rule — the rest accept a handle or a URL and normalise on blur, and there
+    // is no shape of text that is wrong enough to block a save over.
+    SOCIAL_NETWORKS.forEach((n) => {
+      const value = String(form[n.field] || "").trim();
+      if (!value || !n.validate) return;
+      const message = n.validate(value);
+      if (message) e[n.field] = message;
+    });
     return e;
+  };
+
+  /* Normalise on BLUR, not on save.
+     "@nepaltours" becomes https://instagram.com/nepaltours in the box the moment focus leaves it,
+     so what gets stored is visible and still editable. Doing it silently at submit would show one
+     thing on screen and put another in the database. */
+  const normaliseSocial = (network) => {
+    const current = String(form[network.field] || "").trim();
+    if (!current) return;
+    const next = network.normalise(current);
+    if (next && next !== current) set(network.field, next);
   };
 
   const handleFile = (e, type) => {
@@ -656,6 +723,60 @@ function EditProfileTab({
             </div>
             {faviconPreview && <p className="text-xs text-slate-500 mt-2 font-medium">→ Current favicon</p>}
           </div>
+        </div>
+      </SectionCard>
+
+      {/* ── Social Media ─────────────────────────────────────────────────────────────────────
+          Sits after Branding because that is what it is: the company's public face, alongside the
+          logo and favicon rather than among the tax identifiers.
+
+          Every field is OPTIONAL and every one accepts a handle or a full URL — an agent should not
+          have to remember which. The value is normalised into a real link when the field loses
+          focus, so what is stored is what is shown. */}
+      <SectionCard
+        title="Social Media"
+        icon={<FiShare2 className="w-4 h-4" />}
+        subtitle="Where customers can find and message you — shown on quotations and web links"
+        delay={100}
+      >
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          {SOCIAL_NETWORKS.map(({ key, field, label, Icon, tone, placeholder, hint, normalise }) => {
+            const url = normalise(form[field]);
+            return (
+              <div key={key}>
+                <Label hint={hint}>
+                  <span className="inline-flex items-center gap-2">
+                    <Icon className={`w-4 h-4 ${tone}`} />
+                    {label}
+                  </span>
+                </Label>
+                <input
+                  value={form[field] || ""}
+                  onChange={(e) => set(field, e.target.value)}
+                  onBlur={() => normaliseSocial(SOCIAL_NETWORKS.find((n) => n.field === field))}
+                  className={inp(errs[field])}
+                  placeholder={placeholder}
+                  inputMode={key === "whatsapp" ? "tel" : "url"}
+                  autoComplete="off"
+                />
+                <ErrMsg f={field} />
+                {/* The finished link, live. It is the only way to tell a typo from a working
+                    address before saving — and for WhatsApp it is the wa.me number that will
+                    actually be dialled, which is not obvious from "+91 98765 43210". */}
+                {!errs[field] && url && (
+                  <a
+                    href={url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-semibold text-blue-600 hover:text-blue-700 break-all"
+                  >
+                    {url.replace(/^https?:\/\//i, "")}
+                    <FiExternalLink className="w-3 h-3 flex-shrink-0" />
+                  </a>
+                )}
+              </div>
+            );
+          })}
         </div>
       </SectionCard>
 
