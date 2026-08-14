@@ -84,6 +84,7 @@ export function flattenDestinations(sections) {
           keywords: item.keywords,
           sectionId: section.id,
           sectionLabel: section.label,
+          parentId: null,
           parentLabel: null,
         });
       }
@@ -101,9 +102,64 @@ export function flattenDestinations(sections) {
           keywords: child.keywords,
           sectionId: section.id,
           sectionLabel: section.label,
+          // The owning group's ID, not just its label. The sidebar re-groups pinned leaves back
+          // under their parent, and it keys that group on this id so the rail's one-open-at-a-time
+          // accordion — which is seeded from `activeTrail.itemId`, itself an item id — opens the
+          // pinned group automatically when the route lands inside it. Keyed on the label instead,
+          // navigating to a child would seed the accordion with an id nothing matches and the
+          // group the user is standing in would collapse.
+          parentId: item.id,
           parentLabel: item.label,
         });
       }
+    }
+  }
+  return out;
+}
+
+/**
+ * Every GROUP as a pinnable entry — a module the user can put on the rail whole,
+ * instead of pinning its pages one at a time.
+ *
+ * <p>Deliberately NOT folded into {@link flattenDestinations}. That list is the
+ * search index and the active-route matcher, and both are about single pages: a
+ * group is not somewhere you can be, it is a heading over places you can be.
+ * Mixing the two would put "Platform Hotels" in the command palette next to the
+ * two pages it merely contains.
+ *
+ * <p>`path` is the FIRST child's, so every consumer that just navigates a pinned
+ * entry keeps working unchanged — the mobile tab bar in particular renders pins
+ * as plain links and would otherwise get a tab that goes nowhere. `children`
+ * carries the resolved leaves so the sidebar can expand the group without
+ * re-walking the registry.
+ *
+ * <p>Only groups with at least TWO children: a "group" of one is the page itself
+ * wearing a disclosure triangle.
+ */
+export function flattenGroups(sections) {
+  const out = [];
+  for (const section of sections) {
+    for (const item of section.items) {
+      const children = (item.children || []).filter((c) => c.path);
+      if (children.length < 2) continue;
+      out.push({
+        kind: "group",
+        id: item.id,
+        label: item.label,
+        Icon: item.Icon,
+        tone: item.tone,
+        keywords: item.keywords,
+        sectionId: section.id,
+        sectionLabel: section.label,
+        path: children[0].path,
+        children: children.map((child) => ({
+          id: child.id,
+          label: child.label,
+          path: child.path,
+          badge: child.badge,
+          exact: child.exact,
+        })),
+      });
     }
   }
   return out;

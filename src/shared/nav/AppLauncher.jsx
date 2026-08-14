@@ -95,6 +95,13 @@ export default function AppLauncher({
   tone = {},
   theme = "app",
   title = "All apps",
+  /* Whether a whole MODULE may be pinned, not just its pages. Opt-in, and off by
+     default, because it is only half a feature here: the realm's sidebar has to
+     be able to resolve a group id back into a row. The tenant rail can (its pins
+     resolve against destinations + flattenGroups); the console's resolves against
+     flattenDestinations alone, which is leaves only — offering the star there
+     would store a pin that renders as nothing at all. */
+  allowGroupPins = false,
 }) {
   const skin = SKIN[theme] || SKIN.app;
   const [query, setQuery] = useState("");
@@ -124,8 +131,18 @@ export default function AppLauncher({
     return () => window.removeEventListener("resize", place);
   }, [open, anchor]);
 
-  // One tile per DESTINATION, not per menu row: the group "Leads" contributes its
-  // children ("Incoming leads", "All leads", …), because those are what people pin.
+  /* Tiles are still one per DESTINATION, but they are no longer a single flat run
+     per section. A module's pages now sit under the module's own heading, and that
+     heading carries a star of its own.
+
+     The flat version listed "Browse catalog" and "Hotel requests" as two unrelated
+     tiles that happened to share an icon, with "Platform Hotels" — the thing the
+     user actually thinks of as the app — named nowhere and impossible to pin. You
+     can now pin the module whole (one sidebar row that expands to its pages) or
+     still pin a single page, which is what the shipped DEFAULT_PINS are.
+
+     `loose` holds items that ARE a destination themselves, so they keep the plain
+     grid they always had. */
   const groups = useMemo(() => {
     const q = query.trim();
     const keep = (label, keywords) =>
@@ -133,12 +150,14 @@ export default function AppLauncher({
 
     return sections
       .map((section) => {
-        const tiles = [];
+        const loose = [];
+        const blocks = [];
         for (const item of section.items) {
           const itemMatches = keep(item.label, item.keywords);
           if (item.path && itemMatches) {
-            tiles.push({ ...item, parent: null });
+            loose.push({ ...item, parent: null });
           }
+          const tiles = [];
           for (const child of item.children || []) {
             // A matching PARENT brings all its children — you searched for the
             // group, you want to see what is in it.
@@ -150,19 +169,95 @@ export default function AppLauncher({
               parent: item.label,
             });
           }
+          if (!tiles.length) continue;
+          /* A realm that cannot pin a module has no use for the heading either —
+             it would be a label over tiles that were already labelled, and the
+             console did not ask to have its launcher rearranged. There, children
+             stay in the one flat grid they have always been in. */
+          if (!allowGroupPins) {
+            loose.push(...tiles);
+            continue;
+          }
+          blocks.push({
+            id: item.id,
+            label: item.label,
+            tone: item.tone,
+            // Only a module with two or more real pages can be pinned whole, and the
+            // test has to match flattenGroups() — that is what resolves the id back
+            // into a sidebar row, so a star offered here that it will not resolve
+            // would pin something that then renders as nothing.
+            pinnable: (item.children || []).filter((c) => c.path).length >= 2,
+            tiles,
+          });
         }
-        return { ...section, tiles };
+        return { ...section, loose, blocks };
       })
-      .filter((s) => s.tiles.length);
-  }, [sections, query]);
+      .filter((s) => s.loose.length || s.blocks.length);
+  }, [sections, query, allowGroupPins]);
 
   if (!open) return null;
 
-  const total = groups.reduce((n, g) => n + g.tiles.length, 0);
+  const total = groups.reduce(
+    (n, g) => n + g.loose.length + g.blocks.reduce((m, b) => m + b.tiles.length, 0),
+    0,
+  );
+
+  /* A plain function, not a component: declaring a component inside the render
+     gives it a new identity every keystroke, so every tile would unmount and
+     remount on each character typed into the search box. */
+  const renderTile = (tile) => {
+    const pinned = isPinned?.(tile.id);
+    const here = activeId === tile.id;
+    return (
+      <div key={tile.id} className="relative">
+        <Link
+          to={tile.path}
+          onClick={onClose}
+          title={tile.parent ? `${tile.parent} · ${tile.label}` : tile.label}
+          className={`flex h-full flex-col items-center gap-2 rounded-xl border px-2 py-4 text-center transition-all ${
+            here ? skin.tileActive : skin.tile
+          }`}
+        >
+          {tile.Icon && (
+            <tile.Icon size={22} className={tone[tile.tone] || skin.icon} strokeWidth={1.9} />
+          )}
+          <span
+            className={`line-clamp-2 text-[12px] font-semibold leading-tight ${skin.tileLabel}`}
+          >
+            {tile.label}
+          </span>
+        </Link>
+
+        {togglePin && (
+          <button
+            type="button"
+            onClick={() => togglePin(tile.id)}
+            title={pinned ? "Unpin from sidebar" : "Pin to sidebar"}
+            aria-label={pinned ? `Unpin ${tile.label}` : `Pin ${tile.label}`}
+            aria-pressed={!!pinned}
+            className={`absolute right-1.5 top-1.5 rounded-md p-1 transition-colors ${
+              pinned ? skin.starOn : skin.star
+            }`}
+          >
+            <Star size={13} fill={pinned ? "currentColor" : "none"} />
+          </button>
+        )}
+      </div>
+    );
+  };
 
   // Anchored under its trigger on desktop; a full-screen sheet on phones, where a
   // 620px card hanging off a button is not a shape that exists.
   const anchored = !!pos;
+
+  /* Declared AFTER `anchored`, and that is load-bearing rather than stylistic.
+     Both are plain consts in this same function body, so reading `anchored` from
+     a const declared above it is a temporal-dead-zone ReferenceError the instant
+     the sheet renders — which is a blank, un-openable launcher, and a clean build,
+     because nothing about it is a type error. */
+  const gridClass = `grid gap-2.5 ${
+    anchored ? "grid-cols-4" : "grid-cols-3 sm:grid-cols-4 lg:grid-cols-5"
+  }`;
 
   return (
     <div
@@ -228,59 +323,52 @@ export default function AppLauncher({
                 >
                   {section.label}
                 </h3>
+
                 {/* Anchored, the panel is a fixed 620px, so the column count is
                     fixed too — `lg:` tracks the VIEWPORT, not this box, and would
                     otherwise squeeze five tiles into it on a wide monitor. */}
-                <div
-                  className={`grid gap-2.5 ${
-                    anchored ? "grid-cols-4" : "grid-cols-3 sm:grid-cols-4 lg:grid-cols-5"
-                  }`}
-                >
-                  {section.tiles.map((tile) => {
-                    const pinned = isPinned?.(tile.id);
-                    const here = activeId === tile.id;
-                    return (
-                      <div key={tile.id} className="relative">
-                        <Link
-                          to={tile.path}
-                          onClick={onClose}
-                          title={tile.parent ? `${tile.parent} · ${tile.label}` : tile.label}
-                          className={`flex h-full flex-col items-center gap-2 rounded-xl border px-2 py-4 text-center transition-all ${
-                            here ? skin.tileActive : skin.tile
+                {section.loose.length > 0 && (
+                  <div className={gridClass}>{section.loose.map(renderTile)}</div>
+                )}
+
+                {section.blocks.map((block) => (
+                  <div key={block.id} className={section.loose.length ? "mt-4" : ""}>
+                    {/* The module itself: named, and pinnable as one row. Its star
+                        pins the WHOLE module — the sidebar then shows a single
+                        collapsible row carrying the pages below. */}
+                    <div className="mb-2 flex items-center gap-2">
+                      <span className={`text-[11.5px] font-bold ${skin.tileLabel}`}>
+                        {block.label}
+                      </span>
+                      {togglePin && block.pinnable && (
+                        <button
+                          type="button"
+                          onClick={() => togglePin(block.id)}
+                          title={
+                            isPinned?.(block.id)
+                              ? "Unpin module from sidebar"
+                              : "Pin whole module to sidebar"
+                          }
+                          aria-label={
+                            isPinned?.(block.id)
+                              ? `Unpin ${block.label}`
+                              : `Pin ${block.label}`
+                          }
+                          aria-pressed={!!isPinned?.(block.id)}
+                          className={`rounded-md p-0.5 transition-colors ${
+                            isPinned?.(block.id) ? skin.starOn : skin.star
                           }`}
                         >
-                          {tile.Icon && (
-                            <tile.Icon
-                              size={22}
-                              className={tone[tile.tone] || skin.icon}
-                              strokeWidth={1.9}
-                            />
-                          )}
-                          <span
-                            className={`line-clamp-2 text-[12px] font-semibold leading-tight ${skin.tileLabel}`}
-                          >
-                            {tile.label}
-                          </span>
-                        </Link>
-
-                        {togglePin && (
-                          <button
-                            type="button"
-                            onClick={() => togglePin(tile.id)}
-                            title={pinned ? "Unpin from sidebar" : "Pin to sidebar"}
-                            aria-label={pinned ? `Unpin ${tile.label}` : `Pin ${tile.label}`}
-                            aria-pressed={!!pinned}
-                            className={`absolute right-1.5 top-1.5 rounded-md p-1 transition-colors ${
-                              pinned ? skin.starOn : skin.star
-                            }`}
-                          >
-                            <Star size={13} fill={pinned ? "currentColor" : "none"} />
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
+                          <Star
+                            size={12}
+                            fill={isPinned?.(block.id) ? "currentColor" : "none"}
+                          />
+                        </button>
+                      )}
+                    </div>
+                    <div className={gridClass}>{block.tiles.map(renderTile)}</div>
+                  </div>
+                ))}
               </section>
             ))
           )}

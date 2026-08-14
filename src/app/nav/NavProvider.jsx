@@ -19,6 +19,7 @@ import {
   findActiveDestination,
   findActiveTrail,
   flattenDestinations,
+  flattenGroups,
   resolveSections,
 } from "@shared/nav/navModel";
 import {
@@ -133,7 +134,26 @@ export default function NavProvider({ children }) {
   const { recents } = useRecents(NAV_NAMESPACE, activeDestination?.id);
   const sectionState = useCollapsedSections(NAV_NAMESPACE);
 
-  const pinnedDestinations = useResolvedIds(pins, destinations);
+  /* What a pin is allowed to point at: every page, PLUS every module as a whole.
+     Kept separate from `destinations` on purpose — that list is the search index
+     and the active-route matcher, both of which are about single pages.
+
+     A group whose id is ALREADY a page is dropped rather than appended. The
+     registry allows a group to carry its own `path` (flattenDestinations: "a group
+     that has its own path appears once as itself"), and both entries would then
+     answer to the same id — so this is a real collision, not a hypothetical one.
+     Order alone would not settle it: useResolvedIds resolves through
+     `new Map(destinations.map(...))`, where the LAST entry for a key wins, so
+     appending groups at the end makes the group shadow the page, which is the
+     opposite of what you want. Nothing in navConfig hits this today; the point is
+     that adding a path to a group tomorrow must not silently repoint a pin. */
+  const pinnables = useMemo(() => {
+    const pageIds = new Set(destinations.map((d) => d.id));
+    return [...destinations, ...flattenGroups(sections).filter((g) => !pageIds.has(g.id))];
+  }, [destinations, sections]);
+
+  const pinnedDestinations = useResolvedIds(pins, pinnables);
+  // Recents stay page-only: "where I have been" is never a heading.
   const recentDestinations = useResolvedIds(recents, destinations);
 
   const quickActions = useMemo(() => {

@@ -17,6 +17,7 @@ export const ROLE_TO_LABEL = {
   TRAVEL_AGENT: "Travel Agent",
   STAFF:        "Staff",
   ACCOUNTANT:   "Account",
+  SUB_AGENT:    "Sub-agent",
 };
 
 // UI label → backend Role. A tenant admin may assign any tenant role

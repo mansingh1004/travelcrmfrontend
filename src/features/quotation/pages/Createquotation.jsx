@@ -729,6 +729,49 @@ export default function CreateQuotation() {
 
   const fmt = (n) => `₹${Number(n).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
 
+  /* ── A quotation must belong to a lead ───────────────────────────────────────────────────────
+     Opened with no leadId this page still saved, with `leadId: null` on the payload (:318) — the
+     backend accepts it, because linkLeadAndSnapshot returns early on a null lead. What that writes
+     is an ORPHAN quotation: it never appears under any lead, never becomes a lead's
+     latestQuotation, and can never be converted, because conversion only ever runs through a lead
+     (POST /leads/{id}/convert-to-booking). It is a record with no way back into the pipeline.
+
+     Nothing in the app actually links here without a leadId — all eight call sites pass one and the
+     sidebar has no quotation entry — so this was only ever reachable by typing the URL. Closed
+     rather than left as a trap.
+
+     Pricing an enquiry that has no lead yet belongs on the lead form, which captures the enquiry
+     and prices it inline in one pass. Same destination QuickQuotation's own guard points at.
+
+     `editId` is deliberately exempt: a quotation being EDITED is already saved, and refusing to
+     open a legacy lead-less one would strand it with no other route in. This closes the door on
+     creating new orphans, it does not lock out the ones already there. */
+  if (!leadId && !editId) {
+    return (
+      <main
+        className="flex min-h-screen items-center justify-center bg-slate-100 p-6"
+        style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif" }}
+      >
+        <div className="max-w-md rounded-2xl border border-amber-200 bg-amber-50 p-7 text-center">
+          <Sparkles className="mx-auto h-10 w-10 text-amber-500" />
+          <h1 className="mt-3 text-xl font-black text-slate-900">Start from a lead</h1>
+          <p className="mt-2 text-sm text-slate-600">
+            A quotation is always priced against an enquiry — it reuses the customer, itinerary and
+            traveller counts, and a booking is only ever converted from the lead behind it. Create
+            the lead and price it there in one pass.
+          </p>
+          <button
+            type="button"
+            onClick={() => navigate("/createlead")}
+            className="mt-5 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-slate-800"
+          >
+            Create lead
+          </button>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <div
       className="min-h-screen bg-slate-100 font-sans"

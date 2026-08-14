@@ -335,6 +335,7 @@ const AppRouter = () => {
                 element={
                   isFleetOnly() ? <Navigate to="/fleet" replace />
                     : isSubAgent() ? <Navigate to="/allleads" replace />
+                    : !hasModule("DASHBOARD") ? <Navigate to={hasPermission(P.BOOKING_READ) ? "/Allbookings" : hasPermission(P.LEAD_READ) ? "/allleads" : "/CompanyProfile"} replace />
                     : <Dashboard />
                 }
               />
@@ -437,7 +438,7 @@ const AppRouter = () => {
               <Route path="WhatsAppConfiguration" element={<Guard allow={hasPermission(P.SETTINGS_MANAGE)}><WhatsAppConfiguration /></Guard>} />
               <Route path="LeadSources" element={<Guard allow={hasPermission(P.SETTINGS_MANAGE)}><LeadSources /></Guard>} />
               <Route path="SubscriptionInfo" element={<Guard allow={!isSubAgent()}><SubscriptionInfo /></Guard>} />
-              <Route path="Dashboard" element={<Guard allow={!isSubAgent()}><Dashboard /></Guard>} />
+              <Route path="Dashboard" element={<Guard allow={!isSubAgent() && hasModule("DASHBOARD")}><Dashboard /></Guard>} />
               <Route path="trash" element={<Guard allow={hasPermission(P.TRASH_VIEW)}><TrashPage /></Guard>} />
               <Route path="/EditVendor/:id" element={<EditVendor />} />
               <Route path="/EditCustomer/:id" element={<EditCustomer />} />

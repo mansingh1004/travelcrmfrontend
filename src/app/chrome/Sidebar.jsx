@@ -17,7 +17,7 @@
 //   stuck open the way the old mouseenter version did.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { ChevronDown, LayoutGrid, PanelLeftClose, PanelLeftOpen, Pin, X } from "lucide-react";
 
@@ -150,6 +150,90 @@ export default function Sidebar() {
     setHovered(false);
     closeOnMobile();
   };
+
+  /* ── Pinned rows, folded back under the module they belong to ─────────────────
+     Pins are LEAVES: the launcher deliberately offers one tile per destination
+     ("the group Leads contributes its children … because those are what people
+     pin"), so pinning Browse catalog and Hotel requests produced two unrelated
+     rows carrying the same inherited icon, with the module that owns them named
+     nowhere. Siblings are regrouped here under the parent, which is how the user
+     already reads them three inches higher in the rail.
+
+     Only from TWO siblings up. A lone pin under its own header is a group of one:
+     it costs a row and a disclosure to say nothing the row did not already say.
+
+     Purely presentational — the pin set is untouched, each child keeps its own
+     unpin, and the group is keyed on the parent's real item id so the rail's
+     one-open-at-a-time accordion (seeded from activeTrail.itemId) expands it by
+     itself when the route lands on one of its children. */
+  const pinnedRows = useMemo(() => {
+    // A pin that is already on the rail would render the same row twice.
+    const visible = pinnedDestinations.filter(
+      (d) => !railItems.some((r) => r.id === d.id),
+    );
+
+    // Modules pinned whole. Their children are already on screen underneath them,
+    // so a separately-pinned child of one would render the same row twice.
+    const pinnedGroupIds = new Set(
+      visible.filter((d) => d.kind === "group").map((d) => d.id),
+    );
+
+    const siblingCount = new Map();
+    for (const d of visible) {
+      if (!d.parentId || pinnedGroupIds.has(d.parentId)) continue;
+      siblingCount.set(d.parentId, (siblingCount.get(d.parentId) || 0) + 1);
+    }
+
+    const rows = [];
+    const groupAt = new Map();
+    for (const d of visible) {
+      /* Pinned as a MODULE, not a page — the launcher offers the group its own pin,
+         so this arrives already carrying its children and needs no regrouping.
+         `pinnedAsGroup` is what the renderer keys the unpin control off: here the
+         GROUP is the pin, so the control belongs on the header. On a group this
+         component merely DERIVED from sibling leaves it is the opposite — the
+         children are the pins, and an unpin on the header would remove something
+         the user never created. Getting that backwards is not a cosmetic slip:
+         togglePin on an unpinned child would ADD a pin, not remove one. */
+      if (d.kind === "group") {
+        rows.push({
+          kind: "group",
+          pinnedAsGroup: true,
+          id: d.id,
+          label: d.label,
+          Icon: d.Icon,
+          tone: d.tone,
+          children: d.children || [],
+        });
+        continue;
+      }
+      if (d.parentId && pinnedGroupIds.has(d.parentId)) continue;
+      if (!d.parentId || (siblingCount.get(d.parentId) || 0) < 2) {
+        rows.push({ kind: "leaf", d });
+        continue;
+      }
+      const at = groupAt.get(d.parentId);
+      if (at != null) {
+        rows[at].children.push(d);
+        continue;
+      }
+      groupAt.set(d.parentId, rows.length);
+      rows.push({
+        kind: "group",
+        // Derived, not pinned: the children are the pins — see the note above.
+        pinnedAsGroup: false,
+        id: d.parentId,
+        label: d.parentLabel,
+        // Off the child, not looked up again: flattenDestinations already inherits
+        // both from the parent when the child declares none, so this IS the
+        // module's own icon and colour.
+        Icon: d.Icon,
+        tone: d.tone,
+        children: [d],
+      });
+    }
+    return rows;
+  }, [pinnedDestinations, railItems]);
 
   return (
     <>
@@ -329,7 +413,7 @@ export default function Sidebar() {
           </ul>
 
           {/* ── Pinned ──────────────────────────────────────────────────────── */}
-          {pinnedDestinations.length > 0 && (
+          {pinnedRows.length > 0 && (
             <div className="mt-4 border-t border-white/[0.07] pt-3">
               <p
                 className={`px-3 pb-1.5 text-[10.5px] font-bold uppercase tracking-[0.16em] text-slate-500 ${
@@ -339,10 +423,118 @@ export default function Sidebar() {
                 Pinned
               </p>
               <ul className="space-y-1">
-                {pinnedDestinations
-                  // A pin that is already on the rail would render the same row twice.
-                  .filter((d) => !railItems.some((r) => r.id === d.id))
-                  .map((d) => {
+                {pinnedRows.map((row) => {
+                  if (row.kind === "group") {
+                    const open = openGroupId === row.id;
+                    const active = row.children.some((c) => activeId === c.id);
+                    return (
+                      <li key={`pin-group-${row.id}`}>
+                        {/* Same control as a rail group, down to the collapsed-rail
+                            behaviour: in the icon strip there is nowhere to show
+                            children, so the header opens the rail instead of
+                            toggling a list nobody can see. */}
+                        <button
+                          type="button"
+                          onClick={() => (compact ? setRailCollapsed(false) : toggleGroup(row.id))}
+                          title={row.label}
+                          aria-expanded={open}
+                          className={`${ROW} ${active ? ROW_ACTIVE : ROW_IDLE} ${
+                            compact ? "justify-center px-2 py-2.5 md:px-0" : "gap-3 px-3 py-2.5"
+                          }`}
+                        >
+                          {row.Icon && (
+                            <row.Icon
+                              size={18}
+                              className={`shrink-0 ${iconTone(row.tone, active)}`}
+                              strokeWidth={active ? 2.3 : 2}
+                            />
+                          )}
+                          <span className={`flex-1 truncate text-left ${compact ? "md:hidden" : ""}`}>
+                            {row.label}
+                          </span>
+                          {/* Unpin sits here only when the GROUP is what was pinned.
+                              On a group derived from sibling leaves it belongs on
+                              each child instead — the header is not a pin, and
+                              togglePin on it would CREATE one. */}
+                          {row.pinnedAsGroup && (
+                            <span
+                              role="button"
+                              tabIndex={-1}
+                              title="Unpin"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                togglePin(row.id);
+                              }}
+                              className={`shrink-0 opacity-50 transition-opacity hover:opacity-100 ${
+                                compact ? "md:hidden" : ""
+                              }`}
+                            >
+                              <Pin size={13} />
+                            </span>
+                          )}
+                          <ChevronDown
+                            size={14}
+                            className={`shrink-0 opacity-60 transition-transform duration-150 ${
+                              open ? "rotate-180" : ""
+                            } ${compact ? "md:hidden" : ""}`}
+                          />
+                        </button>
+
+                        {open && !compact && (
+                          <ul className="mt-1 space-y-0.5 pb-1">
+                            {row.children.map((child) => {
+                              const on = activeId === child.id;
+                              return (
+                                <li key={`pin-${child.id}`}>
+                                  <Link
+                                    to={child.path}
+                                    onClick={handleNavigate}
+                                    aria-current={on ? "page" : undefined}
+                                    className={`flex items-center gap-2.5 rounded-lg py-2 pl-11 pr-3 text-[13px] transition-colors ${
+                                      on
+                                        ? "font-semibold text-white"
+                                        : "font-medium text-slate-400 hover:bg-white/[0.05] hover:text-white"
+                                    }`}
+                                  >
+                                    <span
+                                      className={`h-1.5 w-1.5 shrink-0 rounded-full bg-current ${
+                                        on
+                                          ? "text-white"
+                                          : `${TONE_TEXT[row.tone] || "text-slate-500"} opacity-60`
+                                      }`}
+                                    />
+                                    <span className="flex-1 truncate">{child.label}</span>
+                                    {/* Only when the CHILD is the pin. Under a group
+                                        pinned whole these rows are not pins at all,
+                                        and a control here would add one rather than
+                                        remove it. */}
+                                    {!row.pinnedAsGroup && (
+                                      <span
+                                        role="button"
+                                        tabIndex={-1}
+                                        title="Unpin"
+                                        onClick={(e) => {
+                                          e.preventDefault();
+                                          e.stopPropagation();
+                                          togglePin(child.id);
+                                        }}
+                                        className="shrink-0 opacity-50 transition-opacity hover:opacity-100"
+                                      >
+                                        <Pin size={12} />
+                                      </span>
+                                    )}
+                                  </Link>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        )}
+                      </li>
+                    );
+                  }
+
+                  const d = row.d;
                   const on = activeId === d.id;
                   return (
                     <li key={`pin-${d.id}`}>
