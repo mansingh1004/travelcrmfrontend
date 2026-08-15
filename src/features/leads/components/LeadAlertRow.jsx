@@ -128,6 +128,12 @@ function LeadAlertRow({
           <OwnerCell ownerName={lead.ownerName} isYou={isMine} />
         </td>
 
+        <td className={TD}>
+          <div className="whitespace-nowrap text-xs font-semibold tabular-nums text-slate-600">
+            {formatClock(lead.createdAt, true) || "—"}
+          </div>
+        </td>
+
         <td className={`${TD} text-right`}>
           <Sla
             secondsLeft={lead.secondsLeft}
@@ -237,6 +243,7 @@ export default memo(LeadAlertRow, (a, b) => {
     x.secondsLeft === y.secondsLeft &&
     x.claimVersion === y.claimVersion &&
     x.ownerName === y.ownerName &&
+    x.createdAt === y.createdAt &&
     x.openToClaim === y.openToClaim &&
     x.leadStage === y.leadStage &&
     x.firstResponseSeconds === y.firstResponseSeconds &&

@@ -44,6 +44,7 @@ export const COLUMNS = [
   { key: "enquiry", label: "Enquiry", width: 196 },
   { key: "value", label: "Value", width: 126, align: "right" },
   { key: "owner", label: "Owner", width: 148 },
+  { key: "injected", label: "Injected On", width: 152 },
   { key: "sla", label: "SLA", width: 96, align: "right" },
   { key: "actions", label: "Actions", width: 268, align: "right" },
 ];
