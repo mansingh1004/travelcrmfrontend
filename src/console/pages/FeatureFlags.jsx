@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   Search, Loader2, ChevronLeft, ChevronRight, ToggleLeft, Check, X,
   CheckCircle2, AlertTriangle, RotateCcw, Building2,
@@ -135,6 +136,8 @@ function ModulesModal({ tenant, onClose, showToast }) {
 }
 
 export default function FeatureFlags() {
+  const [searchParams] = useSearchParams();
+  const tenantId = searchParams.get("tenantId") || "";
   const [rows, setRows] = useState([]);
   const [pagination, setPagination] = useState({});
   const [loading, setLoading] = useState(true);
@@ -172,6 +175,13 @@ export default function FeatureFlags() {
 
   useEffect(() => { load(); }, [load]);
 
+  useEffect(() => {
+    if (!tenantId) return;
+    tenantService.get(tenantId)
+      .then(setModalTenant)
+      .catch(() => showToast("error", "Selected tenant could not be loaded."));
+  }, [tenantId, showToast]);
+
   const totalPages = pagination.totalPages ?? 1;
 
   return (
@@ -180,6 +190,13 @@ export default function FeatureFlags() {
         <h1 className="text-xl font-bold text-heading">Feature Flags</h1>
         <p className="text-sm text-body">Toggle module access per tenant. Defaults come from the plan; overrides stick until you reset.</p>
       </div>
+
+      {tenantId && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-accent/25 bg-accent-soft px-4 py-3 text-sm text-body">
+          <span>Tenant entitlement workspace opened from Tenant 360.</span>
+          <Link to="/console/feature-flags" className="text-xs font-semibold text-accent hover:underline">Show all tenants</Link>
+        </div>
+      )}
 
       <div className="relative min-w-[240px] max-w-md">
         <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" />

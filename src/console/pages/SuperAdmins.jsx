@@ -7,13 +7,18 @@ import {
   KeyRound,
   Loader2,
   LockKeyhole,
+  LogOut,
   Plus,
+  Power,
   RefreshCw,
+  Send,
   ShieldCheck,
+  Unlock,
   UserCog,
 } from "lucide-react";
 
 import superAdminInviteService from "../api/superAdminInviteService";
+import { isLocalSuperAdminMfaDisabled } from "../lib/consoleEnvironment";
 
 const inputCls =
   "w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-heading " +
@@ -63,11 +68,12 @@ function accountSecurityLabel(account) {
 
 function MfaActionModal({ title, description, confirmLabel, saving, error, onClose, onConfirm }) {
   const [code, setCode] = useState("");
+  const mfaDisabled = isLocalSuperAdminMfaDisabled();
 
   const submit = (e) => {
     e.preventDefault();
-    if (!/^\d{6}$/.test(code)) return;
-    onConfirm(code);
+    if (!mfaDisabled && !/^\d{6}$/.test(code)) return;
+    onConfirm(mfaDisabled ? "" : code);
   };
 
   return (
@@ -81,8 +87,10 @@ function MfaActionModal({ title, description, confirmLabel, saving, error, onClo
           <ShieldCheck size={16} className="text-accent" />
           <h3 className="text-sm font-bold text-heading">{title}</h3>
         </div>
-        <p className="mt-1 text-xs text-muted">{description}</p>
-        <div className="mt-4">
+        <p className="mt-1 text-xs text-muted">
+          {mfaDisabled ? "MFA is disabled for local development. Confirm to continue." : description}
+        </p>
+        {!mfaDisabled && <div className="mt-4">
           <label htmlFor="superadmin-mfa-action-code" className="mb-1 block text-xs font-semibold text-body">
             Authenticator code
           </label>
@@ -98,7 +106,12 @@ function MfaActionModal({ title, description, confirmLabel, saving, error, onClo
             placeholder="000000"
             required
           />
-        </div>
+        </div>}
+        {mfaDisabled && (
+          <p className="mt-4 rounded-lg bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-700 ring-1 ring-amber-500/20">
+            Local development bypass active
+          </p>
+        )}
         {error && (
           <p className="mt-3 flex items-start gap-1.5 rounded-lg bg-red-500/10 px-3 py-2 text-[11px] text-red-700 ring-1 ring-red-500/20">
             <AlertTriangle size={13} className="mt-px shrink-0" />
@@ -116,7 +129,7 @@ function MfaActionModal({ title, description, confirmLabel, saving, error, onClo
           </button>
           <button
             type="submit"
-            disabled={saving || code.length !== 6}
+            disabled={saving || (!mfaDisabled && code.length !== 6)}
             className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-60"
           >
             {saving && <Loader2 size={15} className="animate-spin" />}
@@ -134,6 +147,7 @@ export default function SuperAdmins() {
   const [loading, setLoading] = useState(true);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [role, setRole] = useState("PLATFORM_ADMIN");
   const [created, setCreated] = useState(null);
   const [busy, setBusy] = useState(false);
   const [busyId, setBusyId] = useState(null);
@@ -176,6 +190,8 @@ export default function SuperAdmins() {
       { label: "Pending invites", value: pendingInvites, Icon: Plus },
     ];
   }, [accounts, invites]);
+  const permanentSuperAdminCount = accounts.filter((account) => account.role === "SUPER_ADMIN").length;
+  const superAdminSeatsFull = permanentSuperAdminCount >= 2;
 
   const create = async (e) => {
     e.preventDefault();
@@ -185,7 +201,7 @@ export default function SuperAdmins() {
     setMfaError("");
     setMfaAction({
       type: "invite",
-      payload: { name: name.trim(), email: email.trim() },
+      payload: { name: name.trim(), email: email.trim(), role },
     });
   };
 
@@ -196,20 +212,38 @@ export default function SuperAdmins() {
     setMfaAction({ type: "resetMfa", account });
   };
 
+  const openAccountAction = (type, account, extra = {}) => {
+    setError("");
+    setNotice("");
+    setMfaError("");
+    setMfaAction({ type, account, ...extra });
+  };
+
+  const openInviteAction = (type, invite) => {
+    setError("");
+    setNotice("");
+    setMfaError("");
+    setMfaAction({ type, invite });
+  };
+
   const actionCopy = (action) => {
     if (!action) return { title: "", description: "", confirmLabel: "Confirm" };
-    if (action.type === "invite") {
-      return {
+    const copyByType = {
+      invite: {
         title: "Confirm invite",
-        description: `Enter your authenticator code to invite ${action.payload.email}.`,
+        description: `Invite ${action.payload?.email} as ${action.payload?.role === "SUPER_ADMIN" ? "SuperAdmin" : "Platform Admin"}.`,
         confirmLabel: "Create invite",
-      };
-    }
-    return {
-      title: "Reset MFA",
-      description: `Enter your authenticator code to reset MFA for ${action.account.email}.`,
-      confirmLabel: "Reset MFA",
+      },
+      resetMfa: { title: "Reset MFA", description: `Reset MFA for ${action.account?.email}.`, confirmLabel: "Reset MFA" },
+      role: { title: "Change operator role", description: `Change ${action.account?.email} to ${action.role === "SUPER_ADMIN" ? "SuperAdmin" : "Platform Admin"}. Existing sessions will be revoked.`, confirmLabel: "Change role" },
+      enable: { title: "Enable operator", description: `Restore console access for ${action.account?.email}.`, confirmLabel: "Enable" },
+      disable: { title: "Disable operator", description: `Block console access and revoke sessions for ${action.account?.email}.`, confirmLabel: "Disable" },
+      unlock: { title: "Unlock operator", description: `Clear failed login attempts and the lock for ${action.account?.email}.`, confirmLabel: "Unlock" },
+      revokeSessions: { title: "Revoke sessions", description: `Sign ${action.account?.email} out from every active session.`, confirmLabel: "Revoke sessions" },
+      resendInvite: { title: "Resend invite", description: `Rotate the invite token for ${action.invite?.email}.`, confirmLabel: "Resend" },
+      revokeInvite: { title: "Revoke invite", description: `Permanently invalidate the pending invite for ${action.invite?.email}.`, confirmLabel: "Revoke invite" },
     };
+    return copyByType[action.type] || { title: "Confirm action", description: "Confirm this account action.", confirmLabel: "Confirm" };
   };
 
   const confirmMfaAction = async (mfaCode) => {
@@ -236,14 +270,39 @@ export default function SuperAdmins() {
     }
 
     const account = action.account;
-    setBusyId(account.publicId);
+    const invite = action.invite;
+    const targetId = account?.publicId || invite?.publicId;
+    setBusyId(targetId);
     try {
-      await superAdminInviteService.resetMfa(account.publicId, mfaCode);
-      setNotice(`MFA reset for ${account.email}. They must re-enroll authenticator on next login.`);
+      let message = "Action completed.";
+      if (action.type === "resetMfa") {
+        await superAdminInviteService.resetMfa(account.publicId, mfaCode);
+        message = `MFA reset for ${account.email}. Re-enrollment is required.`;
+      } else if (action.type === "role") {
+        await superAdminInviteService.changeRole(account.publicId, action.role, mfaCode);
+        message = `${account.email} is now ${action.role === "SUPER_ADMIN" ? "SuperAdmin" : "Platform Admin"}.`;
+      } else if (action.type === "enable" || action.type === "disable") {
+        await superAdminInviteService.setEnabled(account.publicId, action.type === "enable", mfaCode);
+        message = `${account.email} ${action.type === "enable" ? "enabled" : "disabled"}.`;
+      } else if (action.type === "unlock") {
+        await superAdminInviteService.unlock(account.publicId, mfaCode);
+        message = `${account.email} unlocked.`;
+      } else if (action.type === "revokeSessions") {
+        await superAdminInviteService.revokeSessions(account.publicId, mfaCode);
+        message = `All sessions revoked for ${account.email}.`;
+      } else if (action.type === "resendInvite") {
+        const nextInvite = await superAdminInviteService.resendInvite(invite.publicId, mfaCode);
+        setCreated(nextInvite);
+        message = `A new invite link was created for ${invite.email}.`;
+      } else if (action.type === "revokeInvite") {
+        await superAdminInviteService.revokeInvite(invite.publicId, mfaCode);
+        message = `Invite revoked for ${invite.email}.`;
+      }
+      setNotice(message);
       setMfaAction(null);
       await load(false);
     } catch (err) {
-      setMfaError(apiMessage(err, "Unable to reset MFA."));
+      setMfaError(apiMessage(err, "Unable to complete the account action."));
     } finally {
       setBusyId(null);
     }
@@ -258,7 +317,8 @@ export default function SuperAdmins() {
   };
 
   const copy = actionCopy(mfaAction);
-  const actionSaving = mfaAction?.type === "invite" ? busy : busyId === mfaAction?.account?.publicId;
+  const actionTargetId = mfaAction?.account?.publicId || mfaAction?.invite?.publicId;
+  const actionSaving = mfaAction?.type === "invite" ? busy : busyId === actionTargetId;
 
   return (
     <div className="space-y-6">
@@ -315,6 +375,7 @@ export default function SuperAdmins() {
               <tr>
                 <th className="px-4 py-3 font-semibold">Operator</th>
                 <th className="px-4 py-3 font-semibold">Type</th>
+                <th className="px-4 py-3 font-semibold">Role</th>
                 <th className="px-4 py-3 font-semibold">Security</th>
                 <th className="px-4 py-3 font-semibold">Failures</th>
                 <th className="px-4 py-3 font-semibold">Last login</th>
@@ -326,13 +387,13 @@ export default function SuperAdmins() {
             <tbody className="divide-y divide-border">
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-12 text-center text-muted">
+                  <td colSpan={9} className="px-4 py-12 text-center text-muted">
                     <Loader2 size={18} className="mx-auto animate-spin" />
                   </td>
                 </tr>
               ) : accounts.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-10 text-center text-sm text-muted">
+                  <td colSpan={9} className="px-4 py-10 text-center text-sm text-muted">
                     No SuperAdmin accounts.
                   </td>
                 </tr>
@@ -349,6 +410,24 @@ export default function SuperAdmins() {
                       </Pill>
                     </td>
                     <td className="px-4 py-3">
+                      {account.role === "SUPER_ADMIN" ? (
+                        <div>
+                          <Pill tone="violet">Permanent SuperAdmin</Pill>
+                          <p className="mt-1 text-[11px] text-muted">Role locked</p>
+                        </div>
+                      ) : (
+                        <select value={account.role || "PLATFORM_ADMIN"}
+                          onChange={(event) => openAccountAction("role", account, { role: event.target.value })}
+                          disabled={busyId === account.publicId}
+                          className="rounded-lg border border-border bg-surface px-2 py-1.5 text-xs font-semibold text-body focus:border-accent focus:outline-none focus:ring-2 focus:ring-focus">
+                          <option value="PLATFORM_ADMIN">Platform Admin</option>
+                          <option value="SUPER_ADMIN" disabled={superAdminSeatsFull}>
+                            {superAdminSeatsFull ? "SuperAdmin (2/2 assigned)" : "SuperAdmin"}
+                          </option>
+                        </select>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-1.5">
                         <Pill tone={accountSecurityTone(account)}>{accountSecurityLabel(account)}</Pill>
                         {account.mfaEnabled && <Pill tone="green">MFA</Pill>}
@@ -362,7 +441,7 @@ export default function SuperAdmins() {
                     <td className="px-4 py-3 font-mono text-xs text-body">{account.lastLoginIp || "-"}</td>
                     <td className="px-4 py-3 font-mono text-xs text-body">{formatDate(account.createdAt)}</td>
                     <td className="px-4 py-3">
-                      <div className="flex items-center justify-end">
+                      <div className="flex items-center justify-end gap-1">
                         {account.mfaEnabled ? (
                           <button
                             type="button"
@@ -378,8 +457,18 @@ export default function SuperAdmins() {
                             )}
                           </button>
                         ) : (
-                          <span className="text-xs text-muted">-</span>
+                          null
                         )}
+                        {account.locked && <button type="button" title="Unlock account" aria-label="Unlock account"
+                          onClick={() => openAccountAction("unlock", account)} disabled={busyId === account.publicId}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-hue-emerald hover:bg-surface-hover disabled:opacity-50"><Unlock size={15} /></button>}
+                        <button type="button" title="Revoke all sessions" aria-label="Revoke all sessions"
+                          onClick={() => openAccountAction("revokeSessions", account)} disabled={busyId === account.publicId}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-surface-hover hover:text-body disabled:opacity-50"><LogOut size={15} /></button>
+                        <button type="button" title={account.enabled ? "Disable account" : "Enable account"}
+                          aria-label={account.enabled ? "Disable account" : "Enable account"}
+                          onClick={() => openAccountAction(account.enabled ? "disable" : "enable", account)} disabled={busyId === account.publicId}
+                          className={`inline-flex h-8 w-8 items-center justify-center rounded-lg hover:bg-surface-hover disabled:opacity-50 ${account.enabled ? "text-hue-rose" : "text-hue-emerald"}`}><Power size={15} /></button>
                       </div>
                     </td>
                   </tr>
@@ -395,7 +484,7 @@ export default function SuperAdmins() {
           <ShieldCheck size={17} className="text-accent" />
           <h2 className="text-sm font-bold text-heading">Create invite</h2>
         </div>
-        <form onSubmit={create} className="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
+        <form onSubmit={create} className="grid gap-3 md:grid-cols-[1fr_1fr_180px_auto]">
           <input
             className={inputCls}
             value={name}
@@ -411,6 +500,17 @@ export default function SuperAdmins() {
             placeholder="email@example.com"
             required
           />
+          <select
+            value={role}
+            onChange={(event) => setRole(event.target.value)}
+            className={inputCls}
+            aria-label="Platform role"
+          >
+            <option value="PLATFORM_ADMIN">Platform Admin</option>
+            <option value="SUPER_ADMIN" disabled={superAdminSeatsFull}>
+              {superAdminSeatsFull ? "SuperAdmin (2/2 assigned)" : "SuperAdmin"}
+            </option>
+          </select>
           <button
             type="submit"
             disabled={busy}
@@ -420,6 +520,9 @@ export default function SuperAdmins() {
             Invite
           </button>
         </form>
+        <p className="mt-2 text-[11px] text-muted">
+          {permanentSuperAdminCount}/2 permanent SuperAdmin seats assigned. Additional operators are invited as Platform Admins.
+        </p>
 
         {created && (
           <div className="mt-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3">
@@ -459,10 +562,33 @@ export default function SuperAdmins() {
                     <p className="truncate font-mono text-xs text-muted">{invite.email}</p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
+                    <Pill tone={invite.role === "SUPER_ADMIN" ? "violet" : "slate"}>
+                      {invite.role === "SUPER_ADMIN" ? "SuperAdmin" : "Platform Admin"}
+                    </Pill>
                     <Pill tone={invite.consumedAt ? "green" : expired ? "red" : "amber"}>
                       {invite.consumedAt ? "Accepted" : expired ? "Expired" : "Pending"}
                     </Pill>
                     <span>Expires {formatDate(invite.expiresAt)}</span>
+                    {!invite.consumedAt && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => openInviteAction("resendInvite", invite)}
+                          disabled={busyId === invite.publicId}
+                          className="inline-flex items-center gap-1 rounded-lg border border-border px-2 py-1 font-semibold text-body hover:bg-surface-hover disabled:opacity-50"
+                        >
+                          <Send size={12} /> Resend
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openInviteAction("revokeInvite", invite)}
+                          disabled={busyId === invite.publicId}
+                          className="inline-flex items-center gap-1 rounded-lg border border-hue-rose/30 px-2 py-1 font-semibold text-hue-rose hover:bg-hue-rose-soft disabled:opacity-50"
+                        >
+                          <Power size={12} /> Revoke
+                        </button>
+                      </>
+                    )}
                   </div>
                 </li>
               );

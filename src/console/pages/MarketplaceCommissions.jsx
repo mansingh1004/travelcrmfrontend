@@ -25,6 +25,7 @@ import {
 import { marketplaceCommissionService as svc } from "../api/marketplaceCommissionService";
 import { getErrorMessage, isAlreadyReported } from "@shared/api/apiError";
 import { useToast } from "@shared/ui/toast";
+import SuperAdminMfaActionModal from "../components/SuperAdminMfaActionModal";
 
 const PAGE_SIZE = 25;
 
@@ -536,12 +537,13 @@ function SettleModal({ entry, onClose, onDone }) {
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [confirming, setConfirming] = useState(false);
 
-  const submit = async () => {
+  const submit = async (mfaCode) => {
     setBusy(true);
     setErr("");
     try {
-      await svc.settle(entry.publicId, reason.trim() || undefined);
+      await svc.settle(entry.publicId, reason.trim() || undefined, mfaCode);
       onDone(`Settled ${money(entry.amount, entry.currency)} on ${entry.bookingCode}.`);
     } catch (e) {
       // 409 lands here when the row moved out of PENDING/EARNED under us — a real, expected outcome
@@ -588,7 +590,7 @@ function SettleModal({ entry, onClose, onDone }) {
           Cancel
         </button>
         <button
-          onClick={submit}
+          onClick={() => setConfirming(true)}
           disabled={busy}
           className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-semibold text-white shadow-[var(--sa-card-shadow)] disabled:opacity-60"
           style={{ backgroundImage: "var(--sa-gradient)" }}
@@ -596,6 +598,17 @@ function SettleModal({ entry, onClose, onDone }) {
           {busy ? <Loader2 size={14} className="animate-spin" /> : <Landmark size={14} />} Mark settled
         </button>
       </div>
+      {confirming && (
+        <SuperAdminMfaActionModal
+          title="Settle commission entry"
+          description="Enter your authenticator code to permanently mark this ledger entry as settled."
+          confirmLabel="Mark settled"
+          saving={busy}
+          error={err}
+          onClose={() => { if (!busy) { setConfirming(false); setErr(""); } }}
+          onConfirm={submit}
+        />
+      )}
     </ModalShell>
   );
 }
@@ -613,6 +626,7 @@ function AdjustModal({ booking, onClose, onDone }) {
   const [reference, setReference] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [confirming, setConfirming] = useState(false);
 
   const trimmedRef = reference.trim();
   const parsedAmount = Number(amount);
@@ -621,7 +635,7 @@ function AdjustModal({ booking, onClose, onDone }) {
   const bookingOk = UUID_RE.test(bookingId.trim());
   const valid = amountOk && Boolean(reason.trim()) && referenceOk && bookingOk;
 
-  const submit = async () => {
+  const submit = async (mfaCode) => {
     setBusy(true);
     setErr("");
     try {
@@ -629,7 +643,7 @@ function AdjustModal({ booking, onClose, onDone }) {
         amount: parsedAmount,
         reason: reason.trim(),
         referenceSuffix: trimmedRef,
-      });
+      }, mfaCode);
       onDone(`Adjustment of ${money(parsedAmount)} recorded.`);
     } catch (e) {
       if (!isAlreadyReported(e)) setErr(getErrorMessage(e, "Could not record this adjustment."));
@@ -705,7 +719,7 @@ function AdjustModal({ booking, onClose, onDone }) {
           Cancel
         </button>
         <button
-          onClick={submit}
+          onClick={() => setConfirming(true)}
           disabled={!valid || busy}
           className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-semibold text-white shadow-[var(--sa-card-shadow)] disabled:opacity-50"
           style={{ backgroundImage: "var(--sa-gradient)" }}
@@ -713,6 +727,17 @@ function AdjustModal({ booking, onClose, onDone }) {
           {busy ? <Loader2 size={14} className="animate-spin" /> : <Scale size={14} />} Record adjustment
         </button>
       </div>
+      {confirming && (
+        <SuperAdminMfaActionModal
+          title="Record commission adjustment"
+          description="Enter your authenticator code to append this signed adjustment to the commission ledger."
+          confirmLabel="Record adjustment"
+          saving={busy}
+          error={err}
+          onClose={() => { if (!busy) { setConfirming(false); setErr(""); } }}
+          onConfirm={submit}
+        />
+      )}
     </ModalShell>
   );
 }

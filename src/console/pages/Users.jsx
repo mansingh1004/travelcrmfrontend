@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   Search,
   Loader2,
@@ -14,6 +15,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { userService } from "../api/userService";
+import { isLocalSuperAdminMfaDisabled } from "../lib/consoleEnvironment";
 import { clearMyPermissions, clearMyEntitlements, primeSessionCaches } from "@shared/lib/access";
 
 const inputCls =
@@ -39,11 +41,12 @@ function UserStatusPill({ user }) {
 
 function MfaActionModal({ title, description, saving, error, onClose, onConfirm }) {
   const [code, setCode] = useState("");
+  const mfaDisabled = isLocalSuperAdminMfaDisabled();
 
   const submit = (e) => {
     e.preventDefault();
-    if (!/^\d{6}$/.test(code)) return;
-    onConfirm(code);
+    if (!mfaDisabled && !/^\d{6}$/.test(code)) return;
+    onConfirm(mfaDisabled ? "" : code);
   };
 
   return (
@@ -57,8 +60,10 @@ function MfaActionModal({ title, description, saving, error, onClose, onConfirm 
           <ShieldCheck size={16} className="text-accent" />
           <h3 className="text-sm font-bold text-heading">{title}</h3>
         </div>
-        <p className="mt-1 text-xs text-muted">{description}</p>
-        <div className="mt-4">
+        <p className="mt-1 text-xs text-muted">
+          {mfaDisabled ? "MFA is disabled for local development. Confirm to continue." : description}
+        </p>
+        {!mfaDisabled && <div className="mt-4">
           <label htmlFor="mfa-action-code" className="mb-1 block text-xs font-semibold text-body">
             Authenticator code
           </label>
@@ -74,7 +79,12 @@ function MfaActionModal({ title, description, saving, error, onClose, onConfirm 
             placeholder="000000"
             required
           />
-        </div>
+        </div>}
+        {mfaDisabled && (
+          <p className="mt-4 rounded-lg bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-700 ring-1 ring-amber-500/20">
+            Local development bypass active
+          </p>
+        )}
         {error && (
           <p className="mt-3 flex items-start gap-1.5 rounded-lg bg-red-500/10 px-3 py-2 text-[11px] text-red-700 ring-1 ring-red-500/20">
             <AlertTriangle size={13} className="mt-px shrink-0" />
@@ -92,7 +102,7 @@ function MfaActionModal({ title, description, saving, error, onClose, onConfirm 
           </button>
           <button
             type="submit"
-            disabled={saving || code.length !== 6}
+            disabled={saving || (!mfaDisabled && code.length !== 6)}
             className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-60"
           >
             {saving && <Loader2 size={15} className="animate-spin" />}
@@ -108,6 +118,7 @@ function ResetPasswordModal({ user, onClose, onDone, showToast }) {
   const [pw, setPw] = useState("");
   const [mfaCode, setMfaCode] = useState("");
   const [saving, setSaving] = useState(false);
+  const mfaDisabled = isLocalSuperAdminMfaDisabled();
 
   const submit = async (e) => {
     e.preventDefault();
@@ -115,13 +126,13 @@ function ResetPasswordModal({ user, onClose, onDone, showToast }) {
       showToast("error", "Password must be at least 12 characters.");
       return;
     }
-    if (!/^\d{6}$/.test(mfaCode)) {
+    if (!mfaDisabled && !/^\d{6}$/.test(mfaCode)) {
       showToast("error", "Enter the 6-digit authenticator code.");
       return;
     }
     setSaving(true);
     try {
-      await userService.resetPassword(user.publicId, pw, mfaCode);
+      await userService.resetPassword(user.publicId, pw, mfaDisabled ? "" : mfaCode);
       showToast("success", `Password reset for ${user.email}`);
       onDone();
     } catch (e2) {
@@ -141,7 +152,7 @@ function ResetPasswordModal({ user, onClose, onDone, showToast }) {
         <h3 className="text-sm font-bold text-heading">Reset password - {user.name}</h3>
         <p className="mt-1 text-xs text-muted">{user.email}</p>
         <div className="mt-4 space-y-3">
-          <div>
+          {!mfaDisabled && <div>
             <label className="mb-1 block text-xs font-semibold text-body">New password</label>
             <input
               type="password"
@@ -152,7 +163,7 @@ function ResetPasswordModal({ user, onClose, onDone, showToast }) {
               placeholder="12+ chars with symbol"
               required
             />
-          </div>
+          </div>}
           <div>
             <label className="mb-1 block text-xs font-semibold text-body">
               Authenticator code
@@ -209,6 +220,8 @@ function IconBtn({ title, onClick, busy, children }) {
 }
 
 export default function Users() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tenantId = searchParams.get("tenantId") || "";
   const [rows, setRows] = useState([]);
   const [pagination, setPagination] = useState({});
   const [loading, setLoading] = useState(true);
@@ -239,7 +252,7 @@ export default function Users() {
     setLoading(true);
     setError("");
     try {
-      const result = await userService.list({ search: debounced, page, size: 20 });
+      const result = await userService.list({ search: debounced, tenantId, page, size: 20 });
       setRows(result.rows);
       setPagination(result.pagination);
     } catch (e) {
@@ -248,7 +261,7 @@ export default function Users() {
     } finally {
       setLoading(false);
     }
-  }, [debounced, page]);
+  }, [debounced, page, tenantId]);
 
   useEffect(() => {
     const id = window.setTimeout(load, 0);
@@ -332,6 +345,12 @@ export default function Users() {
       <div>
         <h1 className="text-xl font-bold text-heading">Users</h1>
         <p className="text-sm text-body">Cross-tenant user control - lock, unlock, impersonate, and reset passwords.</p>
+        {tenantId && (
+          <button type="button" onClick={() => { setSearchParams({}); setPage(0); }}
+            className="mt-2 rounded-full border border-accent/30 bg-accent-soft px-2.5 py-1 text-xs font-semibold text-accent hover:opacity-80">
+            Tenant filter active · clear
+          </button>
+        )}
       </div>
 
       <div className="flex flex-wrap items-center gap-3">

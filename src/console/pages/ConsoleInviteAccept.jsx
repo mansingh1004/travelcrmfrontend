@@ -14,6 +14,7 @@ import {
 import ConsoleThemeProvider from "../theme/ConsoleThemeProvider";
 import superAdminInviteService from "../api/superAdminInviteService";
 import { setConsoleSession } from "../lib/consoleAuth";
+import { isLocalSuperAdminMfaDisabled } from "../lib/consoleEnvironment";
 
 const inputCls =
   "w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-heading " +
@@ -35,6 +36,7 @@ function InviteAcceptView() {
   const [busy, setBusy] = useState(() => Boolean(token));
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
+  const mfaDisabled = isLocalSuperAdminMfaDisabled();
 
   useEffect(() => {
     if (!token) return undefined;
@@ -88,13 +90,13 @@ function InviteAcceptView() {
       setError("Passwords do not match.");
       return;
     }
-    if (!/^\d{6}$/.test(code)) {
+    if (!mfaDisabled && !/^\d{6}$/.test(code)) {
       setError("Enter the 6-digit authenticator code.");
       return;
     }
     setBusy(true);
     try {
-      const body = await superAdminInviteService.accept(token, { password, code });
+      const body = await superAdminInviteService.accept(token, { password, code: mfaDisabled ? "" : code });
       setConsoleSession({
         token: body.token,
         name: body.name,
@@ -137,7 +139,7 @@ function InviteAcceptView() {
             </div>
           ) : setup ? (
             <div className="mt-6 space-y-4">
-              <div className="flex flex-col items-center rounded-lg border border-border bg-white p-4">
+              {!mfaDisabled && <div className="flex flex-col items-center rounded-lg border border-border bg-white p-4">
                 {qrSrc ? (
                   <img src={qrSrc} alt="Authenticator setup QR code" className="h-48 w-48 rounded-md" />
                 ) : (
@@ -145,9 +147,9 @@ function InviteAcceptView() {
                     Preparing QR code
                   </div>
                 )}
-              </div>
+              </div>}
 
-              <div className="rounded-lg border border-border bg-page px-3.5 py-3">
+              {!mfaDisabled && <div className="rounded-lg border border-border bg-page px-3.5 py-3">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Manual key</p>
                   <button
@@ -169,9 +171,15 @@ function InviteAcceptView() {
                   <Smartphone size={14} />
                   Open authenticator app
                 </a>
-              </div>
+              </div>}
 
-              <label className="block text-xs font-semibold text-body">
+              {mfaDisabled && (
+                <p className="rounded-lg bg-amber-500/10 px-3.5 py-3 text-sm font-semibold text-amber-700 ring-1 ring-amber-500/20">
+                  MFA enrollment is disabled for local development.
+                </p>
+              )}
+
+              {!mfaDisabled && <label className="block text-xs font-semibold text-body">
                 Password
                 <input
                   type="password"
@@ -181,7 +189,7 @@ function InviteAcceptView() {
                   onChange={(e) => setPassword(e.target.value)}
                   required
                 />
-              </label>
+              </label>}
               <label className="block text-xs font-semibold text-body">
                 Confirm password
                 <input

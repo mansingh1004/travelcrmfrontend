@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   Building2, Users, CalendarClock, HardDrive, AlertTriangle,
-  Loader2, SlidersHorizontal, RotateCcw, X, Lock, Network,
+  Loader2, SlidersHorizontal, RotateCcw, X, Lock, Layers3,
 } from "lucide-react";
 import { usageService } from "../api/usageService";
 import SuperAdminMfaActionModal from "../components/SuperAdminMfaActionModal";
@@ -18,6 +19,7 @@ const HUE = {
 const STATUS_CLS = {
   ACTIVE:    "bg-hue-emerald-soft text-hue-emerald",
   TRIAL:     "bg-hue-amber-soft text-hue-amber",
+  PAST_DUE:  "bg-hue-amber-soft text-hue-amber",
   SUSPENDED: "bg-hue-rose-soft text-hue-rose",
   EXPIRED:   "bg-surface-hover text-muted",
 };
@@ -25,6 +27,7 @@ const PLAN_CLS = {
   STARTER:    "bg-hue-sky-soft text-hue-sky",
   PRO:        "bg-hue-violet-soft text-hue-violet",
   ENTERPRISE: "bg-hue-indigo-soft text-hue-indigo",
+  FLEET:      "bg-hue-emerald-soft text-hue-emerald",
 };
 
 function formatBytes(bytes) {
@@ -99,6 +102,7 @@ function Field({ label, hint, value, onChange, placeholder, min = "1" }) {
 
 function OverrideModal({ tenant, onClose, onSaved }) {
   const [users, setUsers] = useState(tenant.maxUsers ?? "");
+  const [leads, setLeads] = useState(tenant.maxLeads ?? "");
   const [bookings, setBookings] = useState(tenant.maxBookingsPerMonth ?? "");
   const [storage, setStorage] = useState(tenant.maxStorageMb ?? "");
   const [subAgents, setSubAgents] = useState(tenant.maxSubAgents ?? "");
@@ -110,6 +114,7 @@ function OverrideModal({ tenant, onClose, onSaved }) {
   const submit = async () => {
     const payload = {};
     if (String(users) !== "") payload.maxUsers = Number(users);
+    if (String(leads) !== "") payload.maxLeads = Number(leads);
     if (String(bookings) !== "") payload.maxBookingsPerMonth = Number(bookings);
     if (String(storage) !== "") payload.maxStorageMb = Number(storage);
     if (String(subAgents) !== "") payload.maxSubAgents = Number(subAgents);
@@ -163,6 +168,8 @@ function OverrideModal({ tenant, onClose, onSaved }) {
 
         <div className="mt-4 space-y-3">
           <Field label="Max users" value={users} onChange={setUsers} placeholder="e.g. 20" />
+          <Field label="Max leads" value={leads} onChange={setLeads} placeholder="e.g. 5000"
+            hint="Lifetime live-lead allowance for this tenant" />
           <Field label="Max bookings / month" value={bookings} onChange={setBookings} placeholder="e.g. 500" />
           <Field label="Max storage (MB)" value={storage} onChange={setStorage} placeholder="e.g. 5120" />
           <Field label="Max sub-agents" value={subAgents} onChange={setSubAgents} placeholder="e.g. 5"
@@ -215,6 +222,8 @@ function OverrideModal({ tenant, onClose, onSaved }) {
 }
 
 export default function Usage() {
+  const [searchParams] = useSearchParams();
+  const tenantId = searchParams.get("tenantId") || "";
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -242,7 +251,8 @@ export default function Usage() {
   }
 
   const o = data.overview || {};
-  const rows = data.tenants || [];
+  const allRows = data.tenants || [];
+  const rows = tenantId ? allRows.filter((row) => row.tenantPublicId === tenantId) : allRows;
   const tiles = [
     { label: "Total Tenants", value: o.totalTenants ?? 0, Icon: Building2, hue: "indigo" },
     { label: "Over Limit", value: o.tenantsOverLimit ?? 0, Icon: AlertTriangle, hue: "rose",
@@ -250,6 +260,7 @@ export default function Usage() {
     { label: "Near Limit", value: o.tenantsNearLimit ?? 0, Icon: AlertTriangle, hue: "amber",
       valueTone: (o.tenantsNearLimit ?? 0) > 0 ? "text-hue-amber" : "text-muted" },
     { label: "Active Users", value: o.totalActiveUsers ?? 0, Icon: Users, hue: "sky" },
+    { label: "Live Leads", value: o.totalActiveLeads ?? 0, Icon: Layers3, hue: "indigo" },
     { label: "Bookings (mo)", value: o.totalBookingsThisMonth ?? 0, Icon: CalendarClock, hue: "violet" },
     { label: "Storage Used", value: formatBytes(o.totalStorageBytes), Icon: HardDrive, hue: "emerald" },
   ];
@@ -263,7 +274,14 @@ export default function Usage() {
         </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-6">
+      {tenantId && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-accent/25 bg-accent-soft px-4 py-3 text-sm text-body">
+          <span>Showing quota health for <strong className="text-heading">{rows[0]?.organizationName || "selected tenant"}</strong>.</span>
+          <Link to="/console/usage" className="text-xs font-semibold text-accent hover:underline">Show all tenants</Link>
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4 2xl:grid-cols-7">
         {tiles.map((t) => <Tile key={t.label} {...t} />)}
       </div>
 
@@ -276,6 +294,7 @@ export default function Usage() {
                 <th className="px-4 py-3 font-medium">Plan</th>
                 <th className="px-4 py-3 font-medium">Status</th>
                 <th className="px-4 py-3 font-medium">Users</th>
+                <th className="px-4 py-3 font-medium">Leads</th>
                 <th className="px-4 py-3 font-medium">Bookings (mo)</th>
                 <th className="px-4 py-3 font-medium">Storage</th>
                 <th className="px-4 py-3 font-medium">Sub-agents</th>
@@ -284,7 +303,7 @@ export default function Usage() {
             </thead>
             <tbody>
               {rows.length === 0 && (
-                <tr><td colSpan={8} className="px-4 py-10 text-center text-muted">No tenants yet.</td></tr>
+                <tr><td colSpan={9} className="px-4 py-10 text-center text-muted">No tenants yet.</td></tr>
               )}
               {rows.map((r) => (
                 <tr key={r.tenantPublicId} className="border-b border-border/60 last:border-0 hover:bg-surface-hover/50">
@@ -308,6 +327,10 @@ export default function Usage() {
                   <td className="px-4 py-3">
                     <UsageBar usedText={r.activeUsers} limitText={r.maxUsers}
                       percent={r.usersPercent} over={r.usersOverLimit} near={r.usersNearLimit} />
+                  </td>
+                  <td className="px-4 py-3">
+                    <UsageBar usedText={r.activeLeads} limitText={r.maxLeads}
+                      percent={r.leadsPercent} over={r.leadsOverLimit} near={r.leadsNearLimit} />
                   </td>
                   <td className="px-4 py-3">
                     <UsageBar usedText={r.bookingsThisMonth} limitText={r.maxBookingsPerMonth}

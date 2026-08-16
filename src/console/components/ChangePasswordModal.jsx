@@ -2,6 +2,7 @@ import { useState } from "react";
 import { KeyRound, Loader2, CheckCircle2, AlertTriangle } from "lucide-react";
 
 import profileService from "../api/profileService";
+import { isLocalSuperAdminMfaDisabled } from "../lib/consoleEnvironment";
 
 const inputCls =
   "w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-heading placeholder:text-muted focus:border-accent focus:outline-none focus:ring-2 focus:ring-focus";
@@ -14,6 +15,7 @@ export default function ChangePasswordModal({ onClose, onChanged }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [done, setDone] = useState(false);
+  const mfaDisabled = isLocalSuperAdminMfaDisabled();
 
   const submit = async (e) => {
     e.preventDefault();
@@ -22,11 +24,11 @@ export default function ChangePasswordModal({ onClose, onChanged }) {
     if (newPassword.length < 12) return setError("New password must be at least 12 characters.");
     if (newPassword !== confirm) return setError("The two new passwords do not match.");
     if (newPassword === currentPassword) return setError("The new password must be different from the current one.");
-    if (!/^\d{6}$/.test(mfaCode)) return setError("Enter the 6-digit authenticator code.");
+    if (!mfaDisabled && !/^\d{6}$/.test(mfaCode)) return setError("Enter the 6-digit authenticator code.");
 
     setSaving(true);
     try {
-      await profileService.changePassword({ currentPassword, newPassword, mfaCode });
+      await profileService.changePassword({ currentPassword, newPassword, mfaCode: mfaDisabled ? "" : mfaCode });
       setDone(true);
     } catch (err) {
       setError(err?.response?.data?.message || "Could not change the password.");
@@ -77,7 +79,7 @@ export default function ChangePasswordModal({ onClose, onChanged }) {
         </p>
 
         <div className="mt-4 space-y-3">
-          <div>
+          {!mfaDisabled && <div>
             <label htmlFor="cp-current" className="mb-1 block text-xs font-semibold text-body">
               Current password
             </label>
@@ -90,7 +92,7 @@ export default function ChangePasswordModal({ onClose, onChanged }) {
               className={inputCls}
               required
             />
-          </div>
+          </div>}
           <div>
             <label htmlFor="cp-new" className="mb-1 block text-xs font-semibold text-body">
               New password

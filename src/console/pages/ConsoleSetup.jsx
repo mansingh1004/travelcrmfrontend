@@ -4,6 +4,7 @@ import { AlertTriangle, KeyRound, Loader2, LogOut, ShieldCheck } from "lucide-re
 
 import profileService from "../api/profileService";
 import { clearConsoleSession } from "../lib/consoleAuth";
+import { isLocalSuperAdminMfaDisabled } from "../lib/consoleEnvironment";
 
 const inputCls =
   "w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-heading " +
@@ -21,6 +22,7 @@ export default function ConsoleSetup() {
   const [mfaCode, setMfaCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const mfaDisabled = isLocalSuperAdminMfaDisabled();
 
   const logout = () => {
     clearConsoleSession();
@@ -34,7 +36,7 @@ export default function ConsoleSetup() {
       setError("Passwords do not match.");
       return;
     }
-    if (!/^\d{6}$/.test(mfaCode)) {
+    if (!mfaDisabled && !/^\d{6}$/.test(mfaCode)) {
       setError("Enter the 6-digit authenticator code.");
       return;
     }
@@ -44,7 +46,7 @@ export default function ConsoleSetup() {
       await profileService.changePassword({
         currentPassword,
         newPassword,
-        mfaCode,
+        mfaCode: mfaDisabled ? "" : mfaCode,
       });
       logout();
     } catch (err) {
@@ -87,7 +89,7 @@ export default function ConsoleSetup() {
         )}
 
         <div className="mt-6 space-y-4">
-          <label className="block text-xs font-semibold text-body">
+          {!mfaDisabled && <label className="block text-xs font-semibold text-body">
             Current password
             <input
               type="password"
@@ -97,7 +99,7 @@ export default function ConsoleSetup() {
               onChange={(e) => setCurrentPassword(e.target.value)}
               required
             />
-          </label>
+          </label>}
           <label className="block text-xs font-semibold text-body">
             New password
             <input

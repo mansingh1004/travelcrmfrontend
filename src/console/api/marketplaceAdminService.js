@@ -17,10 +17,12 @@
 // and no way to decompose it.
 
 import ConsoleAPI, { unwrap } from "./consoleHttp";
+import { SUPERADMIN_MFA_HEADER } from "./userService";
 
 const RULES = "/super-admin/marketplace/commercial-rules";
 const CREDIT = "/super-admin/marketplace/credit";
 const NOMINATIONS = "/super-admin/marketplace/nominations";
+const stepUpHeaders = (mfaCode) => ({ headers: { [SUPERADMIN_MFA_HEADER]: mfaCode } });
 
 /** Drop empty filters — an empty string is a *value* to a Spring `@RequestParam`, not "no filter". */
 function clean(params) {
@@ -60,16 +62,19 @@ export const commercialRuleService = {
    * A percentage above 100 is a 400: on a commission model it would drive the supplier total
    * negative, i.e. record that the hotel pays the platform to take the booking.
    */
-  create: async (payload) => unwrap(await ConsoleAPI.post(RULES, payload)),
+  create: async (payload, mfaCode) =>
+    unwrap(await ConsoleAPI.post(RULES, payload, stepUpHeaders(mfaCode))),
 
   /**
    * Update. Editing a rule reprices every FUTURE request against that hotel and no past one:
    * bookings carry their agreed amounts, so a March edit cannot restate what was earned in January.
    */
-  update: async (publicId, payload) => unwrap(await ConsoleAPI.put(`${RULES}/${publicId}`, payload)),
+  update: async (publicId, payload, mfaCode) =>
+    unwrap(await ConsoleAPI.put(`${RULES}/${publicId}`, payload, stepUpHeaders(mfaCode))),
 
   /** Soft-delete. A rule is the explanation for every price it produced, so it is never removed. */
-  remove: async (publicId) => unwrap(await ConsoleAPI.delete(`${RULES}/${publicId}`)),
+  remove: async (publicId, mfaCode) =>
+    unwrap(await ConsoleAPI.delete(`${RULES}/${publicId}`, stepUpHeaders(mfaCode))),
 };
 
 /* ── Tenant credit ────────────────────────────────────────────────────────── */
@@ -90,7 +95,8 @@ export const marketplaceCreditService = {
    * them, and treating that as "zero credit" would refuse every approval for every tenant who has
    * not been configured yet.
    */
-  setLimit: async (tenantId, payload) => unwrap(await ConsoleAPI.put(`${CREDIT}/${tenantId}`, payload)),
+  setLimit: async (tenantId, payload, mfaCode) =>
+    unwrap(await ConsoleAPI.put(`${CREDIT}/${tenantId}`, payload, stepUpHeaders(mfaCode))),
 
   /**
    * Record money actually received against one booking.
@@ -100,12 +106,14 @@ export const marketplaceCreditService = {
    * settles the booking rather than creating a negative balance that would then quietly net against
    * the tenant's other debts.
    */
-  recordPayment: async (bookingPublicId, payload) =>
-    unwrap(await ConsoleAPI.post(`${CREDIT}/bookings/${bookingPublicId}/payments`, payload)),
+  recordPayment: async (bookingPublicId, payload, mfaCode) =>
+    unwrap(await ConsoleAPI.post(`${CREDIT}/bookings/${bookingPublicId}/payments`, payload,
+      stepUpHeaders(mfaCode))),
 
   /** Undo a recorded receipt — a bounced cheque, a misapplied transfer, a fat-fingered amount. */
-  reversePayment: async (bookingPublicId, amount, reason) =>
+  reversePayment: async (bookingPublicId, amount, reason, mfaCode) =>
     unwrap(await ConsoleAPI.post(`${CREDIT}/bookings/${bookingPublicId}/payments/reverse`, null, {
+      ...stepUpHeaders(mfaCode),
       params: clean({ amount, reason }),
     })),
 };
@@ -139,12 +147,18 @@ export const hotelNominationService = {
    * Not idempotent by design: a second call on a decided nomination 409s rather than sending a
    * second invite. Re-inviting a silent hotel is the invite's own `resend`.
    */
-  accept: async (publicId, note) =>
-    unwrap(await ConsoleAPI.post(`${NOMINATIONS}/${publicId}/accept`, null, { params: clean({ note }) })),
+  accept: async (publicId, note, mfaCode) =>
+    unwrap(await ConsoleAPI.post(`${NOMINATIONS}/${publicId}/accept`, null, {
+      ...stepUpHeaders(mfaCode),
+      params: clean({ note }),
+    })),
 
   /** Reject. The reason is TENANT-VISIBLE — one they cannot read is one they will simply re-send. */
-  reject: async (publicId, reason) =>
-    unwrap(await ConsoleAPI.post(`${NOMINATIONS}/${publicId}/reject`, null, { params: clean({ reason }) })),
+  reject: async (publicId, reason, mfaCode) =>
+    unwrap(await ConsoleAPI.post(`${NOMINATIONS}/${publicId}/reject`, null, {
+      ...stepUpHeaders(mfaCode),
+      params: clean({ reason }),
+    })),
 };
 
 export default { commercialRuleService, marketplaceCreditService, hotelNominationService };

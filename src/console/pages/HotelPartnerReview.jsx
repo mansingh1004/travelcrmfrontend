@@ -5,6 +5,7 @@ import {
   Loader2, MapPin, RefreshCw, Star, X,
 } from "lucide-react";
 import { hotelPartnerService, REG_STATUS } from "../api/hotelPartnerService";
+import SuperAdminMfaActionModal from "../components/SuperAdminMfaActionModal";
 
 /**
  * One hotel partner submission, reviewed on a full page.
@@ -45,6 +46,8 @@ export default function HotelPartnerReview() {
   const [mode, setMode] = useState("");        // "" | "changes" | "reject"
   const [note, setNote] = useState("");
   const [actionError, setActionError] = useState("");
+  const [mfaAction, setMfaAction] = useState(null);
+  const [mfaError, setMfaError] = useState("");
   const [lightbox, setLightbox] = useState(null);   // { images, index }
 
   const load = useCallback(async () => {
@@ -82,15 +85,19 @@ export default function HotelPartnerReview() {
     return () => window.removeEventListener("keydown", onKey);
   }, [lightbox]);
 
-  const decide = async (fn) => {
+  const confirmDecision = async (mfaCode) => {
+    const action = mfaAction;
+    if (!action) return;
     setBusy(true);
-    setActionError("");
+    setMfaError("");
     try {
-      await fn();
+      if (action.kind === "approve") await hotelPartnerService.approve(publicId, mfaCode);
+      else if (action.kind === "reject") await hotelPartnerService.reject(publicId, action.note, mfaCode);
+      else await hotelPartnerService.requestChanges(publicId, action.note, mfaCode);
+      setMfaAction(null);
       navigate("/console/hotel-partners");
     } catch (e) {
-      // Kept on the page: a 409 the reviewer cannot see is a button that does nothing.
-      setActionError(e?.response?.data?.message || "That did not work.");
+      setMfaError(e?.response?.data?.message || "That did not work.");
     } finally {
       setBusy(false);
     }
@@ -403,7 +410,7 @@ export default function HotelPartnerReview() {
         ) : mode === "" ? (
           <div className="flex flex-wrap gap-2">
             <button
-              onClick={() => decide(() => hotelPartnerService.approve(publicId))}
+              onClick={() => { setMfaError(""); setMfaAction({ kind: "approve" }); }}
               disabled={busy}
               className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-sm font-bold text-accent-text hover:bg-accent-hover disabled:opacity-50"
             >
@@ -440,9 +447,10 @@ export default function HotelPartnerReview() {
             />
             <div className="mt-2 flex gap-2">
               <button
-                onClick={() => decide(() => (mode === "reject"
-                  ? hotelPartnerService.reject(publicId, note)
-                  : hotelPartnerService.requestChanges(publicId, note)))}
+                onClick={() => {
+                  setMfaError("");
+                  setMfaAction({ kind: mode === "reject" ? "reject" : "changes", note });
+                }}
                 disabled={busy || !note.trim()}
                 className="rounded-lg bg-accent px-4 py-2 text-sm font-bold text-accent-text hover:bg-accent-hover disabled:opacity-40"
               >
@@ -466,6 +474,19 @@ export default function HotelPartnerReview() {
           onStep={(d) => setLightbox((l) => l && {
             ...l, index: (l.index + d + l.images.length) % l.images.length,
           })}
+        />
+      )}
+      {mfaAction && (
+        <SuperAdminMfaActionModal
+          title={mfaAction.kind === "approve" ? "Approve this hotel partner"
+            : mfaAction.kind === "reject" ? "Reject this submission" : "Request partner changes"}
+          description="This decision changes the hotel partner onboarding state and is audited."
+          confirmLabel={mfaAction.kind === "approve" ? "Approve"
+            : mfaAction.kind === "reject" ? "Reject" : "Request changes"}
+          saving={busy}
+          error={mfaError}
+          onClose={busy ? undefined : () => setMfaAction(null)}
+          onConfirm={confirmDecision}
         />
       )}
     </Shell>
