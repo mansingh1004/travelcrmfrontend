@@ -25,6 +25,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Check, Loader2, Percent, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import { commercialRuleService as svc } from "../api/marketplaceAdminService";
 import { platformHotelService } from "../api/platformHotelService";
+import SuperAdminMfaActionModal from "../components/SuperAdminMfaActionModal";
 import { getErrorMessage, isAlreadyReported } from "@shared/api/apiError";
 import { useToast } from "@shared/ui/toast";
 
@@ -46,6 +47,11 @@ export default function CommercialRules() {
   const [hotels, setHotels] = useState([]);
   const [loading, setLoading] = useState(false);
   const [editing, setEditing] = useState(null);   // BLANK-shaped draft, or an existing rule
+  // Deleting a rule is MARKETPLACE_RULE_DELETE server-side, so it needs a step-up code. That gate
+  // doubles as the confirmation this action never had — the trash icon used to delete on first click.
+  const [pendingDelete, setPendingDelete] = useState(null);
+  const [removing, setRemoving] = useState(false);
+  const [removeError, setRemoveError] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -80,13 +86,20 @@ export default function CommercialRules() {
     return () => { alive = false; };
   }, []);
 
-  const remove = async (rule) => {
+  const confirmRemove = async (mfaCode) => {
+    setRemoving(true);
+    setRemoveError("");
     try {
-      await svc.remove(rule.publicId);
+      await svc.remove(pendingDelete.publicId, mfaCode);
+      setPendingDelete(null);
       showToast("Rule deleted.", "success");
       load();
     } catch (e) {
-      if (!isAlreadyReported(e)) showToast(getErrorMessage(e, "Could not delete the rule."), "error");
+      // Rendered inside the dialog, not as a toast: the operator is still standing in front of the
+      // code field and a wrong or expired code has to be retryable without reopening anything.
+      setRemoveError(getErrorMessage(e, "Could not delete the rule."));
+    } finally {
+      setRemoving(false);
     }
   };
 
@@ -126,11 +139,11 @@ export default function CommercialRules() {
       )}
 
       <RuleTable title="Global fallback" rows={globals} loading={loading && rows === null}
-                 onEdit={setEditing} onDelete={remove}
+                 onEdit={setEditing} onDelete={setPendingDelete}
                  empty="No global rule — the configured default applies." />
 
       <RuleTable title="Per hotel" rows={perHotel} loading={loading && rows === null}
-                 onEdit={setEditing} onDelete={remove}
+                 onEdit={setEditing} onDelete={setPendingDelete}
                  empty="No hotel has its own rule yet." />
 
       {editing && (
@@ -138,6 +151,22 @@ export default function CommercialRules() {
           rule={editing} options={options} hotels={hotels}
           onClose={() => setEditing(null)}
           onSaved={() => { setEditing(null); load(); }}
+        />
+      )}
+
+      {pendingDelete && (
+        <SuperAdminMfaActionModal
+          title="Delete commercial rule"
+          description={
+            pendingDelete.global
+              ? "This removes the global fallback. Hotels without their own rule fall back to the configured default markup until a new global rule exists."
+              : `This removes the rule for ${pendingDelete.hotelName || "this hotel"}. Future requests are priced by the global fallback instead.`
+          }
+          confirmLabel="Delete rule"
+          saving={removing}
+          error={removeError}
+          onClose={removing ? undefined : () => { setPendingDelete(null); setRemoveError(""); }}
+          onConfirm={confirmRemove}
         />
       )}
     </div>
@@ -218,6 +247,10 @@ function RuleDialog({ rule, options, hotels, onClose, onSaved }) {
     value: rule.value ?? "10",
   });
   const [busy, setBusy] = useState(false);
+  // MARKETPLACE_RULE_CREATE / _UPDATE are step-up guarded server-side; the code is collected once,
+  // after the form validates, so a typo in the value is caught before an authenticator is involved.
+  const [mfaOpen, setMfaOpen] = useState(false);
+  const [mfaError, setMfaError] = useState("");
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
 
   const value = Number(form.value);
@@ -227,8 +260,9 @@ function RuleDialog({ rule, options, hotels, onClose, onSaved }) {
   const invalid = !Number.isFinite(value) || value < 0 || (isPct && value > 100);
   const datesInvalid = form.validFrom && form.validTo && form.validTo < form.validFrom;
 
-  const save = async () => {
+  const save = async (mfaCode) => {
     setBusy(true);
+    setMfaError("");
     const payload = {
       hotelPublicId: form.hotelPublicId || undefined,
       label: form.label?.trim() || undefined,
@@ -243,12 +277,13 @@ function RuleDialog({ rule, options, hotels, onClose, onSaved }) {
       notes: form.notes?.trim() || undefined,
     };
     try {
-      if (rule.publicId) await svc.update(rule.publicId, payload);
-      else await svc.create(payload);
+      if (rule.publicId) await svc.update(rule.publicId, payload, mfaCode);
+      else await svc.create(payload, mfaCode);
+      setMfaOpen(false);
       showToast(rule.publicId ? "Rule updated." : "Rule created.", "success");
       onSaved();
     } catch (e) {
-      if (!isAlreadyReported(e)) showToast(getErrorMessage(e, "Could not save the rule."), "error");
+      setMfaError(getErrorMessage(e, "Could not save the rule."));
     } finally {
       setBusy(false);
     }
@@ -365,13 +400,30 @@ function RuleDialog({ rule, options, hotels, onClose, onSaved }) {
                   className="rounded-lg border border-border px-3 py-2 text-sm font-semibold text-body hover:bg-surface-hover">
             Cancel
           </button>
-          <button onClick={save} disabled={invalid || datesInvalid || busy}
+          <button onClick={() => { setMfaError(""); setMfaOpen(true); }}
+                  disabled={invalid || datesInvalid || busy}
                   className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-50">
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
             Save
           </button>
         </div>
       </div>
+
+      {mfaOpen && (
+        <SuperAdminMfaActionModal
+          title={rule.publicId ? "Confirm rule change" : "Confirm new rule"}
+          description={
+            rule.publicId
+              ? "This reprices every future request against this hotel. Bookings already made keep the amounts they were agreed at."
+              : "This sets what the platform adds on top of, or takes out of, the hotel's rate."
+          }
+          confirmLabel={rule.publicId ? "Save rule" : "Create rule"}
+          saving={busy}
+          error={mfaError}
+          onClose={busy ? undefined : () => setMfaOpen(false)}
+          onConfirm={save}
+        />
+      )}
     </div>
   );
 }
