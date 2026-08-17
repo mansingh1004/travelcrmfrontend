@@ -47,6 +47,7 @@ import {
   UserCog,
   Users,
   Zap,
+  BedDouble,
   BellRing,
   Inbox,
   CircleUser,
@@ -390,6 +391,31 @@ export const NAV_SECTIONS = [
             path: "/marketplace/bookings",
             keywords: "approval queue status",
           },
+        ],
+      },
+      {
+        // The tenant's own property-management screens. Distinct from "Platform Hotels"
+        // above (that is the shared marketplace catalog) and from Masters → Hotels (a
+        // reference list). No `can()`: the module runs on its own mocked service with no
+        // backend endpoints, so there is no permission or module key that gates it.
+        id: "hotelmgmt",
+        label: "Hotel Management",
+        Icon: BedDouble,
+        tone: "teal",
+        keywords: "property pms rooms occupancy housekeeping adr",
+        children: [
+          { id: "hotelmgmt.dashboard", label: "Dashboard", path: "/hotels/dashboard", keywords: "occupancy adr revpar" },
+          // No `alt` for the detail page: matching is subtree-based and longest-match-wins,
+          // so "/hotels" already stays lit on "/hotels/:id" while "/hotels/dashboard" and the
+          // rest of the siblings still beat it.
+          { id: "hotelmgmt.hotels", label: "Hotels", path: "/hotels" },
+          { id: "hotelmgmt.roomtypes", label: "Room Types", path: "/hotels/room-types", keywords: "rooms categories" },
+          { id: "hotelmgmt.inventory", label: "Inventory Calendar", path: "/hotels/inventory", keywords: "availability allotment" },
+          { id: "hotelmgmt.bookings", label: "Bookings", path: "/hotels/bookings", keywords: "reservations stays" },
+          { id: "hotelmgmt.pricing", label: "Pricing", path: "/hotels/pricing", keywords: "rates tariff" },
+          { id: "hotelmgmt.amenities", label: "Amenities", path: "/hotels/amenities", keywords: "facilities" },
+          { id: "hotelmgmt.housekeeping", label: "Housekeeping", path: "/hotels/housekeeping", keywords: "cleaning rooms status" },
+          { id: "hotelmgmt.reports", label: "Reports", path: "/hotels/reports", keywords: "analytics performance" },
         ],
       },
     ],

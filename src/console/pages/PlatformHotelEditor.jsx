@@ -6,6 +6,7 @@ import {
   GlassCard, useToast, errMsg,
 } from "../components/hotelUi";
 import { platformHotelService } from "../api/platformHotelService";
+import SuperAdminMfaActionModal from "../components/SuperAdminMfaActionModal";
 
 /**
  * Enter a catalog hotel by hand, from the console, without touching a mouse.
@@ -46,6 +47,8 @@ export default function PlatformHotelEditor() {
   const [loadError, setLoadError] = useState("");
   const [uploading, setUploading] = useState(false);
   const [uploadPct, setUploadPct] = useState(0);
+  const [mfaOpen, setMfaOpen] = useState(false);
+  const [mfaError, setMfaError] = useState("");
   const rootRef = useRef(null);
   /* The room a rate shortcut applies to — whichever room last held focus. Without this, Alt+T on a
      page with six rooms has to guess, and guessing wrong writes a price onto the wrong room. */
@@ -86,73 +89,90 @@ export default function PlatformHotelEditor() {
 
   // ── save ────────────────────────────────────────────────────────────────
 
-  const save = useCallback(async () => {
+  /* Validate first, THEN ask for the code. A hotel missing its city should fail on the form, not
+     after the operator has fetched their phone and typed six digits. */
+  const requestSave = useCallback(() => {
     if (saving) return;
     if (!form.name.trim() || !form.cityName.trim()) {
       showToast("A hotel needs at least a name and a city.", "error");
       document.getElementById(form.name.trim() ? "h-city" : "h-name")?.focus();
       return;
     }
+    setMfaError("");
+    setMfaOpen(true);
+  }, [saving, form, showToast]);
+
+  /* Every write below is @RequireSuperAdminStepUp server-side (PLATFORM_HOTEL_CREATE / _UPDATE /
+     _ROOM_CHANGE / _RATE_CHANGE / _MEAL_PLAN_CHANGE), so ONE code is collected up front and threaded
+     through the whole sequence. Prompting per call would mean up to twelve dialogs for one Save, and
+     a TOTP window is 30 seconds — the operator would be re-typing codes mid-sequence and would still
+     lose the batch when one expired. */
+  const save = useCallback(async (mfaCode) => {
     setSaving(true);
+    setMfaError("");
     try {
       /* The hotel row first, and always: rooms and rates are addressed through its publicId, so on a
          new hotel there is nothing to attach them to until this returns. */
       const hotel = isNew
-        ? await platformHotelService.create(toPayload(form))
-        : await platformHotelService.update(publicId, toPayload(form));
+        ? await platformHotelService.create(toPayload(form), mfaCode)
+        : await platformHotelService.update(publicId, toPayload(form), mfaCode);
       const id = hotel.publicId;
 
       // Meal plans before rooms: a rate names a meal plan code, and a code the hotel does not offer
       // is a rate nobody can interpret.
       for (const plan of mealPlans) {
         if (plan._deleted && plan.publicId) {
-          await platformHotelService.deleteMealPlan(id, plan.publicId);
+          await platformHotelService.deleteMealPlan(id, plan.publicId, mfaCode);
         } else if (!plan._deleted && !plan.publicId) {
-          await platformHotelService.addMealPlan(id, mealPayload(plan));
+          await platformHotelService.addMealPlan(id, mealPayload(plan), mfaCode);
         } else if (!plan._deleted && plan._dirty) {
-          await platformHotelService.updateMealPlan(id, plan.publicId, mealPayload(plan));
+          await platformHotelService.updateMealPlan(id, plan.publicId, mealPayload(plan), mfaCode);
         }
       }
 
       for (const room of rooms) {
         if (room._deleted) {
-          if (room.publicId) await platformHotelService.deleteRoom(id, room.publicId);
+          if (room.publicId) await platformHotelService.deleteRoom(id, room.publicId, mfaCode);
           continue;
         }
         let roomId = room.publicId;
         if (!roomId) {
-          roomId = (await platformHotelService.addRoom(id, roomPayload(room))).publicId;
+          roomId = (await platformHotelService.addRoom(id, roomPayload(room), mfaCode)).publicId;
         } else if (room._dirty) {
-          await platformHotelService.updateRoom(id, roomId, roomPayload(room));
+          await platformHotelService.updateRoom(id, roomId, roomPayload(room), mfaCode);
         }
         for (const rate of room.rates) {
           if (rate._deleted && rate.publicId) {
-            await platformHotelService.deleteRate(id, roomId, rate.publicId);
+            await platformHotelService.deleteRate(id, roomId, rate.publicId, mfaCode);
           } else if (!rate._deleted && !rate.publicId) {
-            await platformHotelService.addRate(id, roomId, ratePayload(rate));
+            await platformHotelService.addRate(id, roomId, ratePayload(rate), mfaCode);
           } else if (!rate._deleted && rate._dirty) {
-            await platformHotelService.updateRate(id, roomId, rate.publicId, ratePayload(rate));
+            await platformHotelService.updateRate(id, roomId, rate.publicId, ratePayload(rate), mfaCode);
           }
         }
       }
 
+      setMfaOpen(false);
       showToast(isNew ? `${hotel.name} created as a draft.` : "Saved.", "success");
       navigate(`/console/hotel-catalog/${id}`);
     } catch (e) {
       /* Deliberately NOT reloading from the server here. A failure part-way through leaves the
          hotel saved and, say, room three unsaved — re-hydrating would throw away everything the
          operator typed after the point it broke. The page keeps their work; pressing Save again
-         re-runs only what is still outstanding, because saved rows now carry publicIds. */
-      showToast(errMsg(e, "Could not save. Your changes are still here — try again."), "error");
+         re-runs only what is still outstanding, because saved rows now carry publicIds.
+
+         The message stays in the dialog so the operator can enter a fresh code and retry, which is
+         the common case: a code that expired part-way through a long sequence. */
+      setMfaError(errMsg(e, "Could not save. Your changes are still here — enter a fresh code and try again."));
     } finally {
       setSaving(false);
     }
-  }, [saving, form, rooms, mealPlans, isNew, publicId, navigate, showToast]);
+  }, [form, rooms, mealPlans, isNew, publicId, navigate, showToast]);
 
   // ── keyboard ────────────────────────────────────────────────────────────
 
   const onKeyDown = (e) => {
-    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); save(); return; }
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); requestSave(); return; }
     if (e.altKey && e.key.toLowerCase() === "r") { e.preventDefault(); addRoom(); return; }
     if (e.altKey && e.key.toLowerCase() === "t") {
       e.preventDefault();
@@ -467,7 +487,7 @@ export default function PlatformHotelEditor() {
       {/* Sticky, because a hotel is a long page and the operator must never scroll to save. */}
       <div className="sticky bottom-0 z-20 -mx-4 border-t border-border bg-surface/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6">
         <div className="flex flex-wrap items-center gap-3">
-          <Button onClick={save} disabled={saving}>
+          <Button onClick={requestSave} disabled={saving}>
             {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
             {saving ? "Saving…" : isNew ? "Create draft" : "Save changes"}
           </Button>
@@ -478,6 +498,22 @@ export default function PlatformHotelEditor() {
           </span>
         </div>
       </div>
+
+      {mfaOpen && (
+        <SuperAdminMfaActionModal
+          title={isNew ? "Confirm new hotel" : "Confirm hotel changes"}
+          description={
+            isNew
+              ? "This adds the property to the platform catalogue as a draft. No tenant sees it until it is published."
+              : "This saves the hotel and every room, rate and meal-plan change on this page in one sequence."
+          }
+          confirmLabel={isNew ? "Create draft" : "Save changes"}
+          saving={saving}
+          error={mfaError}
+          onClose={saving ? undefined : () => setMfaOpen(false)}
+          onConfirm={save}
+        />
+      )}
     </PageShell>
   );
 }

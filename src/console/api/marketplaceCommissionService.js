@@ -6,13 +6,11 @@
 // There is no tenant counterpart to this service and there must never be one — every row carries the
 // supplier cost and the platform's margin on a tenant's booking.
 //
-// Neither write here takes a step-up MFA code: the ledger is append-only, so the worst a mis-click
-// can do is add a row that another row corrects. That is deliberately unlike the booking queue, where
-// approving commits the platform to a supplier.
-
 import ConsoleAPI, { unwrap } from "./consoleHttp";
+import { SUPERADMIN_MFA_HEADER } from "./userService";
 
 const BASE = "/super-admin/marketplace/commissions";
+const stepUpHeaders = (mfaCode) => ({ headers: { [SUPERADMIN_MFA_HEADER]: mfaCode } });
 
 /** Drop empty filters — an empty string is a *value* to a Spring `@RequestParam`, not "no filter". */
 function clean(params) {
@@ -62,16 +60,19 @@ export const marketplaceCommissionService = {
    * corrects may not exist at all (an accrual that was never written is exactly what an adjustment
    * fixes). `referenceSuffix` is what makes a retry land once, so the caller owns it.
    */
-  adjust: async (bookingPublicId, { amount, reason, referenceSuffix }) =>
+  adjust: async (bookingPublicId, { amount, reason, referenceSuffix }, mfaCode) =>
     unwrap(await ConsoleAPI.post(`${BASE}/${bookingPublicId}/adjust`, {
       amount,
       reason,
       referenceSuffix,
-    })),
+    }, stepUpHeaders(mfaCode))),
 
   /** Keyed by the LEDGER ROW's publicId — settlement is a claim about one specific entry. */
-  settle: async (publicId, reason) =>
-    unwrap(await ConsoleAPI.post(`${BASE}/${publicId}/settle`, null, { params: clean({ reason }) })),
+  settle: async (publicId, reason, mfaCode) =>
+    unwrap(await ConsoleAPI.post(`${BASE}/${publicId}/settle`, null, {
+      ...stepUpHeaders(mfaCode),
+      params: clean({ reason }),
+    })),
 };
 
 export default marketplaceCommissionService;

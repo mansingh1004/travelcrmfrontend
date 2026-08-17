@@ -5,7 +5,12 @@ import { KeyRound, Loader2, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Search 
 import CommandPalette from "@shared/nav/CommandPalette";
 import LauncherSheet from "@shared/nav/AppLauncher";
 import { findActiveDestination, flattenDestinations, resolveSections } from "@shared/nav/navModel";
-import { usePins } from "@shared/nav/usePinnedNav";
+import {
+  usePins,
+  useRailCollapsed,
+  useRecents,
+  useResolvedIds,
+} from "@shared/nav/usePinnedNav";
 
 import ConsoleThemeProvider from "./theme/ConsoleThemeProvider";
 import ThemeToggle from "./theme/ThemeToggle";
@@ -35,7 +40,7 @@ const CONSOLE_IDLE_TIMEOUT_MS = 15 * 60 * 1000;
 export default function ConsoleLayout() {
   const nav = useNavigate();
   const location = useLocation();
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useRailCollapsed(CONSOLE_NAV_NAMESPACE, false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [launcherOpen, setLauncherOpen] = useState(false);
@@ -48,7 +53,10 @@ export default function ConsoleLayout() {
 
   // The console's own search index — never the tenant app's. Static: unlike the
   // tenant registry there are no permission gates to re-evaluate.
-  const consoleSections = useMemo(() => resolveSections(CONSOLE_NAV_SECTIONS), []);
+  const consoleSections = useMemo(
+    () => (me.role ? resolveSections(CONSOLE_NAV_SECTIONS) : []),
+    [me.role],
+  );
   const consoleDestinations = useMemo(
     () => flattenDestinations(consoleSections),
     [consoleSections],
@@ -58,6 +66,8 @@ export default function ConsoleLayout() {
   // Same store the rail reads; the hook's event bus keeps the two mounts in sync,
   // so starring a tile here lights the pin in the rail immediately.
   const { isPinned, toggle: togglePin } = usePins(CONSOLE_NAV_NAMESPACE, CONSOLE_DEFAULT_PINS);
+  const { recents } = useRecents(CONSOLE_NAV_NAMESPACE, activeConsoleId);
+  const recentDestinations = useResolvedIds(recents, consoleDestinations);
 
   const logout = useCallback(() => {
     clearConsoleSession();
@@ -74,11 +84,12 @@ export default function ConsoleLayout() {
             ...prev,
             name: body.name,
             email: body.email,
+            role: body.role || "SUPER_ADMIN",
             mfaEnabled: body.mfaEnabled,
             mustChangePassword: body.mustChangePassword,
             setupComplete: body.setupComplete,
           }));
-          setConsoleSession({ name: body.name, email: body.email });
+          setConsoleSession({ name: body.name, email: body.email, role: body.role || "SUPER_ADMIN" });
         }
       })
       .catch(() => {
@@ -100,20 +111,34 @@ export default function ConsoleLayout() {
   // ⌘K / Ctrl+K opens the console palette; Escape closes the mobile drawer.
   useEffect(() => {
     const onKey = (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && e.key.toLowerCase() === "k") {
         e.preventDefault();
+        setLauncherOpen(false);
         setPaletteOpen((v) => !v);
-      } else if (e.key === "Escape") {
+        return;
+      }
+      if (mod && e.key.toLowerCase() === "b" && window.innerWidth >= 640) {
+        e.preventDefault();
+        setCollapsed(!collapsed);
+        return;
+      }
+      if (e.key === "Escape") {
+        setLauncherOpen(false);
         setMobileNavOpen(false);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [collapsed, setCollapsed]);
 
   // Any navigation closes the drawer — otherwise it covers the page just requested.
   useEffect(() => {
-    setMobileNavOpen(false);
+    const closeTimer = window.setTimeout(() => {
+      setLauncherOpen(false);
+      setMobileNavOpen(false);
+    }, 0);
+    return () => window.clearTimeout(closeTimer);
   }, [location.pathname]);
 
   useEffect(() => {
@@ -146,6 +171,10 @@ export default function ConsoleLayout() {
     );
   }
 
+  if (me.role !== "SUPER_ADMIN" && location.pathname.startsWith("/console/superadmins")) {
+    return <Navigate to="/console" replace />;
+  }
+
   if (me?.setupComplete === false) {
     const onSetupRoute = location.pathname === "/console/setup";
     return (
@@ -167,10 +196,12 @@ export default function ConsoleLayout() {
     <ConsoleThemeProvider>
       <div className="flex min-h-screen">
         <ConsoleSidebar
+          sections={consoleSections}
           collapsed={collapsed}
           mobileOpen={mobileNavOpen}
           onCloseMobile={() => setMobileNavOpen(false)}
           onOpenLauncher={(el) => {
+            setPaletteOpen(false);
             setLauncherAnchor(el?.getBoundingClientRect?.() ?? null);
             setLauncherOpen(true);
           }}
@@ -205,12 +236,15 @@ export default function ConsoleLayout() {
                   operator reaches for first. */}
               <button
                 type="button"
-                onClick={() => setPaletteOpen(true)}
+                onClick={() => {
+                  setLauncherOpen(false);
+                  setPaletteOpen(true);
+                }}
                 className="ml-1 flex min-w-0 items-center gap-2 rounded-lg border border-border bg-surface-hover/40 px-2.5 py-1.5 text-xs text-muted transition-colors hover:border-border-strong hover:text-body sm:px-3"
                 aria-label="Search the console"
               >
                 <Search size={14} className="shrink-0" />
-                <span className="hidden truncate md:block">Search tenants, plans, settings…</span>
+                <span className="hidden truncate md:block">Go to a console page…</span>
                 <kbd className="hidden rounded border border-border px-1.5 py-0.5 font-sans text-[10px] font-semibold lg:block">
                   Ctrl K
                 </kbd>
@@ -253,9 +287,10 @@ export default function ConsoleLayout() {
         open={paletteOpen}
         onClose={() => setPaletteOpen(false)}
         destinations={consoleDestinations}
+        recents={recentDestinations}
         onNavigate={(path) => nav(path)}
         theme="console"
-        placeholder="Search tenants, plans, settings…"
+        placeholder="Go to a console page…"
       />
 
       <LauncherSheet
@@ -268,6 +303,7 @@ export default function ConsoleLayout() {
         anchor={launcherAnchor}
         theme="console"
         title="All console areas"
+        allowGroupPins
       />
 
       {changingPassword && (

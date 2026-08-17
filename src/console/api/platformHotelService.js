@@ -46,10 +46,11 @@ export const platformHotelService = {
   /** Full detail: rooms, meal plans and how many tenants have imported it. */
   get: (publicId) => ConsoleAPI.get(`${BASE}/hotels/${publicId}`).then(unwrap),
 
-  create: (payload) => ConsoleAPI.post(`${BASE}/hotels`, payload).then(unwrap),
+  create: (payload, mfaCode) =>
+    ConsoleAPI.post(`${BASE}/hotels`, payload, stepUpHeaders(mfaCode)).then(unwrap),
 
-  update: (publicId, payload) =>
-    ConsoleAPI.put(`${BASE}/hotels/${publicId}`, payload).then(unwrap),
+  update: (publicId, payload, mfaCode) =>
+    ConsoleAPI.put(`${BASE}/hotels/${publicId}`, payload, stepUpHeaders(mfaCode)).then(unwrap),
 
   /** Refused with 400 unless the hotel has at least one ACTIVE room. Step-up guarded. */
   publish: (publicId, mfaCode) =>
@@ -68,18 +69,22 @@ export const platformHotelService = {
     }).then(unwrap),
 
   /** 409 when any tenant has imported it — unpublish is the correct verb in that case. */
-  remove: (publicId) => ConsoleAPI.delete(`${BASE}/hotels/${publicId}`).then(unwrap),
+  remove: (publicId, mfaCode) =>
+    ConsoleAPI.delete(`${BASE}/hotels/${publicId}`, stepUpHeaders(mfaCode)).then(unwrap),
 
   // ── Rooms (no price field — the catalog is descriptive; rates live elsewhere) ──
 
-  addRoom: (hotelPublicId, payload) =>
-    ConsoleAPI.post(`${BASE}/hotels/${hotelPublicId}/rooms`, payload).then(unwrap),
+  addRoom: (hotelPublicId, payload, mfaCode) =>
+    ConsoleAPI.post(`${BASE}/hotels/${hotelPublicId}/rooms`, payload,
+      stepUpHeaders(mfaCode)).then(unwrap),
 
-  updateRoom: (hotelPublicId, roomPublicId, payload) =>
-    ConsoleAPI.put(`${BASE}/hotels/${hotelPublicId}/rooms/${roomPublicId}`, payload).then(unwrap),
+  updateRoom: (hotelPublicId, roomPublicId, payload, mfaCode) =>
+    ConsoleAPI.put(`${BASE}/hotels/${hotelPublicId}/rooms/${roomPublicId}`, payload,
+      stepUpHeaders(mfaCode)).then(unwrap),
 
-  deleteRoom: (hotelPublicId, roomPublicId) =>
-    ConsoleAPI.delete(`${BASE}/hotels/${hotelPublicId}/rooms/${roomPublicId}`).then(unwrap),
+  deleteRoom: (hotelPublicId, roomPublicId, mfaCode) =>
+    ConsoleAPI.delete(`${BASE}/hotels/${hotelPublicId}/rooms/${roomPublicId}`,
+      stepUpHeaders(mfaCode)).then(unwrap),
 
   // ── Meal plans (likewise no price — a meal plan is an inclusion, not a rate) ──
 
@@ -114,25 +119,31 @@ export const platformHotelService = {
     }).then((res) => unwrap(res)?.imagePath);
   },
 
-  addRate: (hotelPublicId, roomPublicId, payload) =>
-    ConsoleAPI.post(`${BASE}/hotels/${hotelPublicId}/rooms/${roomPublicId}/rates`, payload).then(unwrap),
+  addRate: (hotelPublicId, roomPublicId, payload, mfaCode) =>
+    ConsoleAPI.post(`${BASE}/hotels/${hotelPublicId}/rooms/${roomPublicId}/rates`, payload,
+      stepUpHeaders(mfaCode)).then(unwrap),
 
-  updateRate: (hotelPublicId, roomPublicId, ratePublicId, payload) =>
-    ConsoleAPI.put(`${BASE}/hotels/${hotelPublicId}/rooms/${roomPublicId}/rates/${ratePublicId}`, payload)
+  updateRate: (hotelPublicId, roomPublicId, ratePublicId, payload, mfaCode) =>
+    ConsoleAPI.put(`${BASE}/hotels/${hotelPublicId}/rooms/${roomPublicId}/rates/${ratePublicId}`,
+      payload, stepUpHeaders(mfaCode))
       .then(unwrap),
 
-  deleteRate: (hotelPublicId, roomPublicId, ratePublicId) =>
-    ConsoleAPI.delete(`${BASE}/hotels/${hotelPublicId}/rooms/${roomPublicId}/rates/${ratePublicId}`)
+  deleteRate: (hotelPublicId, roomPublicId, ratePublicId, mfaCode) =>
+    ConsoleAPI.delete(`${BASE}/hotels/${hotelPublicId}/rooms/${roomPublicId}/rates/${ratePublicId}`,
+      stepUpHeaders(mfaCode))
       .then(unwrap),
 
-  addMealPlan: (hotelPublicId, payload) =>
-    ConsoleAPI.post(`${BASE}/hotels/${hotelPublicId}/meal-plans`, payload).then(unwrap),
+  addMealPlan: (hotelPublicId, payload, mfaCode) =>
+    ConsoleAPI.post(`${BASE}/hotels/${hotelPublicId}/meal-plans`, payload,
+      stepUpHeaders(mfaCode)).then(unwrap),
 
-  updateMealPlan: (hotelPublicId, mealPlanPublicId, payload) =>
-    ConsoleAPI.put(`${BASE}/hotels/${hotelPublicId}/meal-plans/${mealPlanPublicId}`, payload).then(unwrap),
+  updateMealPlan: (hotelPublicId, mealPlanPublicId, payload, mfaCode) =>
+    ConsoleAPI.put(`${BASE}/hotels/${hotelPublicId}/meal-plans/${mealPlanPublicId}`, payload,
+      stepUpHeaders(mfaCode)).then(unwrap),
 
-  deleteMealPlan: (hotelPublicId, mealPlanPublicId) =>
-    ConsoleAPI.delete(`${BASE}/hotels/${hotelPublicId}/meal-plans/${mealPlanPublicId}`).then(unwrap),
+  deleteMealPlan: (hotelPublicId, mealPlanPublicId, mfaCode) =>
+    ConsoleAPI.delete(`${BASE}/hotels/${hotelPublicId}/meal-plans/${mealPlanPublicId}`,
+      stepUpHeaders(mfaCode)).then(unwrap),
 };
 
 /** Catalog lifecycle. Only ACTIVE is sellable and visible to tenants. */

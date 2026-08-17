@@ -1,5 +1,5 @@
 import { useState, lazy, Suspense } from "react";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import ScrollToTop from './ScrollToTop';
 import Layout from "./Layout";
 import PageLoader from "./PageLoader";
@@ -112,6 +112,8 @@ const ConsoleHome = lazyPage(consoleFeature, "ConsoleHome");
 const ConsoleSetup = lazyPage(consoleFeature, "ConsoleSetup");
 const ConsolePalette = lazyPage(consoleFeature, "ConsolePalette");
 const ConsoleTenants = lazyPage(consoleFeature, "ConsoleTenants");
+const ConsoleTenantDetail = lazyPage(consoleFeature, "ConsoleTenantDetail");
+const ConsoleBilling = lazyPage(consoleFeature, "ConsoleBilling");
 const ConsolePlans = lazyPage(consoleFeature, "ConsolePlans");
 const ConsoleUpgradeRequests = lazyPage(consoleFeature, "ConsoleUpgradeRequests");
 const ConsoleUsage = lazyPage(consoleFeature, "ConsoleUsage");
@@ -119,6 +121,7 @@ const ConsoleUsers = lazyPage(consoleFeature, "ConsoleUsers");
 const ConsoleFeatureFlags = lazyPage(consoleFeature, "ConsoleFeatureFlags");
 const ConsoleGlobalConfig = lazyPage(consoleFeature, "ConsoleGlobalConfig");
 const ConsolePlatformEmail = lazyPage(consoleFeature, "ConsolePlatformEmail");
+const ConsolePlatformHealth = lazyPage(consoleFeature, "ConsolePlatformHealth");
 const ConsoleAuditLog = lazyPage(consoleFeature, "ConsoleAuditLog");
 const ConsoleAnnouncements = lazyPage(consoleFeature, "ConsoleAnnouncements");
 const ConsoleOps = lazyPage(consoleFeature, "ConsoleOps");
@@ -196,10 +199,29 @@ const MarketplaceBookingRequest = lazyPage(marketplace, "MarketplaceBookingReque
 const MarketplaceBookings = lazyPage(marketplace, "MarketplaceBookings");
 const MarketplaceBookingDetail = lazyPage(marketplace, "MarketplaceBookingDetail");
 
+// ── Hotel Management module (self-contained feature; restored) ──
+const hotels = () => import("@features/hotels");
+const HotelDashboard = lazyPage(hotels, "HotelDashboard");
+const HotelList = lazyPage(hotels, "HotelList");
+const HotelDetails = lazyPage(hotels, "HotelDetails");
+const HotelRoomTypes = lazyPage(hotels, "RoomTypes");
+const HotelInventory = lazyPage(hotels, "InventoryCalendar");
+const HotelBookings = lazyPage(hotels, "HotelBookings");
+const HotelPricing = lazyPage(hotels, "HotelPricing");
+const HotelAmenities = lazyPage(hotels, "HotelAmenities");
+const HotelHousekeeping = lazyPage(hotels, "Housekeeping");
+const HotelReports = lazyPage(hotels, "HotelReports");
+
 
 // Route-level guard (defense-in-depth; backend is the real gate, menus already hide these).
 function Guard({ allow, children }) {
   return allow ? children : <Navigate to="/" replace />;
+}
+
+/** Preserve old/bookmarked billing links without letting them fall into the tenant auth realm. */
+function LegacyConsoleBillingRedirect() {
+  const { search } = useLocation();
+  return <Navigate to={{ pathname: "/console/billing", search }} replace />;
 }
 
 
@@ -258,10 +280,13 @@ const AppRouter = () => {
             <Route path="/superadmin/login" element={<ConsoleLogin />} />
             <Route path="/superadmin/invite" element={<ConsoleInviteAccept />} />
             <Route path="/console/login" element={<Navigate to="/superadmin/login" replace />} />
+            <Route path="/billing" element={<LegacyConsoleBillingRedirect />} />
             <Route path="/console" element={<ConsoleLayout />}>
               <Route index element={<ConsoleHome />} />
               <Route path="setup" element={<ConsoleSetup />} />
               <Route path="tenants" element={<ConsoleTenants />} />
+              <Route path="tenants/:publicId" element={<ConsoleTenantDetail />} />
+              <Route path="billing" element={<ConsoleBilling />} />
               <Route path="plans" element={<ConsolePlans />} />
               <Route path="upgrade-requests" element={<ConsoleUpgradeRequests />} />
               <Route path="usage" element={<ConsoleUsage />} />
@@ -269,6 +294,7 @@ const AppRouter = () => {
               <Route path="feature-flags" element={<ConsoleFeatureFlags />} />
               <Route path="config" element={<ConsoleGlobalConfig />} />
               <Route path="platform-email" element={<ConsolePlatformEmail />} />
+              <Route path="platform-health" element={<ConsolePlatformHealth />} />
               <Route path="audit" element={<ConsoleAuditLog />} />
               <Route path="announcements" element={<ConsoleAnnouncements />} />
               <Route path="ops" element={<ConsoleOps />} />
@@ -503,6 +529,21 @@ const AppRouter = () => {
               so it gates on BOOK, not VIEW. More specific path, so route ranking picks it over
               ":publicId" regardless of declaration order. */}
               <Route path="marketplace/:publicId/request" element={<Guard allow={hasPermission(P.HOTEL_MARKETPLACE_BOOK)}><MarketplaceBookingRequest /></Guard>} />
+
+              {/* ── Hotel Management module (self-contained; open to logged-in staff) ──
+              Ungated on purpose: the feature runs on its own mocked service and has no backend
+              endpoints behind it, so there is no permission or module key that describes it. */}
+              <Route path="hotels" element={<HotelList />} />
+              <Route path="hotels/dashboard" element={<HotelDashboard />} />
+              <Route path="hotels/room-types" element={<HotelRoomTypes />} />
+              <Route path="hotels/inventory" element={<HotelInventory />} />
+              <Route path="hotels/bookings" element={<HotelBookings />} />
+              <Route path="hotels/pricing" element={<HotelPricing />} />
+              <Route path="hotels/amenities" element={<HotelAmenities />} />
+              <Route path="hotels/housekeeping" element={<HotelHousekeeping />} />
+              <Route path="hotels/reports" element={<HotelReports />} />
+              {/* Last for readability; route ranking prefers the static segments above regardless. */}
+              <Route path="hotels/:id" element={<HotelDetails />} />
 
               {/* ── Sub-Agents (B2B franchise) — TENANT_ADMIN only ── */}
               <Route path="subagents" element={<Guard allow={isTenantAdmin()}><SubAgents /></Guard>} />

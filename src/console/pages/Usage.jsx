@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   Building2, Users, CalendarClock, HardDrive, AlertTriangle,
-  Loader2, SlidersHorizontal, RotateCcw, X, Lock, Network,
+  Loader2, SlidersHorizontal, RotateCcw, X, Lock, Layers3,
 } from "lucide-react";
 import { usageService } from "../api/usageService";
 import SuperAdminMfaActionModal from "../components/SuperAdminMfaActionModal";
+import { ConsoleTable } from "../components/ConsoleTable";
 
 // Full literal hue classes so Tailwind's scanner emits them (dynamic `bg-hue-${x}` would NOT be).
 const HUE = {
@@ -18,6 +20,7 @@ const HUE = {
 const STATUS_CLS = {
   ACTIVE:    "bg-hue-emerald-soft text-hue-emerald",
   TRIAL:     "bg-hue-amber-soft text-hue-amber",
+  PAST_DUE:  "bg-hue-amber-soft text-hue-amber",
   SUSPENDED: "bg-hue-rose-soft text-hue-rose",
   EXPIRED:   "bg-surface-hover text-muted",
 };
@@ -25,6 +28,7 @@ const PLAN_CLS = {
   STARTER:    "bg-hue-sky-soft text-hue-sky",
   PRO:        "bg-hue-violet-soft text-hue-violet",
   ENTERPRISE: "bg-hue-indigo-soft text-hue-indigo",
+  FLEET:      "bg-hue-emerald-soft text-hue-emerald",
 };
 
 function formatBytes(bytes) {
@@ -97,8 +101,17 @@ function Field({ label, hint, value, onChange, placeholder, min = "1" }) {
   );
 }
 
-function OverrideModal({ tenant, onClose, onSaved }) {
+/**
+ * Exported because the tenant workspace opens the same dialog.
+ *
+ * Quota limits are one decision with one set of rules — blank means "leave unchanged", revert-to-plan
+ * is a separate act from lowering a number — and a second implementation on the tenant page would be
+ * two places for those rules to drift apart. `tenant` here is a usage row: it needs
+ * `tenantPublicId`, `organizationName` and the current `max*` values.
+ */
+export function OverrideModal({ tenant, onClose, onSaved }) {
   const [users, setUsers] = useState(tenant.maxUsers ?? "");
+  const [leads, setLeads] = useState(tenant.maxLeads ?? "");
   const [bookings, setBookings] = useState(tenant.maxBookingsPerMonth ?? "");
   const [storage, setStorage] = useState(tenant.maxStorageMb ?? "");
   const [subAgents, setSubAgents] = useState(tenant.maxSubAgents ?? "");
@@ -110,6 +123,7 @@ function OverrideModal({ tenant, onClose, onSaved }) {
   const submit = async () => {
     const payload = {};
     if (String(users) !== "") payload.maxUsers = Number(users);
+    if (String(leads) !== "") payload.maxLeads = Number(leads);
     if (String(bookings) !== "") payload.maxBookingsPerMonth = Number(bookings);
     if (String(storage) !== "") payload.maxStorageMb = Number(storage);
     if (String(subAgents) !== "") payload.maxSubAgents = Number(subAgents);
@@ -163,6 +177,8 @@ function OverrideModal({ tenant, onClose, onSaved }) {
 
         <div className="mt-4 space-y-3">
           <Field label="Max users" value={users} onChange={setUsers} placeholder="e.g. 20" />
+          <Field label="Max leads" value={leads} onChange={setLeads} placeholder="e.g. 5000"
+            hint="Lifetime live-lead allowance for this tenant" />
           <Field label="Max bookings / month" value={bookings} onChange={setBookings} placeholder="e.g. 500" />
           <Field label="Max storage (MB)" value={storage} onChange={setStorage} placeholder="e.g. 5120" />
           <Field label="Max sub-agents" value={subAgents} onChange={setSubAgents} placeholder="e.g. 5"
@@ -215,6 +231,8 @@ function OverrideModal({ tenant, onClose, onSaved }) {
 }
 
 export default function Usage() {
+  const [searchParams] = useSearchParams();
+  const tenantId = searchParams.get("tenantId") || "";
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -242,7 +260,65 @@ export default function Usage() {
   }
 
   const o = data.overview || {};
-  const rows = data.tenants || [];
+  const allRows = data.tenants || [];
+  const rows = tenantId ? allRows.filter((row) => row.tenantPublicId === tenantId) : allRows;
+
+  const usageColumns = [
+    {
+      id: "tenant",
+      header: "Tenant",
+      accessorKey: "organizationName",
+      cell: ({ row }) => (
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5 font-semibold text-heading">
+            <span className="truncate">{row.original.organizationName}</span>
+            {row.original.quotaOverride && (
+              <span title="Quota manually overridden"><Lock size={12} className="shrink-0 text-accent" /></span>
+            )}
+          </div>
+          <div className="font-mono text-[11px] text-muted">{row.original.organizationCode}</div>
+        </div>
+      ),
+    },
+    { id: "plan", header: "Plan", accessorKey: "plan",
+      cell: ({ row }) => <Chip text={row.original.plan} cls={PLAN_CLS[row.original.plan] || "bg-surface-hover text-muted"} /> },
+    { id: "status", header: "Status", accessorKey: "status",
+      cell: ({ row }) => <Chip text={row.original.status} cls={STATUS_CLS[row.original.status] || "bg-surface-hover text-muted"} /> },
+    { id: "users", header: "Users", accessorKey: "usersPercent", enableSorting: true,
+      cell: ({ row }) => <UsageBar usedText={row.original.activeUsers} limitText={row.original.maxUsers}
+        percent={row.original.usersPercent} over={row.original.usersOverLimit} near={row.original.usersNearLimit} /> },
+    { id: "leads", header: "Leads", accessorKey: "leadsPercent",
+      cell: ({ row }) => <UsageBar usedText={row.original.activeLeads} limitText={row.original.maxLeads}
+        percent={row.original.leadsPercent} over={row.original.leadsOverLimit} near={row.original.leadsNearLimit} /> },
+    { id: "bookings", header: "Bookings (mo)", accessorKey: "bookingsPercent",
+      cell: ({ row }) => <UsageBar usedText={row.original.bookingsThisMonth} limitText={row.original.maxBookingsPerMonth}
+        percent={row.original.bookingsPercent} over={row.original.bookingsOverLimit} near={row.original.bookingsNearLimit} /> },
+    { id: "storage", header: "Storage", accessorKey: "storagePercent",
+      cell: ({ row }) => <UsageBar usedText={formatBytes(row.original.storageUsedBytes)}
+        limitText={row.original.maxStorageMb != null ? `${row.original.maxStorageMb} MB` : ""}
+        percent={row.original.storagePercent} over={row.original.storageOverLimit} near={row.original.storageNearLimit} /> },
+    { id: "subAgents", header: "Sub-agents", accessorKey: "subAgentsPercent",
+      cell: ({ row }) => row.original.maxSubAgents ? (
+        <UsageBar usedText={row.original.subAgents} limitText={row.original.maxSubAgents}
+          percent={row.original.subAgentsPercent} over={row.original.subAgentsOverLimit} near={row.original.subAgentsNearLimit} />
+      ) : (
+        <span className="text-[11px] font-medium text-muted">
+          {row.original.subAgents > 0 ? `${row.original.subAgents} · disabled` : "Disabled"}
+        </span>
+      ) },
+    {
+      id: "quota",
+      header: "Quota",
+      enableSorting: false,
+      meta: { numeric: true },
+      cell: ({ row }) => (
+        <button onClick={() => setEditing(row.original)}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs font-semibold text-body hover:bg-surface-hover hover:text-heading">
+          <SlidersHorizontal size={13} /> Adjust
+        </button>
+      ),
+    },
+  ];
   const tiles = [
     { label: "Total Tenants", value: o.totalTenants ?? 0, Icon: Building2, hue: "indigo" },
     { label: "Over Limit", value: o.tenantsOverLimit ?? 0, Icon: AlertTriangle, hue: "rose",
@@ -250,6 +326,7 @@ export default function Usage() {
     { label: "Near Limit", value: o.tenantsNearLimit ?? 0, Icon: AlertTriangle, hue: "amber",
       valueTone: (o.tenantsNearLimit ?? 0) > 0 ? "text-hue-amber" : "text-muted" },
     { label: "Active Users", value: o.totalActiveUsers ?? 0, Icon: Users, hue: "sky" },
+    { label: "Live Leads", value: o.totalActiveLeads ?? 0, Icon: Layers3, hue: "indigo" },
     { label: "Bookings (mo)", value: o.totalBookingsThisMonth ?? 0, Icon: CalendarClock, hue: "violet" },
     { label: "Storage Used", value: formatBytes(o.totalStorageBytes), Icon: HardDrive, hue: "emerald" },
   ];
@@ -263,85 +340,24 @@ export default function Usage() {
         </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-6">
+      {tenantId && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-accent/25 bg-accent-soft px-4 py-3 text-sm text-body">
+          <span>Showing quota health for <strong className="text-heading">{rows[0]?.organizationName || "selected tenant"}</strong>.</span>
+          <Link to="/console/usage" className="text-xs font-semibold text-accent hover:underline">Show all tenants</Link>
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4 2xl:grid-cols-7">
         {tiles.map((t) => <Tile key={t.label} {...t} />)}
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-border bg-surface shadow-[var(--sa-card-shadow)]">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="border-b border-border text-xs text-muted">
-                <th className="px-4 py-3 font-medium">Tenant</th>
-                <th className="px-4 py-3 font-medium">Plan</th>
-                <th className="px-4 py-3 font-medium">Status</th>
-                <th className="px-4 py-3 font-medium">Users</th>
-                <th className="px-4 py-3 font-medium">Bookings (mo)</th>
-                <th className="px-4 py-3 font-medium">Storage</th>
-                <th className="px-4 py-3 font-medium">Sub-agents</th>
-                <th className="px-4 py-3 font-medium text-right">Quota</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.length === 0 && (
-                <tr><td colSpan={8} className="px-4 py-10 text-center text-muted">No tenants yet.</td></tr>
-              )}
-              {rows.map((r) => (
-                <tr key={r.tenantPublicId} className="border-b border-border/60 last:border-0 hover:bg-surface-hover/50">
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-1.5 font-medium text-heading">
-                      {r.organizationName}
-                      {r.quotaOverride && (
-                        <span title="Quota manually overridden">
-                          <Lock size={12} className="text-accent" />
-                        </span>
-                      )}
-                    </div>
-                    <div className="font-mono text-[11px] text-muted">{r.organizationCode}</div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <Chip text={r.plan} cls={PLAN_CLS[r.plan] || "bg-surface-hover text-muted"} />
-                  </td>
-                  <td className="px-4 py-3">
-                    <Chip text={r.status} cls={STATUS_CLS[r.status] || "bg-surface-hover text-muted"} />
-                  </td>
-                  <td className="px-4 py-3">
-                    <UsageBar usedText={r.activeUsers} limitText={r.maxUsers}
-                      percent={r.usersPercent} over={r.usersOverLimit} near={r.usersNearLimit} />
-                  </td>
-                  <td className="px-4 py-3">
-                    <UsageBar usedText={r.bookingsThisMonth} limitText={r.maxBookingsPerMonth}
-                      percent={r.bookingsPercent} over={r.bookingsOverLimit} near={r.bookingsNearLimit} />
-                  </td>
-                  <td className="px-4 py-3">
-                    <UsageBar usedText={formatBytes(r.storageUsedBytes)}
-                      limitText={r.maxStorageMb != null ? `${r.maxStorageMb} MB` : ""}
-                      percent={r.storagePercent} over={r.storageOverLimit} near={r.storageNearLimit} />
-                  </td>
-                  <td className="px-4 py-3">
-                    {r.maxSubAgents ? (
-                      <UsageBar usedText={r.subAgents} limitText={r.maxSubAgents}
-                        percent={r.subAgentsPercent} over={r.subAgentsOverLimit} near={r.subAgentsNearLimit} />
-                    ) : (
-                      <span className="text-[11px] font-medium text-muted">
-                        {r.subAgents > 0 ? `${r.subAgents} · disabled` : "Disabled"}
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <button
-                      onClick={() => setEditing(r)}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium text-body hover:bg-surface-hover hover:text-heading"
-                    >
-                      <SlidersHorizontal size={13} /> Adjust
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <ConsoleTable
+        columns={usageColumns}
+        rows={rows}
+        state="ready"
+        emptyTitle="No tenants yet"
+        emptyHint="Usage appears here once a tenant exists."
+      />
 
       {editing && (
         <OverrideModal
