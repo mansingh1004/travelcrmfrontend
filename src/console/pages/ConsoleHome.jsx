@@ -27,6 +27,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { actionInboxService } from "../api/actionInboxService";
 import { analyticsService } from "../api/analyticsService";
 import { auditService } from "../api/auditService";
 import { marketplaceBookingService } from "../api/marketplaceBookingService";
@@ -94,6 +95,13 @@ function useChartTheme() {
   };
 }
 
+/* One cell of a hairline-divided strip, not a card.
+   Six identical bordered-and-shadowed tiles in a 3x2 grid is the shape every admin template ships,
+   and it flattens hierarchy: "Outstanding invoices" and "Platform users" were rendered with exactly
+   the same weight. A strip divided by hairlines reads as one instrument with several readings, which
+   is what these numbers actually are.
+   Numerals are tabular-nums on the UI face rather than font-mono: mono is for identifiers (audit
+   actions, tenant codes), and using it for money costs legibility and reads as a developer tool. */
 function MetricCard({ label, value, helper, Icon, hue = "violet", danger = false, to }) {
   const Card = to ? Link : "div";
   return (
@@ -118,20 +126,34 @@ function MetricCard({ label, value, helper, Icon, hue = "violet", danger = false
 }
 
 function QueueItem({ path, label, hint, count, Icon, tone = "violet" }) {
-  const hasWork = count > 0;
   return (
     <Link to={path}
       className="group flex items-center gap-3 border-b border-border px-5 py-3.5 transition-colors last:border-b-0 hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent">
-      <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${hasWork ? HUE[tone] : "bg-surface-hover text-muted"}`}>
+      <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${HUE[tone]}`}>
         <Icon size={17} />
       </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-semibold text-heading">{label}</span>
-        <span className="block truncate text-xs text-muted">{hasWork ? hint : "No action waiting"}</span>
+        <span className="block truncate text-xs text-muted">{hint}</span>
       </span>
-      <span className={`font-mono text-lg font-bold ${hasWork ? "text-heading" : "text-muted"}`}>{count}</span>
+      <span className="font-mono text-lg font-bold text-heading">{count}</span>
       <ArrowRight size={15} className="text-muted transition-transform group-hover:translate-x-0.5 group-hover:text-accent" />
     </Link>
+  );
+}
+
+/* Everything with nothing waiting, folded into one quiet line. The operator needs to know these
+   queues were checked and are clear — but they should cost one row, not seven. */
+function ClearQueues({ labels }) {
+  if (!labels.length) return null;
+  return (
+    <div className="flex items-start gap-2.5 px-5 py-3 text-xs text-muted">
+      <CheckCircle2 size={15} className="mt-px shrink-0 text-hue-emerald" />
+      <span>
+        <span className="font-semibold text-body">{labels.length} clear</span>
+        {" — "}{labels.join(" · ")}
+      </span>
+    </div>
   );
 }
 
@@ -188,6 +210,25 @@ function Bars({ title, description, data, id, from, to, tickFormatter, tooltipFo
   );
 }
 
+/**
+ * How long the oldest item in a queue has been waiting, as a compact "6d" / "4h" / "12m".
+ *
+ * Deliberately terse and deliberately not `relativeTime` — that one produces "3 days ago", which reads
+ * as when something happened. This reads as how long it has been ignored, which is the operator's
+ * actual question. Returns null when there is nothing to report, so callers can omit it entirely
+ * rather than render "0m".
+ */
+function waitedFor(iso) {
+  if (!iso) return null;
+  const ms = Date.now() - new Date(iso).getTime();
+  if (!Number.isFinite(ms) || ms < 0) return null;
+  const minutes = Math.floor(ms / 60000);
+  if (minutes < 60) return `${Math.max(minutes, 1)}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  return `${Math.floor(hours / 24)}d`;
+}
+
 function relativeTime(value) {
   if (!value) return "Unknown time";
   const seconds = Math.round((new Date(value).getTime() - Date.now()) / 1000);
@@ -211,6 +252,7 @@ export default function ConsoleHome() {
   });
   const [activity, setActivity] = useState([]);
   const [platformEarning, setPlatformEarning] = useState(null);
+  const [queueAges, setQueueAges] = useState({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [degraded, setDegraded] = useState(false);
@@ -229,9 +271,10 @@ export default function ConsoleHome() {
       hotelPartnerService.listRegistrations({ status: "SUBMITTED", page: 0, size: 1 }),
       auditService.list({ page: 0, size: 6 }),
       marketplaceCommissionService.summary({}),
+      actionInboxService.ages(),
     ]);
 
-    const [analytics, usage, upgrades, licenses, hotelRequests, nominations, registrations, audit, earning] = results;
+    const [analytics, usage, upgrades, licenses, hotelRequests, nominations, registrations, audit, earning, ages] = results;
     if (analytics.status === "rejected") {
       setError(analytics.reason?.response?.data?.message || "Failed to load platform analytics.");
     } else {
@@ -250,7 +293,10 @@ export default function ConsoleHome() {
       });
       setActivity(audit.status === "fulfilled" ? audit.value?.rows ?? [] : []);
       setPlatformEarning(earning.status === "fulfilled" ? earning.value : null);
-      setDegraded(results.slice(1).some((result) => result.status === "rejected"));
+      // Age is decoration on top of the counts, so a failure here must not raise the degraded banner:
+      // the inbox simply shows what it always showed.
+      setQueueAges(ages.status === "fulfilled" ? ages.value : {});
+      setDegraded(results.slice(1, -1).some((result) => result.status === "rejected"));
     }
     setLoading(false);
     setRefreshing(false);
@@ -270,6 +316,52 @@ export default function ConsoleHome() {
   const revenueSeries = (data.revenueByMonth || []).map((row) => ({ label: row.month, value: row.amount }));
   const queueTotal = ops.upgrades + ops.hotelRequests + ops.nominations + ops.partnerRegistrations
     + ops.overLimit + Number(data.overdueInvoices || 0) + Number(data.expiringSubscriptions || 0);
+
+  /* One declared list, partitioned into "has work" and "clear", then ordered by size. The queue with
+     the most waiting work is the first thing on the page.
+     NOTE: ordering by COUNT is a stand-in for ordering by AGE, which is what an operator actually
+     needs — twelve requests from this morning matter less than one that has waited three weeks. No
+     endpoint currently returns an oldest-pending timestamp per queue, so this is deliberately not
+     faked; adding that field is tracked in the audit doc. */
+  const queues = [
+    { path: "/console/upgrade-requests", label: "Subscription and add-on decisions", short: "Subscriptions",
+      inboxKey: "UPGRADE_REQUESTS",
+      hint: "Review tenant plan or seat requests", count: ops.upgrades, Icon: FileCheck2, tone: "violet" },
+    { path: "/console/hotel-requests", label: "Hotel booking requests", short: "Booking requests",
+      inboxKey: "HOTEL_BOOKING_REQUESTS",
+      hint: "Tenant is waiting for a platform decision", count: ops.hotelRequests, Icon: Clock3, tone: "amber" },
+    { path: "/console/hotel-nominations", label: "Hotel nominations", short: "Nominations",
+      inboxKey: "HOTEL_NOMINATIONS",
+      hint: "Review tenant-suggested properties", count: ops.nominations, Icon: Handshake, tone: "sky" },
+    { path: "/console/hotel-partners", label: "Hotel partner registrations", short: "Partner registrations",
+      inboxKey: "HOTEL_PARTNER_REGISTRATIONS",
+      hint: "Review submitted supplier profiles", count: ops.partnerRegistrations, Icon: Building2, tone: "amber" },
+    { path: "/console/billing?overdue=true", label: "Overdue invoices", short: "Overdue invoices",
+      inboxKey: "OVERDUE_INVOICES",
+      hint: `${money(data.overdueAmount, currency)} needs collection follow-up`,
+      count: Number(data.overdueInvoices || 0), Icon: Banknote, tone: "rose" },
+    // The last two are computed from current state, so nothing was ever "queued" and there is no age
+    // to report — the backend deliberately omits them rather than sending a misleading null.
+    { path: "/console/tenants", label: "Subscriptions expiring in 14 days", short: "Expiring access",
+      hint: "Contact or renew access before expiry", count: Number(data.expiringSubscriptions || 0), Icon: Clock3, tone: "amber" },
+    { path: "/console/usage", label: "Tenants over quota", short: "Quota breaches",
+      hint: `${ops.nearLimit} more tenant(s) approaching their limit`, count: ops.overLimit, Icon: Gauge, tone: "rose" },
+  ].map((q) => {
+    const waited = waitedFor(queueAges[q.inboxKey]?.oldestPendingAt);
+    return {
+      ...q,
+      waitedMs: waited ? Date.now() - new Date(queueAges[q.inboxKey].oldestPendingAt).getTime() : -1,
+      hint: waited ? `${q.hint} · oldest ${waited}` : q.hint,
+    };
+  });
+
+  /* Ordered by NEGLECT, not by volume: the queue whose oldest item has waited longest comes first.
+     One partner who submitted three weeks ago outranks twelve booking requests raised this morning.
+     Queues with no age (live-computed, or a feed that failed) fall back to depth so they still rank
+     sensibly instead of sinking to the bottom. */
+  const activeQueues = queues.filter((q) => q.count > 0)
+    .sort((a, b) => (b.waitedMs - a.waitedMs) || (b.count - a.count));
+  const clearQueues = queues.filter((q) => q.count === 0);
 
   const setDashboardView = (nextView) => {
     const next = new URLSearchParams(searchParams);
@@ -358,21 +450,22 @@ export default function ConsoleHome() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-5">
+        {/* Kept from the rework: queues with work are listed first and ordered by size, and the ones
+            with nothing waiting collapse into a single line instead of seven near-identical empty
+            rows. The panel itself is unchanged. */}
         <ConsolePanel title="Action inbox" description={`${queueTotal} platform decisions or risks need attention`} className="xl:col-span-3">
-          <QueueItem path="/console/upgrade-requests" label="Subscription and add-on decisions" hint="Review tenant plan or seat requests"
-            count={ops.upgrades} Icon={FileCheck2} tone="violet" />
-          <QueueItem path="/console/hotel-requests" label="Hotel booking requests" hint="Tenant is waiting for a platform decision"
-            count={ops.hotelRequests} Icon={Clock3} tone="amber" />
-          <QueueItem path="/console/hotel-nominations" label="Hotel nominations" hint="Review tenant-suggested properties"
-            count={ops.nominations} Icon={Handshake} tone="sky" />
-          <QueueItem path="/console/hotel-partners" label="Hotel partner registrations" hint="Review submitted supplier profiles"
-            count={ops.partnerRegistrations} Icon={Building2} tone="amber" />
-          <QueueItem path="/console/billing?overdue=true" label="Overdue invoices" hint={`${money(data.overdueAmount, currency)} needs collection follow-up`}
-            count={Number(data.overdueInvoices || 0)} Icon={Banknote} tone="rose" />
-          <QueueItem path="/console/tenants" label="Subscriptions expiring in 14 days" hint="Contact or renew access before expiry"
-            count={Number(data.expiringSubscriptions || 0)} Icon={Clock3} tone="amber" />
-          <QueueItem path="/console/usage" label="Tenants over quota" hint={`${ops.nearLimit} more tenant(s) approaching their limit`}
-            count={ops.overLimit} Icon={Gauge} tone="rose" />
+          {activeQueues.length === 0 ? (
+            <div className="flex flex-col items-center gap-2 px-5 py-10 text-center">
+              <CheckCircle2 size={22} className="text-hue-emerald" />
+              <p className="text-sm font-semibold text-heading">Every queue is clear</p>
+              <p className="text-xs text-muted">No approvals, overdue invoices, expiring access or quota breaches.</p>
+            </div>
+          ) : (
+            <>
+              {activeQueues.map((q) => <QueueItem key={q.path + q.label} {...q} />)}
+              <ClearQueues labels={clearQueues.map((q) => q.short)} />
+            </>
+          )}
         </ConsolePanel>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:col-span-2 xl:grid-cols-1">

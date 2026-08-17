@@ -35,8 +35,13 @@ export const marketplaceBookingService = {
    *
    * @returns {Promise<{items: Array, pagination: Object|null}>} rows live in `data`, NOT `content`.
    */
-  list: async ({ page = 0, size = 25, status, tenantId } = {}) => {
-    const res = await ConsoleAPI.get(BASE, { params: clean({ page, size, status, tenantId }) });
+  /**
+   * `status` is the booking's lifecycle; `paymentStatus` is settlement, and they are independent — a
+   * CONFIRMED booking can be unpaid and a CANCELLED one can still owe. The credit screen filters on
+   * the second to ask "which of this tenant's bookings still owe" without pulling their whole history.
+   */
+  list: async ({ page = 0, size = 25, status, paymentStatus, tenantId } = {}) => {
+    const res = await ConsoleAPI.get(BASE, { params: clean({ page, size, status, paymentStatus, tenantId }) });
     const rows = res?.data?.data;
     return {
       items: Array.isArray(rows) ? rows : [],
@@ -104,7 +109,15 @@ export const marketplaceBookingService = {
   issueVoucher: async (publicId, mfaCode) =>
     unwrap(await ConsoleAPI.post(`${BASE}/${publicId}/voucher/issue`, null, stepUpHeaders(mfaCode))),
 
-  /** Attach the hotel-supplied PDF/image. Uploading also issues the voucher server-side. */
+  /**
+   * Attach the hotel-supplied PDF/image. Uploading also issues the voucher server-side.
+   *
+   * No Content-Type override here, deliberately. ConsoleAPI does set a default
+   * `Content-Type: application/json`, but axios clears it for a FormData body in a browser
+   * environment (`transformRequest` → `headers.setContentType(undefined)`) so the browser can supply
+   * `multipart/form-data` with a correct boundary. Setting it by hand is at best redundant and at
+   * worst omits the boundary.
+   */
   uploadVoucher: async (publicId, file, mfaCode, onUploadProgress) => {
     const body = new FormData();
     body.append("file", file);

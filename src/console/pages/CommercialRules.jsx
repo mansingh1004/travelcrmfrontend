@@ -26,6 +26,7 @@ import { Check, Loader2, Percent, Plus, RefreshCw, Trash2, X } from "lucide-reac
 import { commercialRuleService as svc } from "../api/marketplaceAdminService";
 import { platformHotelService } from "../api/platformHotelService";
 import SuperAdminMfaActionModal from "../components/SuperAdminMfaActionModal";
+import { ConsoleTable } from "../components/ConsoleTable";
 import { getErrorMessage, isAlreadyReported } from "@shared/api/apiError";
 import { useToast } from "@shared/ui/toast";
 
@@ -174,67 +175,77 @@ export default function CommercialRules() {
 }
 
 function RuleTable({ title, rows, loading, empty, onEdit, onDelete }) {
+  const columns = [
+    {
+      id: "rule",
+      header: "Rule",
+      accessorKey: "label",
+      cell: ({ row }) => (
+        <div className="min-w-0">
+          <p className="truncate font-semibold text-heading">{row.original.label}</p>
+          <p className="truncate text-xs text-muted">
+            {row.original.hotelName || "All hotels without their own rule"}
+            {!row.original.active && <span className="ml-2 text-hue-rose">Inactive</span>}
+          </p>
+        </div>
+      ),
+    },
+    { id: "model", header: "Model", accessorKey: "commercialModelLabel",
+      cell: ({ row }) => <span className="text-body">{row.original.commercialModelLabel}</span> },
+    {
+      id: "value",
+      header: "Value",
+      accessorKey: "value",
+      meta: { numeric: true },
+      cell: ({ row }) => (
+        <div>
+          <span className="font-semibold text-heading">
+            {row.original.calculationType === "PERCENTAGE" ? `${row.original.value}%` : `${row.original.currency} ${row.original.value}`}
+          </span>
+          <span className="block text-[10px] font-normal text-muted">{row.original.calculationTypeLabel}</span>
+        </div>
+      ),
+    },
+    { id: "valid", header: "Valid", accessorKey: "validFrom",
+      cell: ({ row }) => (
+        <span className="text-xs text-muted">
+          {row.original.validFrom || row.original.validTo
+            ? `${row.original.validFrom || "any"} → ${row.original.validTo || "open"}`
+            : "Always"}
+        </span>
+      ) },
+    { id: "priority", header: "Priority", accessorKey: "priority", meta: { numeric: true },
+      cell: ({ row }) => <span className="text-body">{row.original.priority}</span> },
+    {
+      id: "actions",
+      header: "",
+      enableSorting: false,
+      meta: { numeric: true },
+      cell: ({ row }) => (
+        <div className="flex justify-end gap-1">
+          <button onClick={() => onEdit(row.original)}
+            className="rounded-lg border border-border px-2.5 py-1.5 text-xs font-semibold text-body hover:bg-surface-hover">
+            Edit
+          </button>
+          <button onClick={() => onDelete(row.original)} aria-label="Delete rule"
+            className="rounded-lg border border-border px-2 py-1.5 text-hue-rose hover:bg-hue-rose-soft">
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      ),
+    },
+  ];
+
   return (
     <section>
       <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">{title}</h2>
-      <div className="overflow-hidden rounded-xl border border-border bg-surface">
-        {loading ? (
-          <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted">
-            <Loader2 className="h-4 w-4 animate-spin" /> Loading…
-          </div>
-        ) : !rows.length ? (
-          <p className="px-4 py-6 text-sm text-muted">{empty}</p>
-        ) : (
-          <table className="min-w-full text-sm">
-            <thead className="border-b border-border bg-surface-hover text-xs uppercase tracking-wide text-muted">
-              <tr>
-                <th className="px-4 py-2 text-left font-semibold">Rule</th>
-                <th className="px-4 py-2 text-left font-semibold">Model</th>
-                <th className="px-4 py-2 text-right font-semibold">Value</th>
-                <th className="px-4 py-2 text-left font-semibold">Valid</th>
-                <th className="px-4 py-2 text-right font-semibold">Priority</th>
-                <th className="px-4 py-2 text-right font-semibold" />
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.publicId} className="border-b border-border last:border-0 hover:bg-surface-hover">
-                  <td className="px-4 py-2.5">
-                    <p className="font-semibold text-heading">{r.label}</p>
-                    <p className="text-xs text-muted">
-                      {r.hotelName || "All hotels without their own rule"}
-                      {!r.active && <span className="ml-2 text-hue-rose">Inactive</span>}
-                    </p>
-                  </td>
-                  <td className="px-4 py-2.5 text-body">{r.commercialModelLabel}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-heading">
-                    {r.calculationType === "PERCENTAGE" ? `${r.value}%` : `${r.currency} ${r.value}`}
-                    <span className="block text-[10px] font-normal text-muted">{r.calculationTypeLabel}</span>
-                  </td>
-                  <td className="px-4 py-2.5 text-xs text-muted">
-                    {r.validFrom || r.validTo
-                      ? `${r.validFrom || "any"} → ${r.validTo || "open"}`
-                      : "Always"}
-                  </td>
-                  <td className="px-4 py-2.5 text-right tabular-nums text-body">{r.priority}</td>
-                  <td className="px-4 py-2.5 text-right">
-                    <div className="flex justify-end gap-1">
-                      <button onClick={() => onEdit(r)}
-                        className="rounded-lg border border-border px-2.5 py-1.5 text-xs font-semibold text-body hover:bg-surface-hover">
-                        Edit
-                      </button>
-                      <button onClick={() => onDelete(r)} aria-label="Delete rule"
-                        className="rounded-lg border border-border px-2 py-1.5 text-hue-rose hover:bg-hue-rose-soft">
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+      <ConsoleTable
+        columns={columns}
+        rows={rows}
+        state={loading ? "loading" : "ready"}
+        density="compact"
+        emptyTitle={empty}
+      />
     </section>
   );
 }

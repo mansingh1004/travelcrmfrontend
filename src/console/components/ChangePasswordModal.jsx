@@ -75,11 +75,16 @@ export default function ChangePasswordModal({ onClose, onChanged }) {
           <h3 className="text-sm font-bold text-heading">Change your password</h3>
         </div>
         <p className="mt-1 text-xs text-muted">
-          This platform account change requires your current password and authenticator code.
+          {mfaDisabled
+            ? "This platform account change requires your current password. MFA is disabled for local development."
+            : "This platform account change requires your current password and authenticator code."}
         </p>
 
         <div className="mt-4 space-y-3">
-          {!mfaDisabled && <div>
+          {/* Always shown. The local bypass stands down step-up MFA only — the backend verifies the
+              current password on this endpoint unconditionally, so hiding this field in dev left it
+              empty and made the change impossible to complete. */}
+          <div>
             <label htmlFor="cp-current" className="mb-1 block text-xs font-semibold text-body">
               Current password
             </label>
@@ -92,7 +97,7 @@ export default function ChangePasswordModal({ onClose, onChanged }) {
               className={inputCls}
               required
             />
-          </div>}
+          </div>
           <div>
             <label htmlFor="cp-new" className="mb-1 block text-xs font-semibold text-body">
               New password
@@ -121,22 +126,24 @@ export default function ChangePasswordModal({ onClose, onChanged }) {
               required
             />
           </div>
-          <div>
-            <label htmlFor="cp-mfa" className="mb-1 block text-xs font-semibold text-body">
-              Authenticator code
-            </label>
-            <input
-              id="cp-mfa"
-              type="text"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              value={mfaCode}
-              onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-              className={inputCls}
-              placeholder="000000"
-              required
-            />
-          </div>
+          {!mfaDisabled && (
+            <div>
+              <label htmlFor="cp-mfa" className="mb-1 block text-xs font-semibold text-body">
+                Authenticator code
+              </label>
+              <input
+                id="cp-mfa"
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                value={mfaCode}
+                onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                className={inputCls}
+                placeholder="000000"
+                required
+              />
+            </div>
+          )}
         </div>
 
         {error && (

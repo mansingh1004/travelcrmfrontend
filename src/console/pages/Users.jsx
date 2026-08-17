@@ -3,18 +3,16 @@ import { useSearchParams } from "react-router-dom";
 import {
   Search,
   Loader2,
-  ChevronLeft,
-  ChevronRight,
   Lock,
   Unlock,
   KeyRound,
   UserCog,
-  Users as UsersIcon,
   CheckCircle2,
   AlertTriangle,
   ShieldCheck,
 } from "lucide-react";
 import { userService } from "../api/userService";
+import { ConsoleTable, ConsolePager } from "../components/ConsoleTable";
 import { isLocalSuperAdminMfaDisabled } from "../lib/consoleEnvironment";
 import { clearMyPermissions, clearMyEntitlements, primeSessionCaches } from "@shared/lib/access";
 
@@ -152,7 +150,11 @@ function ResetPasswordModal({ user, onClose, onDone, showToast }) {
         <h3 className="text-sm font-bold text-heading">Reset password - {user.name}</h3>
         <p className="mt-1 text-xs text-muted">{user.email}</p>
         <div className="mt-4 space-y-3">
-          {!mfaDisabled && <div>
+          {/* The new password is the POINT of this dialog, not a second factor — it stays whatever
+              the MFA policy is. Only the authenticator field follows the local-development bypass.
+              Guarding these the other way round hid the password input in dev while `pw.length < 12`
+              was still enforced, so the reset could never be submitted. */}
+          <div>
             <label className="mb-1 block text-xs font-semibold text-body">New password</label>
             <input
               type="password"
@@ -163,22 +165,24 @@ function ResetPasswordModal({ user, onClose, onDone, showToast }) {
               placeholder="12+ chars with symbol"
               required
             />
-          </div>}
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-body">
-              Authenticator code
-            </label>
-            <input
-              type="text"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              className={inputCls}
-              value={mfaCode}
-              onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-              placeholder="000000"
-              required
-            />
           </div>
+          {!mfaDisabled && (
+            <div>
+              <label className="mb-1 block text-xs font-semibold text-body">
+                Authenticator code
+              </label>
+              <input
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                className={inputCls}
+                value={mfaCode}
+                onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                placeholder="000000"
+                required
+              />
+            </div>
+          )}
         </div>
         <p className="mt-3 rounded-lg bg-emerald-500/10 px-3 py-2 text-[11px] text-emerald-700 ring-1 ring-emerald-500/20">
           The user's active sessions are revoked immediately.
@@ -337,7 +341,72 @@ export default function Users() {
     }
   };
 
-  const totalPages = pagination.totalPages ?? 1;
+  const totalElements = pagination.totalElements ?? 0;
+
+  const userColumns = [
+    {
+      id: "user",
+      header: "User",
+      accessorKey: "name",
+      cell: ({ row }) => (
+        <div className="min-w-0">
+          <div className="truncate font-semibold text-heading">{row.original.name}</div>
+          <div className="truncate text-xs text-muted">{row.original.email}</div>
+        </div>
+      ),
+    },
+    {
+      id: "tenant",
+      header: "Tenant",
+      accessorKey: "tenantName",
+      cell: ({ row }) => (
+        <div className="min-w-0">
+          <div className="truncate text-body">{row.original.tenantName || "—"}</div>
+          <div className="font-mono text-[11px] text-muted">{row.original.tenantCode || "—"}</div>
+        </div>
+      ),
+    },
+    {
+      id: "role",
+      header: "Role",
+      accessorKey: "role",
+      cell: ({ row }) => (
+        <span className="rounded bg-surface-hover px-2 py-0.5 font-mono text-xs text-body">{row.original.role}</span>
+      ),
+    },
+    { id: "status", header: "Status", accessorKey: "active", cell: ({ row }) => <UserStatusPill user={row.original} /> },
+    {
+      id: "actions",
+      header: "Actions",
+      enableSorting: false,
+      meta: { numeric: true },
+      cell: ({ row }) => {
+        const u = row.original;
+        const busy = busyId === u.publicId;
+        return (
+          <div className="flex items-center justify-end gap-1">
+            {!u.locked && u.active && (
+              <IconBtn title="Impersonate" onClick={() => openMfaAction("impersonate", u)} busy={busy}>
+                <UserCog size={16} className="text-accent" />
+              </IconBtn>
+            )}
+            {u.locked ? (
+              <IconBtn title="Unlock" onClick={() => openMfaAction("unlock", u)} busy={busy}>
+                <Unlock size={16} className="text-hue-emerald" />
+              </IconBtn>
+            ) : (
+              <IconBtn title="Lock" onClick={() => openMfaAction("lock", u)} busy={busy}>
+                <Lock size={16} className="text-hue-amber" />
+              </IconBtn>
+            )}
+            <IconBtn title="Reset password" onClick={() => setResetUser(u)} busy={busy}>
+              <KeyRound size={16} />
+            </IconBtn>
+          </div>
+        );
+      },
+    },
+  ];
   const copy = actionCopy(mfaAction);
 
   return (
@@ -365,104 +434,17 @@ export default function Users() {
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-border bg-surface">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[900px] text-left text-sm">
-            <thead className="border-b border-border bg-surface-hover text-xs uppercase tracking-wide text-muted">
-              <tr>
-                <th className="px-4 py-3 font-semibold">User</th>
-                <th className="px-4 py-3 font-semibold">Tenant</th>
-                <th className="px-4 py-3 font-semibold">Role</th>
-                <th className="px-4 py-3 font-semibold">Status</th>
-                <th className="px-4 py-3 text-right font-semibold">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {loading ? (
-                <tr>
-                  <td colSpan={5} className="px-4 py-12 text-center text-muted">
-                    <Loader2 size={18} className="mx-auto animate-spin" />
-                  </td>
-                </tr>
-              ) : error ? (
-                <tr>
-                  <td colSpan={5} className="px-4 py-12 text-center text-red-500">{error}</td>
-                </tr>
-              ) : rows.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="px-4 py-12 text-center text-muted">
-                    <UsersIcon size={28} className="mx-auto mb-2 opacity-50" />
-                    No users found.
-                  </td>
-                </tr>
-              ) : (
-                rows.map((u) => {
-                  const busy = busyId === u.publicId;
-                  return (
-                    <tr key={u.publicId} className="hover:bg-surface-hover/60">
-                      <td className="px-4 py-3">
-                        <div className="font-semibold text-heading">{u.name}</div>
-                        <div className="text-xs text-muted">{u.email}</div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="text-body">{u.tenantName || "-"}</div>
-                        <div className="font-mono text-xs text-muted">{u.tenantCode || "-"}</div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="rounded bg-surface-hover px-2 py-0.5 font-mono text-xs text-body">{u.role}</span>
-                      </td>
-                      <td className="px-4 py-3"><UserStatusPill user={u} /></td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center justify-end gap-1">
-                          {!u.locked && u.active && (
-                            <IconBtn title="Impersonate" onClick={() => openMfaAction("impersonate", u)} busy={busy}>
-                              <UserCog size={16} className="text-accent" />
-                            </IconBtn>
-                          )}
-                          {u.locked ? (
-                            <IconBtn title="Unlock" onClick={() => openMfaAction("unlock", u)} busy={busy}>
-                              <Unlock size={16} className="text-emerald-500" />
-                            </IconBtn>
-                          ) : (
-                            <IconBtn title="Lock" onClick={() => openMfaAction("lock", u)} busy={busy}>
-                              <Lock size={16} className="text-amber-500" />
-                            </IconBtn>
-                          )}
-                          <IconBtn title="Reset password" onClick={() => setResetUser(u)} busy={busy}>
-                            <KeyRound size={16} />
-                          </IconBtn>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between border-t border-border px-4 py-3 text-sm">
-            <span className="text-muted">Page {page + 1} of {totalPages}</span>
-            <div className="flex gap-1">
-              <button
-                disabled={page <= 0}
-                onClick={() => setPage((p) => Math.max(0, p - 1))}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border-strong text-body hover:bg-surface-hover disabled:opacity-40"
-              >
-                <ChevronLeft size={16} />
-              </button>
-              <button
-                disabled={page + 1 >= totalPages}
-                onClick={() => setPage((p) => p + 1)}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border-strong text-body hover:bg-surface-hover disabled:opacity-40"
-              >
-                <ChevronRight size={16} />
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
+      <ConsoleTable
+        columns={userColumns}
+        rows={rows}
+        state={loading ? "loading" : error ? "error" : "ready"}
+        error={error}
+        onRetry={load}
+        filtered={Boolean(debounced || tenantId)}
+        emptyTitle="No users found"
+        emptyHint="Users appear here once a tenant has staff accounts."
+      />
+      <ConsolePager page={page} size={20} total={totalElements || 0} onPage={setPage} />
 
       {resetUser && (
         <ResetPasswordModal

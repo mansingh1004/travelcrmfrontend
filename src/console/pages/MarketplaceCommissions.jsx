@@ -19,13 +19,14 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
-  AlertTriangle, Banknote, ChevronLeft, ChevronRight, CircleDollarSign, Coins, Landmark, Loader2,
+  AlertTriangle, Banknote, CircleDollarSign, Coins, Landmark, Loader2,
   PlusCircle, RefreshCw, RotateCcw, Scale, Undo2, Wallet, X,
 } from "lucide-react";
 import { marketplaceCommissionService as svc } from "../api/marketplaceCommissionService";
 import { getErrorMessage, isAlreadyReported } from "@shared/api/apiError";
 import { useToast } from "@shared/ui/toast";
 import SuperAdminMfaActionModal from "../components/SuperAdminMfaActionModal";
+import { ConsoleTable, ConsolePager } from "../components/ConsoleTable";
 
 const PAGE_SIZE = 25;
 
@@ -174,8 +175,62 @@ export default function MarketplaceCommissions() {
   const hasFilters = Object.values(filters).some(Boolean);
 
   const currency = summary?.currency || rows[0]?.currency || "INR";
-  const totalPages = pagination?.totalPages ?? 1;
   const narrowedBeyondSummary = Boolean(filters.status || filters.entryType);
+
+  const ledgerColumns = [
+    { id: "date", header: "Date", accessorKey: "effectiveDate",
+      cell: ({ row }) => (
+        <div className="whitespace-nowrap">
+          <div className="text-xs font-semibold text-heading">{fmtDate(row.original.effectiveDate)}</div>
+          <div className="text-[11px] text-muted">written {fmtDateTime(row.original.createdAt)}</div>
+        </div>
+      ) },
+    { id: "booking", header: "Booking", accessorKey: "bookingCode",
+      cell: ({ row }) => (
+        <div className="min-w-0">
+          <div className="font-mono text-xs font-semibold text-heading">{row.original.bookingCode || "—"}</div>
+          {/* The economics as snapshotted onto the row, not re-read from a booking that may since
+              have been restated. Legitimate here and nowhere in the tenant app. */}
+          <div className="text-[11px] text-muted">
+            supplier {money(row.original.supplierTotal, row.original.currency)} · payable {money(row.original.tenantPayable, row.original.currency)}
+          </div>
+        </div>
+      ) },
+    { id: "tenant", header: "Tenant", accessorKey: "tenantCode",
+      cell: ({ row }) => <span className="font-mono text-xs text-body">{row.original.tenantCode || `#${row.original.tenantId}`}</span> },
+    { id: "type", header: "Type", accessorKey: "entryType",
+      cell: ({ row }) => <Chip config={ENTRY_TYPE} value={row.original.entryType} /> },
+    { id: "amount", header: "Amount", accessorKey: "amount", meta: { numeric: true },
+      cell: ({ row }) => (
+        <span className={`whitespace-nowrap text-sm font-bold ${Number(row.original.amount) < 0 ? "text-hue-rose" : "text-heading"}`}>
+          {money(row.original.amount, row.original.currency)}
+        </span>
+      ) },
+    { id: "status", header: "Status", accessorKey: "status",
+      cell: ({ row }) => <Chip config={STATUS} value={row.original.status} /> },
+    { id: "reason", header: "Reason", enableSorting: false,
+      cell: ({ row }) => (
+        <span className="block max-w-[280px] text-xs text-body" title={row.original.reason || ""}>
+          <span className="line-clamp-2">{row.original.reason || "—"}</span>
+        </span>
+      ) },
+    { id: "actions", header: "Actions", enableSorting: false, meta: { numeric: true },
+      cell: ({ row }) => (
+        <div className="inline-flex gap-1.5 whitespace-nowrap">
+          {OPEN_STATUSES.has(row.original.status) && (
+            <button onClick={() => setSettling(row.original)}
+              className="rounded-lg border border-border px-2.5 py-1.5 text-xs font-semibold text-body hover:bg-surface-hover hover:text-heading">
+              Settle
+            </button>
+          )}
+          <button onClick={() => setAdjusting({ publicId: row.original.hotelBookingPublicId, code: row.original.bookingCode })}
+            title="Append a signed correction against this booking"
+            className="rounded-lg border border-border px-2.5 py-1.5 text-xs font-semibold text-body hover:bg-surface-hover hover:text-heading">
+            Adjust
+          </button>
+        </div>
+      ) },
+  ];
 
   return (
     <div className="space-y-5">
@@ -242,71 +297,17 @@ export default function MarketplaceCommissions() {
         )}
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-border bg-surface">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[980px] text-left text-sm">
-            <thead className="border-b border-border bg-surface-hover text-xs uppercase tracking-wide text-muted">
-              <tr>
-                <th className="px-4 py-3 font-semibold">Date</th>
-                <th className="px-4 py-3 font-semibold">Booking</th>
-                <th className="px-4 py-3 font-semibold">Tenant</th>
-                <th className="px-4 py-3 font-semibold">Type</th>
-                <th className="px-4 py-3 text-right font-semibold">Amount</th>
-                <th className="px-4 py-3 font-semibold">Status</th>
-                <th className="px-4 py-3 font-semibold">Reason</th>
-                <th className="px-4 py-3 text-right font-semibold">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {loading ? (
-                <tr><td colSpan={8} className="px-4 py-12 text-center text-muted"><Loader2 size={18} className="mx-auto animate-spin" /></td></tr>
-              ) : error ? (
-                <tr><td colSpan={8} className="px-4 py-12 text-center">
-                  <span className="inline-flex items-start gap-1.5 text-sm text-hue-rose">
-                    <AlertTriangle size={15} className="mt-px shrink-0" /> {error}
-                  </span>
-                </td></tr>
-              ) : rows.length === 0 ? (
-                <tr><td colSpan={8} className="px-4 py-12 text-center text-muted">
-                  <Coins size={26} className="mx-auto mb-2 opacity-50" />
-                  {hasFilters ? "No ledger entries match these filters." : "Nothing has been earned yet."}
-                </td></tr>
-              ) : (
-                rows.map((r) => (
-                  <LedgerRow
-                    key={r.publicId}
-                    row={r}
-                    onSettle={() => setSettling(r)}
-                    onAdjust={() => setAdjusting({ publicId: r.hotelBookingPublicId, code: r.bookingCode })}
-                  />
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        <div className="flex items-center justify-between border-t border-border px-4 py-3 text-sm">
-          <span className="text-muted">
-            {pagination?.totalElements ?? 0} entries · page {page + 1} of {totalPages}
-          </span>
-          <div className="flex gap-1">
-            <button
-              disabled={page <= 0}
-              onClick={() => setPage((p) => Math.max(0, p - 1))}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border-strong text-body hover:bg-surface-hover disabled:opacity-40"
-            >
-              <ChevronLeft size={16} />
-            </button>
-            <button
-              disabled={page + 1 >= totalPages}
-              onClick={() => setPage((p) => p + 1)}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border-strong text-body hover:bg-surface-hover disabled:opacity-40"
-            >
-              <ChevronRight size={16} />
-            </button>
-          </div>
-        </div>
-      </div>
+      <ConsoleTable
+        columns={ledgerColumns}
+        rows={rows}
+        state={loading ? "loading" : error ? "error" : "ready"}
+        error={error}
+        onRetry={loadList}
+        filtered={hasFilters}
+        emptyTitle="Nothing has been earned yet"
+        emptyHint="Commission entries appear as marketplace bookings are confirmed."
+      />
+      <ConsolePager page={page} size={25} total={pagination?.totalElements || 0} onPage={setPage} />
 
       {settling && (
         <SettleModal
@@ -429,55 +430,6 @@ function Chip({ config, value }) {
 
 /* ── Rows ───────────────────────────────────────────────────────────────────── */
 
-function LedgerRow({ row, onSettle, onAdjust }) {
-  const negative = Number(row.amount) < 0;
-  const open = OPEN_STATUSES.has(row.status);
-
-  return (
-    <tr className="align-top hover:bg-surface-hover/60">
-      <td className="whitespace-nowrap px-4 py-3">
-        <div className="text-xs font-medium text-heading">{fmtDate(row.effectiveDate)}</div>
-        <div className="text-[11px] text-muted">written {fmtDateTime(row.createdAt)}</div>
-      </td>
-      <td className="px-4 py-3">
-        <div className="font-mono text-xs font-semibold text-heading">{row.bookingCode || "—"}</div>
-        {/* The economics as snapshotted onto the row, not re-read from a booking that may since have
-            been restated. Legitimate here and nowhere in the tenant app. */}
-        <div className="text-[11px] text-muted">
-          supplier {money(row.supplierTotal, row.currency)} · payable {money(row.tenantPayable, row.currency)}
-        </div>
-      </td>
-      <td className="px-4 py-3 font-mono text-xs text-body">{row.tenantCode || `#${row.tenantId}`}</td>
-      <td className="px-4 py-3"><Chip config={ENTRY_TYPE} value={row.entryType} /></td>
-      <td className={`whitespace-nowrap px-4 py-3 text-right font-mono text-sm font-bold tabular-nums ${negative ? "text-hue-rose" : "text-heading"}`}>
-        {money(row.amount, row.currency)}
-      </td>
-      <td className="px-4 py-3"><Chip config={STATUS} value={row.status} /></td>
-      <td className="max-w-[280px] px-4 py-3 text-xs text-body" title={row.reason || ""}>
-        <span className="line-clamp-2">{row.reason || "—"}</span>
-      </td>
-      <td className="whitespace-nowrap px-4 py-3 text-right">
-        <div className="inline-flex gap-1.5">
-          {open && (
-            <button
-              onClick={onSettle}
-              className="rounded-lg border border-border px-2.5 py-1.5 text-xs font-semibold text-body hover:bg-surface-hover hover:text-heading"
-            >
-              Settle
-            </button>
-          )}
-          <button
-            onClick={onAdjust}
-            title="Append a signed correction against this booking"
-            className="rounded-lg border border-border px-2.5 py-1.5 text-xs font-semibold text-body hover:bg-surface-hover hover:text-heading"
-          >
-            Adjust
-          </button>
-        </div>
-      </td>
-    </tr>
-  );
-}
 
 /* ── Modals ─────────────────────────────────────────────────────────────────── */
 

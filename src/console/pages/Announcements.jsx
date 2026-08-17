@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   Megaphone, Send, Loader2, CheckCircle2, AlertTriangle, X, Users, Building2,
-  ChevronLeft, ChevronRight,
 } from "lucide-react";
 import { announcementService } from "../api/announcementService";
+import { ConsoleTable, ConsolePager } from "../components/ConsoleTable";
 import SuperAdminMfaActionModal from "../components/SuperAdminMfaActionModal";
 
 const inputCls =
@@ -86,7 +86,37 @@ export default function Announcements() {
     }
   };
 
-  const totalPages = pagination.totalPages ?? 1;
+
+  const announcementColumns = [
+    { id: "sent", header: "Sent", accessorKey: "createdAt",
+      cell: ({ row }) => (
+        <div className="whitespace-nowrap text-xs text-muted">
+          {fmt(row.original.createdAt)}
+          {row.original.sentByEmail && <div className="text-[11px]">{row.original.sentByEmail}</div>}
+        </div>
+      ) },
+    { id: "announcement", header: "Announcement", accessorKey: "title",
+      cell: ({ row }) => (
+        <div className="min-w-0">
+          <div className="font-semibold text-heading">{row.original.title}</div>
+          <div className="mt-0.5 line-clamp-2 max-w-[420px] text-xs text-muted">{row.original.message}</div>
+        </div>
+      ) },
+    { id: "audience", header: "Audience", accessorKey: "audience",
+      cell: ({ row }) => (
+        <div className="text-xs text-body">
+          {labelOf(AUDIENCE, row.original.audience)}
+          <div className="text-muted">{labelOf(RECIPIENTS, row.original.recipientScope)}</div>
+        </div>
+      ) },
+    { id: "reach", header: "Reach", accessorKey: "recipientCount", meta: { numeric: true },
+      cell: ({ row }) => (
+        <div className="text-xs">
+          <div className="inline-flex items-center gap-1 font-semibold text-body"><Building2 size={12} /> {row.original.tenantCount}</div>
+          <div className="inline-flex items-center gap-1 text-muted"><Users size={12} /> {row.original.recipientCount}</div>
+        </div>
+      ) },
+  ];
 
   return (
     <div className="space-y-6">
@@ -139,68 +169,17 @@ export default function Announcements() {
       </section>
 
       {/* History */}
-      <section className="overflow-hidden rounded-xl border border-border bg-surface">
-        <div className="border-b border-border px-4 py-3">
-          <h2 className="text-sm font-bold text-heading">History</h2>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px] text-left text-sm">
-            <thead className="border-b border-border bg-surface-hover text-xs uppercase tracking-wide text-muted">
-              <tr>
-                <th className="px-4 py-3 font-semibold">Sent</th>
-                <th className="px-4 py-3 font-semibold">Announcement</th>
-                <th className="px-4 py-3 font-semibold">Audience</th>
-                <th className="px-4 py-3 text-right font-semibold">Reach</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {loading ? (
-                <tr><td colSpan={4} className="px-4 py-12 text-center text-muted"><Loader2 size={18} className="mx-auto animate-spin" /></td></tr>
-              ) : rows.length === 0 ? (
-                <tr><td colSpan={4} className="px-4 py-12 text-center text-muted">
-                  <Megaphone size={28} className="mx-auto mb-2 opacity-50" /> No announcements sent yet.
-                </td></tr>
-              ) : (
-                rows.map((r) => (
-                  <tr key={r.publicId} className="align-top hover:bg-surface-hover/60">
-                    <td className="whitespace-nowrap px-4 py-3 text-xs text-muted">
-                      {fmt(r.createdAt)}
-                      {r.sentByEmail && <div className="text-[11px]">{r.sentByEmail}</div>}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="font-semibold text-heading">{r.title}</div>
-                      <div className="mt-0.5 line-clamp-2 max-w-[420px] text-xs text-muted">{r.message}</div>
-                    </td>
-                    <td className="px-4 py-3 text-xs text-body">
-                      {labelOf(AUDIENCE, r.audience)}
-                      <div className="text-muted">{labelOf(RECIPIENTS, r.recipientScope)}</div>
-                    </td>
-                    <td className="px-4 py-3 text-right text-xs">
-                      <div className="inline-flex items-center gap-1 font-semibold text-body"><Building2 size={12} /> {r.tenantCount}</div>
-                      <div className="inline-flex items-center gap-1 text-muted"><Users size={12} /> {r.recipientCount}</div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between border-t border-border px-4 py-3 text-sm">
-            <span className="text-muted">Page {page + 1} of {totalPages}</span>
-            <div className="flex gap-1">
-              <button disabled={page <= 0} onClick={() => setPage((p) => Math.max(0, p - 1))}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border-strong text-body hover:bg-surface-hover disabled:opacity-40">
-                <ChevronLeft size={16} />
-              </button>
-              <button disabled={page + 1 >= totalPages} onClick={() => setPage((p) => p + 1)}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border-strong text-body hover:bg-surface-hover disabled:opacity-40">
-                <ChevronRight size={16} />
-              </button>
-            </div>
-          </div>
-        )}
-      </section>
+      <div>
+        <h2 className="mb-2 text-sm font-bold text-heading">History</h2>
+        <ConsoleTable
+          columns={announcementColumns}
+          rows={rows}
+          state={loading ? "loading" : "ready"}
+          emptyTitle="No announcements sent yet"
+          emptyHint="Announcements you send to tenants are listed here."
+        />
+        <ConsolePager page={page} size={20} total={pagination.totalElements || 0} onPage={setPage} />
+      </div>
 
       {/* Confirm modal */}
       {confirming && (

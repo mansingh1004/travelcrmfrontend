@@ -19,6 +19,7 @@ import {
 
 import superAdminInviteService from "../api/superAdminInviteService";
 import { isLocalSuperAdminMfaDisabled } from "../lib/consoleEnvironment";
+import { ConsoleTable } from "../components/ConsoleTable";
 
 const inputCls =
   "w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-heading " +
@@ -193,6 +194,113 @@ export default function SuperAdmins() {
   const permanentSuperAdminCount = accounts.filter((account) => account.role === "SUPER_ADMIN").length;
   const superAdminSeatsFull = permanentSuperAdminCount >= 2;
 
+  const accountColumns = [
+    {
+      id: "operator",
+      header: "Operator",
+      accessorKey: "name",
+      cell: ({ row }) => (
+        <div className="min-w-0">
+          <p className="truncate font-semibold text-heading">{row.original.name}</p>
+          <p className="truncate font-mono text-[11px] text-muted">{row.original.email}</p>
+        </div>
+      ),
+    },
+    {
+      id: "type",
+      header: "Type",
+      accessorKey: "createdViaInvite",
+      cell: ({ row }) => (
+        <Pill tone={row.original.createdViaInvite ? "violet" : "slate"}>
+          {row.original.createdViaInvite ? "Invite" : "Fixed"}
+        </Pill>
+      ),
+    },
+    {
+      id: "role",
+      header: "Role",
+      accessorKey: "role",
+      cell: ({ row }) => row.original.role === "SUPER_ADMIN" ? (
+        <div>
+          <Pill tone="violet">Permanent SuperAdmin</Pill>
+          <p className="mt-1 text-[11px] text-muted">Role locked</p>
+        </div>
+      ) : (
+        <select value={row.original.role || "PLATFORM_ADMIN"}
+          onChange={(event) => openAccountAction("role", row.original, { role: event.target.value })}
+          disabled={busyId === row.original.publicId}
+          className="rounded-lg border border-border bg-surface px-2 py-1.5 text-xs font-semibold text-body focus:border-accent focus:outline-none focus:ring-2 focus:ring-focus">
+          <option value="PLATFORM_ADMIN">Platform Admin</option>
+          <option value="SUPER_ADMIN" disabled={superAdminSeatsFull}>
+            {superAdminSeatsFull ? "SuperAdmin (2/2 assigned)" : "SuperAdmin"}
+          </option>
+        </select>
+      ),
+    },
+    {
+      id: "security",
+      header: "Security",
+      accessorKey: "enabled",
+      cell: ({ row }) => (
+        <div>
+          <div className="flex flex-wrap gap-1.5">
+            <Pill tone={accountSecurityTone(row.original)}>{accountSecurityLabel(row.original)}</Pill>
+            {row.original.mfaEnabled && <Pill tone="green">MFA</Pill>}
+          </div>
+          {row.original.lockedUntil && (
+            <p className="mt-1 text-xs text-muted">Until {formatDate(row.original.lockedUntil)}</p>
+          )}
+        </div>
+      ),
+    },
+    { id: "failures", header: "Failures", accessorKey: "failedLoginAttempts", meta: { numeric: true },
+      cell: ({ row }) => <span className="text-xs text-body">{row.original.failedLoginAttempts ?? 0}</span> },
+    { id: "lastLogin", header: "Last login", accessorKey: "lastLoginAt",
+      cell: ({ row }) => <span className="font-mono text-xs text-body">{formatDate(row.original.lastLoginAt)}</span> },
+    { id: "lastIp", header: "Last IP", accessorKey: "lastLoginIp",
+      cell: ({ row }) => <span className="font-mono text-xs text-body">{row.original.lastLoginIp || "—"}</span> },
+    { id: "created", header: "Created", accessorKey: "createdAt",
+      cell: ({ row }) => <span className="font-mono text-xs text-body">{formatDate(row.original.createdAt)}</span> },
+    {
+      id: "actions",
+      header: "Actions",
+      enableSorting: false,
+      meta: { numeric: true },
+      cell: ({ row }) => {
+        const account = row.original;
+        const busy = busyId === account.publicId;
+        return (
+          <div className="flex items-center justify-end gap-1">
+            {account.mfaEnabled && (
+              <button type="button" title="Reset MFA" onClick={() => openResetMfa(account)} disabled={busy}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-surface-hover hover:text-body disabled:opacity-50">
+                {busy ? <Loader2 size={15} className="animate-spin" /> : <KeyRound size={16} className="text-accent" />}
+              </button>
+            )}
+            {account.locked && (
+              <button type="button" title="Unlock account" aria-label="Unlock account"
+                onClick={() => openAccountAction("unlock", account)} disabled={busy}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-hue-emerald hover:bg-surface-hover disabled:opacity-50">
+                <Unlock size={15} />
+              </button>
+            )}
+            <button type="button" title="Revoke all sessions" aria-label="Revoke all sessions"
+              onClick={() => openAccountAction("revokeSessions", account)} disabled={busy}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-surface-hover hover:text-body disabled:opacity-50">
+              <LogOut size={15} />
+            </button>
+            <button type="button" title={account.enabled ? "Disable account" : "Enable account"}
+              aria-label={account.enabled ? "Disable account" : "Enable account"}
+              onClick={() => openAccountAction(account.enabled ? "disable" : "enable", account)} disabled={busy}
+              className={`inline-flex h-8 w-8 items-center justify-center rounded-lg hover:bg-surface-hover disabled:opacity-50 ${account.enabled ? "text-hue-rose" : "text-hue-emerald"}`}>
+              <Power size={15} />
+            </button>
+          </div>
+        );
+      },
+    },
+  ];
+
   const create = async (e) => {
     e.preventDefault();
     setError("");
@@ -364,120 +472,15 @@ export default function SuperAdmins() {
         </p>
       )}
 
-      <section className="overflow-hidden rounded-xl border border-border bg-surface">
-        <div className="flex items-center gap-2 border-b border-border px-4 py-3">
-          <UserCog size={17} className="text-accent" />
-          <h2 className="text-sm font-bold text-heading">Accounts</h2>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[1040px] text-left text-sm">
-            <thead className="border-b border-border bg-surface-hover text-xs uppercase tracking-wide text-muted">
-              <tr>
-                <th className="px-4 py-3 font-semibold">Operator</th>
-                <th className="px-4 py-3 font-semibold">Type</th>
-                <th className="px-4 py-3 font-semibold">Role</th>
-                <th className="px-4 py-3 font-semibold">Security</th>
-                <th className="px-4 py-3 font-semibold">Failures</th>
-                <th className="px-4 py-3 font-semibold">Last login</th>
-                <th className="px-4 py-3 font-semibold">Last IP</th>
-                <th className="px-4 py-3 font-semibold">Created</th>
-                <th className="px-4 py-3 text-right font-semibold">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {loading ? (
-                <tr>
-                  <td colSpan={9} className="px-4 py-12 text-center text-muted">
-                    <Loader2 size={18} className="mx-auto animate-spin" />
-                  </td>
-                </tr>
-              ) : accounts.length === 0 ? (
-                <tr>
-                  <td colSpan={9} className="px-4 py-10 text-center text-sm text-muted">
-                    No SuperAdmin accounts.
-                  </td>
-                </tr>
-              ) : (
-                accounts.map((account) => (
-                  <tr key={account.publicId} className="hover:bg-surface-hover/60">
-                    <td className="px-4 py-3">
-                      <p className="font-semibold text-heading">{account.name}</p>
-                      <p className="font-mono text-xs text-muted">{account.email}</p>
-                    </td>
-                    <td className="px-4 py-3">
-                      <Pill tone={account.createdViaInvite ? "violet" : "slate"}>
-                        {account.createdViaInvite ? "Invite" : "Fixed"}
-                      </Pill>
-                    </td>
-                    <td className="px-4 py-3">
-                      {account.role === "SUPER_ADMIN" ? (
-                        <div>
-                          <Pill tone="violet">Permanent SuperAdmin</Pill>
-                          <p className="mt-1 text-[11px] text-muted">Role locked</p>
-                        </div>
-                      ) : (
-                        <select value={account.role || "PLATFORM_ADMIN"}
-                          onChange={(event) => openAccountAction("role", account, { role: event.target.value })}
-                          disabled={busyId === account.publicId}
-                          className="rounded-lg border border-border bg-surface px-2 py-1.5 text-xs font-semibold text-body focus:border-accent focus:outline-none focus:ring-2 focus:ring-focus">
-                          <option value="PLATFORM_ADMIN">Platform Admin</option>
-                          <option value="SUPER_ADMIN" disabled={superAdminSeatsFull}>
-                            {superAdminSeatsFull ? "SuperAdmin (2/2 assigned)" : "SuperAdmin"}
-                          </option>
-                        </select>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex flex-wrap gap-1.5">
-                        <Pill tone={accountSecurityTone(account)}>{accountSecurityLabel(account)}</Pill>
-                        {account.mfaEnabled && <Pill tone="green">MFA</Pill>}
-                      </div>
-                      {account.lockedUntil && (
-                        <p className="mt-1 text-xs text-muted">Until {formatDate(account.lockedUntil)}</p>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 font-mono text-xs text-body">{account.failedLoginAttempts ?? 0}</td>
-                    <td className="px-4 py-3 font-mono text-xs text-body">{formatDate(account.lastLoginAt)}</td>
-                    <td className="px-4 py-3 font-mono text-xs text-body">{account.lastLoginIp || "-"}</td>
-                    <td className="px-4 py-3 font-mono text-xs text-body">{formatDate(account.createdAt)}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center justify-end gap-1">
-                        {account.mfaEnabled ? (
-                          <button
-                            type="button"
-                            title="Reset MFA"
-                            onClick={() => openResetMfa(account)}
-                            disabled={busyId === account.publicId}
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-surface-hover hover:text-body disabled:opacity-50"
-                          >
-                            {busyId === account.publicId ? (
-                              <Loader2 size={15} className="animate-spin" />
-                            ) : (
-                              <KeyRound size={16} className="text-accent" />
-                            )}
-                          </button>
-                        ) : (
-                          null
-                        )}
-                        {account.locked && <button type="button" title="Unlock account" aria-label="Unlock account"
-                          onClick={() => openAccountAction("unlock", account)} disabled={busyId === account.publicId}
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-hue-emerald hover:bg-surface-hover disabled:opacity-50"><Unlock size={15} /></button>}
-                        <button type="button" title="Revoke all sessions" aria-label="Revoke all sessions"
-                          onClick={() => openAccountAction("revokeSessions", account)} disabled={busyId === account.publicId}
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-surface-hover hover:text-body disabled:opacity-50"><LogOut size={15} /></button>
-                        <button type="button" title={account.enabled ? "Disable account" : "Enable account"}
-                          aria-label={account.enabled ? "Disable account" : "Enable account"}
-                          onClick={() => openAccountAction(account.enabled ? "disable" : "enable", account)} disabled={busyId === account.publicId}
-                          className={`inline-flex h-8 w-8 items-center justify-center rounded-lg hover:bg-surface-hover disabled:opacity-50 ${account.enabled ? "text-hue-rose" : "text-hue-emerald"}`}><Power size={15} /></button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
+      <div>
+        <ConsoleTable
+          columns={accountColumns}
+          rows={accounts}
+          state={loading ? "loading" : "ready"}
+          emptyTitle="No SuperAdmin accounts"
+          emptyHint="Invite a platform operator to get started."
+        />
+      </div>
 
       <section className="rounded-xl border border-border bg-surface p-5">
         <div className="mb-4 flex items-center gap-2">

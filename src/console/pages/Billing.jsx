@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
-  AlertTriangle, Banknote, CheckCircle2, ChevronLeft, ChevronRight, CircleDollarSign,
-  CreditCard, Loader2, RefreshCw, RotateCcw, Search,
+  AlertTriangle, Banknote, CheckCircle2, CircleDollarSign,
+  CreditCard, RefreshCw, RotateCcw, Search,
 } from "lucide-react";
 import { analyticsService } from "../api/analyticsService";
 import { billingService } from "../api/billingService";
 import SuperAdminMfaActionModal from "../components/SuperAdminMfaActionModal";
 import { ConsoleErrorState, ConsoleLoadingState, ConsolePageHeader } from "../components/ConsoleUi";
+import { ConsoleTable, ConsolePager } from "../components/ConsoleTable";
 
 const STATUSES = ["", "UNPAID", "PAID", "CREDIT", "VOID"];
 const STATUS_STYLE = {
@@ -110,11 +111,92 @@ export default function Billing() {
     }
   };
 
+  /* Column defs live next to the render rather than at module scope: several cells close over
+     `requestStateChange`, and hoisting them out would mean threading it through as a prop. */
+  const columns = [
+    {
+      id: "invoice",
+      header: "Invoice",
+      accessorKey: "invoiceNumber",
+      cell: ({ row }) => (
+        <div>
+          <div className="font-mono text-xs font-bold text-heading">{row.original.invoiceNumber}</div>
+          <div className="mt-0.5 text-xs text-muted">{row.original.plan || "Custom"}</div>
+        </div>
+      ),
+    },
+    {
+      id: "tenant",
+      header: "Tenant",
+      accessorKey: "tenantName",
+      cell: ({ row }) => (
+        <div className="min-w-0">
+          <Link to={`/console/tenants?q=${encodeURIComponent(row.original.tenantCode || row.original.tenantName || "")}`}
+            className="truncate font-semibold text-heading hover:text-accent hover:underline">
+            {row.original.tenantName || "Unknown tenant"}
+          </Link>
+          <div className="font-mono text-[11px] text-muted">{row.original.tenantCode || "—"}</div>
+        </div>
+      ),
+    },
+    {
+      id: "dates",
+      header: "Issued / due",
+      accessorKey: "dueDate",
+      cell: ({ row }) => (
+        <div className="text-xs">
+          <div className="text-body">{date(row.original.issueDate)}</div>
+          <div className={row.original.overdue ? "font-semibold text-hue-rose" : "text-muted"}>
+            Due {date(row.original.dueDate)}
+          </div>
+        </div>
+      ),
+    },
+    {
+      id: "status",
+      header: "Status",
+      accessorKey: "status",
+      cell: ({ row }) => (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className={`rounded-md px-2 py-1 text-[11px] font-bold ${STATUS_STYLE[row.original.status] || STATUS_STYLE.VOID}`}>
+            {row.original.status}
+          </span>
+          {row.original.overdue && (
+            <span className="rounded-md bg-hue-rose-soft px-2 py-1 text-[11px] font-bold text-hue-rose">OVERDUE</span>
+          )}
+        </div>
+      ),
+    },
+    {
+      id: "amount",
+      header: "Amount",
+      accessorKey: "amount",
+      meta: { numeric: true },
+      cell: ({ row }) => (
+        <span className="font-bold text-heading">{money(row.original.amount, row.original.currency)}</span>
+      ),
+    },
+    {
+      id: "action",
+      header: "Action",
+      enableSorting: false,
+      meta: { numeric: true },
+      cell: ({ row }) => (
+        row.original.status === "UNPAID" || row.original.status === "PAID" ? (
+          <button type="button" onClick={() => requestStateChange(row.original)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs font-semibold text-body hover:bg-surface-hover">
+            {row.original.status === "UNPAID" ? <CheckCircle2 size={13} /> : <RotateCcw size={13} />}
+            {row.original.status === "UNPAID" ? "Mark paid" : "Mark unpaid"}
+          </button>
+        ) : <span className="text-xs text-muted">Final</span>
+      ),
+    },
+  ];
+
   if (loading) return <ConsoleLoadingState label="Loading platform billing…" />;
   if (error && !overview) return <ConsoleErrorState message={error} onRetry={() => load()} />;
 
   const currency = overview?.currency || rows[0]?.currency || "INR";
-  const totalPages = Math.max(Number(pagination.totalPages || 1), 1);
 
   return (
     <div className="space-y-5">
@@ -153,31 +235,15 @@ export default function Billing() {
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-border bg-surface">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[900px] text-left text-sm">
-            <thead className="sticky top-0 border-b border-border bg-surface-hover text-xs uppercase tracking-wide text-muted">
-              <tr><th className="px-4 py-3">Invoice</th><th className="px-4 py-3">Tenant</th><th className="px-4 py-3">Issued / due</th><th className="px-4 py-3">Status</th><th className="px-4 py-3 text-right">Amount</th><th className="px-4 py-3 text-right">Action</th></tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {rows.length === 0 ? <tr><td colSpan={6} className="px-4 py-14 text-center text-muted">No invoices match these filters.</td></tr> : rows.map((record) => (
-                <tr key={record.publicId} className="hover:bg-surface-hover/50">
-                  <td className="px-4 py-3"><div className="font-mono text-xs font-bold text-heading">{record.invoiceNumber}</div><div className="mt-1 text-xs text-muted">{record.plan || "Custom"}</div></td>
-                  <td className="px-4 py-3"><Link to={`/console/tenants?q=${encodeURIComponent(record.tenantCode || record.tenantName || "")}`} className="font-semibold text-heading hover:text-accent hover:underline">{record.tenantName || "Unknown tenant"}</Link><div className="font-mono text-xs text-muted">{record.tenantCode || "—"}</div></td>
-                  <td className="px-4 py-3 text-xs text-body"><div>{date(record.issueDate)}</div><div className={record.overdue ? "font-semibold text-hue-rose" : "text-muted"}>Due {date(record.dueDate)}</div></td>
-                  <td className="px-4 py-3"><span className={`rounded-md px-2 py-1 text-[11px] font-bold ${STATUS_STYLE[record.status] || STATUS_STYLE.VOID}`}>{record.status}</span>{record.overdue && <span className="ml-1.5 rounded-md bg-hue-rose-soft px-2 py-1 text-[11px] font-bold text-hue-rose">OVERDUE</span>}</td>
-                  <td className="px-4 py-3 text-right font-mono font-bold text-heading">{money(record.amount, record.currency)}</td>
-                  <td className="px-4 py-3 text-right">{record.status === "UNPAID" || record.status === "PAID" ? <button type="button" onClick={() => requestStateChange(record)} className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs font-semibold text-body hover:bg-surface-hover">{record.status === "UNPAID" ? <CheckCircle2 size={13} /> : <RotateCcw size={13} />}{record.status === "UNPAID" ? "Mark paid" : "Mark unpaid"}</button> : <span className="text-xs text-muted">Final</span>}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div className="flex items-center justify-between border-t border-border px-4 py-3 text-sm text-muted">
-          <span>{Number(pagination.totalElements || 0).toLocaleString("en-IN")} invoice(s)</span>
-          <div className="flex items-center gap-2"><button disabled={page <= 0} onClick={() => setPage((value) => Math.max(0, value - 1))} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border disabled:opacity-40"><ChevronLeft size={15} /></button><span className="font-mono text-xs">{page + 1} / {totalPages}</span><button disabled={page + 1 >= totalPages} onClick={() => setPage((value) => value + 1)} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border disabled:opacity-40"><ChevronRight size={15} /></button></div>
-        </div>
-      </div>
+      <ConsoleTable
+        columns={columns}
+        rows={rows}
+        state="ready"
+        filtered={Boolean(query || status || overdue)}
+        emptyTitle="No invoices yet"
+        emptyHint="Invoices raised against a tenant appear here."
+      />
+      <ConsolePager page={page} size={pagination.size || 20} total={pagination.totalElements || 0} onPage={setPage} />
 
       {action && <SuperAdminMfaActionModal
         title={action.nextPaid ? "Confirm invoice settlement" : "Reopen paid invoice"}

@@ -45,7 +45,9 @@ export default function HotelPartnerReview() {
   const [busy, setBusy] = useState(false);
   const [mode, setMode] = useState("");        // "" | "changes" | "reject"
   const [note, setNote] = useState("");
-  const [actionError, setActionError] = useState("");
+  /* No page-level error state: every decision now fails inside the step-up dialog, which renders the
+     message next to the code field the operator is still looking at. A second banner behind the
+     dialog was never set and could not render. */
   const [mfaAction, setMfaAction] = useState(null);
   const [mfaError, setMfaError] = useState("");
   const [lightbox, setLightbox] = useState(null);   // { images, index }
@@ -400,9 +402,6 @@ export default function HotelPartnerReview() {
 
       {/* ── Decide ──────────────────────────────────────────────────────── */}
       <div className="sticky bottom-0 z-20 mt-6 border-t border-border bg-surface/95 py-3 backdrop-blur">
-        {actionError && (
-          <p className="mb-2 rounded-lg bg-hue-rose-soft px-3 py-2 text-sm text-hue-rose">{actionError}</p>
-        )}
         {!decidable ? (
           <p className="text-sm text-muted">
             This submission is <b>{REG_STATUS[reg.status]?.label || reg.status}</b> — no decision to take.

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
   Plus, Search, Pencil, Trash2, RotateCcw, PauseCircle, PlayCircle,
-  X, Loader2, ChevronLeft, ChevronRight, Building2, AlertTriangle, CheckCircle2, CreditCard, Receipt,
+  X, Loader2, Building2, AlertTriangle, CheckCircle2, CreditCard, Receipt,
 } from "lucide-react";
 import StatusPill from "../components/StatusPill";
 import BillingDrawer from "../components/BillingDrawer";
@@ -10,6 +10,7 @@ import SuperAdminMfaActionModal from "../components/SuperAdminMfaActionModal";
 import { tenantService } from "../api/tenantService";
 import { planService } from "../api/planService";
 import { isLocalSuperAdminMfaDisabled } from "../lib/consoleEnvironment";
+import { ConsoleTable, ConsolePager } from "../components/ConsoleTable";
 
 const CREATE_STATUSES = ["TRIAL", "ACTIVE"];
 const FILTERS = [
@@ -25,8 +26,12 @@ const EMPTY = {
   organizationName: "", organizationCode: "", email: "", phone: "", address: "",
   plan: "STARTER", status: "TRIAL", maxUsers: 5,
   subscriptionStartDate: "", subscriptionEndDate: "",
-  adminUsername: "", adminEmail: "", adminPassword: "",
+  adminUsername: "", adminLoginUsername: "", adminEmail: "", adminPassword: "",
 };
+
+/** Mirrors UsernamePolicy on the server — 3–80 chars, letters/digits/dot/underscore/hyphen. */
+const USERNAME_PATTERN = /^[A-Za-z0-9._-]+$/;
+const ADMIN_PASSWORD_MIN = 6;
 
 const inputCls =
   "w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-heading placeholder:text-muted focus:border-accent focus:outline-none focus:ring-2 focus:ring-focus disabled:opacity-60";
@@ -76,6 +81,9 @@ function TenantDrawer({ mode, tenant, onClose, onSaved, showToast }) {
   );
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState({});
+  /* Set once the tenant exists. The drawer then shows the credentials instead of the form, because
+     the derived login username is returned exactly once and cannot be looked up again from here. */
+  const [created, setCreated] = useState(null);
 
   useEffect(() => {
     if (isEdit) return undefined;
@@ -113,7 +121,14 @@ function TenantDrawer({ mode, tenant, onClose, onSaved, showToast }) {
       if (plansError || plans.length === 0) errs.plan = plansError || "Select an active plan";
       if (!form.adminUsername.trim()) errs.adminUsername = "Required";
       if (!form.adminEmail.trim()) errs.adminEmail = "Valid email required";
-      if (!form.adminPassword || form.adminPassword.length < 6) errs.adminPassword = "Min 6 characters";
+      if (!form.adminPassword || form.adminPassword.length < ADMIN_PASSWORD_MIN) {
+        errs.adminPassword = `Min ${ADMIN_PASSWORD_MIN} characters`;
+      }
+      // Validated only when supplied — blank is a legitimate choice that lets the server derive one.
+      const login = form.adminLoginUsername.trim();
+      if (login && (login.length < 3 || login.length > 80 || !USERNAME_PATTERN.test(login))) {
+        errs.adminLoginUsername = "3–80 chars: letters, digits, dot, underscore or hyphen";
+      }
     }
     setErr(errs);
     if (Object.keys(errs).length) return;
@@ -131,7 +146,7 @@ function TenantDrawer({ mode, tenant, onClose, onSaved, showToast }) {
           subscriptionEndDate: form.subscriptionEndDate,
         });
       } else {
-        await tenantService.create({
+        const created = await tenantService.create({
           organizationName: form.organizationName,
           organizationCode: form.organizationCode,
           email: form.email,
@@ -143,9 +158,22 @@ function TenantDrawer({ mode, tenant, onClose, onSaved, showToast }) {
           subscriptionStartDate: form.subscriptionStartDate,
           subscriptionEndDate: form.subscriptionEndDate,
           adminUsername: form.adminUsername,
+          adminLoginUsername: form.adminLoginUsername.trim() || undefined,
           adminEmail: form.adminEmail,
           adminPassword: form.adminPassword,
         });
+        /* The response is the ONLY place the admin's login username appears.
+           Staff sign in with a username, not an email, and this field is optional on purpose — left
+           blank, the server derives one from the admin email's local part. That derived value used to
+           be thrown away here (`await` with no assignment), so the operator finished onboarding
+           without ever seeing the credential they have to hand the customer. Hold it on screen until
+           it is dismissed rather than putting it in a toast that auto-hides. */
+        setCreated({
+          organizationName: form.organizationName,
+          loginUsername: created?.adminLoginUsername || form.adminLoginUsername.trim() || "—",
+          adminEmail: form.adminEmail,
+        });
+        return;
       }
       showToast("success", isEdit ? "Tenant updated" : "Tenant created");
       onSaved();
@@ -155,6 +183,49 @@ function TenantDrawer({ mode, tenant, onClose, onSaved, showToast }) {
       setSaving(false);
     }
   };
+
+  if (created) {
+    return (
+      <div className="fixed inset-0 z-40 flex justify-end">
+        <div className="absolute inset-0 bg-slate-950/50" onClick={() => { setCreated(null); onSaved(); }} />
+        <div className="relative flex h-full w-full max-w-lg flex-col border-l border-border bg-surface shadow-xl">
+          <div className="flex items-center justify-between border-b border-border px-5 py-4">
+            <div className="flex items-center gap-2">
+              <Building2 size={18} className="text-hue-emerald" />
+              <h2 className="text-sm font-bold text-heading">{created.organizationName} created</h2>
+            </div>
+          </div>
+          <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
+            <p className="text-sm text-body">Hand these to the customer. The login username is shown here once.</p>
+            <div className="space-y-3 rounded-lg border border-border bg-page p-4">
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-wide text-muted">Login username</p>
+                <p className="font-mono text-sm font-bold text-heading">{created.loginUsername}</p>
+              </div>
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-wide text-muted">Admin email</p>
+                <p className="text-sm text-heading">{created.adminEmail}</p>
+              </div>
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-wide text-muted">Password</p>
+                <p className="text-sm text-body">The one you set. The admin is asked to change it on first sign-in.</p>
+              </div>
+            </div>
+            <p className="rounded-lg bg-hue-amber-soft px-3 py-2 text-xs text-hue-amber">
+              Staff sign in with the <b>username</b>, not the email. Sending only the email is the most common
+              onboarding failure.
+            </p>
+          </div>
+          <div className="flex justify-end border-t border-border px-5 py-4">
+            <button type="button" onClick={() => { setCreated(null); onSaved(); }}
+              className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover">
+              Done
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-40 flex justify-end">
@@ -248,9 +319,23 @@ function TenantDrawer({ mode, tenant, onClose, onSaved, showToast }) {
                   <input type="email" className={inputCls} value={form.adminEmail}
                     onChange={(e) => set("adminEmail", e.target.value)} placeholder="admin@abc.com" />
                 </Field>
+                {/* Optional by design: staff sign in with a username, and when this is blank the server
+                    derives one from the admin email's local part and returns it. Offered here for the
+                    case where the customer has asked for a specific login. */}
+                <Field label="Login username" error={err.adminLoginUsername}>
+                  <input className={inputCls} value={form.adminLoginUsername}
+                    onChange={(e) => set("adminLoginUsername", e.target.value)}
+                    placeholder={form.adminEmail ? form.adminEmail.split("@")[0] : "derived from the admin email"} />
+                  <p className="mt-1 text-[11px] text-muted">
+                    Leave blank to derive it from the admin email — the result is shown after the tenant is created.
+                  </p>
+                </Field>
                 <Field label="Admin password" required error={err.adminPassword}>
                   <input type="password" className={inputCls} value={form.adminPassword}
                     onChange={(e) => set("adminPassword", e.target.value)} placeholder="••••••••" />
+                  <p className="mt-1 text-[11px] text-muted">
+                    Minimum {ADMIN_PASSWORD_MIN} characters. The admin is asked to change it on first sign-in.
+                  </p>
                 </Field>
               </div>
             )}
@@ -525,12 +610,99 @@ export default function Tenants() {
     onConfirm: (mfaCode) => runAction(tenantService.remove, t.publicId, "Tenant deleted", mfaCode),
   });
 
-  const totalPages = pagination.totalPages ?? 1;
   const listContext = new URLSearchParams();
   if (debounced.trim()) listContext.set("q", debounced.trim());
   if (statusFilter) listContext.set("status", statusFilter);
   if (showDeleted) listContext.set("deleted", "true");
   if (page > 0) listContext.set("page", String(page));
+
+  const tenantColumns = [
+    {
+      id: "organization",
+      header: "Organization",
+      accessorKey: "organizationName",
+      cell: ({ row }) => (
+        <div className="min-w-0">
+          <Link to={`/console/tenants/${row.original.publicId}`} state={{ tenantList: listContext.toString() }}
+            className="truncate font-semibold text-heading hover:text-accent hover:underline">
+            {row.original.organizationName}
+          </Link>
+          <div className="font-mono text-[11px] text-muted">{row.original.organizationCode}</div>
+        </div>
+      ),
+    },
+    {
+      id: "contact",
+      header: "Contact",
+      accessorKey: "email",
+      cell: ({ row }) => (
+        <div className="min-w-0">
+          <div className="truncate text-body">{row.original.email}</div>
+          <div className="truncate text-xs text-muted">{row.original.phone || "—"}</div>
+        </div>
+      ),
+    },
+    { id: "plan", header: "Plan", accessorKey: "plan", cell: ({ row }) => <PlanBadge plan={row.original.plan} /> },
+    {
+      id: "status",
+      header: "Status",
+      accessorKey: "status",
+      cell: ({ row }) => (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <StatusPill status={row.original.status} />
+          {row.original.unpaidCount > 0 && (
+            <span title={`${row.original.unpaidCount} unpaid invoice(s)`}
+              className="rounded bg-hue-amber-soft px-1.5 py-0.5 text-[10px] font-semibold text-hue-amber">
+              {row.original.unpaidCount} unpaid
+            </span>
+          )}
+        </div>
+      ),
+    },
+    {
+      id: "users",
+      header: "Users",
+      accessorKey: "userCount",
+      meta: { numeric: true },
+      cell: ({ row }) => <span className="text-body">{row.original.userCount}/{row.original.maxUsers}</span>,
+    },
+    {
+      id: "subEnd",
+      header: "Sub. end",
+      accessorKey: "subscriptionEndDate",
+      meta: { numeric: true },
+      cell: ({ row }) => <span className="text-xs text-body">{row.original.subscriptionEndDate || "—"}</span>,
+    },
+    {
+      id: "actions",
+      header: "Actions",
+      enableSorting: false,
+      meta: { numeric: true },
+      cell: ({ row }) => {
+        const t = row.original;
+        const busy = busyId === t.publicId;
+        return (
+          <div className="flex items-center justify-end gap-1">
+            {t.deleted ? (
+              <IconBtn title="Restore" onClick={() => askRestore(t)} busy={busy}><RotateCcw size={16} /></IconBtn>
+            ) : (
+              <>
+                <IconBtn title="Edit" onClick={() => setDrawer({ mode: "edit", tenant: t })} busy={busy}><Pencil size={16} /></IconBtn>
+                <IconBtn title="Change plan" onClick={() => setPlanModal(t)} busy={busy}><CreditCard size={16} className="text-accent" /></IconBtn>
+                <IconBtn title="Billing" onClick={() => setBillingTenant(t)} busy={busy}><Receipt size={16} /></IconBtn>
+                {t.status === "SUSPENDED" || t.status === "EXPIRED" ? (
+                  <IconBtn title="Reactivate" onClick={() => askReactivate(t)} busy={busy}><PlayCircle size={16} className="text-hue-emerald" /></IconBtn>
+                ) : (
+                  <IconBtn title="Suspend" onClick={() => askSuspend(t)} busy={busy}><PauseCircle size={16} className="text-hue-amber" /></IconBtn>
+                )}
+                <IconBtn title="Delete" onClick={() => askDelete(t)} busy={busy}><Trash2 size={16} className="text-hue-rose" /></IconBtn>
+              </>
+            )}
+          </div>
+        );
+      },
+    },
+  ];
 
   return (
     <div className="space-y-5">
@@ -565,122 +737,17 @@ export default function Tenants() {
         </label>
       </div>
 
-      {/* Table */}
-      <div className="overflow-hidden rounded-xl border border-border bg-surface">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[900px] text-left text-sm">
-            <thead className="border-b border-border bg-surface-hover text-xs uppercase tracking-wide text-muted">
-              <tr>
-                <th className="px-4 py-3 font-semibold">Organization</th>
-                <th className="px-4 py-3 font-semibold">Contact</th>
-                <th className="px-4 py-3 font-semibold">Plan</th>
-                <th className="px-4 py-3 font-semibold">Status</th>
-                <th className="px-4 py-3 font-semibold">Users</th>
-                <th className="px-4 py-3 font-semibold">Sub. end</th>
-                <th className="px-4 py-3 text-right font-semibold">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {loading ? (
-                <tr><td colSpan={7} className="px-4 py-12 text-center text-muted">
-                  <Loader2 size={18} className="mx-auto animate-spin" />
-                </td></tr>
-              ) : error ? (
-                <tr><td colSpan={7} className="px-4 py-12 text-center text-red-500">{error}</td></tr>
-              ) : rows.length === 0 ? (
-                <tr><td colSpan={7} className="px-4 py-12 text-center text-muted">
-                  <Building2 size={28} className="mx-auto mb-2 opacity-50" />
-                  No tenants found.
-                </td></tr>
-              ) : (
-                rows.map((t) => {
-                  const busy = busyId === t.publicId;
-                  return (
-                    <tr key={t.publicId} className="hover:bg-surface-hover/60">
-                      <td className="px-4 py-3">
-                        <Link to={`/console/tenants/${t.publicId}`} state={{ tenantList: listContext.toString() }}
-                          className="font-semibold text-heading hover:text-accent hover:underline">
-                          {t.organizationName}
-                        </Link>
-                        <div className="font-mono text-xs text-muted">{t.organizationCode}</div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="text-body">{t.email}</div>
-                        <div className="text-xs text-muted">{t.phone || "—"}</div>
-                      </td>
-                      <td className="px-4 py-3"><PlanBadge plan={t.plan} /></td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <StatusPill status={t.status} />
-                          {t.unpaidCount > 0 && (
-                            <span title={`${t.unpaidCount} unpaid invoice(s)`}
-                              className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-amber-600 ring-1 ring-amber-500/20">
-                              {t.unpaidCount} unpaid
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 font-mono text-body">{t.userCount}/{t.maxUsers}</td>
-                      <td className="px-4 py-3 font-mono text-xs text-body">{t.subscriptionEndDate || "—"}</td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center justify-end gap-1">
-                          {t.deleted ? (
-                            <IconBtn title="Restore" onClick={() => askRestore(t)} busy={busy}>
-                              <RotateCcw size={16} />
-                            </IconBtn>
-                          ) : (
-                            <>
-                              <IconBtn title="Edit" onClick={() => setDrawer({ mode: "edit", tenant: t })} busy={busy}>
-                                <Pencil size={16} />
-                              </IconBtn>
-                              <IconBtn title="Change plan" onClick={() => setPlanModal(t)} busy={busy}>
-                                <CreditCard size={16} className="text-accent" />
-                              </IconBtn>
-                              <IconBtn title="Billing" onClick={() => setBillingTenant(t)} busy={busy}>
-                                <Receipt size={16} />
-                              </IconBtn>
-                              {t.status === "SUSPENDED" || t.status === "EXPIRED" ? (
-                                <IconBtn title="Reactivate" onClick={() => askReactivate(t)} busy={busy}>
-                                  <PlayCircle size={16} className="text-emerald-500" />
-                                </IconBtn>
-                              ) : (
-                                <IconBtn title="Suspend" onClick={() => askSuspend(t)} busy={busy}>
-                                  <PauseCircle size={16} className="text-amber-500" />
-                                </IconBtn>
-                              )}
-                              <IconBtn title="Delete" onClick={() => askDelete(t)} busy={busy}>
-                                <Trash2 size={16} className="text-red-500" />
-                              </IconBtn>
-                            </>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Pagination */}
-        <div className="flex items-center justify-between border-t border-border px-4 py-3 text-sm text-muted">
-          <span>
-            {pagination.totalElements ?? 0} tenant{(pagination.totalElements ?? 0) === 1 ? "" : "s"}
-          </span>
-          <div className="flex items-center gap-2">
-            <button disabled={page <= 0} onClick={() => setPage((p) => Math.max(0, p - 1))}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border text-body hover:bg-surface-hover disabled:opacity-40">
-              <ChevronLeft size={16} />
-            </button>
-            <span className="font-mono text-xs">{(pagination.page ?? 0) + 1} / {Math.max(totalPages, 1)}</span>
-            <button disabled={page + 1 >= totalPages} onClick={() => setPage((p) => p + 1)}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border text-body hover:bg-surface-hover disabled:opacity-40">
-              <ChevronRight size={16} />
-            </button>
-          </div>
-        </div>
-      </div>
+      <ConsoleTable
+        columns={tenantColumns}
+        rows={rows}
+        state={loading ? "loading" : error ? "error" : "ready"}
+        error={error}
+        onRetry={load}
+        filtered={Boolean(debounced || status || showDeleted)}
+        emptyTitle="No tenants yet"
+        emptyHint="Create the first tenant to start onboarding an agency."
+      />
+      <ConsolePager page={page} size={pagination.size || 20} total={pagination.totalElements || 0} onPage={setPage} />
 
       {drawer && (
         <TenantDrawer

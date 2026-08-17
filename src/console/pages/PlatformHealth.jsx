@@ -5,10 +5,7 @@ import {
   ArrowRight,
   BellRing,
   CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
   Database,
-  History,
   Mail,
   RefreshCw,
   ServerCog,
@@ -16,6 +13,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { platformHealthService } from "../api/platformHealthService";
+import { ConsoleTable, ConsolePager } from "../components/ConsoleTable";
 import {
   ConsoleErrorState,
   ConsoleLoadingState,
@@ -146,7 +144,37 @@ export default function PlatformHealth() {
   const mail = summary?.mail ?? {};
   const delivery = summary?.notificationDelivery ?? {};
   const backlog = summary?.backlog ?? {};
-  const totalPages = Math.max(1, Number(pagination.totalPages || 1));
+  const jobColumns = [
+    { id: "job", header: "Job", accessorKey: "jobKey",
+      cell: ({ row }) => <span className="font-semibold text-heading">{JOB_LABELS[row.original.jobKey] || row.original.jobKey}</span> },
+    { id: "status", header: "Status", accessorKey: "status",
+      cell: ({ row }) => <StatusPill status={row.original.status} /> },
+    { id: "trigger", header: "Trigger / actor", accessorKey: "trigger",
+      cell: ({ row }) => (
+        <div>
+          <p className="font-semibold text-body">{row.original.trigger}</p>
+          <p className="mt-0.5 text-xs text-muted">{row.original.actorEmail || "System scheduler"}</p>
+        </div>
+      ) },
+    { id: "started", header: "Started", accessorKey: "startedAt",
+      cell: ({ row }) => (
+        <div>
+          <p className="text-xs text-body">{fmtDateTime(row.original.startedAt)}</p>
+          <p className="mt-0.5 font-mono text-[11px] text-muted">{fmtDuration(row.original.durationMs)}</p>
+        </div>
+      ) },
+    { id: "result", header: "Result", accessorKey: "resultCount", meta: { numeric: true },
+      cell: ({ row }) => <span className="font-bold text-heading">{row.original.resultCount ?? "—"}</span> },
+    { id: "node", header: "Node / detail", enableSorting: false,
+      cell: ({ row }) => (
+        <div className="max-w-xs">
+          <p className="font-mono text-[11px] text-muted">{row.original.nodeId}</p>
+          {row.original.failureDetail && (
+            <p className="mt-1 text-xs text-hue-rose"><XCircle size={12} className="mr-1 inline" />{row.original.failureDetail}</p>
+          )}
+        </div>
+      ) },
+  ];
 
   return (
     <div className="space-y-5">
@@ -241,37 +269,15 @@ export default function PlatformHealth() {
           </select>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[900px] text-left text-sm">
-            <thead className="border-b border-border bg-surface-hover text-xs uppercase tracking-wide text-muted">
-              <tr><th className="px-4 py-3">Job</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Trigger / actor</th><th className="px-4 py-3">Started</th><th className="px-4 py-3">Result</th><th className="px-4 py-3">Node / detail</th></tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {rows.length === 0 ? (
-                <tr><td colSpan={6} className="px-4 py-12 text-center text-sm text-muted"><History size={22} className="mx-auto mb-2 opacity-50" />No job runs recorded yet.</td></tr>
-              ) : rows.map((run) => (
-                <tr key={run.publicId} className="align-top hover:bg-surface-hover/50">
-                  <td className="px-4 py-3 font-semibold text-heading">{JOB_LABELS[run.jobKey] || run.jobKey}</td>
-                  <td className="px-4 py-3"><StatusPill status={run.status} /></td>
-                  <td className="px-4 py-3"><p className="font-semibold text-body">{run.trigger}</p><p className="mt-1 text-xs text-muted">{run.actorEmail || "System scheduler"}</p></td>
-                  <td className="px-4 py-3"><p className="text-xs text-body">{fmtDateTime(run.startedAt)}</p><p className="mt-1 font-mono text-[11px] text-muted">{fmtDuration(run.durationMs)}</p></td>
-                  <td className="px-4 py-3 font-mono font-bold text-heading">{run.resultCount ?? "—"}</td>
-                  <td className="max-w-xs px-4 py-3"><p className="font-mono text-[11px] text-muted">{run.nodeId}</p>{run.failureDetail && <p className="mt-1 text-xs text-hue-rose"><XCircle size={12} className="mr-1 inline" />{run.failureDetail}</p>}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div className="flex items-center justify-between border-t border-border px-4 py-3 text-xs text-muted">
-          <span>{number(pagination.totalElements)} run(s)</span>
-          <div className="flex items-center gap-2">
-            <button type="button" disabled={page <= 0} onClick={() => setPage((value) => Math.max(0, value - 1))}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border disabled:opacity-40"><ChevronLeft size={14} /></button>
-            <span className="font-mono">{page + 1} / {totalPages}</span>
-            <button type="button" disabled={page + 1 >= totalPages} onClick={() => setPage((value) => value + 1)}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border disabled:opacity-40"><ChevronRight size={14} /></button>
-          </div>
-        </div>
+        <ConsoleTable
+          columns={jobColumns}
+          rows={rows}
+          state="ready"
+          filtered={Boolean(jobKey || status)}
+          emptyTitle="No job runs recorded yet"
+          emptyHint="Scheduled sweeps and manual runs appear here once they execute."
+        />
+        <ConsolePager page={page} size={25} total={pagination.totalElements || 0} onPage={setPage} />
       </ConsolePanel>
     </div>
   );
