@@ -1,5 +1,9 @@
 // features/whatsapp/index.js — the feature's public API. Nothing else may be imported from here.
-export { default as WhatsAppInbox } from "./pages/WhatsAppInbox";
+//
+// WhatsAppInbox is NO LONGER exported. It was a read-only thread list superseded by the
+// Communication Center's WhatsApp preset, which shows the same comm_conversations rows and can also
+// reply; /WhatsApp is now a redirect. The page file is left on disk for one release rather than
+// deleted, but nothing imports it, so it no longer ships in this feature's chunk.
 
 // Exported because features/operations renders the same thread inside its service-line modal.
 // One component, so a bubble looks and behaves identically wherever a conversation is shown.

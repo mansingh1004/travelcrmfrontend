@@ -69,9 +69,14 @@ const communicationService = {
     };
   },
 
-  /** Tile counts for the hub header. */
-  summary: async () => {
-    const res = await API.get(`${BASE}/conversations/summary`);
+  /**
+   * Tile counts for the hub header.
+   *
+   * Takes the SAME `kind` as the list, because the tiles are counts over the same query — pass a
+   * different one and a tile reports a number the list under it contradicts.
+   */
+  summary: async (kind) => {
+    const res = await API.get(`${BASE}/conversations/summary`, { params: { kind } });
     return res?.data?.data ?? null;
   },
 

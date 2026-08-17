@@ -60,7 +60,6 @@ const whatsapp = () => import("@features/whatsapp");
 const communication = () => import("@features/communication");
 const Reminders = lazyPage(reminders, "Reminders");
 const Mailbox = lazyPage(mailbox, "Mailbox");
-const WhatsAppInbox = lazyPage(whatsapp, "WhatsAppInbox");
 const WhatsAppConversations = lazyPage(communication, "WhatsAppConversations");
 const EmailConversations = lazyPage(communication, "EmailConversations");
 const MessageTemplates = lazyPage(communication, "MessageTemplates");
@@ -397,7 +396,12 @@ const AppRouter = () => {
               <Route path="Mailbox" element={<Guard allow={hasPermission(P.COMM_READ) && hasModule("COMMUNICATION")}><Mailbox /></Guard>} />
               {/* Same gate as Mailbox: it reads the same conversations table behind the same
                   COMM_READ authority and the same plan module. */}
-              <Route path="WhatsApp" element={<Guard allow={hasPermission(P.COMM_READ) && hasModule("COMMUNICATION")}><WhatsAppInbox /></Guard>} />
+              {/* /WhatsApp is now a kept redirect, the same treatment /console/login gets. The
+                  screen it used to render was read-only and is superseded by the Communication
+                  Center's WhatsApp preset, which shows the same rows AND can reply. Kept rather
+                  than deleted because it has been a real URL in people's bookmarks and in the
+                  sidebar; the component it pointed at is no longer bundled. */}
+              <Route path="WhatsApp" element={<Navigate to="/communication/whatsapp" replace />} />
               {/* Communication Center. ONE screen; the two paths below are presets of it with a
                   channel pinned, because channel is a filter over one comm_conversations table and
                   never a separate page. Same gate throughout: the same rows behind the same

@@ -32,6 +32,35 @@ const fmtDay = (iso) => {
   return d.toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" });
 };
 
+/**
+ * An email body is HTML; a WhatsApp body is not.
+ *
+ * The composer sends what the rich editor produced, so `bodyText` on an email row holds
+ * `<div>…<a href="…">`. Rendered as a React text child that is exactly what the agent reads back —
+ * their own markup, on the one screen built to show the formatting.
+ *
+ * This flattens it to readable text rather than rendering it: there is NO sanitizer in this
+ * codebase (no DOMPurify, no sanitize-html), and `dangerouslySetInnerHTML` on a message body is
+ * one customer reply away from stored XSS. Real HTML rendering waits for a sanitizer to land —
+ * until then a legible plain-text rendering beats both raw tags and an injection hole.
+ */
+function readable(message) {
+  const body = message.bodyText || "";
+  if (message.channel !== "EMAIL" || !/<[a-z][\s\S]*>/i.test(body)) return body;
+  return body
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|li|tr|h[1-6])>/gi, "\n")
+    .replace(/<li[^>]*>/gi, "• ")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 /** Delivery state, shown only where it tells the reader something they can act on. */
 function StatusMark({ status }) {
   if (status === "FAILED") {
@@ -112,7 +141,7 @@ export default function ChatThread({
                   </span>
                 )}
 
-                {m.bodyText || <span className="text-slate-400 italic">[no text]</span>}
+                {readable(m) || <span className="text-slate-400 italic">[no text]</span>}
 
                 {/* A refused send says so on the bubble. Anywhere else and the operator reads a
                     message they believe was delivered. */}

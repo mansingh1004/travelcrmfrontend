@@ -888,7 +888,7 @@ import { WhatsAppIcon as FaWhatsapp } from "@shared/ui/WhatsAppIcon";
 import { ConversationDrawer } from "@features/whatsapp";
 import { GridStyles, GridHead, GridRow, Cell, Avatar, GridSkeleton, GridEmpty } from "@shared/ui/gridTable";
 import { useToast } from "@shared/ui/toast";
-import { hasPermission, P } from "@shared/lib/access";
+import { hasPermission, hasModule, P } from "@shared/lib/access";
 
 // Leads-directory grid columns (Customer, Contact, City, Type, Loyalty, Bookings, Spent, Status, Actions)
 const CUST_COLS = "1.7fr 1.3fr 0.8fr 0.7fr 0.95fr 0.6fr 1fr 0.85fr 150px";
@@ -1052,6 +1052,10 @@ export default function Customers() {
   // opened to. One state, not two: clicking Email on a customer whose WhatsApp drawer is already
   // open must switch the tab rather than stack a second panel.
   const [convo, setConvo] = useState(null);
+
+  /* The drawer is a modal, so the Guard on /communication never runs for it — the gate has to be
+     here or a plan without COMMUNICATION still shows comms buttons on every customer row. */
+  const canMessage = hasPermission(P.COMM_READ) && hasModule("COMMUNICATION");
 
   const [customerStatsOpen, setCustomerStatsOpen] = useState(false);
 
@@ -1484,8 +1488,8 @@ export default function Customers() {
                         {/* Opens the conversation drawer, not wa.me. A deep link hands the message to
                             the operator's phone and the CRM never learns the customer was contacted —
                             the drawer still offers that as one of its send modes, and records it. */}
-                        <button onClick={() => setConvo({ customer: c, channel: "WHATSAPP" })} title="WhatsApp" className="w-8 h-8 rounded-lg bg-green-50 hover:bg-green-100 text-green-600 flex items-center justify-center transition-all text-sm"><FaWhatsapp/></button>
-                        {c.email && <button onClick={() => setConvo({ customer: c, channel: "EMAIL" })} title={`Email ${c.email}`} className="w-8 h-8 rounded-lg bg-sky-50 hover:bg-sky-100 text-sky-600 flex items-center justify-center transition-all text-sm"><FaEnvelope/></button>}
+                        {canMessage && <button onClick={() => setConvo({ customer: c, channel: "WHATSAPP" })} title="WhatsApp" className="w-8 h-8 rounded-lg bg-green-50 hover:bg-green-100 text-green-600 flex items-center justify-center transition-all text-sm"><FaWhatsapp/></button>}
+                        {canMessage && c.email && <button onClick={() => setConvo({ customer: c, channel: "EMAIL" })} title={`Email ${c.email}`} className="w-8 h-8 rounded-lg bg-sky-50 hover:bg-sky-100 text-sky-600 flex items-center justify-center transition-all text-sm"><FaEnvelope/></button>}
                         {canDeleteCustomer && <button onClick={() => setDelTarget(c)} title="Delete" className="w-8 h-8 rounded-lg bg-red-50 hover:bg-red-100 text-red-400 hover:text-red-600 flex items-center justify-center transition-all text-sm"><FaTrash/></button>}
                       </div>
                     </Cell>

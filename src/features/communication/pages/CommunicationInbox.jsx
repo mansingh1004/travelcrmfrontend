@@ -212,7 +212,16 @@ export default function CommunicationInbox({ channel: fixedChannel = null, kind:
           q: q.trim() || undefined,
           unreadOnly: unreadOnly || undefined,
         });
-        setThreads(items);
+        /* APPEND past page 0, never replace. "Load more" that replaces is a lie: it drops the rows
+           the operator was reading, and with no Previous control they cannot get them back. Page 0
+           replaces because that is a genuine reload — a filter changed, or Refresh was pressed.
+           Deduped by publicId because a post-send refresh re-fetches the CURRENT page, and an
+           inbox sorted by lastMessageAt reshuffles under paging anyway. */
+        setThreads((prev) => {
+          if (page === 0) return items;
+          const seen = new Set(prev.map((t) => t.publicId));
+          return [...prev, ...items.filter((t) => !seen.has(t.publicId))];
+        });
         setPagination(pg);
         if (!keepSelection) {
           setSelected((prev) =>
@@ -239,8 +248,13 @@ export default function CommunicationInbox({ channel: fixedChannel = null, kind:
 
   useEffect(() => {
     communicationService.readiness().then(setReadiness).catch(() => setReadiness(null));
-    communicationService.summary().then(setSummary).catch(() => setSummary(null));
   }, []);
+
+  // Re-counted whenever the kind filter moves, with the same kind the list is using — otherwise
+  // "Conversations 41" sits above a list of 58.
+  useEffect(() => {
+    communicationService.summary(kind || undefined).then(setSummary).catch(() => setSummary(null));
+  }, [kind]);
 
   // ?c=<publicId> so the drawer's "open in Communication Center" arrow lands on the right row.
   useEffect(() => {
@@ -579,12 +593,35 @@ export default function CommunicationInbox({ channel: fixedChannel = null, kind:
 
                   <div className="px-4 py-3">
                     {tab === "MESSAGE" ? (
-                      <Composer
-                        ctx={composerCtx}
-                        channel={selected.channel}
-                        thread={selected}
-                        onSent={onSent}
-                      />
+                      /* Operations threads are READ-ONLY here, deliberately. A supplier send is not
+                         just a message: it moves the booking service line to REQUESTED and records
+                         the hold expiry. A composer on this screen has no service line to move, so
+                         it would be a second, statusless send path — the thing whatsappService.js
+                         and WhatsAppInbox both refuse to build. Read the thread here, reply where
+                         the state change lives. */
+                      selected.kind === "VENDOR" ? (
+                        <div className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg bg-violet-50 ring-1 ring-violet-200">
+                          <p className="text-[11.5px] font-semibold text-violet-900 leading-relaxed">
+                            Operations thread — reply from the booking service line so the line moves
+                            to REQUESTED and the hold expiry is recorded.
+                          </p>
+                          {selected.bookingPublicId && (
+                            <Link
+                              to="/operations"
+                              className="inline-flex items-center gap-1 text-[11.5px] font-bold text-violet-800 underline flex-shrink-0"
+                            >
+                              Open booking <ExternalLink className="w-3 h-3" />
+                            </Link>
+                          )}
+                        </div>
+                      ) : (
+                        <Composer
+                          ctx={composerCtx}
+                          channel={selected.channel}
+                          thread={selected}
+                          onSent={onSent}
+                        />
+                      )
                     ) : (
                       <div className="space-y-2">
                         <textarea

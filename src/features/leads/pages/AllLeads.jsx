@@ -6,7 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { leadService } from "../api/leadService";
 import { leadAlertService } from "../api/leadAlertService";
 import { quotationService } from "@features/quotation";
-import { hasPermission, P } from "@shared/lib/access";
+import { hasPermission, hasModule, P } from "@shared/lib/access";
 import { useToast } from "@shared/ui/toast";
 import { getErrorMessage, isAlreadyReported } from "@shared/api/apiError";
 import AccessDenied from "../components/AccessDenied";
@@ -1625,6 +1625,11 @@ const Leads = () => {
   // opened to. Two fields rather than two states: clicking the email of a lead whose WhatsApp
   // drawer is already open must switch the tab, not stack a second panel.
   const [convo, setConvo] = useState(null);
+
+  /* Same pair the /communication route is guarded on. COMM_READ because opening the drawer reads a
+     conversation; the module because comms is a plan entitlement and the buttons should not exist
+     on a plan that excludes it. COMM_SEND is checked further in, by the composer itself. */
+  const canMessage = hasPermission(P.COMM_READ) && hasModule("COMMUNICATION");
   const [selectedIds, setSelectedIds] = useState([]);     // row checkbox selection
   const [denied, setDenied] = useState(false);
   const [importOpen, setImportOpen] = useState(false);    // bulk CSV/Excel import modal
@@ -2451,7 +2456,13 @@ const Leads = () => {
                         onViewLogs={setLogsViewLead}
                         onWeblinkStats={setWeblinkLead}
                         onWeblinkView={setWeblinkStyleLead}
-                        onWhatsApp={(lead, channel = 'WHATSAPP') => setConvo({ lead, channel })}
+                        /* Gated here, not inside the drawer: the drawer is a MODAL, so the Guard on
+                           /communication never runs for it. Without this a tenant whose plan
+                           excludes COMMUNICATION still gets WhatsApp and Email buttons on every
+                           row, and clicking one just produces a MODULE_NOT_ENABLED toast. */
+                        onWhatsApp={canMessage
+                          ? (lead, channel = 'WHATSAPP') => setConvo({ lead, channel })
+                          : undefined}
                         canEdit={hasPermission(P.LEAD_UPDATE)}
                         canDelete={hasPermission(P.LEAD_DELETE)}
                         canConvert={hasPermission(P.BOOKING_CREATE)}

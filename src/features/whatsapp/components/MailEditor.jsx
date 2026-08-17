@@ -60,14 +60,27 @@ export default function MailEditor({
       "https://",
     );
     if (!url || url === "https://") return;
+
+    // http/https/mailto only, and escaped before it goes near innerHTML. Without the scheme check a
+    // `javascript:` link is live in the sent mail; without the escaping a quote in the URL closes
+    // the href and the rest is markup the operator did not write.
+    const safe = url.trim();
+    if (!/^(https?:|mailto:)/i.test(safe)) {
+      // eslint-disable-next-line no-alert
+      window.alert("Links must start with http://, https:// or mailto:");
+      return;
+    }
+    const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
     ref.current?.focus();
     if (selected) {
-      document.execCommand("createLink", false, url);
+      document.execCommand("createLink", false, safe);
     } else {
       // Nothing selected — insert the URL as its own link rather than creating an
       // invisible empty anchor the operator cannot see or remove.
       document.execCommand("insertHTML", false,
-        `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`);
+        `<a href="${esc(safe)}" target="_blank" rel="noopener noreferrer">${esc(safe)}</a>`);
     }
     emit();
   };

@@ -18,6 +18,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, ChevronDown, Loader2, Search, Send } from "lucide-react";
 import { useToast } from "@shared/ui/toast";
 import { getErrorMessage, isAlreadyReported } from "@shared/api/apiError";
+import { hasPermission, P } from "@shared/lib/access";
 import conversationService from "../api/conversationService";
 import MailEditor from "./MailEditor";
 
@@ -154,6 +155,27 @@ export default function Composer({
   onSent,
   autoFocus = false,
 }) {
+  const { showToast } = useToast();
+
+  /* Replying is a separate authority from reading, and the split is load-bearing: the backend's
+     viewer role holds COMM_READ without COMM_SEND, so a composer that renders unconditionally hands
+     every viewer a Send button the server then 403s. The Mailbox has always done this correctly
+     (Mailbox.jsx: canSend); this component did not, and shipped the exact failure access.js warns
+     about. Rendering nothing at all — rather than a disabled box — because a composer a user can
+     never use is furniture. */
+  const canSend = hasPermission(P.COMM_SEND);
+  if (!canSend) {
+    return (
+      <p className="text-[11.5px] text-slate-400 font-medium leading-relaxed">
+        You can read this conversation but not reply to it. Ask an admin for the “Send messages”
+        permission.
+      </p>
+    );
+  }
+  return <ComposerBody {...{ ctx, channel, thread, target, onSent, autoFocus }} />;
+}
+
+function ComposerBody({ ctx, channel, thread, target, onSent, autoFocus }) {
   const { showToast } = useToast();
 
   const [templates, setTemplates] = useState([]);
