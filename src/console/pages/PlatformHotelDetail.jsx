@@ -11,16 +11,17 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
-  BedDouble, Building2, Check, Globe, MapPin, Pencil, Plus, Trash2, UtensilsCrossed, X as XIcon,
+  BedDouble, Building2, Check, MapPin, Pencil, Plus, Trash2, UtensilsCrossed, X as XIcon,
 } from "lucide-react";
 import {
   PageShell, HotelStyles, GlassCard, SectionCard, FormHeader,
   Input, Textarea, Label, Select, Button, Badge,
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogBody, DialogFooter,
-  LoadingState, EmptyState, StarRating, useToast, errMsg, cn,
+  LoadingState, EmptyState, StarRating, useToast, errMsg,
 } from "../components/hotelUi";
 import SuperAdminMfaActionModal from "../components/SuperAdminMfaActionModal";
+import { useStepUp } from "../components/useStepUp";
 import { platformHotelService, CATALOG_STATUS, MEAL_PLAN_CODES } from "../api/platformHotelService";
 import { CatalogStatusBadge } from "./PlatformHotels";
 
@@ -179,31 +180,30 @@ export default function PlatformHotelDetail() {
 function IdentitySection({ hotel, onSaved }) {
   const { showToast } = useToast();
   const [editing, setEditing] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [form, setForm] = useState(() => toForm(hotel));
+  const stepUp = useStepUp();
+  const saving = stepUp.busy;
 
   useEffect(() => { setForm(toForm(hotel)); }, [hotel]);
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
-  const save = async () => {
-    setSaving(true);
-    try {
+  const save = () => stepUp.request({
+    title: "Confirm hotel changes",
+    description: "This updates the platform catalogue entry. Every tenant's copy re-syncs from it.",
+    confirmLabel: "Save hotel",
+    run: async (mfaCode) => {
       // amenities are owned by the section below — carry them through untouched so this PUT
       // does not blank them.
       const updated = await platformHotelService.update(hotel.publicId, {
         ...toPayload(form),
         amenities: hotel.amenities ?? [],
-      });
+      }, mfaCode);
       onSaved(updated);
       setEditing(false);
       showToast("Hotel updated. Tenant copies will re-sync.", "success");
-    } catch (e) {
-      showToast(errMsg(e, "Could not save the hotel."), "error");
-    } finally {
-      setSaving(false);
-    }
-  };
+    },
+  });
 
   return (
     <SectionCard
@@ -273,6 +273,7 @@ function IdentitySection({ hotel, onSaved }) {
           )}
         </div>
       )}
+      {stepUp.dialog}
     </SectionCard>
   );
 }
@@ -282,20 +283,21 @@ function IdentitySection({ hotel, onSaved }) {
 ═════════════════════════════════════════════════════════════ */
 
 function AmenitiesSection({ hotel, onSaved }) {
-  const { showToast } = useToast();
   const [draft, setDraft] = useState("");
-  const [saving, setSaving] = useState(false);
+  const stepUp = useStepUp();
+  const saving = stepUp.busy;
 
-  const persist = async (next) => {
-    setSaving(true);
-    try {
-      onSaved(await platformHotelService.update(hotel.publicId, { ...toPayload(toForm(hotel)), amenities: next }));
-    } catch (e) {
-      showToast(errMsg(e, "Could not update amenities."), "error");
-    } finally {
-      setSaving(false);
-    }
-  };
+  /* An amenity edit is a PUT of the whole hotel, which is PLATFORM_HOTEL_UPDATE server-side — so
+     adding or removing one chip needs the same step-up code as renaming the property. */
+  const persist = (next, verb) => stepUp.request({
+    title: verb === "add" ? "Confirm amenity" : "Confirm amenity removal",
+    description: "Amenities are part of the catalogue entry, so this re-syncs to every tenant's copy.",
+    confirmLabel: verb === "add" ? "Add amenity" : "Remove amenity",
+    run: async (mfaCode) => {
+      onSaved(await platformHotelService.update(
+        hotel.publicId, { ...toPayload(toForm(hotel)), amenities: next }, mfaCode));
+    },
+  });
 
   const add = (e) => {
     e.preventDefault();
@@ -304,7 +306,7 @@ function AmenitiesSection({ hotel, onSaved }) {
     const current = hotel.amenities ?? [];
     if (current.some((a) => a.toLowerCase() === value.toLowerCase())) { setDraft(""); return; }
     setDraft("");
-    persist([...current, value]);
+    persist([...current, value], "add");
   };
 
   return (
@@ -319,7 +321,7 @@ function AmenitiesSection({ hotel, onSaved }) {
             <button
               type="button"
               disabled={saving}
-              onClick={() => persist((hotel.amenities ?? []).filter((x) => x !== a))}
+              onClick={() => persist((hotel.amenities ?? []).filter((x) => x !== a), "remove")}
               className="text-focus transition-colors hover:text-accent-hover disabled:opacity-50"
               aria-label={`Remove ${a}`}
             >
@@ -334,6 +336,7 @@ function AmenitiesSection({ hotel, onSaved }) {
           <Plus className="h-4 w-4" /> Add
         </Button>
       </form>
+      {stepUp.dialog}
     </SectionCard>
   );
 }
@@ -388,6 +391,7 @@ function RoomRates({ rates }) {
 function RoomsSection({ hotel, onChanged }) {
   const { showToast } = useToast();
   const [editing, setEditing] = useState(null);   // {mode:'add'|'edit', row}
+  const stepUp = useStepUp();
 
   const ratesByRoom = useMemo(() => {
     const m = new Map();
@@ -398,15 +402,16 @@ function RoomsSection({ hotel, onChanged }) {
     return m;
   }, [hotel.rates]);
 
-  const remove = async (room) => {
-    try {
-      await platformHotelService.deleteRoom(hotel.publicId, room.publicId);
+  const remove = (room) => stepUp.request({
+    title: "Remove room",
+    description: `This removes ${room.name} and its net rates from the catalogue. A hotel cannot be published without at least one active room.`,
+    confirmLabel: "Remove room",
+    run: async (mfaCode) => {
+      await platformHotelService.deleteRoom(hotel.publicId, room.publicId, mfaCode);
       showToast(`${room.name} removed.`, "success");
       onChanged();
-    } catch (e) {
-      showToast(errMsg(e, "Could not remove the room."), "error");
-    }
-  };
+    },
+  });
 
   return (
     <SectionCard
@@ -474,6 +479,7 @@ function RoomsSection({ hotel, onChanged }) {
           onSaved={() => { setEditing(null); onChanged(); }}
         />
       )}
+      {stepUp.dialog}
     </SectionCard>
   );
 }
@@ -490,13 +496,15 @@ function RoomDialog({ hotel, mode, initial, onClose, onSaved }) {
     description: initial.description ?? "",
     active: initial.active ?? true,
   }));
-  const [saving, setSaving] = useState(false);
+  const stepUp = useStepUp();
+  const saving = stepUp.busy;
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
-  const submit = async (e) => {
+  // Validate before asking for a code — a room with no name should fail on the form, not after the
+  // operator has typed six digits.
+  const submit = (e) => {
     e.preventDefault();
     if (!form.name.trim() || saving) return;
-    setSaving(true);
     const payload = {
       name: form.name.trim(),
       maxAdults: num(form.maxAdults),
@@ -507,16 +515,17 @@ function RoomDialog({ hotel, mode, initial, onClose, onSaved }) {
       description: form.description.trim() || null,
       active: form.active,
     };
-    try {
-      if (mode === "add") await platformHotelService.addRoom(hotel.publicId, payload);
-      else await platformHotelService.updateRoom(hotel.publicId, initial.publicId, payload);
-      showToast(mode === "add" ? "Room added." : "Room updated.", "success");
-      onSaved();
-    } catch (err) {
-      showToast(errMsg(err, "Could not save the room."), "error");
-    } finally {
-      setSaving(false);
-    }
+    stepUp.request({
+      title: mode === "add" ? "Confirm new room" : "Confirm room changes",
+      description: "Rooms are part of the catalogue entry, so this re-syncs to every tenant's copy.",
+      confirmLabel: mode === "add" ? "Add room" : "Save room",
+      run: async (mfaCode) => {
+        if (mode === "add") await platformHotelService.addRoom(hotel.publicId, payload, mfaCode);
+        else await platformHotelService.updateRoom(hotel.publicId, initial.publicId, payload, mfaCode);
+        showToast(mode === "add" ? "Room added." : "Room updated.", "success");
+        onSaved();
+      },
+    });
   };
 
   return (
@@ -550,6 +559,7 @@ function RoomDialog({ hotel, mode, initial, onClose, onSaved }) {
           </DialogFooter>
         </form>
       </DialogContent>
+      {stepUp.dialog}
     </Dialog>
   );
 }
@@ -561,16 +571,18 @@ function RoomDialog({ hotel, mode, initial, onClose, onSaved }) {
 function MealPlansSection({ hotel, onChanged }) {
   const { showToast } = useToast();
   const [editing, setEditing] = useState(null);
+  const stepUp = useStepUp();
 
-  const remove = async (plan) => {
-    try {
-      await platformHotelService.deleteMealPlan(hotel.publicId, plan.publicId);
+  const remove = (plan) => stepUp.request({
+    title: "Remove meal plan",
+    description: `This removes ${plan.code} from the catalogue. Rates that name this plan become uninterpretable, so check them after.`,
+    confirmLabel: "Remove plan",
+    run: async (mfaCode) => {
+      await platformHotelService.deleteMealPlan(hotel.publicId, plan.publicId, mfaCode);
       showToast(`${plan.code} removed.`, "success");
       onChanged();
-    } catch (e) {
-      showToast(errMsg(e, "Could not remove the meal plan."), "error");
-    }
-  };
+    },
+  });
 
   return (
     <SectionCard
@@ -625,6 +637,7 @@ function MealPlansSection({ hotel, onChanged }) {
           onSaved={() => { setEditing(null); onChanged(); }}
         />
       )}
+      {stepUp.dialog}
     </SectionCard>
   );
 }
@@ -637,13 +650,13 @@ function MealPlanDialog({ hotel, mode, initial, onClose, onSaved }) {
     description: initial.description ?? "",
     active: initial.active ?? true,
   }));
-  const [saving, setSaving] = useState(false);
+  const stepUp = useStepUp();
+  const saving = stepUp.busy;
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
-  const submit = async (e) => {
+  const submit = (e) => {
     e.preventDefault();
     if (saving) return;
-    setSaving(true);
     const payload = {
       code: form.code,
       // Blank is allowed: the backend falls back to the code's own label, so a plan never renders
@@ -652,16 +665,17 @@ function MealPlanDialog({ hotel, mode, initial, onClose, onSaved }) {
       description: form.description.trim() || null,
       active: form.active,
     };
-    try {
-      if (mode === "add") await platformHotelService.addMealPlan(hotel.publicId, payload);
-      else await platformHotelService.updateMealPlan(hotel.publicId, initial.publicId, payload);
-      showToast(mode === "add" ? "Meal plan added." : "Meal plan updated.", "success");
-      onSaved();
-    } catch (err) {
-      showToast(errMsg(err, "Could not save the meal plan."), "error");
-    } finally {
-      setSaving(false);
-    }
+    stepUp.request({
+      title: mode === "add" ? "Confirm new meal plan" : "Confirm meal plan changes",
+      description: "Meal plans are part of the catalogue entry, so this re-syncs to every tenant's copy.",
+      confirmLabel: mode === "add" ? "Add plan" : "Save plan",
+      run: async (mfaCode) => {
+        if (mode === "add") await platformHotelService.addMealPlan(hotel.publicId, payload, mfaCode);
+        else await platformHotelService.updateMealPlan(hotel.publicId, initial.publicId, payload, mfaCode);
+        showToast(mode === "add" ? "Meal plan added." : "Meal plan updated.", "success");
+        onSaved();
+      },
+    });
   };
 
   return (
@@ -693,6 +707,7 @@ function MealPlanDialog({ hotel, mode, initial, onClose, onSaved }) {
           </DialogFooter>
         </form>
       </DialogContent>
+      {stepUp.dialog}
     </Dialog>
   );
 }

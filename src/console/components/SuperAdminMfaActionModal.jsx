@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { AlertTriangle, Loader2, ShieldCheck } from "lucide-react";
+import { isLocalSuperAdminMfaDisabled } from "../lib/consoleEnvironment";
 
 const inputCls =
   "w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-heading " +
@@ -10,16 +11,18 @@ export default function SuperAdminMfaActionModal({
   description,
   confirmLabel = "Confirm",
   saving = false,
+  progress = null,
   error = "",
   onClose,
   onConfirm,
 }) {
   const [code, setCode] = useState("");
+  const mfaDisabled = isLocalSuperAdminMfaDisabled();
 
   const submit = (e) => {
     e.preventDefault();
-    if (!/^\d{6}$/.test(code)) return;
-    onConfirm(code);
+    if (!mfaDisabled && !/^\d{6}$/.test(code)) return;
+    onConfirm(mfaDisabled ? "" : code);
   };
 
   return (
@@ -33,29 +36,49 @@ export default function SuperAdminMfaActionModal({
           <ShieldCheck size={16} className="text-accent" />
           <h3 className="text-sm font-bold text-heading">{title}</h3>
         </div>
-        {description && <p className="mt-1 text-xs text-muted">{description}</p>}
-        <div className="mt-4">
-          <label htmlFor="superadmin-stepup-code" className="mb-1 block text-xs font-semibold text-body">
-            Authenticator code
-          </label>
-          <input
-            id="superadmin-stepup-code"
-            type="text"
-            inputMode="numeric"
-            autoComplete="one-time-code"
-            autoFocus
-            value={code}
-            onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-            className={inputCls}
-            placeholder="000000"
-            required
-          />
-        </div>
+        <p className="mt-1 text-xs text-muted">
+          {mfaDisabled ? "MFA is disabled for local development. Confirm to continue." : description}
+        </p>
+        {mfaDisabled ? (
+          <p className="mt-4 rounded-lg bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-700 ring-1 ring-amber-500/20">
+            Local development bypass active
+          </p>
+        ) : (
+          <div className="mt-4">
+            <label htmlFor="superadmin-stepup-code" className="mb-1 block text-xs font-semibold text-body">
+              Authenticator code
+            </label>
+            <input
+              id="superadmin-stepup-code"
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              autoFocus
+              value={code}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              className={inputCls}
+              placeholder="000000"
+              required
+            />
+          </div>
+        )}
         {error && (
           <p className="mt-3 flex items-start gap-1.5 rounded-lg bg-red-500/10 px-3 py-2 text-[11px] text-red-700 ring-1 ring-red-500/20">
             <AlertTriangle size={13} className="mt-px shrink-0" />
             {error}
           </p>
+        )}
+        {saving && Number.isFinite(progress) && (
+          <div className="mt-3" aria-live="polite">
+            <div className="mb-1 flex items-center justify-between text-[11px] font-semibold text-muted">
+              <span>Uploading voucher</span>
+              <span>{progress}%</span>
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-surface-hover" role="progressbar"
+              aria-label="Voucher upload progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}>
+              <div className="h-full rounded-full bg-accent transition-[width]" style={{ width: `${progress}%` }} />
+            </div>
+          </div>
         )}
         <div className="mt-5 flex justify-end gap-3">
           <button
@@ -68,7 +91,7 @@ export default function SuperAdminMfaActionModal({
           </button>
           <button
             type="submit"
-            disabled={saving || code.length !== 6}
+            disabled={saving || (!mfaDisabled && code.length !== 6)}
             className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-60"
           >
             {saving && <Loader2 size={15} className="animate-spin" />}

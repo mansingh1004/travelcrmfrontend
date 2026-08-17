@@ -3,10 +3,8 @@
 // The SuperAdmin queue for tenant hotel booking requests. Platform realm: ConsoleAPI carries
 // `sa_token`, so a 401 bounces to the CONSOLE login and never the tenant one.
 //
-// Step-up MFA is required by exactly the three calls that move money: approve commits the platform
-// to a supplier and puts a payable on a tenant's books, reject kills a request a tenant may have
-// already quoted to their customer, and cancel decides what that tenant is refunded. Requesting a
-// revision and the voucher calls carry no code — see the notes on each.
+// Step-up MFA is required for irreversible financial decisions and voucher publication. Price
+// revisions and cancellation quotes are proposals, so those calls intentionally carry no code.
 
 import ConsoleAPI, { unwrap } from "./consoleHttp";
 import { SUPERADMIN_MFA_HEADER } from "./userService";
@@ -37,8 +35,13 @@ export const marketplaceBookingService = {
    *
    * @returns {Promise<{items: Array, pagination: Object|null}>} rows live in `data`, NOT `content`.
    */
-  list: async ({ page = 0, size = 25, status, tenantId } = {}) => {
-    const res = await ConsoleAPI.get(BASE, { params: clean({ page, size, status, tenantId }) });
+  /**
+   * `status` is the booking's lifecycle; `paymentStatus` is settlement, and they are independent — a
+   * CONFIRMED booking can be unpaid and a CANCELLED one can still owe. The credit screen filters on
+   * the second to ask "which of this tenant's bookings still owe" without pulling their whole history.
+   */
+  list: async ({ page = 0, size = 25, status, paymentStatus, tenantId } = {}) => {
+    const res = await ConsoleAPI.get(BASE, { params: clean({ page, size, status, paymentStatus, tenantId }) });
     const rows = res?.data?.data;
     return {
       items: Array.isArray(rows) ? rows : [],
@@ -89,6 +92,10 @@ export const marketplaceBookingService = {
   requestRevision: async (publicId, payload) =>
     unwrap(await ConsoleAPI.post(`${BASE}/${publicId}/request-revision`, payload)),
 
+  /** Normal cancellation path: propose the supplier charge and wait for tenant consent. */
+  quoteCancellation: async (publicId, payload) =>
+    unwrap(await ConsoleAPI.post(`${BASE}/${publicId}/quote-cancellation`, payload)),
+
   /**
    * Settle a cancellation. MFA — this is the call that decides the tenant's refund.
    *
@@ -99,14 +106,31 @@ export const marketplaceBookingService = {
     unwrap(await ConsoleAPI.post(`${BASE}/${publicId}/cancel`, payload, stepUpHeaders(mfaCode))),
 
   // ── Voucher: a second axis, not a booking state (MarketplaceVoucherAdminController) ──────
-  // No MFA on either: issuing or withdrawing a document moves no money and no booking state.
+  issueVoucher: async (publicId, mfaCode) =>
+    unwrap(await ConsoleAPI.post(`${BASE}/${publicId}/voucher/issue`, null, stepUpHeaders(mfaCode))),
 
-  issueVoucher: async (publicId) =>
-    unwrap(await ConsoleAPI.post(`${BASE}/${publicId}/voucher/issue`)),
+  /**
+   * Attach the hotel-supplied PDF/image. Uploading also issues the voucher server-side.
+   *
+   * No Content-Type override here, deliberately. ConsoleAPI does set a default
+   * `Content-Type: application/json`, but axios clears it for a FormData body in a browser
+   * environment (`transformRequest` → `headers.setContentType(undefined)`) so the browser can supply
+   * `multipart/form-data` with a correct boundary. Setting it by hand is at best redundant and at
+   * worst omits the boundary.
+   */
+  uploadVoucher: async (publicId, file, mfaCode, onUploadProgress) => {
+    const body = new FormData();
+    body.append("file", file);
+    return unwrap(await ConsoleAPI.post(`${BASE}/${publicId}/voucher/upload`, body, {
+      ...stepUpHeaders(mfaCode),
+      onUploadProgress,
+    }));
+  },
 
   /** `reason` is a QUERY param here too. */
-  revokeVoucher: async (publicId, reason) =>
+  revokeVoucher: async (publicId, reason, mfaCode) =>
     unwrap(await ConsoleAPI.post(`${BASE}/${publicId}/voucher/revoke`, null, {
+      ...stepUpHeaders(mfaCode),
       params: clean({ reason }),
     })),
 

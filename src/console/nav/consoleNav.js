@@ -28,17 +28,19 @@ import {
   ScrollText,
   Settings2,
   Mail,
+  ServerCog,
   ToggleLeft,
   UserCog,
   Users,
   Wallet,
   Wrench,
 } from "lucide-react";
+import { getConsoleIdentity } from "../lib/consoleAuth";
 
 export const CONSOLE_NAV_NAMESPACE = "console";
 
-/** Seeds a fresh operator's pinned rail with the two queues that actually wait on them. */
-export const CONSOLE_DEFAULT_PINS = ["console.tenants", "console.upgrades"];
+/** Pins are operator choices; the five daily destinations below make a fresh rail useful already. */
+export const CONSOLE_DEFAULT_PINS = [];
 
 export const CONSOLE_NAV_SECTIONS = [
   {
@@ -47,7 +49,7 @@ export const CONSOLE_NAV_SECTIONS = [
     items: [
       {
         id: "console.home",
-        primary: true,
+        primary: 1,
         label: "Dashboard",
         path: "/console",
         Icon: LayoutDashboard,
@@ -60,19 +62,31 @@ export const CONSOLE_NAV_SECTIONS = [
   },
   {
     id: "customers",
-    label: "Customers & Billing",
+    label: "Business",
     items: [
       {
+        id: "console.customersBilling",
+        label: "Customers & Billing",
+        Icon: Building2,
+        keywords: "tenants subscriptions upgrades usage billing quotas",
+        children: [
+      {
         id: "console.tenants",
-        primary: true,
+        primary: 2,
         label: "Tenants",
         path: "/console/tenants",
         Icon: Building2,
         keywords: "organizations agencies accounts",
       },
       {
+        id: "console.billing",
+        label: "Billing & Collections",
+        path: "/console/billing",
+        Icon: Wallet,
+        keywords: "invoices revenue collections outstanding overdue payments finance",
+      },
+      {
         id: "console.plans",
-        primary: true,
         label: "Subscriptions",
         path: "/console/plans",
         Icon: CreditCard,
@@ -80,7 +94,7 @@ export const CONSOLE_NAV_SECTIONS = [
       },
       {
         id: "console.upgrades",
-        primary: true,
+        primary: 3,
         label: "Subscription & Add-ons",
         path: "/console/upgrade-requests",
         Icon: ArrowUpCircle,
@@ -89,18 +103,26 @@ export const CONSOLE_NAV_SECTIONS = [
       },
       {
         id: "console.usage",
-        primary: true,
+        primary: 5,
         label: "Usage & Quotas",
         path: "/console/usage",
         Icon: Gauge,
         keywords: "limits storage metering overage",
       },
+        ],
+      },
     ],
   },
   {
     id: "marketplace",
-    label: "Hotel Marketplace",
+    label: "Marketplace",
     items: [
+      {
+        id: "console.hotelMarketplace",
+        label: "Hotel Marketplace",
+        Icon: BedDouble,
+        keywords: "hotels marketplace supply bookings partners pricing credit commissions",
+        children: [
       {
         id: "console.hotelCatalog",
         label: "Hotel Catalog",
@@ -130,6 +152,7 @@ export const CONSOLE_NAV_SECTIONS = [
       },
       {
         id: "console.hotelRequests",
+        primary: 4,
         label: "Hotel Requests",
         path: "/console/hotel-requests",
         Icon: ClipboardCheck,
@@ -172,15 +195,22 @@ export const CONSOLE_NAV_SECTIONS = [
         // No badge: the earning ledger is a report, not a queue.
         keywords: "commission ledger revenue",
       },
+        ],
+      },
     ],
   },
   {
     id: "access",
-    label: "Access",
+    label: "Security",
     items: [
       {
+        id: "console.access",
+        label: "Access",
+        Icon: Users,
+        keywords: "users superadmins operators security access",
+        children: [
+      {
         id: "console.users",
-        primary: true,
         label: "Users",
         path: "/console/users",
         Icon: Users,
@@ -192,13 +222,22 @@ export const CONSOLE_NAV_SECTIONS = [
         path: "/console/superadmins",
         Icon: UserCog,
         keywords: "operators mfa invite",
+        can: () => getConsoleIdentity().role === "SUPER_ADMIN",
+      },
+        ],
       },
     ],
   },
   {
     id: "platform",
-    label: "Platform",
+    label: "Administration",
     items: [
+      {
+        id: "console.platform",
+        label: "Platform",
+        Icon: Settings2,
+        keywords: "configuration flags email audit announcements operations",
+        children: [
       {
         id: "console.flags",
         label: "Feature Flags",
@@ -221,6 +260,13 @@ export const CONSOLE_NAV_SECTIONS = [
         keywords: "smtp mailbox inbox sent invites sender",
       },
       {
+        id: "console.platform-health",
+        label: "Platform Health",
+        path: "/console/platform-health",
+        Icon: ServerCog,
+        keywords: "health jobs scheduler failures database mail notifications backlog operations",
+      },
+      {
         id: "console.audit",
         label: "Audit Log",
         path: "/console/audit",
@@ -234,19 +280,21 @@ export const CONSOLE_NAV_SECTIONS = [
         Icon: Megaphone,
         keywords: "broadcast notice banner",
       },
-      {
+      ...(import.meta.env.DEV ? [{
         id: "console.palette",
         label: "Design Tokens",
         path: "/console/palette",
         Icon: PaletteIcon,
         keywords: "theme colours palette",
-      },
+      }] : []),
       {
         id: "console.ops",
         label: "Ops / Danger",
         path: "/console/ops",
         Icon: Wrench,
         keywords: "export purge hard delete danger zone",
+      },
+        ],
       },
     ],
   },
