@@ -76,19 +76,23 @@ export function initials(name) {
 }
 
 /**
- * mm:ss, and +mm:ss counting UP once the target has passed.
- *
- * Not "BREACH": how far past the target you are is actionable ("+0:12" is a different situation from
- * "+18:42"), whereas a shouted label is a scold that tells the operator nothing they can use. It also
- * kept every overdue lead looking identical, which is the opposite of a triage aid.
+ * Compact SLA time: minutes through 60 minutes, then hours (plus remaining whole minutes).
+ * A leading + still means the target has passed, so overdue leads remain easy to distinguish.
  */
 export function formatCountdown(seconds) {
   if (seconds == null) return null;
-  const late = seconds <= 0;
   const abs = Math.abs(Math.round(seconds));
-  const m = Math.floor(abs / 60);
-  const s = abs % 60;
-  return `${late ? "+" : ""}${m}:${s < 10 ? "0" : ""}${s}`;
+  if (abs === 0) return "0 min";
+
+  const prefix = seconds < 0 ? "+" : "";
+  if (abs < 60) return `${prefix}<1 min`;
+
+  const minutes = Math.floor(abs / 60);
+  if (abs <= 60 * 60) return `${prefix}${minutes} min`;
+
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return `${prefix}${hours} hr${remainingMinutes ? ` ${remainingMinutes} min` : ""}`;
 }
 
 /** Human first-response time for the stat tile and the locked rows. */

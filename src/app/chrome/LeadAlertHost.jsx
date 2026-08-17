@@ -19,7 +19,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { X } from "lucide-react";
-import { useLeadAlerts, leadAlertService, claimFailure } from "@features/leads";
+import { useLeadAlerts, leadAlertService, claimFailure, formatCountdown } from "@features/leads";
 import { toast } from "@shared/ui/toast";
 
 /** How long a broadcast stays on screen. Longer than a toast: this one has to be READ and decided. */
@@ -79,13 +79,6 @@ const money = (v) => {
   if (v == null || v === "") return null;
   const n = Number(v);
   return Number.isNaN(n) ? null : `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
-};
-
-const countdown = (seconds) => {
-  if (seconds == null) return null;
-  const late = seconds <= 0;
-  const abs = Math.abs(Math.round(seconds));
-  return `${late ? "+" : ""}${Math.floor(abs / 60)}:${String(abs % 60).padStart(2, "0")}`;
 };
 
 /**
@@ -413,7 +406,7 @@ export default function LeadAlertHost() {
                     left <= 0 ? "text-red-600" : "text-slate-500"
                   }`}
                 >
-                  {countdown(left)}
+                  {formatCountdown(left)}
                 </span>
               ) : null}
             </div>
