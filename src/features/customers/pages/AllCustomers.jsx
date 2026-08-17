@@ -881,7 +881,11 @@ import { useState, useMemo, useEffect, useCallback } from "react";
 import customerService from "../api/customerService";
 import { usePagedList } from "@shared/api/usePagedList";
 import { Users as FaUsers, UserCheck as FaUserCheck, Crown as FaCrown, IndianRupee as FaRupeeSign, Plane as FaPlane, RotateCw as FaRedoAlt, SquarePen as FaEdit, Trash2 as FaTrash, Eye as FaEye, Search as FaSearch, Download as FaDownload, UserPlus as FaUserPlus, ArrowUpDown as FaSort, ChevronUp as FaSortUp, ChevronDown as FaSortDown, Filter as FaFilter, ChevronUp as FaChevronUp, ChevronDown as FaChevronDown, Smartphone as FaMobileAlt, ChevronLeft as FaChevronLeft, ChevronRight as FaChevronRight, ChevronsLeft as FaAngleDoubleLeft, ChevronsRight as FaAngleDoubleRight } from "lucide-react";
+import { Mail as FaEnvelope } from "lucide-react";
 import { WhatsAppIcon as FaWhatsapp } from "@shared/ui/WhatsAppIcon";
+// The conversation drawer, through the whatsapp feature's barrel. Same component the leads list
+// uses, so a message to a customer looks and behaves the same wherever it is written.
+import { ConversationDrawer } from "@features/whatsapp";
 import { GridStyles, GridHead, GridRow, Cell, Avatar, GridSkeleton, GridEmpty } from "@shared/ui/gridTable";
 import { useToast } from "@shared/ui/toast";
 import { hasPermission, P } from "@shared/lib/access";
@@ -1043,6 +1047,11 @@ export default function Customers() {
   const [filtersOpen, setFiltersOpen] = useState(false);   // collapsed by default, like All Bookings
 
   const [deleteTarget, setDelTarget] = useState(null);
+
+  // { customer, channel } — which customer the conversation drawer is open on and which tab it
+  // opened to. One state, not two: clicking Email on a customer whose WhatsApp drawer is already
+  // open must switch the tab rather than stack a second panel.
+  const [convo, setConvo] = useState(null);
 
   const [customerStatsOpen, setCustomerStatsOpen] = useState(false);
 
@@ -1472,7 +1481,11 @@ export default function Customers() {
                             /CustomerDetails/:id with no entry point from its own list. */}
                         <button onClick={() => handleNavigateView(c.id)} title="View profile" className="w-8 h-8 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 flex items-center justify-center transition-all text-sm"><FaEye/></button>
                         {canEditCustomer && <button onClick={() => handleNavigateEdit(c.id)} title="Edit" className="w-8 h-8 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-600 flex items-center justify-center transition-all text-sm"><FaEdit/></button>}
-                        <a href={`https://wa.me/${(c.phone || "").replace(/\D/g, "")}`} target="_blank" rel="noreferrer" title="WhatsApp" className="w-8 h-8 rounded-lg bg-green-50 hover:bg-green-100 text-green-600 flex items-center justify-center transition-all text-sm"><FaWhatsapp/></a>
+                        {/* Opens the conversation drawer, not wa.me. A deep link hands the message to
+                            the operator's phone and the CRM never learns the customer was contacted —
+                            the drawer still offers that as one of its send modes, and records it. */}
+                        <button onClick={() => setConvo({ customer: c, channel: "WHATSAPP" })} title="WhatsApp" className="w-8 h-8 rounded-lg bg-green-50 hover:bg-green-100 text-green-600 flex items-center justify-center transition-all text-sm"><FaWhatsapp/></button>
+                        {c.email && <button onClick={() => setConvo({ customer: c, channel: "EMAIL" })} title={`Email ${c.email}`} className="w-8 h-8 rounded-lg bg-sky-50 hover:bg-sky-100 text-sky-600 flex items-center justify-center transition-all text-sm"><FaEnvelope/></button>}
                         {canDeleteCustomer && <button onClick={() => setDelTarget(c)} title="Delete" className="w-8 h-8 rounded-lg bg-red-50 hover:bg-red-100 text-red-400 hover:text-red-600 flex items-center justify-center transition-all text-sm"><FaTrash/></button>}
                       </div>
                     </Cell>
@@ -1625,6 +1638,17 @@ export default function Customers() {
           )}
         </div>
       </div>
+
+      {convo && (
+        /* Keyed on the customer so switching records remounts it: the thread, the templates and a
+           half-typed message all belong to one contact and must not survive the change. */
+        <ConversationDrawer
+          key={convo.customer.publicId || convo.customer.id}
+          customer={convo.customer}
+          initialChannel={convo.channel}
+          onClose={() => setConvo(null)}
+        />
+      )}
     </div>
   );
 }

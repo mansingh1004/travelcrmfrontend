@@ -71,6 +71,19 @@ export const P = {
   // agency's own inbox is the same authority as reading its conversations, so it deliberately
   // does NOT get a permission of its own.
   COMM_READ: "COMM_READ",
+  // Replying is a separate authority from reading, and the split is load-bearing: the backend's
+  // viewer role deliberately holds READ without SEND, so reusing COMM_READ on a composer would hand
+  // every viewer a send button the server then 403s.
+  COMM_SEND: "COMM_SEND",
+  // Triage: assign, snooze, close. A supervisor act — the backend gives it to MANAGER and
+  // withholds it from TRAVEL_AGENT, whose job is answering conversations rather than deciding
+  // whose they are.
+  COMM_ASSIGN: "COMM_ASSIGN",
+  // NOT in any role's defaults, on purpose — the backend grants templates, private notes, recordings
+  // and workflow config PER USER, TENANT_ADMIN included (Permission.java). A tenant admin still sees
+  // this screen because hasPermission() short-circuits for that role, but the save will 403 until the
+  // key is granted under Users → permissions. That is the backend's rule, not a bug here.
+  COMM_TEMPLATE_MANAGE: "COMM_TEMPLATE_MANAGE",
   TRASH_VIEW: "TRASH_VIEW", TRASH_RESTORE: "TRASH_RESTORE", TRASH_DELETE: "TRASH_DELETE",
   FLEET_READ: "FLEET_READ", FLEET_CREATE: "FLEET_CREATE", FLEET_UPDATE: "FLEET_UPDATE", FLEET_DELETE: "FLEET_DELETE",
   // Fleet MONEY is a separate authority from fleet operations: a dispatcher records forty cost rows

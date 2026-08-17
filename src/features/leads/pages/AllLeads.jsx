@@ -16,7 +16,10 @@ import { AddLogModal, LogsModal } from "../components/LeadLogModals";
 import { formatToWhatsAppLink } from "../lib/whatsapp";
 import PdfDownloadLoader from '@/shared/ui/PdfDownloadLoader';
 import { usePdfDownload } from '@shared/hooks/usePdfDownload';
-import WhatsAppPanel from "./WhatsAppPanel";
+// The record-side conversation drawer, from the whatsapp feature's barrel. It talks to the
+// Communication Center, so what it shows is the same thread the /WhatsApp inbox shows —
+// unlike the old local WhatsAppPanel, whose "chat" was session state around a wa.me link.
+import { ConversationDrawer } from "@features/whatsapp";
 import {
   Users, Trophy, TrendingUp, Search,
   DownloadCloud, FileText, Plus, Upload,
@@ -906,11 +909,17 @@ function LeadRow({
             </div>
             <PhoneLink phone={lead.phone} iconSize={10}
               className="text-[11px] text-slate-500 max-w-full"
-              onWhatsApp={onWhatsApp ? () => onWhatsApp(lead) : undefined} />
+              onWhatsApp={onWhatsApp ? () => onWhatsApp(lead, 'WHATSAPP') : undefined} />
             {lead.email && (
-              <p className="text-[11px] text-slate-400 truncate max-w-full inline-flex items-center gap-1" title={lead.email}>
+              /* The address opens the same drawer on its Email tab. A mailto: here would
+                 hand the conversation to a desktop client and the CRM would never learn
+                 that the lead was contacted — the whole reason the drawer exists. */
+              <button type="button"
+                onClick={(e) => { e.stopPropagation(); onWhatsApp?.(lead, 'EMAIL'); }}
+                title={`Email ${lead.email}`}
+                className="text-[11px] text-slate-400 hover:text-blue-600 truncate max-w-full inline-flex items-center gap-1 transition-colors">
                 <Mail size={10} className="flex-shrink-0" /> <span className="truncate">{lead.email}</span>
-              </p>
+              </button>
             )}
           </div>
         </div>
@@ -1612,7 +1621,10 @@ const Leads = () => {
   const [logsViewLead, setLogsViewLead] = useState(null);
   const [weblinkLead, setWeblinkLead] = useState(null);   // lead whose weblink analytics are open
   const [weblinkStyleLead, setWeblinkStyleLead] = useState(null);   // lead whose weblink design is being picked
-  const [waLead, setWaLead] = useState(null);             // WhatsApp panel
+  // { lead, channel } — which record the conversation drawer is open on, and which tab it
+  // opened to. Two fields rather than two states: clicking the email of a lead whose WhatsApp
+  // drawer is already open must switch the tab, not stack a second panel.
+  const [convo, setConvo] = useState(null);
   const [selectedIds, setSelectedIds] = useState([]);     // row checkbox selection
   const [denied, setDenied] = useState(false);
   const [importOpen, setImportOpen] = useState(false);    // bulk CSV/Excel import modal
@@ -2061,7 +2073,16 @@ const Leads = () => {
         onImported={() => { fetchLeads(); fetchStats(); }}
       />
 
-      {waLead && <WhatsAppPanel lead={waLead} onClose={() => setWaLead(null)} />}
+      {convo && (
+        /* Keyed on the lead so switching records remounts the drawer: its thread, templates
+           and half-typed message all belong to one contact and must not survive the change. */
+        <ConversationDrawer
+          key={convo.lead.publicId || convo.lead.id}
+          lead={convo.lead}
+          initialChannel={convo.channel}
+          onClose={() => setConvo(null)}
+        />
+      )}
       {viewLead && <ViewLeadModal lead={viewLead} onClose={() => setViewLead(null)} onEdit={l => { setViewLead(null); handleEditNavigate(l); }} canEdit={hasPermission(P.LEAD_UPDATE)} />}
       {deleteTarget && <DeleteConfirm lead={deleteTarget} onClose={() => setDeleteTarget(null)} onConfirm={handleDelete} />}
       {/* No onToast prop: every modal reaches the shared toast store directly. */}
@@ -2430,7 +2451,7 @@ const Leads = () => {
                         onViewLogs={setLogsViewLead}
                         onWeblinkStats={setWeblinkLead}
                         onWeblinkView={setWeblinkStyleLead}
-                        onWhatsApp={setWaLead}
+                        onWhatsApp={(lead, channel = 'WHATSAPP') => setConvo({ lead, channel })}
                         canEdit={hasPermission(P.LEAD_UPDATE)}
                         canDelete={hasPermission(P.LEAD_DELETE)}
                         canConvert={hasPermission(P.BOOKING_CREATE)}
