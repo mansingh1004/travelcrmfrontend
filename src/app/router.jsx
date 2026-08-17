@@ -199,6 +199,19 @@ const MarketplaceBookingRequest = lazyPage(marketplace, "MarketplaceBookingReque
 const MarketplaceBookings = lazyPage(marketplace, "MarketplaceBookings");
 const MarketplaceBookingDetail = lazyPage(marketplace, "MarketplaceBookingDetail");
 
+// ── Hotel Management module (self-contained feature; restored) ──
+const hotels = () => import("@features/hotels");
+const HotelDashboard = lazyPage(hotels, "HotelDashboard");
+const HotelList = lazyPage(hotels, "HotelList");
+const HotelDetails = lazyPage(hotels, "HotelDetails");
+const HotelRoomTypes = lazyPage(hotels, "RoomTypes");
+const HotelInventory = lazyPage(hotels, "InventoryCalendar");
+const HotelBookings = lazyPage(hotels, "HotelBookings");
+const HotelPricing = lazyPage(hotels, "HotelPricing");
+const HotelAmenities = lazyPage(hotels, "HotelAmenities");
+const HotelHousekeeping = lazyPage(hotels, "Housekeeping");
+const HotelReports = lazyPage(hotels, "HotelReports");
+
 
 // Route-level guard (defense-in-depth; backend is the real gate, menus already hide these).
 function Guard({ allow, children }) {
@@ -516,6 +529,21 @@ const AppRouter = () => {
               so it gates on BOOK, not VIEW. More specific path, so route ranking picks it over
               ":publicId" regardless of declaration order. */}
               <Route path="marketplace/:publicId/request" element={<Guard allow={hasPermission(P.HOTEL_MARKETPLACE_BOOK)}><MarketplaceBookingRequest /></Guard>} />
+
+              {/* ── Hotel Management module (self-contained; open to logged-in staff) ──
+              Ungated on purpose: the feature runs on its own mocked service and has no backend
+              endpoints behind it, so there is no permission or module key that describes it. */}
+              <Route path="hotels" element={<HotelList />} />
+              <Route path="hotels/dashboard" element={<HotelDashboard />} />
+              <Route path="hotels/room-types" element={<HotelRoomTypes />} />
+              <Route path="hotels/inventory" element={<HotelInventory />} />
+              <Route path="hotels/bookings" element={<HotelBookings />} />
+              <Route path="hotels/pricing" element={<HotelPricing />} />
+              <Route path="hotels/amenities" element={<HotelAmenities />} />
+              <Route path="hotels/housekeeping" element={<HotelHousekeeping />} />
+              <Route path="hotels/reports" element={<HotelReports />} />
+              {/* Last for readability; route ranking prefers the static segments above regardless. */}
+              <Route path="hotels/:id" element={<HotelDetails />} />
 
               {/* ── Sub-Agents (B2B franchise) — TENANT_ADMIN only ── */}
               <Route path="subagents" element={<Guard allow={isTenantAdmin()}><SubAgents /></Guard>} />
