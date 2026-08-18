@@ -27,7 +27,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Link } from "react-router-dom";
 import {
-  AlertTriangle, CheckCircle2, ChevronDown, Clock, ExternalLink, Inbox, Loader2, Mail,
+  AlertTriangle, CheckCircle2, ChevronDown, ChevronLeft, Clock, ExternalLink, Inbox, Loader2, Mail,
   MessageSquare, RefreshCw, RotateCcw, Search, StickyNote, UserMinus, UserPlus,
 } from "lucide-react";
 import { useToast } from "@shared/ui/toast";
@@ -380,43 +380,64 @@ export default function CommunicationInbox({ channel: fixedChannel = null, kind:
   /* ── render ────────────────────────────────────────────────────────────── */
 
   return (
-    <div style={FONT} className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-100">
-      <div className="px-4 sm:px-6 lg:px-8 py-5">
-        <header className="mb-3">
-          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">Communication Center</p>
-          <h1 className="text-xl font-extrabold text-slate-800">Conversations</h1>
-        </header>
+    /* FULL HEIGHT, ONE GUTTER.
+       Layout's <main> is already `flex-1 overflow-y-auto p-4`, so this page adding its own
+       px-4 sm:px-6 lg:px-8 py-5 meant every edge was padded twice — and the panes were then capped
+       at a magic max-h-[calc(100vh-210px)], which left dead space below them on a tall screen and
+       cut them off on a short one. So: h-full and a flex column, no padding of its own, and the
+       panes take the remaining height with flex-1 + min-h-0 (without min-h-0 a flex child refuses
+       to shrink below its content and the inner scrollers never engage). An inbox is a workspace,
+       not an article — it should reach the edges of what it is given. */
+    <div style={FONT} className="h-full min-h-0 flex flex-col gap-2">
+      {/* One header row: title on the left, the queue's own numbers on the right. The tiles were a
+          four-card grid eating ~90px of vertical space above a list whose whole job is showing as
+          many rows as possible. */}
+      <header className="flex items-center gap-3 flex-wrap flex-shrink-0">
+        <div className="flex items-baseline gap-2 mr-auto">
+          <h1 className="text-[15px] font-extrabold text-slate-800">Conversations</h1>
+          <span className="text-[10.5px] font-bold text-slate-400 uppercase tracking-wide">
+            Communication Center
+          </span>
+        </div>
 
-        {/* Tiles are the queue's own numbers, not decoration: each one is a thing somebody has to
-            do today. They count lead conversations — the list's default filter — so the numbers
-            and the rows on screen are answers to the same question. */}
         {summary && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+          <div className="flex items-center gap-3">
             {[
               { label: "Unread", value: summary.unreadConversations, tone: "text-rose-600" },
-              { label: "Awaiting reply", value: summary.pendingReplies, tone: "text-amber-600" },
-              { label: "Conversations", value: summary.totalConversations, tone: "text-slate-700" },
-              { label: "Missed calls", value: summary.missedCalls, tone: "text-slate-700" },
+              { label: "Waiting", value: summary.pendingReplies, tone: "text-amber-600" },
+              { label: "Total", value: summary.totalConversations, tone: "text-slate-600" },
             ].map((t) => (
-              <div key={t.label} className="bg-white rounded-xl border border-slate-200 px-3 py-2">
-                <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wide">{t.label}</p>
-                <p className={`text-lg font-extrabold tabular-nums ${t.tone}`}>{t.value ?? 0}</p>
-              </div>
+              <span key={t.label} className="inline-flex items-baseline gap-1.5">
+                <span className={`text-[13px] font-extrabold tabular-nums ${t.tone}`}>{t.value ?? 0}</span>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">{t.label}</span>
+              </span>
             ))}
           </div>
         )}
 
         {readiness && !readiness.whatsappConfigured && (
-          <div className="mb-3 flex items-center gap-2 px-3.5 py-2 rounded-xl bg-amber-50 ring-1 ring-amber-200 text-[11.5px] font-semibold text-amber-800">
-            <AlertTriangle className="w-3.5 h-3.5" />
-            WhatsApp Business is not connected — replies can only go from your own WhatsApp.
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 ring-1 ring-amber-200 text-[11px] font-semibold text-amber-800">
+            <AlertTriangle className="w-3 h-3" />
+            WhatsApp not connected
             <Link to="/WhatsAppConfiguration" className="underline font-bold">Connect</Link>
-          </div>
+          </span>
         )}
+      </header>
 
-        <div className={`grid grid-cols-1 gap-3 ${railOpen ? "lg:grid-cols-[300px_1fr_248px]" : "lg:grid-cols-[300px_1fr]"}`}>
-          {/* ── 1. list ── */}
-          <section className="bg-white rounded-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[calc(100vh-210px)]">
+      {/* The third column is reserved ONLY when the rail will actually render. The rail is
+          conditional on a selection, so a template that always declared three columns left a 240px
+          empty strip down the right whenever nothing was open — read as a huge right margin, which
+          is exactly what it looked like. */}
+      <div className={`flex-1 min-h-0 grid grid-cols-1 gap-2 ${
+        railOpen && selected ? "lg:grid-cols-[290px_1fr_240px]" : "lg:grid-cols-[290px_1fr]"
+      }`}>
+        {/* ── 1. list ── */}
+        {/* Below lg this is a master/detail, not two stacked scrollers: the list hides once a
+            thread is open, the way the Mailbox does it, because two independent full-height
+            scrollers on a phone is a screen nobody can use. */}
+        <section className={`bg-white rounded-xl border border-slate-200 overflow-hidden flex-col min-h-0 h-full ${
+          selected ? "hidden lg:flex" : "flex"
+        }`}>
             <div className="flex items-center gap-2 px-3 py-2 border-b border-slate-200">
               <Search className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
               <input
@@ -490,7 +511,9 @@ export default function CommunicationInbox({ channel: fixedChannel = null, kind:
           </section>
 
           {/* ── 2. conversation ── */}
-          <section className="bg-white rounded-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[calc(100vh-210px)]">
+          <section className={`bg-white rounded-xl border border-slate-200 overflow-hidden flex-col min-h-0 h-full ${
+            selected ? "flex" : "hidden lg:flex"
+          }`}>
             {!selected ? (
               <div className="flex-1 flex items-center justify-center text-[12px] text-slate-400">
                 Pick a conversation to read it.
@@ -498,6 +521,16 @@ export default function CommunicationInbox({ channel: fixedChannel = null, kind:
             ) : (
               <>
                 <header className="flex items-start gap-3 px-4 py-3 border-b border-slate-200">
+                  {/* The only way back to the list below lg, where the list is hidden. */}
+                  <button
+                    type="button"
+                    onClick={() => setSelected(null)}
+                    title="Back to conversations"
+                    className="lg:hidden p-1 -ml-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex-shrink-0"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <h2 className="text-[13.5px] font-extrabold text-slate-800 truncate">
@@ -662,7 +695,7 @@ export default function CommunicationInbox({ channel: fixedChannel = null, kind:
 
           {/* ── 3. contact ── */}
           {railOpen && selected && (
-            <aside className="hidden lg:flex bg-white rounded-2xl border border-slate-200 overflow-hidden flex-col max-h-[calc(100vh-210px)]">
+            <aside className="hidden lg:flex bg-white rounded-xl border border-slate-200 overflow-hidden flex-col min-h-0 h-full">
               <header className="px-4 py-3 border-b border-slate-200">
                 <p className="text-[12px] font-extrabold text-slate-800">
                   {selected.kind === "VENDOR" ? "Supplier" : "Contact"}
@@ -711,7 +744,6 @@ export default function CommunicationInbox({ channel: fixedChannel = null, kind:
               </div>
             </aside>
           )}
-        </div>
       </div>
     </div>
   );
