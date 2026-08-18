@@ -31,8 +31,7 @@ import { hasPermission, P } from "@shared/lib/access";
 
 import { COLUMN_DIMENSIONS, Badge } from "./opsUi";
 import operationsService from "../api/operationsService";
-import VendorEmailModal from "./VendorEmailModal";
-import VendorWhatsAppModal from "./VendorWhatsAppModal";
+import VendorConversationDrawer from "./VendorConversationDrawer";
 import LogCallModal from "./LogCallModal";
 
 const money = (n) =>
@@ -507,23 +506,19 @@ export default function OpsRowDetail({
         </div>
       )}
 
-      {/* Sending returns the persisted line — status and release date both move as part of
-          that request — so the row is replaced from the response rather than re-fetched. */}
-      {mailFor && (
-        <VendorEmailModal
-          bookingPublicId={bookingId}
-          line={mailFor}
-          onSent={(updated) => { if (updated) replaceLine(updated); onChanged?.(); }}
-          onClose={() => setMailFor(null)}
-        />
-      )}
+      {/* One drawer, two channels — the same shape the lead and customer drawers use, so an
+          operator meets one pattern across the product. Which tab opens is decided by the button
+          that was pressed; landing on the other one would mean switching back every time.
 
-      {waFor && (
-        <VendorWhatsAppModal
+          Sending returns the persisted line — status and release date both move as part of that
+          request — so the row is replaced from the response rather than re-fetched. */}
+      {(mailFor || waFor) && (
+        <VendorConversationDrawer
           bookingPublicId={bookingId}
-          line={waFor}
+          line={waFor || mailFor}
+          initialChannel={waFor ? "WHATSAPP" : "EMAIL"}
           onSent={(updated) => { if (updated) replaceLine(updated); onChanged?.(); }}
-          onClose={() => setWaFor(null)}
+          onClose={() => { setMailFor(null); setWaFor(null); }}
         />
       )}
 

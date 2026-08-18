@@ -251,6 +251,19 @@ export default function HotelPartnerReview() {
           <KV k="State / country" v={[reg.stateName, reg.countryCode].filter(Boolean).join(", ")} />
           <KV k="Coordinates" v={reg.latitude && reg.longitude ? `${reg.latitude}, ${reg.longitude}` : null} />
           <KV k="Map" v={reg.mapUrl && "Open map"} href={reg.mapUrl} />
+          {/* WORTH ONE CLICK BEFORE APPROVING. This is the only field on the form whose wrong value
+              is invisible: it does not fail, it puts another property's rating and reviews on this
+              hotel's catalog page, looking entirely genuine. The link opens the exact listing the
+              owner picked. If it is wrong, approve anyway and fix it on the hotel — promotion copies
+              this onto a DRAFT hotel, and the 360 screen's Google panel can rebind or clear it
+              before publishing makes it visible to tenants. */}
+          <KV
+            k="Google listing"
+            v={reg.googlePlaceId && "Verify on Google"}
+            href={reg.googlePlaceId
+              ? `https://www.google.com/maps/place/?q=place_id:${encodeURIComponent(reg.googlePlaceId)}`
+              : null}
+          />
         </Card>
         <Card title="Contact & timings">
           <KV k="Phone" v={reg.phone} />

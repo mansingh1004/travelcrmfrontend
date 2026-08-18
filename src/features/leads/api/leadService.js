@@ -199,6 +199,16 @@ function transformFormData(formData, services = [], itinerary = []) {
     // null, not "" — email is optional on the entity (the column is nullable) and an empty string
     // is a value, so a blank field used to persist "" instead of leaving the column NULL.
     email:          formData.email?.trim()          || null,
+    /* WhatsApp, and where the customer lives. All four are new columns (V22) and all four exist
+       for the same reason: the BOOKING form asks for them, so until they had somewhere to live on
+       the lead the agent typed them twice. `whatsappSame` is a form-only tick — when it is set the
+       number IS the phone, and sending a copy would create a second value to keep in step. */
+    customerWhatsapp: formData.whatsappSame
+                        ? null
+                        : normalizePhone(formData.whatsappNumber) || null,
+    customerCity:    formData.customerCity?.trim()    || null,
+    customerState:   formData.customerState?.trim()   || null,
+    customerCountry: formData.customerCountry?.trim() || null,
     leadSource:     formData.leadSource             || "",
     leadType:       formData.leadType               || "",
     leadStage:      formData.leadStage              || "",
@@ -235,6 +245,12 @@ function transformFormData(formData, services = [], itinerary = []) {
     // group whose mode does not match, and a party arriving by train but dropped back by the hired
     // car would otherwise lose this the moment the mode was set.
     dropAddress:    formData.dropAddress?.trim()    || null,
+    // The structured drop, for the same reason and under the same rule — the booking form asks
+    // for all four, so the enquiry now records them.
+    dropCity:       formData.dropCity?.trim()       || null,
+    dropCountry:    formData.dropCountry?.trim()    || null,
+    dropMode:       formData.dropMode?.trim()       || null,
+    dropDateTime:   formData.dropDateTime           || null,
 
     // --- Room & Extra Bed ---
     rooms:          Number(formData.rooms)          || 1,
@@ -272,13 +288,33 @@ function transformFormData(formData, services = [], itinerary = []) {
       roomNumber: index + 1,
       roomCategoryPreference: room.roomCategoryPreference || "Any",
       bedPreference: room.bedPreference || "Any",
+      acType: room.acType || "Any",
       adults: Number(room.adults) || 0,
       children: Number(room.children) || 0,
       infants: Number(room.infants) || 0,
       extraBeds: Number(room.extraBeds) || 0,
       childAges: Array.isArray(room.childAges) ? room.childAges.map(Number).filter(Number.isFinite) : [],
     })) : undefined,
-    
+
+    /* Vehicles as ROWS, replacing the single free-text `vehiclePreference` as the thing the booking
+       reads. The note itself is still sent above — it holds what a row cannot ("something with a
+       big boot"). undefined when absent, matching roomAllocations: the server reads a missing list
+       as "not sent, leave alone" and an empty one as "the agent removed them all", and a create
+       that sent [] on every save would wipe rows an edit never touched. */
+    vehicleRequirements: Array.isArray(formData.vehicleRequirements)
+      ? formData.vehicleRequirements
+          // A row with nothing chosen is a blank the agent added and walked away from, not a
+          // requirement — the booking form applies the same test to its own rows.
+          .filter((row) => row && (row.vehicleType || row.model || row.vehicleId))
+          .map((row) => ({
+            vehicleType: row.vehicleType?.trim() || null,
+            vehicleId: row.vehicleId ? Number(row.vehicleId) : null,
+            model: row.model?.trim() || null,
+            capacity: row.capacity === "" || row.capacity == null ? null : Number(row.capacity),
+            quantity: Number(row.quantity) || 1,
+          }))
+      : undefined,
+
     // --- Services & Itinerary Arrays ---
     services:       Array.isArray(services) ? services : [],
     itinerary:      transformItinerary(itinerary),
@@ -373,6 +409,30 @@ export const leadService = {
   // ── SEARCH ───────────────────────────────────────────────
   searchByPhone: (phone) =>
     API.get("/leads/search", { params: { keyword: phone } }),
+
+  /**
+   * Find the OPEN lead behind a contact, by phone or email or both.
+   *
+   * <p>Wraps {@code GET /leads/quick-quote/contact}, which probes the lead AND the customer master
+   * in one round trip and answers `{ lead, customer }`. Used by the booking form to attach the
+   * enquiry from the number the agent is already typing, instead of asking them to find it in a
+   * dropdown — the list the picker used was capped at 200 rows and searched client-side, so the
+   * older the enquiry, the less likely it could be linked at all.
+   *
+   * <p>Only ever returns an OPEN lead: a converted one cannot take a second booking anyway (the
+   * database enforces one active booking per lead), so surfacing it would only offer the agent a
+   * link that is about to be refused.
+   *
+   * <p>At least one of the two must be non-empty — the endpoint 400s otherwise, which is why the
+   * caller checks before firing rather than sending a pair of blanks.
+   */
+  findContact: (phone, email) =>
+    API.get("/leads/quick-quote/contact", {
+      params: {
+        ...(phone ? { phone } : {}),
+        ...(email ? { email } : {}),
+      },
+    }),
 
   /**
    * Envelope-aware duplicate lookup — added in the create-form redesign.

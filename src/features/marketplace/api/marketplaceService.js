@@ -45,6 +45,19 @@ function clean(params) {
   const out = {};
   for (const [key, value] of Object.entries(params)) {
     if (value === "" || value === null || value === undefined) continue;
+    // A multi-select filter arrives as an array. An EMPTY one is "no filter" and must not reach the
+    // wire at all — `stars=` is a value to a Spring @RequestParam, not an absence, and would bind to
+    // an empty Set that matches nothing.
+    if (Array.isArray(value)) {
+      if (value.length === 0) continue;
+      // Comma-joined, NOT axios's default `stars[]=4&stars[]=5`. Spring binds `stars=4,5` straight
+      // into a `Set<Integer>` through its standard conversion service; the bracketed form binds to a
+      // parameter literally named "stars[]" and the filter silently does nothing. Silently, because
+      // an unbound optional @RequestParam is null, which means "no filter" — so the grid looks fine
+      // and simply ignores what the agent ticked.
+      out[key] = value.join(",");
+      continue;
+    }
     out[key] = value;
   }
   return out;
@@ -63,11 +76,23 @@ export const marketplaceService = {
    *          call site never has to guard `.map` against a malformed body.
    */
   searchHotels: async (
-    { page = 0, size = 12, sortBy, sortDir, q, city, countryCode, minStars, stayDate } = {},
+    {
+      page = 0, size = 12, sortBy, sortDir, q, city, countryCode, minStars, stayDate,
+      stars, propertyTypes, mealPlans, amenities, refundableOnly, minPrice, maxPrice,
+    } = {},
     config = {},
   ) => {
     const res = await API.get(`${BASE}/hotels`, {
-      params: clean({ page, size, sortBy, sortDir, q, city, countryCode, minStars, stayDate }),
+      params: clean({
+        page, size, sortBy, sortDir, q, city, countryCode, minStars, stayDate,
+        stars, propertyTypes, mealPlans, amenities,
+        // `false` is a real value to `clean`, so an unticked box would reach the wire as
+        // `refundableOnly=false`. Harmless — Spring binds it to the same default — but it puts a
+        // filter in the URL that is not filtering, which makes a shared link read as narrower than
+        // it is. Only send it when it is on.
+        refundableOnly: refundableOnly ? true : undefined,
+        minPrice, maxPrice,
+      }),
       ...config,
     });
     const rows = res?.data?.data;
@@ -76,6 +101,19 @@ export const marketplaceService = {
       pagination: res?.data?.pagination ?? null,
     };
   },
+
+  /**
+   * GET /hotel-marketplace/filters — CatalogFacetsDto.
+   *
+   * What the catalog can actually be narrowed by, read off the live catalog rather than off the
+   * enums. Offering every constant would put "Houseboat" in the rail over a catalog holding none —
+   * the agent ticks it, gets an empty grid, and concludes the search is broken. A filter option that
+   * cannot return a result is worse than a missing one.
+   *
+   * Fetched once per screen, not per search: the answer moves when an operator edits the catalog,
+   * not when the agent types.
+   */
+  getFilters: async (config = {}) => body(await API.get(`${BASE}/filters`, config)),
 
   /**
    * POST /hotel-marketplace/hotels/import-all — BulkImportResultDto.
@@ -89,9 +127,18 @@ export const marketplaceService = {
    * Call sites must render `failures` as a to-do list, and check `truncated` — the server caps each
    * call, and ignoring it reads as "finished" when it is not.
    */
-  importAllHotels: async ({ publicIds, q, city, countryCode, minStars } = {}) =>
+  importAllHotels: async ({
+    publicIds, q, city, countryCode, minStars,
+    stars, propertyTypes, mealPlans, amenities, refundableOnly, minPrice, maxPrice,
+  } = {}) =>
     body(await API.post(`${BASE}/hotels/import-all`,
-      clean({ publicIds, q, city, countryCode, minStars }), { timeout: 120000 })),
+      // A JSON BODY, not query params — so the arrays stay arrays here rather than being comma-joined
+      // the way `clean` does for the query string. `BulkImportRequest` binds them as `Set<...>`
+      // directly. `clean` is still the right filter for empty values; it only rewrites arrays it puts
+      // on a URL, and these never touch one.
+      { ...clean({ q, city, countryCode, minStars, minPrice, maxPrice }),
+        publicIds, stars, propertyTypes, mealPlans, amenities, refundableOnly },
+      { timeout: 120000 })),
 
   /**
    * GET /hotel-marketplace/hotels/{publicId} — MarketplaceHotelDetailDto.
@@ -104,6 +151,23 @@ export const marketplaceService = {
    */
   getHotel: async (publicId, stayDate, config = {}) =>
     body(await API.get(`${BASE}/hotels/${publicId}`, { params: clean({ stayDate }), ...config })),
+
+  /**
+   * GET /hotel-marketplace/hotels/{publicId}/reviews — PlaceReviewDto.
+   *
+   * DELIBERATELY a second request rather than another field on the detail response. The data is
+   * Google's, fetched over a network the platform does not control, and folding it into the detail
+   * call would put a third party in the critical path of the page that sells the hotel: one slow
+   * Google round-trip and the photos, the rooms and the price all wait behind a review carousel
+   * nobody opened the page for.
+   *
+   * `status: "UNAVAILABLE"` is a NORMAL answer, not a failure — a hotel with no `googlePlaceId`, an
+   * exhausted quota and an upstream timeout all land there. Call sites must then render nothing at
+   * all: an empty "Guest reviews" heading tells the reader the hotel has no reviews, which is a
+   * different and probably false claim.
+   */
+  getHotelReviews: async (publicId, config = {}) =>
+    body(await API.get(`${BASE}/hotels/${publicId}/reviews`, config)),
 
   // ── Pricing ─────────────────────────────────────────────────────────────
 

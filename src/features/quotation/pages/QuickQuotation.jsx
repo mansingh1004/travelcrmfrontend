@@ -2732,9 +2732,16 @@ export const quickQuoteProblems = (model) => {
      (subtotal 0, markup ₹5,000) is valid and passes.
 
      Mirrored on the server in QuotationServiceImpl — this one is the fast, in-context half. */
-  if (quickQuoteGrandTotal(model) <= 0) {
-    push("This quotation totals ₹0 — add at least one price before creating it.", "pricing");
-  }
+  /* OLD — the zero-total block, lifted deliberately.
+     if (quickQuoteGrandTotal(model) <= 0) {
+       push("This quotation totals ₹0 — add at least one price before creating it.", "pricing");
+     }
+     The reasoning above is still true of a quote that is SENT. It was not true of one being
+     BUILT: rates arrive over a day of phone calls, and refusing to save until the first price
+     lands meant the agent either kept the browser tab open or retyped the itinerary tomorrow.
+     Saving a ₹0 draft is now allowed here and on the server (app.quotation.require-positive-total,
+     default false); what still cannot happen is a ₹0 quote reaching a customer unnoticed, because
+     the total is on screen throughout and on the PDF. */
   return problems;
 };
 
