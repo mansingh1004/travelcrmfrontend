@@ -120,10 +120,11 @@ export const NAV_SECTIONS = [
         Icon: Inbox,
         tone: "sky",
         keywords: "email inbox sent mail gmail imap",
-        // Same authority as reading conversations — see the note on P.COMM_READ — and the same plan
-        // module, matching the ModuleAccessFilter rule for /api/mailbox. Without hasModule the row
-        // showed on a plan that excludes COMMUNICATION and every call behind it answered 403.
-        can: () => hasPermission(P.COMM_READ) && hasModule("COMMUNICATION"),
+        // COMM_MAILBOX_READ — its OWN authority, not the one that reads conversations. This is the
+        // whole agency's mailbox with no row scope applied, so it is granted to managers and owners
+        // rather than to everyone who can answer their own threads. The plan module still applies,
+        // matching the ModuleAccessFilter rule for /api/mailbox.
+        can: () => hasPermission(P.COMM_MAILBOX_READ) && hasModule("COMMUNICATION"),
         path: "/Mailbox",
       },
       {

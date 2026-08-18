@@ -71,6 +71,11 @@ export const P = {
   // agency's own inbox is the same authority as reading its conversations, so it deliberately
   // does NOT get a permission of its own.
   COMM_READ: "COMM_READ",
+  // The RAW agency mailbox (/api/mailbox), deliberately NOT COMM_READ. COMM_READ carries the
+  // own/team/all data scope the Communication Center enforces per conversation; the shared IMAP
+  // mailbox has no assignee to scope by, so one key across both let an OWN-scoped agent read the
+  // whole tenant's mail through a second URL. Backend default: MANAGER and TENANT_ADMIN only.
+  COMM_MAILBOX_READ: "COMM_MAILBOX_READ",
   // Replying is a separate authority from reading, and the split is load-bearing: the backend's
   // viewer role deliberately holds READ without SEND, so reusing COMM_READ on a composer would hand
   // every viewer a send button the server then 403s.

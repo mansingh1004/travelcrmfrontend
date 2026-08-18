@@ -393,7 +393,11 @@ const AppRouter = () => {
               <Route path="AllVendors" element={<AllVendors />} />
               <Route path="CreateVendor" element={<CreateVendor />} />
               <Route path="Reminders" element={<Reminders />} />
-              <Route path="Mailbox" element={<Guard allow={hasPermission(P.COMM_READ) && hasModule("COMMUNICATION")}><Mailbox /></Guard>} />
+              {/* COMM_MAILBOX_READ, not COMM_READ. This screen serves the agency's whole IMAP
+                  mailbox with no row filter, while COMM_READ carries the own/team/all scope the
+                  Communication Center enforces — sharing one key let an OWN-scoped agent read every
+                  thread in the tenant through a second URL. */}
+              <Route path="Mailbox" element={<Guard allow={hasPermission(P.COMM_MAILBOX_READ) && hasModule("COMMUNICATION")}><Mailbox /></Guard>} />
               {/* Same gate as Mailbox: it reads the same conversations table behind the same
                   COMM_READ authority and the same plan module. */}
               {/* /WhatsApp is now a kept redirect, the same treatment /console/login gets. The
