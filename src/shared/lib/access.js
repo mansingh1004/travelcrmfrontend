@@ -369,6 +369,31 @@ export function hasModule(moduleKey) {
   return true;
 }
 
+/**
+ * Same question as {@link hasModule}, but FAILS CLOSED: an unloaded, missing or malformed
+ * entitlements cache answers false.
+ *
+ * Use this when the module selects BETWEEN two working implementations rather than hiding a menu.
+ * `hasModule` is fail-open so a failed fetch never blocks a customer out of something they bought —
+ * right for a sidebar item, wrong here: fail-open would hand a plan-exclusive screen to every tenant
+ * for the whole window before entitlements land, and again to anyone whose fetch failed. There is no
+ * loss in failing closed, because the other branch is a complete, working form.
+ *
+ * Deliberately no TENANT_ADMIN bypass, matching `hasModule` — a module is a tenant/plan property,
+ * not a role one, so an admin on a plan without the key is in the same position as their staff.
+ */
+export function hasModuleStrict(moduleKey) {
+  try {
+    const stored = JSON.parse(localStorage.getItem(MODULES_KEY) || "null");
+    return Array.isArray(stored) && stored.includes(moduleKey);
+  } catch {
+    return false;
+  }
+}
+
+/** Module key for the high-volume Create Lead / Create Booking screens. Carried by GROWTH alone. */
+export const FAST_ENTRY_FORMS = "FAST_ENTRY_FORMS";
+
 // True if the current user is allowed `permissionKey`.
 // Prefers the user's REAL effective permissions (from /permissions/me); falls back
 // to role defaults until that fetch has run (or if it failed).

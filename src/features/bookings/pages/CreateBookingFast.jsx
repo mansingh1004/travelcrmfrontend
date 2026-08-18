@@ -6,13 +6,13 @@ import {
   BadgeIndianRupee,
   BedDouble,
   Bus,
-  Camera,
-  CarFront,
-  Plane,
-  Sparkles,
   Route,
   Calculator,
+  Camera,
+  CarFront,
   Check,
+  Plane,
+  Sparkles,
   CheckCircle2,
   ChevronDown,
   CircleUserRound,
@@ -20,13 +20,13 @@ import {
   IndianRupee,
   LoaderCircle,
   Mail,
+  MapPin,
   PackageCheck,
   Phone,
   Store,
   Plus,
   RotateCcw,
   UserCheck,
-  Wallet,
 } from "lucide-react";
 
 import bookingService from "../api/bookingService";
@@ -42,9 +42,11 @@ import { vehicleService } from "@features/masters";
 import { customerService } from "@features/customers";
 import { leadService, SearchableSelect } from "@features/leads";
 import { vendorService } from "@features/vendors";
+import { quotationService } from "@features/quotation";
 import { geographyService } from "@shared/api/geographyService";
 import { getErrorMessage, getFieldErrors, isAlreadyReported } from "@shared/api/apiError";
 import { buildAdultPayload, deriveAdultBreakdown, getAdultBreakdownError } from "@shared/lib/adultBreakdown";
+import { hasModule } from "@shared/lib/access";
 import { useIdempotencyKey } from "@shared/lib/idempotency";
 import { useToast } from "@shared/ui/toast";
 
@@ -70,10 +72,6 @@ const writeSticky = (values) => {
   } catch { /* private mode — sticky is a convenience, never a requirement */ }
 };
 
-/* Advance payment modes. Imported from the payments ledger rather than retyped: BookingPayments
-   already owns this vocabulary as PAYMENT_METHODS against the `paymentMethod` field, and a second
-   copy here would drift from the list every receipt is actually recorded against. */
-const PAYMENT_METHODS = ["Cash", "Bank Transfer", "UPI", "Credit Card", "Debit Card", "Cheque", "Online", "Wallet", "Other"];
 /* Five services, in the order they are usually decided: the vehicle and the hotel are settled
    first on most trips, add-ons last.
    Cruise, Visa and Passport were REMOVED from this form — they are rare enough here that they cost
@@ -83,17 +81,17 @@ const PAYMENT_METHODS = ["Cash", "Bank Transfer", "UPI", "Credit Card", "Debit C
    silently dropped on edit. */
 const SERVICES = ["Vehicle", "Hotel", "Flight", "Sightseeing", "Add-on"];
 
-/* Glyph and tile per service, matching the picker on Create Lead (CreateLead.jsx:133) so the same
-   service is the same colour wherever it is offered — an agent moving between the two screens reads
-   the strip by colour before reading the labels. Add-on has no counterpart there and takes the one
-   hue the other four leave free. Keyed off the SERVICES strings so that list stays the single place
-   the set is decided. */
+/* Glyph and tile per service, matching the picker on Create Lead so the same service is the same
+   colour wherever it is offered — an agent moving between the two screens reads the strip by colour
+   before reading the labels. Add-on has no counterpart there and takes the one hue the other four
+   leave free. Keyed off the SERVICES strings so that list stays the single place the set is decided.
+   Ported from main's version of this form, which is where these hues were chosen. */
 const SERVICE_TILES = {
-  Vehicle: { icon: CarFront, tile: "bg-amber-50 text-amber-700" },
-  Hotel: { icon: BedDouble, tile: "bg-emerald-50 text-emerald-600" },
-  Flight: { icon: Plane, tile: "bg-blue-50 text-blue-600" },
-  Sightseeing: { icon: Camera, tile: "bg-violet-50 text-violet-600" },
-  "Add-on": { icon: Sparkles, tile: "bg-rose-50 text-rose-600" },
+  Vehicle:      { icon: CarFront,  tile: "bg-amber-50 text-amber-700" },
+  Hotel:        { icon: BedDouble, tile: "bg-emerald-50 text-emerald-600" },
+  Flight:       { icon: Plane,     tile: "bg-blue-50 text-blue-600" },
+  Sightseeing:  { icon: Camera,    tile: "bg-violet-50 text-violet-600" },
+  "Add-on":     { icon: Sparkles,  tile: "bg-rose-50 text-rose-600" },
 };
 
 /* Came across with the Special assistance block from FastTravelDetails, unchanged — these strings
@@ -119,14 +117,9 @@ const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const today = () => new Date().toISOString().slice(0, 10);
 const unwrap = (response) => response?.data?.data ?? response?.data;
 
-const unwrapList = (response) => {
-  const value = response?.data;
-  if (Array.isArray(value?.data)) return value.data;
-  if (Array.isArray(value?.data?.content)) return value.data.content;
-  if (Array.isArray(value?.content)) return value.content;
-  if (Array.isArray(value)) return value;
-  return [];
-};
+// REMOVED: unwrapList. Its only caller was the 200-row lead prefetch behind the Link Lead picker,
+// which went with the picker — the lead is matched from the contact now, and a single lead comes
+// back through `unwrap` like every other object on this page.
 
 const destinationIdOf = (destination) =>
   destination?.id ?? destination?.destinationId ?? destination?.publicId ?? "";
@@ -269,15 +262,7 @@ const initialForm = () => ({
   // that base as the preview's customerAmount.
   applyGst: null,
   gstInclusive: null,
-  /* applyTcs is the ONE exception to the null-means-default rule above, and it is deliberate.
-     TCS was removed from this form entirely — no toggle, no overseas checkbox — so there is no
-     longer any way for a user to say "not on this one". Left as null it means "follow the tenant
-     policy", and where that policy collects TCS the booking quietly picked up a charge nobody on
-     this screen asked for or could see: budget 100 + GST 5 came out as a Total Payable of 110.
-     false says it outright — this form does not collect TCS — which is the whole point of taking
-     the controls away. The tenant's Accounting Settings are untouched and still govern every other
-     surface; this is only what THIS form asserts about the bookings it writes. */
-  applyTcs: false,
+  applyTcs: null,
   // ── Agent / agency commission ──────────────────────────────────────────────────────────────
   // What this booking owes whoever brought it. An empty commissionType means no arrangement, which
   // is the ordinary case — the fields stay collapsed until someone says there is one.
@@ -307,11 +292,12 @@ function TriToggle({ label, value, onChange, options, hint }) {
   // null is a real, selectable option ("Default"), so identity comparison is required —
   // a truthiness test would light Default and "No" at the same time.
   const isDefault = value === null || value === undefined;
+  const canReset = options.some((option) => option.value === null);
   return (
     <div>
       <div className="flex items-baseline justify-between gap-2">
         <span className="text-xs font-semibold text-slate-600">{label}</span>
-        {!isDefault && (
+        {canReset && !isDefault && (
           <button
             type="button"
             onClick={() => onChange(null)}
@@ -347,14 +333,10 @@ function TriToggle({ label, value, onChange, options, hint }) {
 }
 
 
-/* `iconTile` is optional and defaults to the neutral grey every panel already had — a Panel used
-   anywhere else keeps the old look without being told to.
-
-   On this form every card passes one. A booking is entered top to bottom in one sitting, and six
-   identical grey glyphs gave the eye nothing to scroll back to; a distinct hue per card turns the
-   page into landmarks. They stay in the 100-200 band so they read as tinted paper rather than as
-   status: none of these mean anything, they only tell the cards apart. Yellow sits a step deeper
-   than the rest because at 100 it is indistinguishable from white. */
+/* `iconTile` carries the section's hue, as on main's version of this form. A long form is scanned
+   before it is read, and a colour is a faster landmark than a label — the agent looking for the
+   money block finds green without parsing three headings on the way. Defaults to the neutral tile,
+   so a panel that names no hue looks exactly as it did. */
 function Panel({ icon: Icon, title, description, action, iconTile = "bg-slate-100 text-slate-700", children }) {
   return (
     <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -375,6 +357,17 @@ function Panel({ icon: Icon, title, description, action, iconTile = "bg-slate-10
   );
 }
 
+/* A section the lead already answered, folded to one line.
+   Deliberately NOT a collapsed <Panel>: a panel that can be reopened in place invites the agent to
+   re-read six filled boxes, which is the cost this exists to remove. It shows what was carried
+   over — so nothing is submitted that was never on screen — and hands off to "Show all fields"
+   for the rare correction. */
+/* REMOVED: CarriedRow. Each folded section used to render one of these — a card with an icon, a
+   title and an Edit button. Five of them stacked above the money block was still five things to
+   read, and the shape announced "here are five sections" on a screen whose whole point is that none
+   of them need you. The single strip above now carries all five summaries in one line, and "Show
+   all fields" restores the real panels. */
+
 function Field({ label, required, optional, error, children }) {
   return (
     <div className="min-w-0 space-y-1.5">
@@ -388,28 +381,6 @@ function Field({ label, required, optional, error, children }) {
   );
 }
 
-/* A Field shaped like one cell of the Travel Date box: caption above value, both inside the
-   border, same padding — which is what makes the three boxes come out the same height without
-   any of them being told what that height is. The leading blank line stands in for the label
-   Field would have drawn, so the box starts level with Travel Date's. */
-function PrimaryBox({ caption, required, optional, error, hint, children }) {
-  return (
-    <div className="min-w-0">
-      <span aria-hidden="true" className="mb-1.5 block text-xs font-semibold">&nbsp;</span>
-      <div className={`rounded-lg border bg-white px-3 py-2 ${error ? "border-red-300" : "border-slate-200"}`}>
-        <span className="block text-[10px] font-bold uppercase tracking-widest text-slate-400">
-          {caption}
-          {required && <span className="ml-0.5 text-red-500">*</span>}
-          {optional && <span className="ml-1 font-medium normal-case tracking-normal text-slate-300">(optional)</span>}
-        </span>
-        <div className="relative">{children}</div>
-      </div>
-      {error && <p className="mt-1 text-xs text-red-500">{error}</p>}
-      {hint && !error && <p className="mt-1 text-xs text-amber-600">{hint}</p>}
-    </div>
-  );
-}
-
 export default function BookingFormPage() {
   const navigate = useNavigate();
   const { leadId: routeLeadId, id: routeBookingId } = useParams();
@@ -417,6 +388,9 @@ export default function BookingFormPage() {
   const [searchParams] = useSearchParams();
   const editing = Boolean(routeBookingId);
   const { showToast } = useToast();
+  // Starter does not include Accounting. Keep the explicit booking-level choices, while hiding
+  // Default/Reset and copy that sends the user to an Accounting Settings screen they cannot open.
+  const accountingDefaultsAvailable = hasModule("ACCOUNTING");
 
   // OLD — replaced in create-form redesign
   // const [form, setForm] = useState(initialForm);
@@ -453,7 +427,49 @@ export default function BookingFormPage() {
      leftover — which is exactly when someone "corrects" a correct figure. Holds the seeded amount
      too, so the note disappears the moment they edit it and it stops describing the box. */
   const [amountOrigin, setAmountOrigin] = useState(null);
-  const [leads, setLeads] = useState([]);
+
+  /* ── Don't ask twice ─────────────────────────────────────────────────────────────────────────
+     A booking made from a lead was re-asking every question the lead had already answered. The
+     agent had typed the customer, the destination, the dates, the party and the route into the
+     enquiry form; picking that lead here prefilled all of it and then still showed twenty-odd
+     filled boxes to scroll past, hunting for the three that were actually empty.
+
+     So a lead-linked booking folds each ANSWERED section to a one-line summary and leaves only
+     what still needs entering — which is what the Book-now panel on the quick quote already does,
+     and why booking from there feels like three fields instead of a form.
+
+     Folding is per SECTION, not per field: a half-folded panel showing two of its six boxes reads
+     as a bug, and the fields inside a section are answered together or not at all. Nothing is
+     hidden that is not also SHOWN in the summary line, and "Show all fields" reopens everything —
+     the values are still in `form` and still submitted either way.
+
+     A direct booking (no lead) folds nothing: there is no prior answer to fold. */
+  const [showAllFields, setShowAllFields] = useState(false);
+
+  /* ── As per quotation ────────────────────────────────────────────────────────────────────────
+     Which quote this booking is being sold on, and whether its PLAN is carried across — the day
+     plan, hotels, room plan and inclusions. It says nothing about the price: the amount is always
+     typeable and the quotation is never rewritten. See priceDivergence for what happens when the
+     agreed figure and the quoted one differ (in short: it is reported, not reconciled). */
+  const [quotations, setQuotations] = useState([]);
+  const [asPerQuotation, setAsPerQuotation] = useState(true);
+  const [quotationPublicId, setQuotationPublicId] = useState("");
+
+  /* A DIRECT booking has no quote behind it, and the customer still expects the document. Ticked,
+     a quotation is written from the booking straight after it saves — one line at the booking's
+     amount, which the agent can itemise later — instead of leaving the form, opening the builder
+     and retyping the trip. Off by default: plenty of direct bookings never need one. */
+  const [alsoCreateQuotation, setAlsoCreateQuotation] = useState(false);
+
+  /* The enquiry this booking was matched to, held whole so the strip can NAME it. There is no
+     list of leads on this page any more: the picker that needed one was fetched once, capped at
+     200 rows and searched in the browser, so the older the enquiry the less findable it was. The
+     lead is now probed by the contact the agent is already typing. */
+  const [linkedLead, setLinkedLead] = useState(null);
+  /* A lead the agent explicitly rejected via "Not this enquiry". Without it the probe would
+     re-attach on the next keystroke, because the phone that matched is still in the box. */
+  const rejectedLeadRef = useRef("");
+
   const [assignees, setAssignees] = useState([]);
   const [vendors, setVendors] = useState([]);
   const [loadingVendors, setLoadingVendors] = useState(true);
@@ -601,8 +617,77 @@ export default function BookingFormPage() {
     return () => clearTimeout(timer);
   }, [editing, form.customerPhone, customerMode, loadingLead, searchingCustomer, searchCustomer]);
 
+
+  /* The lead's quotations, for the "as per quotation" choice below. A lead is often quoted more
+     than once — a revised itinerary, a second version after the customer pushed back — and only
+     the agent knows which one was accepted, so the newest is defaulted rather than assumed.
+     Silent on failure: an empty list simply hides the choice, and a booking must never be blocked
+     because a quotation list would not load. */
+  useEffect(() => {
+    const leadKey = form.leadPublicId;
+    if (!leadKey || editing) { setQuotations([]); return undefined; }
+    let active = true;
+    quotationService
+      .getQuotationsByLead(leadKey)
+      .then((response) => {
+        if (!active) return;
+        const list = unwrap(response);
+        const rows = Array.isArray(list) ? list : [];
+        setQuotations(rows);
+        setQuotationPublicId((current) => current || rows[0]?.publicId || rows[0]?.id || "");
+      })
+      .catch(() => { if (active) setQuotations([]); });
+    return () => { active = false; };
+  }, [form.leadPublicId, editing]);
+
+  const chosenQuotation = useMemo(
+    () => quotations.find((row) => (row.publicId || row.id) === quotationPublicId) || null,
+    [quotations, quotationPublicId],
+  );
+  const quotedFigure = Number(chosenQuotation?.grandTotal ?? amountOrigin?.amount) || 0;
+
+  /* ── "As per quotation" governs the PLAN, not the price ──────────────────────────────────────
+     Ticked, the booking takes the chosen version's day plan, hotels, room plan and inclusions.
+     The AMOUNT is not part of that and is never locked: the price is negotiated on the call, and a
+     figure the agent cannot type is a figure they work around.
+
+     This used to mean the opposite — the box locked the amount to the quote, and unticking it fired
+     PATCH /bookings/{id}/sync-quotation, which rewrote the customer's own quotation IN PLACE by
+     solving for `markup` until the derived total hit the booking figure. Nothing survived that:
+     Quotation carries no Envers audit, no version was bumped, and the PDF renders live from the
+     current row, so the document the customer was holding quietly stopped matching the one on file.
+     Under GST-inclusive pricing it was worse than untidy — the sync targeted the back-derived
+     PRE-TAX base, so a booking sold at ₹1,05,000 inclusive rewrote the quote to ₹1,00,000: the
+     agency cutting its own quoted price by the GST it had just collected, with nobody typing that
+     number anywhere.
+
+     So the sync is gone rather than repaired. The quotation stays exactly as the customer received
+     it, and where the agreed figure differs the gap is a fact about the BOOKING — surfaced below
+     and, once the column lands, stored as a variance rather than erased. */
+  const priceDivergence = Boolean(
+    quotationPublicId && Number(form.customerAmount) > 0
+    && Math.abs(Number(form.customerAmount) - quotedFigure) >= 1
+  );
+
+  /* Seed the amount from the quote ONCE per chosen version — a convenience, not a binding. The
+     agent overtypes it freely, and switching versions re-seeds because that is a new offer being
+     read out, not an edit being undone. `asPerQuotation` is deliberately NOT a dependency: the
+     plan/price split is the whole point, so ticking or unticking it must not move the money. */
+  const seededQuotationRef = useRef("");
+  useEffect(() => {
+    if (!quotedFigure || !quotationPublicId) return;
+    if (seededQuotationRef.current === quotationPublicId) return;
+    seededQuotationRef.current = quotationPublicId;
+    setField("customerAmount", String(quotedFigure));
+  }, [quotedFigure, quotationPublicId, setField]);
+
   const applyLead = useCallback((lead) => {
     if (!lead) return;
+
+    // Hold the lead itself, so the carried-from strip can name the enquiry it matched. The agent
+    // did not choose it, so "carried from the lead" without saying WHICH lead is a claim they
+    // cannot check.
+    setLinkedLead(lead);
 
     // getLeadById populates latestQuotation (LeadServiceImpl:482), so this is present on the
     // lead-detail read this page uses — not just on the list.
@@ -620,7 +705,13 @@ export default function BookingFormPage() {
     const seed = {
       customerName: lead.customerName || lead.customer?.name || "",
       customerEmail: lead.email || lead.customer?.email || "",
-      customerCity: lead.departCity || lead.customer?.city || "",
+      /* The customer's OWN city, now that the lead records one (V22). departCity is where the TRIP
+         starts and was only ever standing in for this — a Pune customer flying out of Mumbai got
+         "Mumbai" written onto their customer record. Kept as the last fallback so an older lead,
+         which has no customerCity, behaves exactly as it did before. */
+      customerCity: lead.customerCity || lead.customer?.city || lead.departCity || "",
+      customerState: lead.customerState || lead.customer?.state || "",
+      customerCountry: lead.customerCountry || lead.customer?.country || "",
       birthday: lead.birthDate || lead.birthday || "",
       anniversary: lead.anniversaryDate || lead.anniversary || "",
     };
@@ -643,6 +734,28 @@ export default function BookingFormPage() {
               || (typeof item.destination === "string" ? item.destination : item.destination?.name)
               || "",
           nights: String(item.nights ?? 0),
+        }))
+      : null;
+
+    /* Lead room allocations → booking room mix. One row per DISTINCT (category, acType) pair, with
+       the counts summed — mirroring buildTripSnapshotFromLead on the server so both doors produce
+       the same booking from the same lead. Null when the lead carries no plan, so the form keeps
+       whatever it already had rather than being reset to a single blank row. */
+    const roomMix = Array.isArray(lead.roomAllocations) && lead.roomAllocations.length
+      ? Object.values(lead.roomAllocations.reduce((groups, allocation) => {
+          const roomType = allocation.roomCategoryPreference || "Double";
+          const acType = allocation.acType || "Any";
+          const key = `${roomType}|${acType}`;
+          const row = groups[key] || (groups[key] = {
+            id: nextRowId(), roomType, acType, count: 0, extraBeds: 0,
+          });
+          row.count += 1;
+          row.extraBeds += Number(allocation.extraBeds) || 0;
+          return groups;
+        }, {})).map((row) => ({
+          ...row,
+          count: String(row.count),
+          extraBeds: String(row.extraBeds),
         }))
       : null;
 
@@ -685,6 +798,27 @@ export default function BookingFormPage() {
       pickupAddress: lead.pickupAddress || lead.roadPickupAddress || current.pickupAddress,
       pickupDateTime: String(lead.pickupDateTime || lead.pickupAt || current.pickupDateTime).slice(0, 16),
       vehiclePreference: lead.vehiclePreference || lead.preferredVehicle || current.vehiclePreference,
+      /* Drop, carried across now that the lead records it (V22). The comment above — "Drop is left
+         empty: the lead never carried a return" — described the world before that column existed;
+         where the trip ends is an answer the enquiry can now hold, so stop asking for it twice.
+         Still falls through to `current` when the lead has none, so an older lead leaves the band
+         blank exactly as before rather than inventing a round trip. */
+      dropCity: lead.dropCity || current.dropCity,
+      dropCountry: lead.dropCountry || current.dropCountry,
+      dropMode: normalizeDepartureMode(lead.dropMode) || lead.dropMode || current.dropMode,
+      dropDateTime: String(lead.dropDateTime || current.dropDateTime).slice(0, 16),
+      /* Vehicle rows map one-for-one — the lead's table was built to mirror this one. Rows carry a
+         client-side id here too, so they are re-keyed rather than reusing the lead's publicIds. */
+      vehicleRequirements: Array.isArray(lead.vehicleRequirements) && lead.vehicleRequirements.length
+        ? lead.vehicleRequirements.map((row) => ({
+            id: nextRowId(),
+            vehicleType: row.vehicleType || "",
+            vehicleId: row.vehicleId || "",
+            model: row.model || "",
+            capacity: row.capacity == null ? "" : String(row.capacity),
+            quantity: String(row.quantity ?? 1),
+          }))
+        : current.vehicleRequirements,
       rooms: String(lead.rooms ?? current.rooms),
       showAdultBreakdown: adultPrefill.showAdultBreakdown,
       male: adultPrefill.male == null ? null : String(adultPrefill.male),
@@ -699,6 +833,24 @@ export default function BookingFormPage() {
       specialAssistanceNotes: lead.specialAssistanceNotes || lead.assistanceNotes || current.specialAssistanceNotes,
       itinerary: itinerary || current.itinerary,
       tripNotes: lead.notes || current.tripNotes,
+      /* When the trip ENDS. The lead has recorded a returnDate all along and this path never read
+         it, so a lead-created booking arrived with no end date and the agent retyped a date the
+         enquiry already held — while the convert door carried it. Two doors, same lead, different
+         booking. */
+      tripEndDate: dateInput(lead.returnDate) || current.tripEndDate,
+      /* The number the customer is actually reachable on. It has nowhere to live on the customer
+         master — there is no whatsapp column — which is why the booking snapshot carries it, and
+         why not carrying it here lost it outright rather than merely duplicating it. */
+      customerWhatsapp: lead.customerWhatsapp || current.customerWhatsapp,
+      /* The ROOM MIX, regrouped from the lead's per-room plan.
+         The lead holds one row PER ROOM ("room 3: 2 adults, 1 child, Deluxe"); the booking holds
+         the mix ("2 x Deluxe"). Rebuilding that here is not invention — every value below is the
+         lead's own — and it replaces a fabricated default row of Double / Any / 1 / 0 that quietly
+         overwrote a plan the agent had already entered on the enquiry.
+         acType comes across now that the lead records one; bedPreference and the per-room pax
+         split have no booking-side column and are NOT carried. That asymmetry is real, and is left
+         visible here rather than papered over with a guess. */
+      roomRequirements: roomMix || current.roomRequirements,
       /* Seeded from the LATEST QUOTATION, with budget only as a fallback.
          Budget is what the customer said they might spend at enquiry time; the quotation's grand
          total is what was actually put to them in writing, and it is the figure the booking should
@@ -720,16 +872,66 @@ export default function BookingFormPage() {
     if (phone) searchCustomer(phone, seed);
   }, [searchCustomer]);
 
+  /* ── The enquiry behind this booking, found rather than picked ───────────────────────────────
+     There is no "Link Lead" dropdown. Choosing the lead by hand meant scrolling a list that was
+     fetched once, capped at 200 rows and filtered in the browser — so past a couple of hundred
+     leads the one you wanted was simply not in it, and a destination wedding enquired about in
+     June and booked in November could only be taken as a direct booking, losing the attribution
+     permanently.
+
+     The contact the agent is already typing is a better key than anything they could pick. The
+     same phone or email that resolves the CUSTOMER also identifies the enquiry, so the probe runs
+     off both: GET /leads/quick-quote/contact answers with the OPEN lead for that contact, which is
+     the only kind that may be booked anyway — an already-converted lead is refused downstream by
+     the one-active-booking-per-lead guard.
+
+     Never overrides a lead already attached (the route can arrive with one), never fires while
+     editing, and stays silent on failure: a booking must not be blocked because a lookup did not
+     answer. Worst case the agent gets a direct booking, which is what they had before. */
+  const probedContact = useRef("");
+  useEffect(() => {
+    if (editing) return undefined;
+    if (form.leadPublicId) return undefined;             // already attached — leave it alone
+
+    const phone = String(form.customerPhone || "").trim();
+    const email = String(form.customerEmail || "").trim();
+    const usablePhone = phonePattern.test(phone) ? phone : "";
+    const usableEmail = email.includes("@") ? email : "";
+    if (!usablePhone && !usableEmail) return undefined;
+
+    const key = `${usablePhone}|${usableEmail}`;
+    if (probedContact.current === key) return undefined;
+
+    let alive = true;
+    const timer = setTimeout(async () => {
+      probedContact.current = key;
+      try {
+        const found = unwrap(await leadService.findContact(usablePhone, usableEmail))?.lead;
+        // Re-check `alive` AND the rejection: half a second is long enough for the agent to have
+        // dismissed this very lead with "Not this enquiry", and re-attaching what they just
+        // pushed away is worse than never matching at all.
+        if (alive && found?.publicId && String(found.publicId) !== rejectedLeadRef.current) {
+          applyLead(found);
+        }
+      } catch {
+        /* silent — see above */
+      }
+    }, 600);
+
+    return () => { alive = false; clearTimeout(timer); };
+  }, [editing, form.leadPublicId, form.customerPhone, form.customerEmail, applyLead]);
+
   useEffect(() => {
     let active = true;
+    // The 200-lead prefetch that fed the picker is gone with the picker. It was the single
+    // heaviest call on this page's mount and the one that made the feature quietly unreliable
+    // past a couple of hundred leads.
     Promise.allSettled([
-      leadService.getAllLeads(0, 200),
       bookingService.getEligibleAssignees(),
       geographyService.getAllDestinations(),
       vendorService.getAll(),
-    ]).then(([leadResult, assigneeResult, destinationResult, vendorResult]) => {
+    ]).then(([assigneeResult, destinationResult, vendorResult]) => {
       if (!active) return;
-      if (leadResult.status === "fulfilled") setLeads(unwrapList(leadResult.value));
       if (assigneeResult.status === "fulfilled") {
         const list = unwrap(assigneeResult.value);
         setAssignees(Array.isArray(list) ? list : []);
@@ -912,14 +1114,7 @@ export default function BookingFormPage() {
           // LEAD_SOURCES has on the lead form.
           applyGst: booking.applyGst ?? null,
           gstInclusive: booking.gstInclusive ?? null,
-          /* applyTcs takes `?? false`, not `?? null`, for the reason set out in the defaults above.
-             The distinction still matters though: an EXPLICIT true was a real decision somebody
-             made about a real booking, and it survives being opened here — only the null case,
-             which means "nobody ever decided", picks up this form's stance of not collecting TCS.
-             So an old booking saved as overseas keeps its TCS (and, since there is no TCS row any
-             more, keeps it silently inside Total Payable); one that was merely inheriting the
-             tenant policy stops doing so. */
-          applyTcs: booking.applyTcs ?? false,
+          applyTcs: booking.applyTcs ?? null,
           commissionPayeeName: booking.commissionPayeeName || "",
           commissionType: booking.commissionType || "",
           // The agreed TERMS, not the computed rupees — a percent commission must load back as the
@@ -1002,18 +1197,9 @@ export default function BookingFormPage() {
     return () => { active = false; };
   }, [editing, routeLeadId, searchParams]);
 
-  const handleLeadChange = async (leadPublicId) => {
-    setField("leadPublicId", leadPublicId);
-    if (!leadPublicId) return;
-    setLoadingLead(true);
-    try {
-      applyLead(unwrap(await leadService.getLeadById(leadPublicId)));
-    } catch (error) {
-      if (!isAlreadyReported(error)) showToast(getErrorMessage(error, "Could not load the selected lead."), "error");
-    } finally {
-      setLoadingLead(false);
-    }
-  };
+  // REMOVED with the picker: handleLeadChange. Nothing selects a lead by hand any more — the
+  // route can arrive carrying one (/CreateBooking/:leadId, still handled above) and the contact
+  // probe attaches one, and both go through applyLead directly.
 
   const changePhone = (value) => {
     setField("customerPhone", value);
@@ -1110,23 +1296,136 @@ export default function BookingFormPage() {
   const totalTravellers =
     (Number(form.totalAdults) || 0) + (Number(form.children) || 0) + (Number(form.infants) || 0);
 
-  /* Counts for the two bands' own headings — the same at-a-glance summary Travel Details carries
-     for travellers, but one per band rather than one for the card.
-
-     They were a single joined pill in the card header. Two figures under one label made the reader
-     work out which number belonged to which band, and the zero rule below could only be applied to
-     the pair: vehicle rows start empty, and "0 vehicles · 2 rooms" reports an absence as if it were
-     an answer. Split, each band answers for itself — an empty vehicle list hides its own count and
-     leaves the room count standing. The rule itself is unchanged: a pill reading "0" is worse than
-     no pill, so a count of zero renders nothing at all. */
-  const vehicleCount = useMemo(
-    () => form.vehicleRequirements.reduce((sum, row) => sum + (Number(row.quantity) || 0), 0),
-    [form.vehicleRequirements]
-  );
-  const roomCount = roomTotals.rooms;
+  /* The card's header badge — the same at-a-glance summary Travel Details carries for travellers.
+     Built as an array and joined so a band with nothing in it contributes no text at all: vehicle
+     rows start empty, and "0 vehicles · 2 rooms" reports an absence as if it were an answer. With
+     both empty the badge does not render, because a pill reading "0" is worse than no pill. */
+  const requirementSummary = useMemo(() => {
+    const vehicles = form.vehicleRequirements.reduce((sum, row) => sum + (Number(row.quantity) || 0), 0);
+    const parts = [];
+    if (vehicles > 0) parts.push(`${vehicles} vehicle${vehicles === 1 ? "" : "s"}`);
+    if (roomTotals.rooms > 0) parts.push(`${roomTotals.rooms} room${roomTotals.rooms === 1 ? "" : "s"}`);
+    return parts.join(" · ");
+  }, [form.vehicleRequirements, roomTotals.rooms]);
 
   const routeNights = useMemo(() => totalRouteNights(form.itinerary), [form.itinerary]);
   const tripRouteSummary = useMemo(() => routeSummary(form.itinerary), [form.itinerary]);
+
+  /* ── Which sections the lead already answered ────────────────────────────────────────────────
+     Read off `form` rather than remembering what applyLead wrote, so a section the agent then
+     CLEARED stops counting as answered and comes back open. The test per section is "has the
+     thing this section exists to capture", not "every box is non-empty" — an optional email left
+     blank must not hold the customer section open. */
+  const leadLinked = Boolean(form.leadPublicId) && !editing;
+
+  /* How the matched enquiry names itself in the strip. Lead code first because that is what an
+     agent reads out on a call; the customer name is the sanity check that it is the right one. */
+  const linkedLeadLabel = useMemo(() => {
+    const parts = [linkedLead?.leadCode, linkedLead?.customerName].filter(Boolean);
+    return parts.length ? parts.join(" · ") : "Linked to an existing enquiry";
+  }, [linkedLead]);
+
+  /* Detach a wrong match. Clears the link and the carried quotation choice, and REMEMBERS the
+     rejection for this contact so the probe does not immediately re-attach the lead the agent
+     just dismissed — the phone in the box has not changed, and without this the effect would
+     simply put it back. */
+  const unlinkLead = useCallback(() => {
+    rejectedLeadRef.current = form.leadPublicId || "";
+    setField("leadPublicId", "");
+    setLinkedLead(null);
+    setQuotations([]);
+    setQuotationPublicId("");
+    setShowAllFields(false);
+  }, [form.leadPublicId, setField]);
+
+  /* The nav rail is NOT hidden on this screen, on any path.
+     An earlier revision had this page ask the shell to hide it while a lead was linked, to buy the
+     form the full width. It bought a worse thing: navigation that comes and goes depending on
+     which record you opened. A sidebar that is sometimes there is harder to use than one that is
+     always there, because it stops being furniture you stop noticing. Width is bought below
+     instead — by dropping the 320px money rail on the convert route, which costs nothing anybody
+     navigates by. */
+
+  /* ── Converting, not creating ────────────────────────────────────────────────────────────────
+     Arriving at /CreateBooking/:leadId means the agent pressed Convert on a lead — the trip is
+     already agreed and every question this form asks about it has an answer sitting on the lead.
+     What is genuinely still unknown is the money: which supplier, at what cost, whose commission,
+     with or without GST, and how much was just collected.
+
+     So this route is a MONEY screen, not a booking form. Everything the lead answered collapses to
+     a one-line summary (readable, and one click from editable), and the money block is the only
+     full card left. Keyed off the ROUTE rather than off `leadLinked`, because those are different
+     facts: a walk-in typed into /CreateBooking whose phone happens to match an old enquiry should
+     still get the ordinary form — they are being asked the questions for the first time. */
+  const moneyOnly = Boolean(routeLeadId) && !editing;
+
+  const answered = useMemo(() => ({
+    customer:  Boolean(form.customerName?.trim() && form.customerPhone?.trim()),
+    travel:    Boolean(form.destination?.trim() && form.travelDate),
+    services:  form.services.length > 0,
+    itinerary: form.itinerary.some((row) => row.toCity?.trim()),
+    /* Only foldable on the convert route. On the ordinary form this section is never prefilled
+       from anywhere, so folding it would hide an empty section behind a summary of nothing. */
+    requirements: moneyOnly,
+  }), [form.customerName, form.customerPhone, form.destination, form.travelDate,
+       form.services, form.itinerary, moneyOnly]);
+
+  const folded = useCallback(
+    (section) => leadLinked && !showAllFields && answered[section],
+    [leadLinked, showAllFields, answered],
+  );
+
+  // How many sections the lead answered — drives the strip's copy, and is counted from `answered`
+  // rather than from `folded` so the number stays truthful while "Show all fields" is on.
+  const foldedCount = useMemo(
+    () => (leadLinked ? Object.values(answered).filter(Boolean).length : 0),
+    [leadLinked, answered],
+  );
+
+  // Middle dot joins, skipping anything absent — a summary that reads "Pune ·  · 4 travellers"
+  // reports a gap as though it were a value.
+  const line = (...parts) => parts.filter(Boolean).join(" · ");
+
+  const carriedSummaries = useMemo(() => ({
+    customer: line(
+      form.customerName,
+      form.customerPhone,
+      form.customerEmail,
+      totalTravellers > 0 ? `${totalTravellers} traveller${totalTravellers === 1 ? "" : "s"}` : "",
+    ),
+    travel: line(
+      form.destination,
+      form.travelDate ? new Date(form.travelDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "",
+      duration && !duration.invalid ? `${duration.nights} night${duration.nights === 1 ? "" : "s"}` : "",
+      form.packageType,
+      form.pickupCity ? `from ${form.pickupCity}` : "",
+    ),
+    services: form.services.join(", "),
+    itinerary: line(
+      tripRouteSummary,
+      routeNights > 0 ? `${routeNights} night${routeNights === 1 ? "" : "s"}` : "",
+    ),
+    requirements: requirementSummary,
+  }), [form.customerName, form.customerPhone, form.customerEmail, form.destination, form.travelDate,
+       form.packageType, form.pickupCity, form.services, totalTravellers, duration,
+       tripRouteSummary, routeNights, requirementSummary]);
+
+  /* Everything the lead answered, as ONE line rather than five cards.
+     Five summary cards were still five things to read, stacked above the single card that actually
+     needed filling — the shape said "here are five sections" when the truth is "none of this needs
+     you". Run together, it stops being a list of sections and becomes one sentence confirming the
+     trip. Blanks drop out, so a lead that never named a package type does not leave a gap where one
+     should be. */
+  const carriedLine = useMemo(
+    () => [
+      carriedSummaries.customer,
+      carriedSummaries.travel,
+      carriedSummaries.itinerary,
+      carriedSummaries.services,
+      carriedSummaries.requirements,
+    ].filter((part) => part && String(part).trim()),
+    [carriedSummaries],
+  );
 
   /* WARNINGS, not errors. A route mid-edit routinely does not add up, and this form's convention
      is to block only on what the server will reject. */
@@ -1367,30 +1666,10 @@ export default function BookingFormPage() {
         : current[key].filter((row) => row.id !== id),
     }));
 
-  const availableLeads = useMemo(() => leads.filter((lead) =>
-    !(lead.leadStage === "Converted" || lead.convertedBookingPublicId) ||
-    String(lead.publicId || lead.id) === String(form.leadPublicId)
-  ), [form.leadPublicId, leads]);
-
-  // OLD — code, name and phone were crushed into one label:
-  //   label: [lead.leadCode, lead.customerName, lead.phone].filter(Boolean).join(" · ")
-  // One long line per row truncated before the phone on a narrow column, and a phone search lit up
-  // a match the clerk could not see. The phone is a second line now, and still searchable.
-  const leadOptions = useMemo(() => [
-    { value: "", label: "Direct booking (no linked lead)" },
-    ...availableLeads.map((lead) => {
-      const phone = lead.phone || lead.customer?.phone || "";
-      return {
-        value: lead.publicId || lead.id,
-        label: [
-          lead.leadCode || "Lead",
-          lead.customerName || lead.customer?.name || "Customer",
-        ].filter(Boolean).join(" · "),
-        sublabel: phone,
-        keywords: [phone, lead.destination].filter(Boolean).join(" "),
-      };
-    }),
-  ], [availableLeads]);
+  // REMOVED with the Link Lead picker: `availableLeads` and `leadOptions`. They existed to feed a
+  // dropdown built from one capped, client-filtered fetch of the newest 200 leads — which is why
+  // an enquiry taken in June and booked in November could not be linked at all. The lead is now
+  // matched from the contact the agent types; see the contact probe above.
 
   const matchedDestination = destinations.find((destination) =>
     (form.destinationId && String(destinationIdOf(destination)) === String(form.destinationId)) ||
@@ -1468,7 +1747,9 @@ export default function BookingFormPage() {
       if (editing && f.travelDate === loadedRef.current.travelDate) return "";
       return f.travelDate < today() ? "Travel date cannot be in the past" : "";
     },
-    customerAmount: (f) => (!(Number(f.customerAmount) > 0) ? "Amount must be greater than 0" : ""),
+    // A booking taken before its price is settled is normal — the server accepts a zero or
+    // absent amount as "not priced yet". Only a negative figure is refused.
+    customerAmount: (f) => (Number(f.customerAmount) < 0 ? "Amount cannot be negative" : ""),
     // Vendor cost is now REQUIRED ONLY WHEN A VENDOR IS CHOSEN, mirroring the relaxed backend
     // contract (optional, inclusive @DecimalMin(0)). Naming a supplier and then leaving the amount
     // blank is the one combination that is meaningless — it records a payee owed nothing.
@@ -1755,6 +2036,19 @@ export default function BookingFormPage() {
       services: form.services,
       assignedUserId: form.assignedUserId || null,
       leadPublicId: form.leadPublicId || null,
+      /* The quote this booking was sold on. Only alongside a lead — the server rejects a quotation
+         it cannot check ownership of, and rightly: without a lead there is nothing to validate the
+         id against. Carrying it is what lets the cancellation module price against the policy
+         version the customer was actually quoted under, instead of the tenant default. */
+      /* Linked only when the booking is actually being taken AS PER that quotation. Unticked means
+         the agent is not carrying its plan — often because a new quote is being written instead —
+         and stamping the old document as this booking's source would then be a claim nobody made.
+         It also keeps sourceQuotationPublicId free, which is what createQuotationFromBooking needs
+         to fill; with one already linked that call is a 409. */
+      quotationPublicId:
+        form.leadPublicId && asPerQuotation && !alsoCreateQuotation
+          ? (quotationPublicId || null)
+          : null,
     };
 
     setSubmitting(true);
@@ -1837,6 +2131,40 @@ export default function BookingFormPage() {
       const booking = unwrap(await bookingService.create(payload, idempotencyKey));
       writeSticky(form);
       const id = booking?.publicId || booking?.id;
+
+      /* REMOVED: the PATCH /bookings/{id}/sync-quotation call that used to fire here whenever the
+         agreed price differed from the quote.
+
+         It rewrote the customer's quotation in place — no new version, no audit row, and the PDF
+         renders live from the current row, so the document they were holding silently stopped
+         matching the one on file. The quotation is the OFFER; the booking is the SALE. They are
+         allowed to differ, and that difference is a fact worth keeping, not a discrepancy to erase
+         by editing the older document. Where the two diverge the form says so (see priceDivergence)
+         and the booking carries the agreed figure. */
+
+      /* A direct booking the agent also wants a quote for. Same second-call rule — the booking is
+         already saved and correct, so a failure here is reported as "no quotation yet", never as a
+         failed booking. */
+      /* Offered in two places and both mean the same thing: no existing quote is being carried, so
+         write one. `!asPerQuotation` covers the lead that HAS quotations the agent chose not to use —
+         which the old `quotations.length === 0` test refused, leaving the checkbox visible and
+         inert. */
+      /* The checkbox is now offered in every state, so this is simply "did they ask for one".
+         The payload above leaves sourceQuotationPublicId NULL whenever it is ticked, which is what
+         createQuotationFromBooking needs — with one already linked it answers 409. */
+      if (alsoCreateQuotation && !editing && id) {
+        try {
+          await bookingService.createQuotationFromBooking(id);
+          showToast("Quotation created from this booking.", "success");
+        } catch (quoteError) {
+          if (!isAlreadyReported(quoteError)) {
+            showToast(
+              getErrorMessage(quoteError, "Booking saved, but the quotation could not be created."),
+              "error",
+            );
+          }
+        }
+      }
 
       // Retire the key only now the record is genuinely finished. Doing it in the catch — or on
       // every submit — would hand a retry a NEW key, and the retry would create a second booking
@@ -1983,22 +2311,8 @@ export default function BookingFormPage() {
   // any leftover preview/previewState from a previous amount is ignored rather than reset.
   const previewActive = Number.isFinite(previewAmount) && previewAmount > 0;
 
-  /* Does this booking say anything about tax of its own, or is it simply following the tenant?
-     Drives the "Custom" chip, and it tracks applyGst because that is now the only tax control on
-     the screen. gstInclusive is deliberately excluded even though it is still a real stored flag:
-     it has no control of its own any more, so a booking saved tax-inclusive would light the chip
-     over a toggle sitting unset — a "Custom" nobody can see, let alone reset. applyTcs is excluded
-     for the same reason. */
-  const taxOverridden = form.applyGst != null;
-
-  /* Balance = what is owed − what has been taken.
-     Derived, never a field: two boxes for one number is how they end up disagreeing.
-     Prefers the SERVER's totalPayable (which includes GST/TCS) and falls back to the plain budget
-     until the preview lands — the label beside it says which of the two is being shown, so the
-     figure is never ambiguous. The frontend does not compute tax; it only subtracts. */
-  const balanceDue = (
-    preview?.totalPayable != null ? Number(preview.totalPayable) : (Number(form.customerAmount) || 0)
-  ) - (Number(form.paidAmount) || 0);
+  const taxOverridden =
+    form.applyGst != null || form.gstInclusive != null || form.applyTcs != null;
 
 
   /* What the commission works out to, shown live beside the control.
@@ -2030,6 +2344,16 @@ export default function BookingFormPage() {
     // The ticket bump stops a lookup still in flight from repopulating the blank form behind it.
     autoSearchedPhone.current = "";
     searchTicket.current += 1;
+    /* The next record is a different lead — or none. Leaving these behind would carry the previous
+       booking's quote across: the picker would still name it, "as per quotation" could stay
+       unticked over a blank amount, and the folded/expanded state would describe sections that no
+       longer hold anything. The quotation list refetches from the new leadPublicId. */
+    setQuotations([]);
+    setQuotationPublicId("");
+    setAsPerQuotation(true);
+    setAlsoCreateQuotation(false);
+    setShowAllFields(false);
+    setAmountOrigin(null);
   };
 
   if (loadingBooking || (loadingLead && routeLeadId && !form.leadPublicId)) {
@@ -2130,15 +2454,75 @@ export default function BookingFormPage() {
           in view while the clerk scrolls the trip detail — DOM order also puts the amounts last,
           which is where Enter-advance should land them. On <lg the rail stacks below the panels. */}
       <main className="mx-auto w-full max-w-[1400px] px-4 py-4">
-        <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
+        {/* One column on the convert route. The 320px rail exists so the money stays in view while
+            the clerk scrolls a long trip form — but on this route there IS no long trip form, only
+            five collapsed summaries, so the rail would pin the one thing the agent came here to
+            fill into a third of the width while two thirds sat empty beside it. Full width instead,
+            and the money block reads as the page rather than as a sidebar on one. */}
+        <div className={`grid grid-cols-1 gap-5 lg:items-start ${
+          moneyOnly && !showAllFields ? "" : "lg:grid-cols-[minmax(0,1fr)_320px]"
+        }`}>
         <div className="min-w-0 space-y-5">
+
+        {/* Says what was carried over and offers the way back to it, ONCE, above the folded rows —
+            rather than repeating "this came from the lead" on each of them. Only rendered when
+            something is actually folded, so a direct booking never sees it. */}
+        {leadLinked && (showAllFields || foldedCount > 0) && (
+          <div className="flex flex-wrap items-start gap-x-3 gap-y-2 rounded-xl border border-emerald-200 bg-emerald-50/60 px-4 py-3">
+            <ClipboardList className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+            <div className="min-w-0 flex-1 space-y-1">
+              <p className="text-xs text-emerald-900">
+                {/* WHICH enquiry, named. The agent never chose this lead — it was matched off the
+                    phone or email they typed — so the screen owes them the identity it decided on,
+                    or "carried from the lead" is a claim about a lead they cannot see. */}
+                <span className="font-bold">{linkedLeadLabel}</span>{" "}
+                {showAllFields
+                  ? "— showing every field, including what it already answered."
+                  : "— carried from this enquiry, nothing to re-enter."}
+              </p>
+              {/* The collapsed view of all five sections. Goes away the moment the real sections
+                  come back, or the page says the same thing twice — once as a sentence, once as
+                  five open panels. Wraps rather than truncates: a trip summary ending in an
+                  ellipsis is one the agent has to open a section to trust. */}
+              {!showAllFields && carriedLine.length > 0 && (
+                <p className="flex flex-wrap text-[11px] leading-relaxed text-emerald-700">
+                  {carriedLine.map((part, index) => (
+                    <span key={part}>
+                      {index > 0 && <span className="mx-2 font-bold text-emerald-400">·</span>}
+                      {part}
+                    </span>
+                  ))}
+                </p>
+              )}
+            </div>
+            <button
+              type="button"
+              data-skip-enter="true"
+              onClick={() => setShowAllFields((value) => !value)}
+              className="shrink-0 rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-[11px] font-bold text-emerald-800 transition hover:bg-emerald-50"
+            >
+              {showAllFields ? "Hide answered" : "Show all fields"}
+            </button>
+            {/* The way out. With no picker there is no "set it back to Direct booking" option, and
+                a wrong auto-match with no undo would be worse than no match at all. */}
+            <button
+              type="button"
+              data-skip-enter="true"
+              onClick={unlinkLead}
+              className="shrink-0 rounded-lg px-2.5 py-1.5 text-[11px] font-bold text-emerald-700 underline decoration-emerald-300 underline-offset-2 transition hover:text-emerald-900"
+            >
+              Not this enquiry
+            </button>
+          </div>
+        )}
+
         {/* OLD — description="Search phone first; existing data will be reused automatically"
             The lookup is no longer something the clerk has to start, so stop instructing them to.
             The action slot also reports the debounced lookup while it runs, so the brief moment
             before the Existing/New chip appears reads as progress rather than as nothing. */}
+        {folded("customer") ? null : (
         <Panel
-          icon={CircleUserRound}
-          iconTile="bg-blue-100 text-blue-700"
+          icon={CircleUserRound} iconTile="bg-blue-100 text-blue-700"
           title="Customer Details"
           description="Enter the phone number — an existing customer is matched automatically"
           action={
@@ -2158,7 +2542,7 @@ export default function BookingFormPage() {
               {/* The party size, in the corner. Guarded on > 0 so a form whose counters have been
                   cleared shows nothing rather than "0 travellers". */}
               {totalTravellers > 0 && (
-                <span className="inline-flex w-fit items-center rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">
+                <span className="inline-flex w-fit items-center rounded-full bg-teal-50 px-2.5 py-1 text-xs font-semibold text-teal-700">
                   {totalTravellers} traveller{totalTravellers === 1 ? "" : "s"}
                 </span>
               )}
@@ -2166,9 +2550,7 @@ export default function BookingFormPage() {
           }
         >
           {/* Name → Phone → WhatsApp. Name leads because it is what the agent is told first on a
-              call; the phone keeps its lookup and its Search button beside it. Link Lead moved to
-              the foot of this panel: it PREFILLS the form, so it is a shortcut rather than a field,
-              and at the top it sat between the agent and the two things they actually type. */}
+              call; the phone keeps its lookup and its Search button beside it. */}
           {/* Equal thirds. The old 4 / 5 / 3 split gave Customer Phone the extra column because it
               was carrying the Search button inside its own row; with the button gone that width
               belonged to nobody, and WhatsApp was left the narrowest of the three despite holding
@@ -2329,16 +2711,7 @@ export default function BookingFormPage() {
 
               Rooms stay suppressed here for the same reason as before: the Room Requirement rows
               own that number, and two editors for one value is how they drift apart. */}
-          {/* Travellers on the left, Link Lead on the right — one row, not two.
-              Stacked, each occupied a full-width band to hold one narrow control, and the counters
-              are capped at max-w-sm while Link Lead is capped at max-w-md, so both left roughly
-              half the card empty. Side by side they fill it and the panel loses two rules and a
-              band of dead space. Still stacks on small screens, where a single column is right. */}
-          {/* 7/5, not 50/50. Link Lead is ONE select and was rendering nearly 600px wide with a
-              short line of text in it, while the traveller counters next to it were squeezed until
-              "Adult Female" truncated to "A…". The wider half goes to the side with five controls
-              in it. */}
-          <div className="mt-4 grid grid-cols-1 gap-x-6 gap-y-4 border-t border-slate-100 pt-4 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
+          <div className="mt-4 border-t border-slate-100 pt-4">
             <div className="min-w-0">
               <div className="mb-3 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
                 <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500">Travellers</h3>
@@ -2353,33 +2726,14 @@ export default function BookingFormPage() {
               />
             </div>
 
-            {/* Link Lead keeps its place at the end of the reading order — it PREFILLS the whole
-                form, so it is a shortcut rather than a customer field, and at the top it sat
-                between the agent and the two things they actually type. */}
-            {/* <div className="min-w-0">
-              <Field label="Link Lead" optional>
-                <SearchableSelect
-                  options={leadOptions}
-                  value={form.leadPublicId}
-                  onChange={handleLeadChange}
-                  placeholder="Search lead code, customer or phone"
-                  searchPlaceholder="Lead code, name or phone..."
-                  loading={loadingLead}
-                  disabled={editing}
-                  icon={ClipboardList}
-                  accent="blue"
-                  advanceOnSelect
-                  className="hover:border-slate-300 disabled:bg-slate-50"
-                />
-              </Field>
-            </div> */}
           </div>
- 
+
           {/* Special assistance moved on to the action footer — it is the last thing asked, and it
               is off on nearly every booking, so a whole band here was a rule and a line of padding
               spent on an unticked box. Its passenger cap still reads totalTravellers, which is
               derived from `form` and so does not care which card the counters are in. */}
         </Panel>
+        )}
 
         {/* OLD — description="Core booking, destination and commercial information"
             The money fields moved to the sticky rail, so "commercial" no longer lives here. */}
@@ -2400,32 +2754,22 @@ export default function BookingFormPage() {
             for Tempo Traveller, "Innova Crysta — …". A room type you cannot read is a room type
             nobody checks. Full width gives each select its own words back, and these are two
             questions asked in sequence anyway, so reading them top to bottom costs nothing. */}
+        {folded("requirements") ? null : (
         <Panel
-          icon={Bus}
-          // Yellow rather than amber, and with enough chroma to read as a colour at all:
-          // amber-50 is 0.022 — a cream that looked like an unstyled tile — and amber's
-          // hue sits far enough toward orange that darkening it alone never reads yellow.
-          // The tile is the softer 200; the glyph stays at 900 so it holds its contrast.
-          iconTile="bg-yellow-200 text-yellow-900"
-          title="Vehicle"
+          icon={Bus} iconTile="bg-amber-100 text-amber-700"
+          title="Vehicle & Room Requirement"
           description="What the trip needs — not what is finally assigned"
+          action={requirementSummary ? (
+            <span className="inline-flex w-fit items-center rounded-full bg-teal-50 px-2.5 py-1 text-xs font-semibold text-teal-700">
+              {requirementSummary}
+            </span>
+          ) : null}
         >
           <div className="space-y-5">
             <section className="min-w-0">
-              {/* The count sits with the band it counts. ml-auto pushes it right on a wide row and
-                  the existing flex-wrap drops it to its own line on a narrow one.
-                  The glyph carries the Services picker's colour for the same service, and takes
-                  self-center because the row aligns on the text baseline — an icon left on that
-                  baseline hangs below the heading it belongs to. */}
               <div className="mb-3 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                <CarFront className="h-4 w-4 shrink-0 self-center text-amber-700" aria-hidden="true" />
                 <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500">Vehicle</h3>
                 <p className="text-[11px] text-slate-400">Not the vehicle finally assigned</p>
-                {vehicleCount > 0 && (
-                  <span className="ml-auto inline-flex w-fit items-center rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">
-                    {vehicleCount} vehicle{vehicleCount === 1 ? "" : "s"}
-                  </span>
-                )}
               </div>
               <VehicleRequirementRows
                 rows={form.vehicleRequirements}
@@ -2439,14 +2783,8 @@ export default function BookingFormPage() {
             {/* A rule between the two bands, at every width now that they are stacked. */}
             <section className="min-w-0 border-t border-slate-100 pt-5">
               <div className="mb-3 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                <BedDouble className="h-4 w-4 shrink-0 self-center text-emerald-600" aria-hidden="true" />
                 <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500">Rooms</h3>
                 <p className="text-[11px] text-slate-400">Room mix for the party</p>
-                {roomCount > 0 && (
-                  <span className="ml-auto inline-flex w-fit items-center rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">
-                    {roomCount} room{roomCount === 1 ? "" : "s"}
-                  </span>
-                )}
               </div>
               <RoomRequirementRows
                 rows={form.roomRequirements}
@@ -2457,35 +2795,21 @@ export default function BookingFormPage() {
             </section>
           </div>
         </Panel>
+        )}
 
         {/* onBlurField added in the create-form redesign so Travel Date validates on blur like the
             fields owned by this page, instead of waiting for submit. */}
         {/* Dates, Pickup, Drop and Travellers are all bands INSIDE this one panel. Vehicle and Room
             Requirement used to be bands here too and are no longer passed down — they are asked
             once, in the card above, instead of appearing under two headings on the same page. */}
+        {folded("travel") ? null : (
         <FastTravelDetails
           form={form}
           setField={setField}
           errors={errors}
           onBlurField={blurField}
           primaryFields={<>
-            {/* These two mirror the Travel Date box rather than sitting beside it as short
-                single-line controls: a mini uppercase caption over the value, inside one bordered
-                cell built the same way, so the row reads as three matching boxes. The height is
-                not set anywhere — the cell is the same caption line over the same text line with
-                the same padding, so it comes out the same height on its own.
-
-                Their Field label is gone: it would print the same word twice, once above the box
-                and once inside it. PrimaryBox puts an invisible line in its place so all three
-                boxes still start level, since Travel Date carries its label above its box. The
-                icons went with the label for the same reason — the caption already names the
-                field, and Travel Date's cells carry no icons either.
-
-                The controls themselves are stripped of their own border, radius and padding with
-                important utilities. The box owns that chrome now, and SearchableSelect's own
-                comment warns that two border utilities in one class string are settled by
-                stylesheet order — so this does not leave it to chance. */}
-            <PrimaryBox caption="Destination" required error={errors.destination} hint={destinationError}>
+            <Field label="Destination" required error={errors.destination}>
               <SearchableSelect
                 name="destination"
                 options={destinationOptions}
@@ -2503,24 +2827,26 @@ export default function BookingFormPage() {
                 searchPlaceholder="Type a destination..."
                 loading={loadingDestinations}
                 invalid={Boolean(errors.destination)}
+                icon={MapPin}
                 accent="blue"
                 advanceOnSelect
-                className="border-0! bg-transparent! rounded-none! p-0! pr-6! focus:ring-0!"
+                className="hover:border-slate-300"
               />
-            </PrimaryBox>
-            <PrimaryBox caption="Package Type" optional>
-              <select
-                value={form.packageType}
-                onChange={(event) => setField("packageType", event.target.value)}
-                className="w-full appearance-none border-0 bg-transparent p-0 pr-6 text-sm text-slate-800 outline-none"
-              >
-                <option value="">Select package</option>
-                {PACKAGE_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}
-              </select>
-              <ChevronDown className="pointer-events-none absolute right-0 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            </PrimaryBox>
+              {destinationError && <p className="text-xs text-amber-600">{destinationError}</p>}
+            </Field>
+            <Field label="Package Type" optional>
+              <div className="relative">
+                <PackageCheck className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <select value={form.packageType} onChange={(event) => setField("packageType", event.target.value)} className={`${controlClass("packageType", true)} appearance-none pr-9`}>
+                  <option value="">Select package</option>
+                  {PACKAGE_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              </div>
+            </Field>
           </>}
         />
+        )}
 
         {/* ── Services & Notes ─────────────────────────────────────────────────────────────────
             Full width, directly under Travel Details. It used to be a narrow right-hand column
@@ -2528,75 +2854,9 @@ export default function BookingFormPage() {
             squeezed into 7/10ths of the row — the source of most of the empty space on this page.
             Laid out horizontally, the eight chips fit one or two rows and the notes sit beside
             them instead of underneath. */}
-        <Panel icon={PackageCheck} iconTile="bg-violet-100 text-violet-700" title="Services & Notes" description="Confirmed inclusions and instructions">
-          {/* items-start is the fix for the oversized chips: without it the grid stretches every
-              cell to the tallest one — the notes textarea — so each service button grew to ~90px
-              tall. Now the chip block keeps its natural height and the textarea is free to be
-              taller than it. */}
-          <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-            {/* auto-rows-min for the same reason one level down, so the two chip rows do not
-                stretch to fill the column either. */}
-            {/* ONE row of five on desktop, wrapping to two-up on phones. Eight chips needed two
-                rows; five fit across, which is what makes this a single glance rather than a grid
-                to read. */}
-            <div className="grid auto-rows-min grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-              {SERVICES.map((service) => {
-                // OLD — replaced in create-form redesign
-                // const selected = form.services.includes(service);
-                //
-                // SERVICES holds Title Case ("Hotel"), but a lead's services come across as the
-                // lowercase ids the lead form stores ("hotel"), so applyLead prefilled the array
-                // and not one chip lit up — the agent then re-picked services that were already
-                // there, or shipped them twice in different casings.
-                const selected = form.services.some(
-                  (item) => String(item).toLowerCase() === service.toLowerCase()
-                );
-                /* Same card as Create Lead's picker: a coloured glyph tile over the label, with the
-                   tick in the corner instead of pushing the text sideways. The tile keeps its
-                   colour when selected — the blue ring and the tick say "picked", the colour says
-                   which service, and painting the whole card blue threw that second signal away. */
-                const { icon: Icon, tile } = SERVICE_TILES[service] || {};
-                return (
-                  <button
-                    key={service}
-                    type="button"
-                    onClick={() => toggleService(service)}
-                    aria-pressed={selected}
-                    title={service}
-                    className={`group relative flex flex-col items-center justify-center gap-1.5 rounded-xl border bg-white px-1 py-3 text-center transition focus:outline-none focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-100 ${selected ? "border-blue-500 ring-1 ring-blue-500" : "border-slate-200 hover:border-slate-300"}`}
-                  >
-                    <span
-                      className={`absolute right-1.5 top-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full transition ${selected ? "bg-blue-600 text-white" : "border border-slate-200 bg-white text-transparent group-hover:border-slate-300"}`}
-                    >
-                      <Check className="h-2 w-2" strokeWidth={3.5} />
-                    </span>
-                    {Icon && (
-                      <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${tile}`}>
-                        <Icon className="h-4 w-4" />
-                      </span>
-                    )}
-                    <span className={`w-full truncate text-[10px] font-semibold leading-tight ${selected ? "text-slate-900" : "text-slate-600"}`}>
-                      {service}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-            {/* Notes sit BESIDE the chips on lg (they are the same decision — "what is included")
-                and fall under them on smaller screens. No h-full: that was making the textarea
-                stretch the row, which is what inflated the chips. */}
-            <Field label="Booking / Trip Notes" optional>
-              <textarea rows={4} value={form.tripNotes} onChange={(event) => setField("tripNotes", event.target.value)} placeholder="Confirmed preferences, inclusions or internal instructions" className={`${controlClass("tripNotes")} resize-y`} />
-            </Field>
-          </div>
-        </Panel>
-
-        {/* ── Travel Itinerary ─────────────────────────────────────────────────────────────────
-            Now full width. The route table has four columns of its own; at 7/10ths of the row its
-            city pickers were the narrowest controls on the page. */}
+        {folded("itinerary") ? null : (
         <Panel
-          icon={Route}
-          iconTile="bg-sky-100 text-sky-700"
+          icon={Route} iconTile="bg-yellow-200 text-yellow-900"
           title="Travel Itinerary"
           description="The route, leg by leg — nights are spent at the To city"
           action={
@@ -2623,6 +2883,85 @@ export default function BookingFormPage() {
             onUpdate={updateItineraryRow}
           />
         </Panel>
+        )}
+
+        {/* ── Travel Itinerary ─────────────────────────────────────────────────────────────────
+            Now full width. The route table has four columns of its own; at 7/10ths of the row its
+            city pickers were the narrowest controls on the page. */}
+        {folded("services") ? null : (
+        <Panel icon={PackageCheck} iconTile="bg-violet-100 text-violet-700" title="Services & Notes" description="Confirmed inclusions and instructions">
+          {/* items-start is the fix for the oversized chips: without it the grid stretches every
+              cell to the tallest one — the notes textarea — so each service button grew to ~90px
+              tall. Now the chip block keeps its natural height and the textarea is free to be
+              taller than it. */}
+          <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+            {/* auto-rows-min for the same reason one level down, so the two chip rows do not
+                stretch to fill the column either. */}
+            {/* ONE row of five on desktop, wrapping to two-up on phones. Eight chips needed two
+                rows; five fit across, which is what makes this a single glance rather than a grid
+                to read. */}
+            <div className="grid auto-rows-min grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+              {SERVICES.map((service) => {
+                // OLD — replaced in create-form redesign
+                // const selected = form.services.includes(service);
+                //
+                // SERVICES holds Title Case ("Hotel"), but a lead's services come across as the
+                // lowercase ids the lead form stores ("hotel"), so applyLead prefilled the array
+                // and not one chip lit up — the agent then re-picked services that were already
+                // there, or shipped them twice in different casings.
+                const selected = form.services.some(
+                  (item) => String(item).toLowerCase() === service.toLowerCase()
+                );
+                  /* OLD — the flat chip this had drifted to on develop:
+                       <button … className={`inline-flex h-9 … ${selected
+                         ? "border-blue-600 bg-blue-600 text-white"
+                         : `… ${SERVICE_TILES[service]?.tile || ""}`}`}>
+                         {selected ? <Check …/> : <Glyph …/>}
+                     Its comment claimed the glyph and hue matched Create Lead's picker. They did
+                     not: the whole card went solid blue on select and the GLYPH WAS REPLACED by the
+                     tick, so the moment a service was picked the one signal that says WHICH service
+                     it is disappeared. A picked strip read as a row of identical blue boxes.
+
+                     Restored to `main`'s card, which is the one Create Lead actually renders: a
+                     coloured glyph tile above the label with the tick in its own corner. The tile
+                     KEEPS its colour when selected — the blue ring and the tick say "picked", the
+                     colour says which service — and the tick no longer pushes the text sideways. */
+                  const { icon: Icon, tile } = SERVICE_TILES[service] || {};
+                  return (
+                    <button
+                      key={service}
+                      type="button"
+                      onClick={() => toggleService(service)}
+                      aria-pressed={selected}
+                      title={service}
+                      className={`group relative flex flex-col items-center justify-center gap-1.5 rounded-xl border bg-white px-1 py-3 text-center transition focus:outline-none focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-100 ${selected ? "border-blue-500 ring-1 ring-blue-500" : "border-slate-200 hover:border-slate-300"}`}
+                    >
+                      <span
+                        className={`absolute right-1.5 top-1.5 flex h-3.5 w-3.5 items-center justify-center rounded-full transition ${selected ? "bg-blue-600 text-white" : "border border-slate-200 bg-white text-transparent group-hover:border-slate-300"}`}
+                      >
+                        <Check className="h-2 w-2" strokeWidth={3.5} />
+                      </span>
+                      {Icon && (
+                        <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${tile}`}>
+                          <Icon className="h-4 w-4" />
+                        </span>
+                      )}
+                      <span className={`w-full truncate text-[10px] font-semibold leading-tight ${selected ? "text-slate-900" : "text-slate-600"}`}>
+                        {service}
+                      </span>
+                    </button>
+                  );
+              })}
+            </div>
+            {/* Notes sit BESIDE the chips on lg (they are the same decision — "what is included")
+                and fall under them on smaller screens. No h-full: that was making the textarea
+                stretch the row, which is what inflated the chips. */}
+            <Field label="Booking / Trip Notes" optional>
+              <textarea rows={4} value={form.tripNotes} onChange={(event) => setField("tripNotes", event.target.value)} placeholder="Confirmed preferences, inclusions or internal instructions" className={`${controlClass("tripNotes")} resize-y`} />
+            </Field>
+          </div>
+        </Panel>
+        )}
         </div>
 
         {/* Money rail — sticky on lg so the amounts and the server-computed figures stay in view
@@ -2631,12 +2970,159 @@ export default function BookingFormPage() {
             onWheel contract), so focus-first-invalid and Enter-advance keep working — DOM order
             simply lands them last, right before the footer actions. */}
         <aside className="min-w-0 space-y-5 lg:sticky lg:top-[72px]">
-          <Panel icon={BadgeIndianRupee} iconTile="bg-emerald-100 text-emerald-700" title="Payment Details" description="Commercials for this booking">
+          <Panel icon={BadgeIndianRupee} iconTile="bg-emerald-100 text-emerald-700" title="Money" description="Commercials for this booking">
             <div className="space-y-4">
-              <Field label="Total Budget (INR)" required error={errors.customerAmount}>
+
+              {/* ── No quote behind this booking at all ───────────────────────────────────────
+                  Nothing to be "as per", so this is the only quotation question there is. Where a
+                  quotation DOES exist the same offer lives inside the block below, next to the
+                  version picker.
+                  Hidden while editing — a saved booking's quote is made from its own screen. */}
+              {quotations.length === 0 && !editing && (
+                <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+                  <input
+                    type="checkbox"
+                    data-skip-enter="true"
+                    checked={alsoCreateQuotation}
+                    onChange={(event) => setAlsoCreateQuotation(event.target.checked)}
+                    className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-blue-600 focus:ring-2 focus:ring-blue-100"
+                  />
+                  <span className="min-w-0">
+                    <span className="block text-xs font-bold text-slate-800">Also create a quotation</span>
+                    <span className="mt-0.5 block text-[11px] leading-relaxed text-slate-500">
+                      Writes a draft quote for this booking's amount and links the two. Open it
+                      afterwards to itemise the hotels, flights and day plan.
+                    </span>
+                  </span>
+                </label>
+              )}
+
+              {/* ── As per quotation ──────────────────────────────────────────────────────────
+                  Sits directly above the amount because it decides whether the amount is even
+                  typeable. Only when there IS a quote to be "as per". */}
+              {quotations.length > 0 && (
+                <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+                  <label className="flex cursor-pointer items-start gap-2.5">
+                    <input
+                      type="checkbox"
+                      data-skip-enter="true"
+                      checked={asPerQuotation}
+                      onChange={(event) => setAsPerQuotation(event.target.checked)}
+                      className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-blue-600 focus:ring-2 focus:ring-blue-100"
+                    />
+                    <span className="min-w-0">
+                      <span className="block text-xs font-bold text-slate-800">
+                        As per quotation — carry the itinerary &amp; plan
+                      </span>
+                      <span className="mt-0.5 block text-[11px] leading-relaxed text-slate-500">
+                        {asPerQuotation
+                          ? "Day plan, hotels, room plan and inclusions come from the selected version. The amount stays yours to type."
+                          : "Nothing is carried from the quotation — enter the trip detail on the booking yourself."}
+                      </span>
+                    </span>
+                  </label>
+
+                  {/* ── Ticked: WHICH quotation ────────────────────────────────────────────────
+                      Shown even when there is only one. "As per quotation" is a claim about a
+                      specific document, and a lead often carries several versions — naming the one
+                      being carried is the difference between a decision and an assumption. With a
+                      single quote it reads back as confirmation, which costs a line and settles the
+                      question. */}
+                  {asPerQuotation && (
+                    <div className="mt-3">
+                      <Field label="Which quotation">
+                        <div className="relative">
+                          <select
+                            value={quotationPublicId}
+                            onChange={(event) => setQuotationPublicId(event.target.value)}
+                            className={`${controlClass("quotationPublicId")} appearance-none pr-9`}
+                          >
+                            {quotations.map((row) => {
+                              const id = row.publicId || row.id;
+                              return (
+                                <option key={id} value={id}>
+                                  {row.version ? `${row.version} · ` : ""}{row.title || "Quotation"}
+                                  {row.grandTotal != null ? ` — ₹${Number(row.grandTotal).toLocaleString("en-IN")}` : ""}
+                                </option>
+                              );
+                            })}
+                          </select>
+                          <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                        </div>
+                      </Field>
+                    </div>
+                  )}
+
+                  {/* ── Unticked: write a NEW one instead ──────────────────────────────────────
+                      Not carrying an existing plan usually means this booking is its own thing, and
+                      the customer still expects a document. Offering it here keeps the fork in one
+                      place — carry an old quote, or start a fresh one — instead of making the agent
+                      leave, open the builder and retype a trip they have just entered. */}
+                  {/* Offered in BOTH states, not only when the box is unticked. Writing a fresh
+                      quote and carrying an old one's plan are separate decisions: an agent can take
+                      v2's day plan into the booking and still owe the customer a document at the
+                      newly agreed price. Hiding this behind "untick as per quotation" made a
+                      routine action reachable only by answering an unrelated question the wrong
+                      way. */}
+                  {!editing && (
+                    <label className="mt-3 flex cursor-pointer items-start gap-2.5 rounded-md border border-slate-200 bg-white p-3">
+                      <input
+                        type="checkbox"
+                        data-skip-enter="true"
+                        checked={alsoCreateQuotation}
+                        onChange={(event) => setAlsoCreateQuotation(event.target.checked)}
+                        className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-blue-600 focus:ring-2 focus:ring-blue-100"
+                      />
+                      <span className="min-w-0">
+                        <span className="block text-xs font-bold text-slate-800">Create a new quotation</span>
+                        <span className="mt-0.5 block text-[11px] leading-relaxed text-slate-500">
+                          Writes a draft quote for this booking's amount. The existing
+                          {" "}{quotations.length === 1 ? "quotation is" : "quotations are"} left
+                          untouched.
+                          {alsoCreateQuotation && asPerQuotation && (
+                            <>
+                              {" "}The new quote becomes this booking's linked one — a booking can
+                              name only one, and it should be the document that matches its price.
+                            </>
+                          )}
+                        </span>
+                      </span>
+                    </label>
+                  )}
+
+                  {/* Reports the gap; does not offer to close it. The quotation is what the customer
+                      was offered and stays that way — this booking simply sold at a different
+                      figure, which is ordinary and worth recording rather than hiding. */}
+                  {priceDivergence && (
+                    <p className="mt-2.5 rounded-md bg-amber-50 px-2.5 py-1.5 text-[11px] font-semibold leading-relaxed text-amber-800">
+                      Quoted ₹{quotedFigure.toLocaleString("en-IN")}, booking at
+                      ₹{(Number(form.customerAmount) || 0).toLocaleString("en-IN")} — recorded on the
+                      booking. The quotation is left as the customer received it.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* ── What comes OFF the price, in one row ─────────────────────────────────────
+                  Vendor cost, agent commission and tax are the three deductions between the
+                  customer amount and the margin. Stacked, they read as three unrelated chores;
+                  side by side they read as the subtraction they are, and the Computed block below
+                  is the answer to it.
+                  Three columns ONLY where there is room for them: on the ordinary form this panel
+                  is a 320px sticky rail, and thirds of that are unreadable. The convert route drops
+                  the rail for full width, which is exactly where the row pays. */}
+              <div className={moneyOnly && !showAllFields
+                ? "grid grid-cols-1 gap-4 lg:grid-cols-3 lg:items-start"
+                : "contents"}>
+                <div className="space-y-4 rounded-xl border border-slate-200 bg-slate-50/70 p-4">
+                  <p className="mb-1 text-[11px] font-bold uppercase tracking-wide text-slate-500">Amount &amp; supplier</p>
+              <Field label="Customer Amount (INR)" optional error={errors.customerAmount}>
                 <div className="relative">
                   <IndianRupee className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                  <input name="customerAmount" type="number" min="0" step="0.01" value={form.customerAmount} onChange={(event) => setField("customerAmount", event.target.value)} onBlur={() => blurField("customerAmount")} onWheel={(event) => event.currentTarget.blur()} placeholder="0.00" className={controlClass("customerAmount", true)} />
+                  {/* Never read-only. "As per quotation" decides what PLAN is carried, not what the
+                      customer pays — the price is settled on the call and the agent must always be
+                      able to type it. */}
+                  <input name="customerAmount" type="number" min="0" step="0.01" value={form.customerAmount} onChange={(event) => setField("customerAmount", event.target.value)} onBlur={() => blurField("customerAmount")} onWheel={(event) => event.currentTarget.blur()} placeholder="0.00" className={`${controlClass("customerAmount", true)}`} />
                 </div>
                 {/* Shown only while the box still holds exactly what was seeded — once the clerk
                     types their own figure the note would be describing a number that is no longer
@@ -2649,68 +3135,18 @@ export default function BookingFormPage() {
                   </p>
                 )}
               </Field>
-              {/* Money the CUSTOMER owes, top to bottom: what the trip costs them, what they have
-                  paid and how, what is still outstanding. Vendor and Vendor Budget follow after,
-                  because they are what WE pay out — a different party and a different direction, so
-                  they no longer sit between the customer's budget and their advance. */}
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <Field label="Advance (INR)" optional error={errors.paidAmount}>
-                  <div className="relative">
-                    <IndianRupee className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                    <input name="paidAmount" type="number" min="0" step="0.01" value={form.paidAmount} onChange={(event) => setField("paidAmount", event.target.value)} onBlur={() => blurField("paidAmount")} onWheel={(event) => event.currentTarget.blur()} placeholder="0.00" className={controlClass("paidAmount", true)} />
-                  </div>
-                </Field>
-
-                {/* How the advance came in — UPI, Cash, Bank Transfer and the rest. The list is
-                    PAYMENT_METHODS, imported from the payments page rather than retyped here: the
-                    ledger already owns this vocabulary and a second copy would drift from it.
-                    Sits beside the amount rather than appearing only once one is typed — a field
-                    that materialises mid-form is a field the agent has to notice. It is DISABLED
-                    until there is an advance, so it never asks how nothing was paid. */}
-                <Field label="Payment Mode" optional>
-                  <div className="relative">
-                    <Wallet className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                    <select
-                      value={form.paymentMethod}
-                      onChange={(event) => setField("paymentMethod", event.target.value)}
-                      disabled={!(Number(form.paidAmount) > 0)}
-                      className={`${controlClass("paymentMethod", true)} appearance-none pr-9`}
-                    >
-                      <option value="">{Number(form.paidAmount) > 0 ? "Select mode" : "No advance"}</option>
-                      {PAYMENT_METHODS.map((method) => <option key={method} value={method}>{method}</option>)}
-                    </select>
-                    <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                  </div>
-                </Field>
-              </div>
-
-              {/* Balance is DERIVED, never typed — two boxes for one number is how they end up
-                  disagreeing. Shown against the server's computed total payable once the preview
-                  has landed (that figure includes GST/TCS), and against the plain budget until
-                  then, so the label always says which it is. */}
-              <div className="rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2.5">
-                <div className="flex items-baseline justify-between gap-2">
-                  <span className="text-xs font-semibold text-slate-500">
-                    Balance {preview?.totalPayable != null ? "(after tax)" : ""}
-                  </span>
-                  <span className={`text-sm font-extrabold tabular-nums ${balanceDue < 0 ? "text-red-600" : "text-slate-800"}`}>
-                    {inr(balanceDue)}
-                  </span>
+              <Field label="Advance Collected (INR)" optional error={errors.paidAmount}>
+                <div className="relative">
+                  <IndianRupee className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <input name="paidAmount" type="number" min="0" step="0.01" value={form.paidAmount} onChange={(event) => setField("paidAmount", event.target.value)} onBlur={() => blurField("paidAmount")} onWheel={(event) => event.currentTarget.blur()} placeholder="0.00" className={controlClass("paidAmount", true)} />
                 </div>
-                {balanceDue < 0 && (
-                  <p className="mt-1 text-[11px] font-semibold text-red-500">
-                    Advance is more than the amount due.
-                  </p>
-                )}
-              </div>
-
-              {/* Vendor gates Vendor Budget. The amount used to be asked for on its own and was
+              </Field>
+              {/* Vendor gates Vendor Cost. The amount used to be asked for on its own and was
                   REQUIRED, so every booking carried a supplier figure with no payee — and the agent
                   had to commit to one at the moment of sale, before anything was actually booked.
                   Now: pick a supplier and the amount opens up; leave it blank and the cost stays 0,
                   with the real spend itemised later in the expense ledger (which reduces profit). */}
-              <div className="space-y-4 border-t border-slate-100 pt-4">
-                <Field label="Vendor" optional error={errors.vendorPublicId}>
+              <Field label="Vendor" optional error={errors.vendorPublicId}>
                   {/* appearance-none + pr-9 is load-bearing: without it the browser draws its own
                       dropdown arrow AND the ChevronDown below renders, giving two. Same recipe as
                       the Package Type select — left icon, suppressed native arrow, own chevron. */}
@@ -2734,9 +3170,9 @@ export default function BookingFormPage() {
                     </select>
                     <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                   </div>
-                </Field>
-                <Field
-                  label="Vendor Budget (INR)"
+              </Field>
+              <Field
+                  label="Vendor Cost (INR)"
                   required={Boolean(form.vendorPublicId)}
                   optional={!form.vendorPublicId}
                   error={errors.vendorCost}
@@ -2745,24 +3181,8 @@ export default function BookingFormPage() {
                     <BadgeIndianRupee className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                     <input name="vendorCost" type="number" min="0" step="0.01" value={form.vendorCost} onChange={(event) => setField("vendorCost", event.target.value)} onBlur={() => blurField("vendorCost")} onWheel={(event) => event.currentTarget.blur()} placeholder={form.vendorPublicId ? "0.00" : "Select a vendor first"} disabled={!form.vendorPublicId} className={controlClass("vendorCost", true)} />
                   </div>
-                </Field>
-              </div>
-              {/* The "Overseas tour package" checkbox stood here. It was the last TCS control on
-                  this form — its only job was telling the server's 206C(1G) rule that this booking
-                  qualifies — and TCS is no longer something this screen asks about or shows.
-
-                  `overseasTourPackage` is NOT removed from the form or the payload, only from the
-                  UI. It still defaults to false and is still sent, so a new booking simply declares
-                  itself domestic; and edit mode still LOADS the saved value and sends it back
-                  untouched, so an existing overseas booking keeps its flag rather than being
-                  silently converted to a domestic one on the next save.
-
-                  Side effect worth knowing: with the flag false, the server's auto-TCS rule does
-                  not fire, so Total Payable becomes Budget + GST and the Computed panel adds up
-                  again — the unexplained ₹5 gap goes away on its own. An OLD booking that was
-                  saved as overseas still carries TCS inside its Total Payable with no line naming
-                  it, because that flag is preserved rather than cleared. */}
-
+              </Field>
+                </div>
               {/* ── Agent / agency commission ────────────────────────────────────────────────
                   Collapsed to a single control until someone says there IS an arrangement, because
                   most bookings have none and six always-visible fields for the exception would push
@@ -2854,27 +3274,15 @@ export default function BookingFormPage() {
                   </div>
                 )}
               </div>
-
-              {/* ── Tax for THIS booking ─────────────────────────────────────────────────────
-                  ONE question, and the only one an agent can actually answer at the point of sale:
-                  is the figure they just typed the all-in price, or does GST go on top of it?
-
-                  Whether GST applies at all, and whether TCS does, are POLICY — they come from the
-                  tenant's Accounting Settings, and the per-booking overrides that used to sit here
-                  ("Charge GST", "Collect TCS") are gone. Both flags still exist on the form and in
-                  the payload as null, which is exactly what "follow Accounting Settings" means, so
-                  the contract with the server is unchanged and a saved booking that carries an
-                  explicit value keeps it. */}
               <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <p className="text-sm font-bold text-slate-700">Tax for this booking</p>
-                    {/* No longer "Leave on Default" — there is no Default BUTTON any more. Unset is
-                        still a real state (neither option lit), so the sentence describes it as
-                        what it is: nothing picked, tenant settings decide. */}
-                    <p className="mt-0.5 text-xs font-normal leading-relaxed text-slate-400">
-                      Leave it unset to follow your Accounting Settings.
-                    </p>
+                    {accountingDefaultsAvailable && (
+                      <p className="mt-0.5 text-xs font-normal leading-relaxed text-slate-400">
+                        Leave on Default to follow your Accounting Settings.
+                      </p>
+                    )}
                   </div>
                   {taxOverridden && (
                     <span className="shrink-0 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-700">
@@ -2883,60 +3291,70 @@ export default function BookingFormPage() {
                   )}
                 </div>
 
-                {/* ONE question: does this booking carry GST or not.
-                    "Price entered is — Excl. / Incl. GST" asked something narrower and harder: not
-                    whether tax applies but how the figure already typed should be READ. That only
-                    ever mattered on inclusive pricing, which is the rare case, and it left the
-                    common one unanswerable — there was no way to say "no GST on this booking" at
-                    all once Charge GST was removed.
-
-                    Two options, no Default BUTTON, which does not drop the default STATE: applyGst
-                    starts null, so on a fresh booking neither is lit and the tenant's Accounting
-                    Settings still decide. TriToggle shows its Reset link once one is chosen, so
-                    null stays reachable. */}
-                <div className="mt-4">
+                <div className="mt-4 space-y-4">
                   <TriToggle
-                    label="GST"
-                    value={form.applyGst}
-                    onChange={(v) => {
-                      setField("applyGst", v);
-                      /* gstInclusive has no control of its own now, so this drives it — carefully.
-                         Without GST: inclusive-or-exclusive is a meaningless question, so it goes
-                         back to null rather than asserting an answer about a tax that is not there.
-                         With GST: the figure typed is pre-tax, which is what an agent means — but
-                         ONLY when nothing has been said yet. A booking saved as tax-INCLUSIVE keeps
-                         that, because flipping it here would silently restate what the customer
-                         owes on a control the agent may only have clicked to confirm. */
-                      if (v !== true) setField("gstInclusive", null);
-                      else if (form.gstInclusive == null) setField("gstInclusive", false);
-                    }}
+                    label="Price entered is"
+                    value={form.gstInclusive}
+                    onChange={(v) => setField("gstInclusive", v)}
                     options={[
-                      { value: true,  label: "With GST" },
-                      { value: false, label: "Without GST" },
+                      ...(accountingDefaultsAvailable ? [{ value: null, label: "Default" }] : []),
+                      { value: false, label: "Excl. GST" },
+                      { value: true,  label: "Incl. GST" },
                     ]}
                     hint={
-                      form.applyGst === true && form.gstInclusive === true
-                        ? "This booking was saved tax-inclusive — Total Budget is the all-in price and the taxable value is worked back out of it."
+                      form.gstInclusive === true
+                        ? "Customer Amount above is the all-in price — the taxable value is worked back out of it."
                         : null
                     }
                   />
+                  <TriToggle
+                    label="Charge GST"
+                    value={form.applyGst}
+                    onChange={(v) => setField("applyGst", v)}
+                    options={[
+                      ...(accountingDefaultsAvailable ? [{ value: null, label: "Default" }] : []),
+                      { value: true,  label: "Yes" },
+                      { value: false, label: "No" },
+                    ]}
+                  />
+                  <TriToggle
+                    label="Collect TCS"
+                    value={form.applyTcs}
+                    onChange={(v) => setField("applyTcs", v)}
+                    options={[
+                      ...(accountingDefaultsAvailable ? [{ value: null, label: "Default" }] : []),
+                      { value: true,  label: "Yes" },
+                      { value: false, label: "No" },
+                    ]}
+                  />
                 </div>
 
-                {/* TCS has no presence on this screen — no control, and no line in the Computed
-                    breakdown. Hiding it was not enough on its own: the form went on sending
-                    applyTcs: null ("follow the tenant policy"), that policy collects TCS, and a
-                    ₹100 booking with ₹5 GST came back with a Total Payable of ₹110 that nothing on
-                    screen could explain. The form now sends applyTcs: false — see the defaults —
-                    so the breakdown reconciles because there IS no other tax, not because one is
-                    being hidden. Accounting Settings are untouched and still govern every other
-                    surface. */}
+                {accountingDefaultsAvailable && form.applyTcs === null && (
+                  <p className="mt-4 border-t border-slate-200 pt-3 text-xs font-normal leading-relaxed text-slate-500">
+                    Domestic packages don't attract TCS. If that is true of most of your bookings,
+                    set the policy to <span className="font-semibold">Overseas only</span> in
+                    Accounting Settings rather than overriding it here.
+                  </p>
+                )}
+              <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2.5">
+                <input
+                  type="checkbox"
+                  checked={form.overseasTourPackage}
+                  onChange={(event) => setField("overseasTourPackage", event.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                />
+                <span className="text-xs">
+                  <span className="font-semibold text-slate-700">Overseas tour package</span>
+                  <span className="block font-normal text-slate-400">TCS is collected on overseas packages when your accounting policy says so</span>
+                </span>
+              </label>
+              </div>
               </div>
             </div>
           </Panel>
 
           <Panel
-            icon={Calculator}
-            iconTile="bg-indigo-100 text-indigo-700"
+            icon={Calculator} iconTile="bg-indigo-100 text-indigo-700"
             title="Computed"
             description="What the server will stamp on save"
             action={previewActive && previewState === "loading" ? (
@@ -2945,7 +3363,7 @@ export default function BookingFormPage() {
           >
             {!previewActive && (
               <p className="text-xs text-slate-400">
-                Enter the customer amount to see GST, total payable and profit — computed by the
+                Enter the customer amount to see GST, TCS, total payable and profit — computed by the
                 server from your accounting settings.
               </p>
             )}
@@ -2972,9 +3390,10 @@ export default function BookingFormPage() {
                     {form.gstInclusive === true ? "incl. " : "+ "}{inr(preview.gst)}
                   </span>
                 </div>
-                {/* No TCS row. It is not dropped from the MATH — Total Payable below is the
-                    server's figure and still has any TCS inside it — only from the breakdown, in
-                    line with TCS no longer being something this screen asks about. */}
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-semibold text-slate-400">TCS</span>
+                  <span className="font-bold text-slate-700">+ {inr(preview.tcs)}</span>
+                </div>
                 <div className="flex items-center justify-between border-t border-slate-100 pt-2">
                   <span className="text-xs font-bold text-slate-600">Total Payable</span>
                   <span className="text-sm font-extrabold text-slate-900">{inr(preview.totalPayable)}</span>
@@ -3088,8 +3507,8 @@ export default function BookingFormPage() {
               </div>
               <div>
                 <label className="mb-1.5 block text-xs font-semibold text-slate-600">Passengers</label>
-                {/*   totalTravellers is derived from `form`, so the cap
-                    of which card the counters themselves live in. */}
+                {/* Capped at the party size. totalTravellers is derived from `form`, so the cap
+                    holds regardless of which card the counters themselves live in. */}
                 <input type="number" min="1" max={Math.max(totalTravellers, 1)} value={form.assistancePassengerCount} onFocus={(event) => event.target.select()} onChange={(event) => setField("assistancePassengerCount", event.target.value)} className={controlClass("assistancePassengerCount")} />
               </div>
               <div>

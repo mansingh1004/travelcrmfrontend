@@ -4,13 +4,31 @@
 
 export { default as Allbookings } from "./pages/Allbookings";
 // Create and Edit routes intentionally share the fast, mode-aware booking form page.
-export { default as EditBooking } from "./pages/CreateBookingClean";
+export { default as EditBooking } from "./pages/CreateBookingEntry";
 export { default as BookingDetails } from "./pages/BookingDetails";
 export { default as bookingService } from "./api/bookingService";
+
+/* The requirement editors, shared with the LEAD form.
+   "What the trip needs, not what is finally assigned" is a question the enquiry asks first and the
+   booking merely inherits — a lead that already knows "1 Innova, 3 Deluxe AC" should not have to
+   say it again at conversion. Exported through the index (never deep-imported) so the boundary
+   rule in CLAUDE.md holds: leads reaches bookings only through its public API. */
+export { VehicleRequirementRows, RoomRequirementRows } from "./components/RequirementRows";
+/* Same reason, one card up: the lead form's Rapid mode renders the BOOKING's Travel Details card
+   rather than a lookalike of it, so dates, pickup mode and drop are asked in one shape across both
+   screens and cannot drift apart. It is fully props-driven (`form` + `setField`), so the lead
+   passes a small alias proxy — the two forms name four of these fields differently (returnDate /
+   departureMode / departCountry / departCity) while the option strings and every sub-field are
+   already identical. */
+export { default as FastTravelDetails } from "./components/FastTravelDetails";
+/* And the route editor, for the same card stack. A lead's STOP is a leg's TO — nights belong to the
+   arrival city on both sides — so the lead maps city/cityId onto toCity/toCityId and chains the FROM
+   from the previous leg. Its saved payload is unchanged; only the editor is shared. */
+export { default as RouteSegments } from "./components/RouteSegments";
 export { default as BookingPayments } from "./pages/BookingPayments";
 export { default as BookingServices } from "./pages/BookingServices"
 export { default as DuplicateBookings } from "./pages/DuplicateBookings";
 // Previous Create Booking UI is intentionally kept for reference:
 // export { default as CreateBooking } from "./pages/CreateBooking";
-export { default as CreateBooking } from "./pages/CreateBookingClean";
+export { default as CreateBooking } from "./pages/CreateBookingEntry";
 
