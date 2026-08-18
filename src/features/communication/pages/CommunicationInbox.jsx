@@ -184,6 +184,12 @@ export default function CommunicationInbox({ channel: fixedChannel = null, kind:
   const [pagination, setPagination] = useState(null);
   const [listLoading, setListLoading] = useState(true);
 
+  /* A failed load is NOT an empty inbox. Without this the catch below toasted (and the toast is
+     suppressed for a 401 the interceptor already handled) and threads stayed [], so the list fell
+     through to "Nothing here" — telling an operator their inbox is empty when it merely failed to
+     load, which is the one message that stops them looking further. */
+  const [listError, setListError] = useState(null);
+
   const [selected, setSelected] = useState(null);
   const [messages, setMessages] = useState([]);
   const [msgLoading, setMsgLoading] = useState(false);
@@ -222,12 +228,17 @@ export default function CommunicationInbox({ channel: fixedChannel = null, kind:
           const seen = new Set(prev.map((t) => t.publicId));
           return [...prev, ...items.filter((t) => !seen.has(t.publicId))];
         });
+        setListError(null);   // a later success clears a stale banner
         setPagination(pg);
         if (!keepSelection) {
           setSelected((prev) =>
             prev && items.some((t) => t.publicId === prev.publicId) ? prev : items[0] || null);
         }
       } catch (e) {
+        /* Recorded in state as well as toasted. isAlreadyReported is true for the errors the
+           interceptor handled itself (401, 403, maintenance), and those are exactly the ones that
+           would otherwise leave the pane silently claiming the inbox is empty. */
+        setListError(getErrorMessage(e, "Could not load conversations."));
         if (!isAlreadyReported(e)) {
           showToast(getErrorMessage(e, "Could not load conversations."), "error");
         }
@@ -476,6 +487,22 @@ export default function CommunicationInbox({ channel: fixedChannel = null, kind:
               {listLoading ? (
                 <div className="flex items-center justify-center gap-2 py-10 text-[12px] text-slate-400">
                   <Loader2 className="w-4 h-4 animate-spin" /> Loading…
+                </div>
+              ) : listError ? (
+                /* Deliberately distinct from the empty state below. "Nothing here" and "we could
+                   not reach the server" are opposite instructions to the operator: one says stop
+                   looking, the other says try again. */
+                <div className="px-4 py-10 text-center">
+                  <AlertTriangle className="w-6 h-6 text-amber-400 mx-auto mb-2" />
+                  <p className="text-[12px] font-bold text-slate-600">Could not load conversations</p>
+                  <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">{listError}</p>
+                  <button
+                    type="button"
+                    onClick={() => loadThreads()}
+                    className="mt-3 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-bold text-slate-600 hover:bg-slate-50"
+                  >
+                    Try again
+                  </button>
                 </div>
               ) : threads.length === 0 ? (
                 <div className="px-4 py-10 text-center">

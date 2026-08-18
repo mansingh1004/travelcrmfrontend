@@ -12,7 +12,7 @@
 // reaching into this feature's internals.
 // ─────────────────────────────────────────────────────────────────────────────
 import { useEffect, useRef } from "react";
-import { AlertCircle, Check, Clock, Loader2, Phone } from "lucide-react";
+import { AlertCircle, Check, Clock, Loader2, Paperclip, Phone } from "lucide-react";
 import { safeHtml } from "@shared/lib/safeHtml";
 
 const fmtTime = (iso) => {
@@ -142,6 +142,27 @@ export default function ChatThread({
                   />
                 ) : (
                   m.bodyText || <span className="text-slate-400 italic">[no text]</span>
+                )}
+
+                {/* Files ride along under the body. The row already carried attachmentCount, so the
+                    bubble could say "1 attachment" while nothing could open it — these are the
+                    links that were missing. The bytes are not in the CRM: the endpoint streams
+                    them from the mailbox and checks the caller may see this thread first. */}
+                {Array.isArray(m.attachments) && m.attachments.length > 0 && (
+                  <div className="mt-1.5 flex flex-col gap-1">
+                    {m.attachments.map((a) => (
+                      <a
+                        key={a.publicId}
+                        href={`/api/communication/attachments/`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white/70 px-2 py-1 text-[10.5px] font-semibold text-slate-600 hover:bg-white hover:text-blue-600"
+                      >
+                        <Paperclip className="w-3 h-3 shrink-0" />
+                        <span className="truncate max-w-[180px]">{a.fileName || "attachment"}</span>
+                      </a>
+                    ))}
+                  </div>
                 )}
 
                 {/* A refused send says so on the bubble. Anywhere else and the operator reads a

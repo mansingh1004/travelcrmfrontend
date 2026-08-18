@@ -29,6 +29,11 @@ const emailConfigurationService = {
       // Always sent, including as "" — the server treats null as "field absent, keep what is
       // stored", so omitting it would make clearing the signature impossible.
       signature: formData.signature ?? "",
+      // Optional IMAP override, for providers the smtp.x -> imap.x guess gets wrong. Always sent,
+      // including as "" — that is how a tenant clears it and goes back to the derived host, which
+      // is the way out for someone who typed the wrong one.
+      imapHost: (formData.imapHost || "").trim(),
+      imapPort: parseInt(String(formData.imapPort ?? ""), 10) || null,
     });
   },
 
