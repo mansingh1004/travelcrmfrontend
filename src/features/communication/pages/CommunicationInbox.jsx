@@ -170,6 +170,67 @@ function RailRow({ label, children }) {
   );
 }
 
+/**
+ * The snooze presets.
+ *
+ * Relative offsets rather than named times ("tomorrow 9am"), because the server compares against a
+ * plain instant and a named time would have to agree with the tenant's timezone to mean what it
+ * says — a promise this stack cannot currently keep. "In 4 hours" is exactly as useful and is true
+ * everywhere.
+ */
+const SNOOZE_PRESETS = [
+  { label: "1 hour",  hours: 1 },
+  { label: "4 hours", hours: 4 },
+  { label: "tomorrow", hours: 24 },
+  { label: "3 days",  hours: 72 },
+  { label: "next week", hours: 168 },
+];
+
+/**
+ * Snooze with a preset menu.
+ *
+ * <p>The pairing that makes this safe to offer at all is `CommSnoozeSweeper`: before it existed,
+ * snoozing removed a thread from the open queue and nothing ever put it back, so the control would
+ * have been a quiet way to lose work an operator explicitly asked to be reminded about.
+ */
+function SnoozeButton({ onPick }) {
+  const [open, setOpen] = useState(false);
+
+  const pick = (preset) => {
+    setOpen(false);
+    // ISO with no zone suffix: the backend field is a LocalDateTime, and sending a Z-suffixed
+    // instant would be parsed as local time and land the wake-up hours off.
+    const until = new Date(Date.now() + preset.hours * 3600_000)
+      .toISOString().slice(0, 19);
+    onPick(until, preset.label);
+  };
+
+  return (
+    <div className="relative">
+      <button type="button" title="Hide this until later — it comes back on its own"
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex items-center gap-1 text-[10.5px] font-bold text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-md px-2 py-1">
+        <Clock className="w-3 h-3" /> Snooze
+      </button>
+      {open && (
+        <>
+          {/* Click-away closes it. Without this the menu survives the next click anywhere on the
+              page, which on a three-pane inbox means it hangs over whatever the operator opened. */}
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 top-full mt-1 z-20 w-36 rounded-lg border border-slate-200 bg-white shadow-lg overflow-hidden">
+            {SNOOZE_PRESETS.map((preset) => (
+              <button key={preset.label} type="button" onClick={() => pick(preset)}
+                className="w-full text-left px-3 py-1.5 text-[11.5px] font-semibold text-slate-600 hover:bg-slate-50 hover:text-slate-900">
+                {preset.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function CommunicationInbox({ channel: fixedChannel = null, kind: fixedKind = "CUSTOMER" }) {
   const { showToast } = useToast();
   const [params, setParams] = useSearchParams();
@@ -602,11 +663,25 @@ export default function CommunicationInbox({ channel: fixedChannel = null, kind:
                           <UserMinus className="w-3 h-3" /> Release
                         </button>
                       )}
-                      {selected.status === "CLOSED" ? (
+                      {/* Snooze — presets, not a date picker. This is pressed mid-conversation and
+                          the honest answers are all "later today" or "tomorrow"; a calendar widget
+                          for that is friction charged on every use to serve the rare one. A thread
+                          snoozed here comes back on its own: CommSnoozeSweeper reopens it and
+                          notifies whoever owns it. */}
+                      {selected.status !== "CLOSED" && (
+                        <SnoozeButton
+                          onPick={(until, label) =>
+                            triage(
+                              () => communicationService.setStatus(selected.publicId, "SNOOZED", until),
+                              `Snoozed until ${label}.`,
+                            )}
+                        />
+                      )}
+                      {selected.status === "CLOSED" || selected.status === "SNOOZED" ? (
                         <button type="button"
                           onClick={() => triage(() => communicationService.setStatus(selected.publicId, "OPEN"), "Reopened.")}
                           className="inline-flex items-center gap-1 text-[10.5px] font-bold text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-md px-2 py-1">
-                          <RotateCcw className="w-3 h-3" /> Reopen
+                          <RotateCcw className="w-3 h-3" /> {selected.status === "SNOOZED" ? "Wake" : "Reopen"}
                         </button>
                       ) : (
                         <button type="button" title="Done with this — a later message opens a new thread"

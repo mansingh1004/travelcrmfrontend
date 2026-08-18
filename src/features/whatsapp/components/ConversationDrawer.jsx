@@ -297,7 +297,11 @@ export default function ConversationDrawer({ lead, customer, initialChannel = "W
           </Notice>
         )}
 
-        <div className="flex-1 overflow-y-auto px-3.5 py-3 bg-slate-50/60">
+        {/* No page padding on the WhatsApp tab: ChatThread paints the wallpaper edge to edge, and a
+            strip of grey around it reads as a widget embedded in a form rather than a conversation. */}
+        <div className={`flex-1 overflow-y-auto ${
+          channel === "WHATSAPP" ? "" : "px-3.5 py-3 bg-slate-50/60"
+        }`}>
           {loading ? (
             <div className="flex items-center justify-center gap-2 py-10 text-[12px] text-slate-400">
               <Loader2 className="w-4 h-4 animate-spin" /> Opening conversation…
@@ -306,6 +310,9 @@ export default function ConversationDrawer({ lead, customer, initialChannel = "W
             <ChatThread
               messages={messages}
               loading={msgLoading}
+              /* Only WhatsApp gets the WhatsApp skin. An email thread painted in chat green would
+                 misrepresent which channel the customer was actually reached on. */
+              skin={channel === "WHATSAPP" ? "whatsapp" : "plain"}
               emptyHint={
                 channel === "WHATSAPP"
                   ? "No WhatsApp messages yet. The first message you send starts the thread."

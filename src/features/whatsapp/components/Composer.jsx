@@ -383,13 +383,19 @@ function ComposerBody({ ctx, channel, thread, target, onSent, autoFocus }) {
           )}
 
           {mode === "TEXT" || mode === "DEVICE" ? (
+            /* Pill-shaped and two rows, the way the real composer sits. Three rows of empty box
+               under a chat is a form; this is a message being typed. It stays a textarea rather
+               than an input because a WhatsApp message is routinely multi-line and Ctrl+Enter is
+               already the send binding. */
             <textarea
               ref={firstFieldRef}
               value={text}
               onChange={(e) => setText(e.target.value)}
-              rows={3}
-              placeholder="Write a message…"
-              className={`${inputCls} resize-none`}
+              rows={2}
+              placeholder="Type a message"
+              className="w-full px-3.5 py-2 rounded-2xl border border-slate-200 bg-white text-[13px]
+                leading-[19px] text-slate-700 placeholder-slate-400 resize-none outline-none
+                focus:border-emerald-300 focus:ring-2 focus:ring-emerald-50"
             />
           ) : (
             <>
@@ -485,14 +491,25 @@ function ComposerBody({ ctx, channel, thread, target, onSent, autoFocus }) {
           onClick={send}
           disabled={!canSend || sending}
           title="Ctrl + Enter"
-          className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-[12px] font-bold transition-colors ${
+          className={`inline-flex items-center gap-1.5 text-[12px] font-bold transition-colors ${
+            /* Plain free text on WhatsApp gets the round green send button — the one control every
+               operator already knows. The template and device modes keep a labelled button on
+               purpose: they do something the icon does not describe (pick an approved template, or
+               hand off to the phone and log it), and a bare arrow there would hide the difference
+               between a business-account send and a person sending it themselves. */
+            channel === "WHATSAPP" && mode === "TEXT"
+              ? "justify-center w-9 h-9 rounded-full shrink-0"
+              : "rounded-lg px-3.5 py-2"
+          } ${
             !canSend || sending
               ? "bg-slate-100 text-slate-400 cursor-not-allowed"
-              : "bg-slate-900 text-white hover:bg-slate-800"
+              : channel === "WHATSAPP" && mode === "TEXT"
+                ? "bg-[#00a884] text-white hover:bg-[#017561]"
+                : "bg-slate-900 text-white hover:bg-slate-800"
           }`}
         >
           {sending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-          {channel !== "WHATSAPP"
+          {channel === "WHATSAPP" && mode === "TEXT" ? null : channel !== "WHATSAPP"
             ? "Send"
             : mode === "TEMPLATE"
               ? "Send template"
