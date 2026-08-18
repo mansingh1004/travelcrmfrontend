@@ -13,6 +13,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { useEffect, useRef } from "react";
 import { AlertCircle, Check, Clock, Loader2, Phone } from "lucide-react";
+import { safeHtml } from "@shared/lib/safeHtml";
 
 const fmtTime = (iso) => {
   if (!iso) return "";
@@ -36,29 +37,20 @@ const fmtDay = (iso) => {
  * An email body is HTML; a WhatsApp body is not.
  *
  * The composer sends what the rich editor produced, so `bodyText` on an email row holds
- * `<div>…<a href="…">`. Rendered as a React text child that is exactly what the agent reads back —
- * their own markup, on the one screen built to show the formatting.
+ * `<div>…<a href="…">`. Rendered as a React text child that is what the agent reads back — their
+ * own markup, on the one screen built to show the formatting.
  *
- * This flattens it to readable text rather than rendering it: there is NO sanitizer in this
- * codebase (no DOMPurify, no sanitize-html), and `dangerouslySetInnerHTML` on a message body is
- * one customer reply away from stored XSS. Real HTML rendering waits for a sanitizer to land —
- * until then a legible plain-text rendering beats both raw tags and an injection hole.
+ * So an email body is rendered as HTML, **through the shared sanitizer**. This is the one message
+ * surface where the content can come from outside the company: an ingested customer reply. Today
+ * the ingest path stores flattened text, but that is an accident of the current reader, not an
+ * invariant, and a single change upstream would otherwise make this stored XSS. Sanitizing here
+ * means the rule holds whatever the ingest does later.
+ *
+ * A WhatsApp body is never HTML and stays a plain text child — cheaper, and it means a customer
+ * typing `<b>` sees `<b>`, which is what they typed.
  */
-function readable(message) {
-  const body = message.bodyText || "";
-  if (message.channel !== "EMAIL" || !/<[a-z][\s\S]*>/i.test(body)) return body;
-  return body
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/(p|div|li|tr|h[1-6])>/gi, "\n")
-    .replace(/<li[^>]*>/gi, "• ")
-    .replace(/<[^>]+>/g, "")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+function isHtmlEmail(message) {
+  return message.channel === "EMAIL" && /<[a-z][\s\S]*>/i.test(message.bodyText || "");
 }
 
 /** Delivery state, shown only where it tells the reader something they can act on. */
@@ -141,7 +133,16 @@ export default function ChatThread({
                   </span>
                 )}
 
-                {readable(m) || <span className="text-slate-400 italic">[no text]</span>}
+                {isHtmlEmail(m) ? (
+                  <div
+                    className="[&_p]:my-1 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5
+                      [&_a]:text-blue-600 [&_a]:underline [&_b]:font-bold [&_strong]:font-bold
+                      [&_img]:max-w-full [&_img]:h-auto"
+                    dangerouslySetInnerHTML={safeHtml(m.bodyText)}
+                  />
+                ) : (
+                  m.bodyText || <span className="text-slate-400 italic">[no text]</span>
+                )}
 
                 {/* A refused send says so on the bubble. Anywhere else and the operator reads a
                     message they believe was delivered. */}
