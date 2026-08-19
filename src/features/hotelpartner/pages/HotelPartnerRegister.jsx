@@ -2762,7 +2762,7 @@ function SaveBadge({ state, editable, complete, onRetry }) {
       </span>
     );
   }
-  /* "Draft saved", not "Saved", and slate rather than emerald when the form is still incomplete.
+  /* "Draft , not "Saved", and slate rather than emerald when the form is still incomplete.
      Green next to an empty form is a lie by tone: it answers "did the autosave reach the server"
      while the owner reads it as "this is done". They are different facts, and the one the owner
      cares about is the checklist. Emerald is kept for the case where both are true. */
