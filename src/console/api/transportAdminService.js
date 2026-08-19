@@ -89,8 +89,6 @@ export const transportAdminService = {
 
   getOrder: async (publicId) => unwrap(await ConsoleAPI.get(`${ORDERS}/${publicId}`)),
 
-  getAssignments: async (publicId) => unwrap(await ConsoleAPI.get(`${ORDERS}/${publicId}/assignments`)),
-
   /** Triage only — "I am looking at this". No step-up: it commits nothing. */
   review: async (publicId) => unwrap(await ConsoleAPI.post(`${ORDERS}/${publicId}/review`)),
 
@@ -180,8 +178,12 @@ export const transportAdminService = {
 
   // ── Earnings ────────────────────────────────────────────────────────────
 
-  listCommissions: async (params = {}) =>
-    unwrap(await ConsoleAPI.get(COMMISSIONS, { params: clean(params) })),
+  /** Paged — returns `{rows, pagination}`. See the note on `listVehicles`. */
+  listCommissions: async (params = {}) => {
+    const res = await ConsoleAPI.get(COMMISSIONS, { params: clean(params) });
+    const body = res?.data ?? {};
+    return { rows: body.data ?? [], pagination: body.pagination ?? {} };
+  },
   commissionSummary: async (params = {}) =>
     unwrap(await ConsoleAPI.get(`${COMMISSIONS}/summary`, { params: clean(params) })),
   commissionsForOrder: async (orderPublicId) =>
@@ -190,8 +192,12 @@ export const transportAdminService = {
   /** Append-only: an adjustment ADDS a row, it never edits the accrual. Both move reported revenue. */
   adjustCommission: async (orderPublicId, payload, mfaCode) =>
     unwrap(await ConsoleAPI.post(`${COMMISSIONS}/orders/${orderPublicId}/adjust`, payload, stepUpHeaders(mfaCode))),
-  settleCommission: async (publicId, payload, mfaCode) =>
-    unwrap(await ConsoleAPI.post(`${COMMISSIONS}/${publicId}/settle`, payload, stepUpHeaders(mfaCode))),
+  /** `reference` is a QUERY param, not a body — a settlement note, e.g. a bank UTR. */
+  settleCommission: async (publicId, reference, mfaCode) =>
+    unwrap(await ConsoleAPI.post(`${COMMISSIONS}/${publicId}/settle`, null, {
+      ...stepUpHeaders(mfaCode),
+      params: clean({ reference }),
+    })),
 };
 
 export default transportAdminService;

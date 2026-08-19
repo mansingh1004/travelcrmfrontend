@@ -33,6 +33,7 @@ import { upgradeRequestService } from "./api/upgradeRequestService";
 import { subAgentLicenseService } from "./api/subAgentLicenseService";
 import { marketplaceBookingService } from "./api/marketplaceBookingService";
 import { hotelNominationService } from "./api/marketplaceAdminService";
+import { transportAdminService } from "./api/transportAdminService";
 
 const ROW =
   "group relative flex w-full items-center rounded-xl text-sm transition-colors duration-150";
@@ -47,6 +48,7 @@ export default function ConsoleSidebar({ sections, collapsed, mobileOpen, onClos
   const [pendingUpgrades, setPendingUpgrades] = useState(0);
   const [pendingHotelRequests, setPendingHotelRequests] = useState(0);
   const [openNominations, setOpenNominations] = useState(0);
+  const [pendingTransportRequests, setPendingTransportRequests] = useState(0);
   const [openPinnedGroupId, setOpenPinnedGroupId] = useState(null);
   const [flyout, setFlyout] = useState(null);
 
@@ -178,11 +180,15 @@ export default function ConsoleSidebar({ sections, collapsed, mobileOpen, onClos
         marketplaceBookingService.pendingCount().catch(() => 0),
         // Also a bare NUMBER, like its neighbour above.
         hotelNominationService.openCount().catch(() => 0),
-      ]).then(([u, s, h, n]) => {
+        // Transport has its own queue and therefore its own pill: a car nobody has answered must
+        // not be hidden inside a hotel count.
+        transportAdminService.pendingCount().catch(() => 0),
+      ]).then(([u, s, h, n, t]) => {
         if (!alive) return;
         setPendingUpgrades(Number(u?.count ?? 0) + Number(s?.count ?? 0));
         setPendingHotelRequests(Number(h ?? 0));
         setOpenNominations(Number(n ?? 0));
+        setPendingTransportRequests(Number(t?.count ?? t ?? 0));
       });
     refresh();
     window.addEventListener("focus", refresh);
@@ -196,6 +202,7 @@ export default function ConsoleSidebar({ sections, collapsed, mobileOpen, onClos
     if (item.badge === "upgrades") return pendingUpgrades;
     if (item.badge === "hotelRequests") return pendingHotelRequests;
     if (item.badge === "hotelNominations") return openNominations;
+    if (item.badge === "transportRequests") return pendingTransportRequests;
     return 0;
   };
 
