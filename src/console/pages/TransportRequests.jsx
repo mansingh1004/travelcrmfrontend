@@ -51,6 +51,13 @@ export default function TransportRequests() {
   const [selected, setSelected] = useState(null);
   const [detail, setDetail] = useState(null);
   const [detailBusy, setDetailBusy] = useState(false);
+  // The contracted rates behind the vehicle that was requested. Fetched with the detail rather than
+  // carried on the order, because an order snapshots what was ASKED FOR and the rate card is what
+  // the platform pays — two different facts with two different lifetimes.
+  const [productRates, setProductRates] = useState([]);
+  // This order's own ledger rows. Shown beside the order because "what did we earn on this" is a
+  // question asked while looking at the order, not while scrolling a platform-wide ledger.
+  const [orderLedger, setOrderLedger] = useState([]);
 
   /** The pending step-up action: {kind, label, payload?, file?}. Null when no modal is open. */
   const [action, setAction] = useState(null);
@@ -80,9 +87,23 @@ export default function TransportRequests() {
   const openDetail = useCallback(async (row) => {
     setSelected(row);
     setDetail(null);
+    setProductRates([]);
+    setOrderLedger([]);
     setDetailBusy(true);
     try {
-      setDetail(await svc.getOrder(row.publicId));
+      const full = await svc.getOrder(row.publicId);
+      setDetail(full);
+      // Best-effort: an order that has never accrued simply has no rows, which is not an error.
+      svc.commissionsForOrder(row.publicId).then((l) => setOrderLedger(l ?? [])).catch(() => {});
+      if (full?.platformProductPublicId) {
+        try {
+          const product = await svc.getVehicle(full.platformProductPublicId);
+          setProductRates((product?.rates ?? []).filter((r) => r.active !== false));
+        } catch {
+          // A deleted or unreadable product must not blank the order. The approver simply types
+          // without the reference figures, which is what they did before this existed.
+        }
+      }
     } catch {
       // The row we already have is a usable fallback — the panel degrades rather than blanking.
       setDetail(row);
@@ -297,6 +318,8 @@ export default function TransportRequests() {
       {selected && (
         <OrderPanel
           order={detail ?? selected}
+          rates={productRates}
+          ledger={orderLedger}
           busy={detailBusy}
           onClose={() => {
             setSelected(null);
@@ -338,7 +361,7 @@ export default function TransportRequests() {
    The detail panel — everything known about one order, and every verb.
    ═══════════════════════════════════════════════════════════════════════════ */
 
-function OrderPanel({ order, busy, onClose, onReview, onRevise, onAction, onVoucher, error }) {
+function OrderPanel({ order, rates, ledger, busy, onClose, onReview, onRevise, onAction, onVoucher, error }) {
   const [approve, setApprove] = useState({ supplierAmount: "", tenantPayable: "", supplierConfirmationNumber: "", cancellationTerms: "" });
   const [revise, setRevise] = useState({ revisedSupplierAmount: "", revisedTenantPayable: "", reason: "" });
   const [assign, setAssign] = useState({ supplierName: "", vehicleRegistration: "", vehicleMakeModel: "", driverName: "", driverPhone: "" });
@@ -401,6 +424,31 @@ function OrderPanel({ order, busy, onClose, onReview, onRevise, onAction, onVouc
                   key={a.publicId ?? i}
                   k={a.vehicleRegistration ?? `Vehicle ${i + 1}`}
                   v={[a.vehicleMakeModel, a.driverName, a.driverPhone, a.supplierName].filter(Boolean).join(" · ")}
+                />
+              ))}
+            </Section>
+          )}
+
+          {/* What the platform contracted for this vehicle. The whole reason rate cards exist: an
+              approval figure typed without them is a guess, and that is how a margin goes negative.
+              Never leaves the console — `netRate` is the platform's cost. */}
+          {rates?.length > 0 && (
+            <Section title="Contracted rates">
+              {rates.map((r) => (
+                <KV
+                  key={r.publicId}
+                  k={String(r.serviceType ?? "").replace(/_/g, " ")}
+                  v={[
+                    r.netRate == null ? null : money(r.netRate, r.currency),
+                    String(r.rateModel ?? "").replace(/_/g, " ").toLowerCase(),
+                    r.includedKm ? `${r.includedKm} km` : null,
+                    r.extraKmRate ? `+${r.extraKmRate}/km` : null,
+                    r.driverAllowance ? `DA ${r.driverAllowance}` : null,
+                    r.nightHalt ? `NH ${r.nightHalt}` : null,
+                    r.publicId === order.platformRatePublicId ? "— the agent picked this one" : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
                 />
               ))}
             </Section>
@@ -554,6 +602,50 @@ function OrderPanel({ order, busy, onClose, onReview, onRevise, onAction, onVouc
                 }
               >
                 Send the quote
+              </Btn>
+            </Action>
+          )}
+
+          {ledger?.length > 0 && (
+            <Section title="What this order earned">
+              {ledger.map((e) => (
+                <KV
+                  key={e.publicId}
+                  k={e.entryType}
+                  v={[money(e.amount, e.currency), e.status, e.reason].filter(Boolean).join(" · ")}
+                />
+              ))}
+            </Section>
+          )}
+
+          {/* The platform's OWN cancellation, distinct from answering a tenant's request above. Used
+              when the operator falls through and the journey cannot run: it settles the charge and
+              the refund in one act rather than waiting for the agency to ask. */}
+          {["CONFIRMED", "TENANT_ACCEPTED", "CANCELLATION_QUOTED"].includes(s) && (
+            <Action label="Cancel this journey" hint="The platform cancelling, not the agency asking. Records the charge and what is refunded, and reverses the accrual.">
+              <div className="grid gap-2 sm:grid-cols-2">
+                <Field label="Charge" value={quote.charge} onChange={(v) => setQuote((f) => ({ ...f, charge: v }))} type="number" />
+                <Field label="Platform keeps" value={quote.retainedEarning} onChange={(v) => setQuote((f) => ({ ...f, retainedEarning: v }))} type="number" />
+              </div>
+              <Field label="Reason" value={quote.note} onChange={(v) => setQuote((f) => ({ ...f, note: v }))} />
+              <Btn
+                className="mt-2"
+                tone="danger"
+                onClick={() =>
+                  onAction({
+                    kind: "cancel",
+                    label: "Cancel this journey",
+                    description: `${order.orderCode} will be cancelled. The agency is charged ${money(quote.charge || 0, order.currency)}.`,
+                    confirmLabel: "Cancel the journey",
+                    payload: {
+                      charge: quote.charge === "" ? null : Number(quote.charge),
+                      retainedEarning: quote.retainedEarning === "" ? null : Number(quote.retainedEarning),
+                      reason: quote.note || null,
+                    },
+                  })
+                }
+              >
+                <XCircle size={14} /> Cancel the journey
               </Btn>
             </Action>
           )}

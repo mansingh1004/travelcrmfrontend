@@ -386,6 +386,23 @@ export const NAV_SECTIONS = [
             path: "/fleet/compliance",
             keywords: "insurance permit fitness puc expiry",
           },
+          /* The supply side of the Transport Marketplace. Their own `can` rather than the group's:
+             an operator with FLEET has these only if they also hold TRANSPORT_SUPPLIER, and a plain
+             Vehicle Diary customer who never joined the marketplace must not see two dead links. */
+          {
+            id: "fleet.platformJobs",
+            label: "Platform Jobs",
+            path: "/fleet/platform-jobs",
+            can: () => hasPermission(P.TRANSPORT_SUPPLIER_ORDER_MANAGE) && hasModule("TRANSPORT_SUPPLIER"),
+            keywords: "marketplace orders assign driver duty slip platform",
+          },
+          {
+            id: "fleet.platformListings",
+            label: "My Platform Listings",
+            path: "/fleet/platform-listings",
+            can: () => hasPermission(P.TRANSPORT_SUPPLIER_LISTING_MANAGE) && hasModule("TRANSPORT_SUPPLIER"),
+            keywords: "marketplace listing publish supply catalog",
+          },
         ],
       },
       {

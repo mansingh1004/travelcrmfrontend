@@ -140,6 +140,7 @@ const ConsolePlatformHotelEditor = lazyPage(consoleFeature, "ConsolePlatformHote
 const ConsoleMarketplaceBookings = lazyPage(consoleFeature, "ConsoleMarketplaceBookings");
 const ConsoleTransportRequests = lazyPage(consoleFeature, "ConsoleTransportRequests");
 const ConsolePlatformVehicles = lazyPage(consoleFeature, "ConsolePlatformVehicles");
+const ConsoleTransportCommissions = lazyPage(consoleFeature, "ConsoleTransportCommissions");
 const ConsoleMarketplaceCommissions = lazyPage(consoleFeature, "ConsoleMarketplaceCommissions");
 const ConsoleMarketplaceOccupancy = lazyPage(consoleFeature, "ConsoleMarketplaceOccupancy");
 const ConsoleCommercialRules = lazyPage(consoleFeature, "ConsoleCommercialRules");
@@ -177,6 +178,8 @@ const FleetTripDetail = lazyPage(fleet, "FleetTripDetail");
 const FleetExpenses = lazyPage(fleet, "FleetExpenses");
 const FleetSettlements = lazyPage(fleet, "FleetSettlements");
 const FleetCompliance = lazyPage(fleet, "FleetCompliance");
+const SupplierOrders = lazyPage(fleet, "SupplierOrders");
+const SupplierListings = lazyPage(fleet, "SupplierListings");
 const FleetPeriods = lazyPage(fleet, "FleetPeriods");
 
 const accounting = () => import("@features/accounting");
@@ -319,6 +322,7 @@ const AppRouter = () => {
               {/* Where the transport catalog is actually filled. Nothing a tenant browses exists
               until a row here is published. */}
               <Route path="transport-catalog" element={<ConsolePlatformVehicles />} />
+              <Route path="transport-earnings" element={<ConsoleTransportCommissions />} />
               {/*
                 What the platform has SOLD, night by night — not what is available. There is no
                 allotment to report on; this is the exposure the operator already carries.
@@ -509,6 +513,11 @@ const AppRouter = () => {
 
               {/* ── Fleet / Vehicle Diary (guarded by FLEET_* permissions) ── */}
               <Route path="fleet" element={<Guard allow={hasPermission(P.FLEET_READ)}><FleetDashboard /></Guard>} />
+              {/* ── The SUPPLY side of the Transport Marketplace. Under /fleet because the operator is
+              a Vehicle Diary tenant and assigning a platform job picks their own vehicles and
+              drivers. Its own permissions — a fleet reader is not automatically a platform supplier. */}
+              <Route path="fleet/platform-jobs" element={<Guard allow={hasPermission(P.TRANSPORT_SUPPLIER_ORDER_MANAGE)}><SupplierOrders /></Guard>} />
+              <Route path="fleet/platform-listings" element={<Guard allow={hasPermission(P.TRANSPORT_SUPPLIER_LISTING_MANAGE)}><SupplierListings /></Guard>} />
               <Route path="fleet/vehicles" element={<Guard allow={hasPermission(P.FLEET_READ)}><FleetVehicles /></Guard>} />
               <Route path="fleet/vehicles/new" element={<Guard allow={hasPermission(P.FLEET_CREATE)}><FleetVehicleForm /></Guard>} />
               <Route path="fleet/vehicles/:publicId" element={<Guard allow={hasPermission(P.FLEET_READ)}><FleetVehicleDetail /></Guard>} />

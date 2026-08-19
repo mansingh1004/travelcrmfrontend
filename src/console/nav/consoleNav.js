@@ -181,7 +181,17 @@ export const CONSOLE_NAV_SECTIONS = [
         // Deliberately NOT folded into the hotel queue. The two are answered with different
         // knowledge — a room rate versus a duty roster — often by different people, and merging
         // them would hide a car nobody has assigned behind a pile of hotel enquiries.
+        badge: "transportRequests",
         keywords: "approval queue transport vehicle cab duty slip assignment driver",
+      },
+      {
+        id: "console.transportEarnings",
+        label: "Transport Earnings",
+        path: "/console/transport-earnings",
+        Icon: Coins,
+        // The ledger, not a report: it is where a settlement is actually recorded, so it sits with
+        // the other transport screens rather than under billing.
+        keywords: "commission earnings margin ledger settle adjust payout",
       },
       {
         id: "console.hotelOccupancy",

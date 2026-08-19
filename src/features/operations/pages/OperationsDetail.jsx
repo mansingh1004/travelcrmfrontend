@@ -285,13 +285,54 @@ export default function OperationsDetail() {
   }, [load]);
 
   /* ── Ops owner ───────────────────────────────────────────────────────────
-     Clearing works; naming somebody does not, and the reason is in the API rather than here:
-     PUT /operations/bookings/{id}/owner takes ?userId=<internal Long>, and no endpoint in the
-     product returns an internal user id — /bookings/assignment/eligible-users, /users/dropdown,
-     /users/available and /users all expose publicId UUIDs only, and no ops response resolves
-     opsOwnerUserId to a name. Rather than invent a picker that cannot be populated (or a raw
-     numeric box that would happily set an id belonging to another tenant — the server does not
-     validate it), the page offers the half that is real and says why the other half is missing. */
+     Both halves work now. The endpoint takes a user publicId and resolves it through a
+     tenant-scoped finder, and the record carries opsOwnerName, so this can name a person
+     instead of printing "user #2".
+
+     The ROSTER is the one thing that can still be unavailable: /bookings/assignment/eligible-users
+     is gated on BOOKING_CREATE, which an operations executive may legitimately not hold. A 403
+     there is ordinary — the page keeps the owner's name and the Release button and simply offers
+     no picker, rather than reporting a failure for a permission the user was never meant to have. */
+  const [roster, setRoster] = useState([]);
+  const [rosterDenied, setRosterDenied] = useState(false);
+  const [picking, setPicking] = useState(false);
+
+  useEffect(() => {
+    if (!canManageOps || !picking || roster.length || rosterDenied) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const users = await operationsService.assignableUsers();
+        if (!cancelled) setRoster(users);
+      } catch (err) {
+        if (cancelled) return;
+        // 403 is the expected shape for an ops user without BOOKING_CREATE — not a fault.
+        if (err?.response?.status === 403) setRosterDenied(true);
+        else if (!isAlreadyReported(err)) console.warn("Assignable users lookup failed", err);
+        setRoster([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [canManageOps, picking, roster.length, rosterDenied]);
+
+  const assignOwner = async (userPublicId) => {
+    if (!canManageOps || ownerBusy || !userPublicId) return;
+    setOwnerBusy(true);
+    try {
+      selfWriteAt.current = Date.now();
+      const updated = await operationsService.assignOpsOwner(bookingPublicId, userPublicId);
+      if (updated) setRecord(updated);
+      setPicking(false);
+      toast.success("Operations owner assigned");
+    } catch (err) {
+      // 404 (a user this tenant cannot see) is silent at the interceptor by policy, and it is
+      // exactly the answer a stale roster produces — so it has to be said here or nowhere.
+      if (!isAlreadyReported(err)) toast.error(getErrorMessage(err, "Could not assign the operations owner"));
+    } finally {
+      setOwnerBusy(false);
+    }
+  };
+
   const releaseOwner = async () => {
     if (!canManageOps || ownerBusy) return;
     setOwnerBusy(true);
@@ -306,6 +347,57 @@ export default function OperationsDetail() {
       setOwnerBusy(false);
     }
   };
+
+  /* Declared HERE, above the picker that reads it, and not down with the other derived values.
+     Those sit after this component's early returns, so a `const` there is in the temporal dead
+     zone while the picker below is being built — which throws on first render rather than
+     rendering a wrong value, and a production build cannot catch it because it is not a compile
+     error at all. */
+  const ownerId = record?.opsOwnerUserId ?? null;
+
+  /* A JSX value rather than a nested component: a component declared inside the render body is a
+     NEW type on every render, so React unmounts and remounts it — and a <select> that remounts
+     loses focus the instant the roster arrives. */
+  const ownerPicker = !picking ? (
+    <button
+      onClick={() => setPicking(true)}
+      disabled={ownerBusy}
+      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold border border-slate-200 bg-white text-slate-500 hover:text-blue-600 hover:border-blue-300 disabled:opacity-50"
+    >
+      {ownerId == null ? "Assign owner" : "Change"}
+    </button>
+  ) : rosterDenied ? (
+    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-400"
+          title="The roster lives behind BOOKING_CREATE, which this account does not hold.">
+      <Info className="w-3 h-3" />
+      No permission to list users
+    </span>
+  ) : (
+    <span className="inline-flex items-center gap-1.5">
+      <select
+        autoFocus
+        defaultValue=""
+        disabled={ownerBusy}
+        onChange={(e) => assignOwner(e.target.value)}
+        className="text-[11px] font-bold px-2 py-1 rounded-lg border border-slate-200 bg-white text-slate-700 outline-none focus:border-blue-400 disabled:opacity-50"
+      >
+        <option value="" disabled>
+          {roster.length ? "Choose a person…" : "Loading…"}
+        </option>
+        {roster.map((u) => (
+          <option key={u.id} value={u.id}>
+            {u.name}{u.role ? ` · ${u.role}` : ""}
+          </option>
+        ))}
+      </select>
+      <button
+        onClick={() => setPicking(false)}
+        className="text-[10px] font-bold text-slate-400 hover:text-slate-600"
+      >
+        Cancel
+      </button>
+    </span>
+  );
 
   /* ── Derived facts ───────────────────────────────────────────────────────── */
   const snap = booking?.tripSnapshot || null;
@@ -418,7 +510,6 @@ export default function OperationsDetail() {
   /* ── The page ────────────────────────────────────────────────────────────── */
 
   const daysOut = daysUntil(booking.travelDate);
-  const ownerId = record?.opsOwnerUserId ?? null;
 
   return (
     <Page
@@ -517,23 +608,19 @@ export default function OperationsDetail() {
             ) : ownerId == null ? (
               <>
                 <Badge tone="amber">Unassigned</Badge>
-                {canManageOps && (
-                  <span
-                    className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-400"
-                    title="PUT /operations/bookings/{id}/owner takes an internal user id, and every user endpoint in the product returns public ids only. Naming an owner from here needs that endpoint to accept a publicId."
-                  >
-                    <Info className="w-3 h-3" />
-                    Naming an owner is not available yet — the API exposes no user list to pick from
-                  </span>
-                )}
+                {canManageOps && ownerPicker}
               </>
             ) : (
               <>
                 <Badge tone="blue">
-                  {/* The API returns the raw internal id and resolves no name for it, so this
-                      says exactly what it knows rather than dressing an integer up as a person. */}
-                  Assigned · user #{ownerId}
+                  {/* opsOwnerName when the server resolved one. The raw id is the fallback and is
+                      labelled as exactly what it is — an unresolvable id means the user was deleted
+                      after being assigned, which is worth showing rather than hiding. */}
+                  {record?.opsOwnerName
+                    ? `Assigned · ${record.opsOwnerName}`
+                    : `Assigned · user #${ownerId} (name unresolved)`}
                 </Badge>
+                {canManageOps && ownerPicker}
                 {canManageOps && (
                   <button
                     onClick={releaseOwner}
