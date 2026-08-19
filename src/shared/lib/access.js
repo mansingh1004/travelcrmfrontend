@@ -43,6 +43,11 @@ export const P = {
   // it immediately, but rewriting what the ledger already says is admin territory. TENANT_ADMIN-only
   // until explicitly granted (same treatment as BOOKING_REFUND — in no non-admin role default).
   PAYMENT_MANAGE: "PAYMENT_MANAGE",
+  // Work a booking's operations checkpoints — source, confirm, reassign. Its own key rather than
+  // BOOKING_UPDATE on purpose: an operations executive marks a hotel confirmed, and must not be
+  // able to edit the booking's amount, travel date or status while doing it. READS stay on
+  // BOOKING_READ. Unlike PAYMENT_MANAGE this IS in the role defaults below — mirrors the backend.
+  OPS_MANAGE: "OPS_MANAGE",
   CUSTOMER_READ: "CUSTOMER_READ", CUSTOMER_CREATE: "CUSTOMER_CREATE", CUSTOMER_UPDATE: "CUSTOMER_UPDATE", CUSTOMER_DELETE: "CUSTOMER_DELETE",
   QUOTATION_READ: "QUOTATION_READ", QUOTATION_CREATE: "QUOTATION_CREATE", QUOTATION_UPDATE: "QUOTATION_UPDATE", QUOTATION_DELETE: "QUOTATION_DELETE",
   VENDOR_READ: "VENDOR_READ", VENDOR_CREATE: "VENDOR_CREATE", VENDOR_UPDATE: "VENDOR_UPDATE", VENDOR_DELETE: "VENDOR_DELETE",
@@ -123,6 +128,8 @@ const ROLE_PERMISSIONS = {
     // V2 PART 18 backfill's MANAGER branch.
     P.LEAD_CLAIM, P.LEAD_REASSIGN_LOCKED,
     P.BOOKING_READ, P.BOOKING_CREATE, P.BOOKING_UPDATE, P.BOOKING_CANCEL, P.BOOKING_DELETE, P.BOOKING_PROFIT_READ,
+    // Runs the operations board. Mirrors defaultsFor(MANAGER) and the V29 backfill.
+    P.OPS_MANAGE,
     P.CUSTOMER_READ, P.CUSTOMER_CREATE, P.CUSTOMER_UPDATE, P.CUSTOMER_DELETE,
     P.QUOTATION_READ, P.QUOTATION_CREATE, P.QUOTATION_UPDATE, P.QUOTATION_DELETE,
     P.VENDOR_READ, P.VENDOR_CREATE, P.VENDOR_UPDATE,
@@ -146,6 +153,8 @@ const ROLE_PERMISSIONS = {
     // the customer, taking the lead is a manager's call. Mirrors defaultsFor(TRAVEL_AGENT).
     P.LEAD_CLAIM,
     P.BOOKING_READ, P.BOOKING_CREATE, P.BOOKING_UPDATE,
+    // Agents deliver the trips they sell — chasing a hotel is the job, not a privilege.
+    P.OPS_MANAGE,
     P.CUSTOMER_READ, P.CUSTOMER_CREATE, P.CUSTOMER_UPDATE,
     P.QUOTATION_READ, P.QUOTATION_CREATE, P.QUOTATION_UPDATE,
     P.VENDOR_READ,
@@ -189,6 +198,9 @@ const ROLE_PERMISSIONS = {
     P.LEAD_READ, P.LEAD_CREATE, P.LEAD_UPDATE, P.LEAD_DELETE,
     P.QUOTATION_READ, P.QUOTATION_CREATE, P.QUOTATION_UPDATE, P.QUOTATION_DELETE,
     P.BOOKING_READ, P.BOOKING_CREATE, P.BOOKING_UPDATE,
+    // Its OWN bookings only — the board already row-scopes a sub-agent's rows, so this
+    // grants the work, not the reach. Mirrors backend Permission.defaultsFor(SUB_AGENT).
+    P.OPS_MANAGE,
     P.CUSTOMER_READ, P.CUSTOMER_CREATE, P.CUSTOMER_UPDATE,
     P.REMINDER_READ, P.REMINDER_CREATE, P.REMINDER_UPDATE,
     P.TASK_READ, P.TASK_CREATE, P.TASK_UPDATE,
