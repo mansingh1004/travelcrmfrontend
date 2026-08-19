@@ -234,6 +234,59 @@ const operationsService = {
     );
     return res?.data?.data ?? null;
   },
+
+  /* ── The checkpoint model ──────────────────────────────────────────────────
+     Distinct from the service-line calls above, and the distinction is the whole
+     point. A service line is something the customer bought; a checkpoint is a
+     thing that must be true before the party can leave — nine of them, including
+     ones no line exists for (vouchers, the pre-departure call). They move
+     independently, so they are written independently.
+
+     Every board row already carries `entry.ops` with the same standing in
+     summary form. These are for the detail panel, where a checkpoint is edited. */
+
+  /**
+   * One booking's ops record and all nine checkpoints.
+   *
+   * Returns null when the booking has no record — ordinary, and it will stay
+   * ordinary until the backfill runs: records are provisioned at confirmation, so
+   * anything confirmed before the model shipped has none, and a PENDING sale never
+   * gets one. Callers must fall back to the derived readiness map rather than
+   * rendering an empty panel.
+   */
+  checkpoints: async (bookingPublicId) => {
+    const res = await API.get(`/operations/bookings/${bookingPublicId}/checkpoints`);
+    return res?.data?.data ?? null;
+  },
+
+  /**
+   * Move one checkpoint. Requires OPS_MANAGE — gate the control, not just the call.
+   *
+   * `patch` is sparse: send only what changed. Pass `expectedRowVersion` (from the
+   * checkpoint you rendered) to make the write optimistic — a 409 means somebody
+   * else moved it while the panel was open, and per the app's error policy a 409 is
+   * SILENT at the interceptor, so the call site must surface it itself.
+   */
+  updateCheckpoint: async (checkpointPublicId, patch) => {
+    const res = await API.put(`/operations/checkpoints/${checkpointPublicId}`, patch);
+    return res?.data?.data ?? null;
+  },
+
+  /**
+   * Name the operations executive for a booking, or clear it with userId = null.
+   *
+   * Deliberately not the same person as the booking's `assignedUserId`, who sold it.
+   * Returns the whole refreshed record, so the caller can replace its copy rather
+   * than patching one field.
+   */
+  assignOpsOwner: async (bookingPublicId, userId) => {
+    const res = await API.put(
+      `/operations/bookings/${bookingPublicId}/owner`,
+      null,
+      { params: userId == null ? {} : { userId } }
+    );
+    return res?.data?.data ?? null;
+  },
 };
 
 export default operationsService;

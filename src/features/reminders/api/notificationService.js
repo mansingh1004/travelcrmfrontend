@@ -232,6 +232,11 @@ const notificationService = {
       'lead-alert': 'leadAlert',
       'lead-claimed': 'leadClaimed',
       'lead-locked': 'leadLocked',
+      // The operations board. Both carry { bookingPublicId, checkpointPublicId, rowVersion } —
+      // a ping, not the row: the stream is tenant-wide and filters nothing, so it must never
+      // carry data the receiving user may not be allowed to see. A subscriber re-fetches.
+      'ops-checkpoint': 'opsCheckpoint',
+      'ops-record': 'opsRecord',
     };
 
     let es = null;
