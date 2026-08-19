@@ -16,7 +16,7 @@ export const createUserService = {
     return { data: mapUserFromApi(unwrap(res)) };
   },
 
-  // GET /api/users/check-email?email= → { available: boolean }
+  // GET /api/users/check-email?= → { available: boolean }
   checkEmail: async (email) => {
     const res = await API.get("/users/check-email", { params: { email } });
     return unwrap(res);
