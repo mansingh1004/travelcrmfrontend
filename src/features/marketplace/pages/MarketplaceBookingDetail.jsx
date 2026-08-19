@@ -235,15 +235,15 @@ export function MarketplaceBookingDetail() {
       {awaitingAnswer && (
         <Card className="mb-6 border-amber-200 bg-amber-50/40">
           <p className="text-sm font-semibold text-slate-900">The price changed — this needs your answer.</p>
-          <p className="mt-1 text-[13px] text-slate-600">
+          <p className="mt-1 text-sm text-slate-600">
             Nothing is confirmed and no room is held until you accept or decline.
           </p>
 
           <div className="mt-4 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            <span className="text-base tabular-nums text-slate-400 line-through">
+            <span className="text-base tabular-nums text-slate-500 line-through">
               {fmtMoney(previous, b.currency)}
             </span>
-            <span className="text-slate-400">→</span>
+            <span className="text-slate-500">→</span>
             <span className="text-2xl font-semibold tabular-nums text-slate-900">
               {fmtMoney(revised, b.currency)}
             </span>
@@ -259,16 +259,16 @@ export function MarketplaceBookingDetail() {
               </span>
             )}
           </div>
-          <p className="mt-1 text-[11px] text-slate-500">What you would owe the platform.</p>
+          <p className="mt-1 text-[12px] text-slate-500">What you would owe the platform.</p>
 
           {b.priceRevisionReason && (
-            <p className="mt-3 text-[13px] leading-relaxed text-slate-700">{b.priceRevisionReason}</p>
+            <p className="mt-3 text-sm leading-relaxed text-slate-700">{b.priceRevisionReason}</p>
           )}
 
           {b.revisedCancellationTerms && (
             <div className="mt-3">
-              <p className="text-[11px] font-medium text-slate-500">New cancellation terms if you accept</p>
-              <p className="mt-0.5 text-[13px] leading-relaxed text-slate-700">{b.revisedCancellationTerms}</p>
+              <p className="text-[12px] font-medium text-slate-500">New cancellation terms if you accept</p>
+              <p className="mt-0.5 text-sm leading-relaxed text-slate-700">{b.revisedCancellationTerms}</p>
             </div>
           )}
 
@@ -315,7 +315,7 @@ export function MarketplaceBookingDetail() {
           <span className="text-sm text-slate-900">
             {fmtDate(b.checkIn)} → {fmtDate(b.checkOut)}
           </span>
-          <span className="ml-2 text-[13px] text-slate-400">
+          <span className="ml-2 text-sm text-slate-500">
             {b.nights} night{b.nights === 1 ? "" : "s"}
           </span>
         </Row>
@@ -396,12 +396,12 @@ export function MarketplaceBookingDetail() {
             <span className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
               <PaymentChip status={b.paymentStatus} />
               {Number(b.amountPaid) > 0 && (
-                <span className="text-[13px] tabular-nums text-slate-500">
+                <span className="text-sm tabular-nums text-slate-500">
                   {fmtMoney(b.amountPaid, b.currency)} paid
                 </span>
               )}
               {Number(b.amountOutstanding) > 0 && (
-                <span className="text-[13px] tabular-nums text-slate-900">
+                <span className="text-sm tabular-nums text-slate-900">
                   · {fmtMoney(b.amountOutstanding, b.currency)} outstanding
                 </span>
               )}
@@ -486,10 +486,10 @@ export function MarketplaceBookingDetail() {
               onClick={() => navigate(`/BookingDetails/${b.crmBookingPublicId}`)}
               className="inline-flex items-center gap-1.5 text-sm text-slate-900 underline-offset-2 hover:underline"
             >
-              {b.crmBookingCode || "Open booking"} <ExternalLink className="h-3.5 w-3.5 text-slate-400" />
+              {b.crmBookingCode || "Open booking"} <ExternalLink className="h-3.5 w-3.5 text-slate-500" />
             </button>
           ) : (
-            <span className="text-sm text-slate-400">Not linked yet</span>
+            <span className="text-sm text-slate-500">Not linked yet</span>
           )}
         </Row>
         <Row label="Requested"><span className="text-sm text-slate-700">{fmtDateTime(b.createdAt)}</span></Row>
@@ -527,13 +527,13 @@ export function MarketplaceBookingDetail() {
           </>
         }
       >
-        <p className="text-[13px] leading-relaxed text-slate-600">
+        <p className="text-sm leading-relaxed text-slate-600">
           You'll owe the platform{" "}
           <span className="font-medium text-slate-900">{fmtMoney(revised, b.currency)}</span> instead
           of {fmtMoney(previous, b.currency)}. The platform still has to confirm the room with the
           hotel — accepting does not confirm the booking.
         </p>
-        <p className="mt-2 text-[13px] leading-relaxed text-slate-600">
+        <p className="mt-2 text-sm leading-relaxed text-slate-600">
           Your price to the customer stays at {fmtMoney(b.tenantCustomerSellingAmount, b.currency)}.
           Whether you absorb the difference or re-quote is your call.
         </p>
@@ -561,12 +561,12 @@ export function MarketplaceBookingDetail() {
           </>
         }
       >
-        <p className="text-[13px] leading-relaxed text-slate-600">
+        <p className="text-sm leading-relaxed text-slate-600">
           The request closes and the hotel line is withdrawn from your booking. It cannot be reopened —
           if you want this hotel at a different number, send a new request.
         </p>
-        <label className="mt-4 block text-[13px] text-slate-500" htmlFor="decline-reason">
-          Reason <span className="text-slate-400">(optional — the platform sees this)</span>
+        <label className="mt-4 block text-sm text-slate-500" htmlFor="decline-reason">
+          Reason <span className="text-slate-500">(optional — the platform sees this)</span>
         </label>
         <Textarea
           id="decline-reason"
@@ -607,7 +607,7 @@ export function MarketplaceBookingDetail() {
       >
         {isCancelRequest ? (
           <>
-            <p className="text-[13px] leading-relaxed text-slate-600">
+            <p className="text-sm leading-relaxed text-slate-600">
               The platform will check what the hotel actually allows. A cancellation charge may apply,
               and until they come back the room stays held and you still owe{" "}
               {fmtMoney(b.tenantPayable, b.currency)}. The charge and any refund appear on this page
@@ -615,20 +615,20 @@ export function MarketplaceBookingDetail() {
             </p>
             {b.cancellationTerms && (
               <div className="mt-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
-                <p className="text-[11px] font-medium text-slate-500">Cancellation terms on this booking</p>
-                <p className="mt-0.5 text-[13px] leading-relaxed text-slate-700">{b.cancellationTerms}</p>
+                <p className="text-[12px] font-medium text-slate-500">Cancellation terms on this booking</p>
+                <p className="mt-0.5 text-sm leading-relaxed text-slate-700">{b.cancellationTerms}</p>
               </div>
             )}
           </>
         ) : (
-          <p className="text-[13px] leading-relaxed text-slate-600">
+          <p className="text-sm leading-relaxed text-slate-600">
             No room is being held, so this is free and immediate — the request closes straight away and
             the hotel line is withdrawn from your booking. It cannot be reopened; you'd send a new
             request instead.
           </p>
         )}
-        <label className="mt-4 block text-[13px] text-slate-500" htmlFor="cancel-reason">
-          Reason <span className="text-slate-400">(optional — the platform sees this)</span>
+        <label className="mt-4 block text-sm text-slate-500" htmlFor="cancel-reason">
+          Reason <span className="text-slate-500">(optional — the platform sees this)</span>
         </label>
         <Textarea
           id="cancel-reason"
@@ -661,7 +661,7 @@ function PaymentChip({ status }) {
   };
   const [label, tone] = map[status] ?? [status, "bg-slate-100 text-slate-600 ring-slate-200"];
   return (
-    <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium ring-1 ring-inset ${tone}`}>
+    <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[12px] font-medium ring-1 ring-inset ${tone}`}>
       {label}
     </span>
   );

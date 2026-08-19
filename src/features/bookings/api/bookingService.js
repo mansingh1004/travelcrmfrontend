@@ -67,6 +67,18 @@ const bookingService = {
     API.post(`/leads/${leadPublicId}/convert-to-booking`, payload,
       { headers: { "Idempotency-Key": idempotencyKey } }),
 
+  /* Rewrite the booking's source quotation so the quote on file matches what was actually sold.
+     Called after the booking is saved, only when the agent unticked "as per quotation" — never
+     bundled into the create call, so a failure here leaves a correct booking standing and the
+     caller can say "booked, but the quotation still shows the old price" instead of losing both. */
+  syncQuotation: (bookingPublicId) =>
+    API.patch(`/bookings/${bookingPublicId}/sync-quotation`),
+
+  /* Write a quotation FROM a direct booking — one that was taken without a quote behind it. Also
+     a second call after the create, so a failure here leaves the booking standing. */
+  createQuotationFromBooking: (bookingPublicId) =>
+    API.post(`/bookings/${bookingPublicId}/create-quotation`),
+
   // Staff selectable in the "Assigned To" dropdown on the create + convert forms. Requires
   // BOOKING_CREATE; a user without it never sees the control, so a 403 here is not expected.
   getEligibleAssignees: () => API.get("/bookings/assignment/eligible-users"),

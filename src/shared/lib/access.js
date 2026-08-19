@@ -71,6 +71,24 @@ export const P = {
   // agency's own inbox is the same authority as reading its conversations, so it deliberately
   // does NOT get a permission of its own.
   COMM_READ: "COMM_READ",
+  // The RAW agency mailbox (/api/mailbox), deliberately NOT COMM_READ. COMM_READ carries the
+  // own/team/all data scope the Communication Center enforces per conversation; the shared IMAP
+  // mailbox has no assignee to scope by, so one key across both let an OWN-scoped agent read the
+  // whole tenant's mail through a second URL. Backend default: MANAGER and TENANT_ADMIN only.
+  COMM_MAILBOX_READ: "COMM_MAILBOX_READ",
+  // Replying is a separate authority from reading, and the split is load-bearing: the backend's
+  // viewer role deliberately holds READ without SEND, so reusing COMM_READ on a composer would hand
+  // every viewer a send button the server then 403s.
+  COMM_SEND: "COMM_SEND",
+  // Triage: assign, snooze, close. A supervisor act — the backend gives it to MANAGER and
+  // withholds it from TRAVEL_AGENT, whose job is answering conversations rather than deciding
+  // whose they are.
+  COMM_ASSIGN: "COMM_ASSIGN",
+  // NOT in any role's defaults, on purpose — the backend grants templates, private notes, recordings
+  // and workflow config PER USER, TENANT_ADMIN included (Permission.java). A tenant admin still sees
+  // this screen because hasPermission() short-circuits for that role, but the save will 403 until the
+  // key is granted under Users → permissions. That is the backend's rule, not a bug here.
+  COMM_TEMPLATE_MANAGE: "COMM_TEMPLATE_MANAGE",
   TRASH_VIEW: "TRASH_VIEW", TRASH_RESTORE: "TRASH_RESTORE", TRASH_DELETE: "TRASH_DELETE",
   FLEET_READ: "FLEET_READ", FLEET_CREATE: "FLEET_CREATE", FLEET_UPDATE: "FLEET_UPDATE", FLEET_DELETE: "FLEET_DELETE",
   // Fleet MONEY is a separate authority from fleet operations: a dispatcher records forty cost rows
@@ -350,6 +368,31 @@ export function hasModule(moduleKey) {
   } catch { /* malformed cache → fail-open */ }
   return true;
 }
+
+/**
+ * Same question as {@link hasModule}, but FAILS CLOSED: an unloaded, missing or malformed
+ * entitlements cache answers false.
+ *
+ * Use this when the module selects BETWEEN two working implementations rather than hiding a menu.
+ * `hasModule` is fail-open so a failed fetch never blocks a customer out of something they bought —
+ * right for a sidebar item, wrong here: fail-open would hand a plan-exclusive screen to every tenant
+ * for the whole window before entitlements land, and again to anyone whose fetch failed. There is no
+ * loss in failing closed, because the other branch is a complete, working form.
+ *
+ * Deliberately no TENANT_ADMIN bypass, matching `hasModule` — a module is a tenant/plan property,
+ * not a role one, so an admin on a plan without the key is in the same position as their staff.
+ */
+export function hasModuleStrict(moduleKey) {
+  try {
+    const stored = JSON.parse(localStorage.getItem(MODULES_KEY) || "null");
+    return Array.isArray(stored) && stored.includes(moduleKey);
+  } catch {
+    return false;
+  }
+}
+
+/** Module key for the high-volume Create Lead / Create Booking screens. Carried by GROWTH alone. */
+export const FAST_ENTRY_FORMS = "FAST_ENTRY_FORMS";
 
 // True if the current user is allowed `permissionKey`.
 // Prefers the user's REAL effective permissions (from /permissions/me); falls back
