@@ -6,6 +6,7 @@ export const createUserService = {
   create: async (form) => {
     const payload = {
       name:        (form.fullName || "").trim(),
+      username:    (form.username.trim()),
       email:       (form.email || "").trim(),
       password:    form.password,
       role:        LABEL_TO_ROLE[form.role] || "TRAVEL_AGENT",
@@ -15,7 +16,7 @@ export const createUserService = {
     return { data: mapUserFromApi(unwrap(res)) };
   },
 
-  // GET /api/users/check-email?email= → { available: boolean }
+  // GET /api/users/check-email?= → { available: boolean }
   checkEmail: async (email) => {
     const res = await API.get("/users/check-email", { params: { email } });
     return unwrap(res);

@@ -28,10 +28,13 @@ import { usePagedList } from "@shared/api/usePagedList";
 import { getErrorMessage, isAlreadyReported } from "@shared/api/apiError";
 import { toast } from "@shared/ui/toast";
 import { hasPermission, P } from "@shared/lib/access";
+// Cross-feature, through the barrel only: the ops board shares the notification SSE stream
+// rather than opening a second EventSource per tab.
+import { notificationService } from "@features/reminders";
 
 import {
   Page, Panel, GridEmpty, Pager, SummaryCard, DimensionCell, OverallBadge,
-  DaysBadge, COLUMN_DIMENSIONS,
+  DaysBadge, SeverityBadge, DepartureCountdown, COLUMN_DIMENSIONS,
 } from "../components/opsUi";
 import OpsRowDetail from "../components/OpsRowDetail";
 import operationsService, { isoDate, addDays } from "../api/operationsService";
@@ -208,6 +211,27 @@ export default function Operations() {
     loadSummary();
   }, [loadSummary]);
 
+  /* ── Somebody else moved a checkpoint ────────────────────────────────────
+     The board is a shared queue: two people working the same morning is the normal
+     case, not the edge one, and the cost of a stale row here is a supplier phoned
+     twice.
+
+     The push is a PING — booking id and a row version, no row data — because the SSE
+     stream is tenant-wide and filters neither permissions nor sub-agent row scope. So
+     this refetches rather than patching state from the payload.
+
+     Only the CARDS reload immediately; the rows are marked stale exactly as a local
+     edit does. Reloading the list under somebody mid-edit is the one thing worse than
+     showing them a row a few seconds old. */
+  useEffect(() => {
+    if (!allowed) return undefined;
+    const sub = notificationService.subscribeToSSE({
+      opsCheckpoint: () => markStale(),
+      opsRecord: () => markStale(),
+    });
+    return () => sub?.close?.();
+  }, [allowed, markStale]);
+
   /* ── Table ──────────────────────────────────────────────────────────────
      TanStack drives the row model and expansion only; the markup below renders
      it, which is the same headless split the leads grid uses. */
@@ -278,12 +302,30 @@ export default function Operations() {
     {
       id: "overall",
       header: "Overall Status",
-      cell: ({ row }) => (
-        <div className="flex flex-col items-center gap-1">
-          <OverallBadge status={row.original.overallStatus} />
-          <DaysBadge days={row.original.daysToDeparture} />
-        </div>
-      ),
+      /*
+       * Two models, one column, and the checkpoint one wins where it exists.
+       *
+       * `ops` is null on every booking confirmed before the checkpoint model shipped, and
+       * will stay null on those until the backfill runs — so this cannot simply be swapped
+       * over. Where a record exists its severity is what somebody actually recorded, in
+       * hours rather than days; where it does not, the derived verdict is still the only
+       * answer there is and the row must not go blank.
+       */
+      cell: ({ row }) => {
+        const ops = row.original.ops;
+        return (
+          <div className="flex flex-col items-center gap-1">
+            {ops ? <SeverityBadge severity={ops.severity} />
+                 : <OverallBadge status={row.original.overallStatus} />}
+            {ops?.hoursToDeparture != null
+              ? <DepartureCountdown
+                  hours={ops.hoursToDeparture}
+                  sourceLabel={ops.departureAtSourceLabel}
+                />
+              : <DaysBadge days={row.original.daysToDeparture} />}
+          </div>
+        );
+      },
     },
   ], []);
 

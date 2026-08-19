@@ -30,6 +30,7 @@ import { toast } from "@shared/ui/toast";
 import { hasPermission, P } from "@shared/lib/access";
 
 import { COLUMN_DIMENSIONS, Badge } from "./opsUi";
+import OpsCheckpointPanel from "./OpsCheckpointPanel";
 import operationsService from "../api/operationsService";
 import VendorConversationDrawer from "./VendorConversationDrawer";
 import LogCallModal from "./LogCallModal";
@@ -415,6 +416,12 @@ export default function OpsRowDetail({
           </button>
         </div>
       </div>
+
+      {/* Above the service-line cards, and above the loading state for them, because it
+          answers a different question: the cards say what was arranged, this says whether
+          the trip can leave. It renders nothing at all on a booking with no ops record,
+          so it costs an older booking neither space nor an explanation. */}
+      <OpsCheckpointPanel bookingPublicId={bookingId} onChanged={onChanged} />
 
       {loading && <p className="text-xs font-bold text-slate-400 py-4">Loading service lines…</p>}
 
