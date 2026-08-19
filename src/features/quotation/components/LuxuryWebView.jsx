@@ -1020,6 +1020,35 @@ const listOf = (value) =>
     .map(textOf)
     .filter((t) => String(t).trim());
 
+/* ── "6N/7D" inside the title ─────────────────────────────────────────────────
+   The title is free text an agent typed (see the note at the <h1>), so the night
+   and day counts can only be found by pattern — there is no field to read. Each
+   "6N" / "7D" run keeps its digits white and tints only the letter, so the
+   heading still reads as one line rather than as a two-colour label. The tints
+   are the bright ends of red and blue: plain red and blue sit too dark to be
+   legible on the hero photograph. */
+const NIGHTS_DAYS = /(\d+\s*)([ND])\b/gi;
+const NIGHT_TINT = "#FF6B6B";
+const DAY_TINT = "#7CC5FF";
+
+const renderNightsDays = (text) => {
+  const src = String(text ?? "");
+  const parts = [];
+  let last = 0;
+  for (const m of src.matchAll(NIGHTS_DAYS)) {
+    parts.push(src.slice(last, m.index), m[1]);
+    parts.push(
+      <span key={m.index} style={{ color: m[2].toUpperCase() === "N" ? NIGHT_TINT : DAY_TINT }}>
+        {m[2]}
+      </span>
+    );
+    last = m.index + m[0].length;
+  }
+  if (!parts.length) return src;
+  parts.push(src.slice(last));
+  return parts;
+};
+
 /* ── Description → points ─────────────────────────────────────────────────────
    Descriptions are written in a <Textarea> (SightseeingTab.jsx:2757) and the service
    stores them verbatim, newlines and all — so when an agent lists an activity's
@@ -1796,7 +1825,7 @@ export default function LuxuryWebView({ data, pdfUrl }) {
             </span>
           )}
           <h1 className="wc-serif mt-4 break-words text-3xl font-semibold leading-tight sm:text-5xl lg:text-6xl">
-            {title}
+            {renderNightsDays(title)}
           </h1>
           {/* Duration sits here rather than in the heading. The heading prints `q.title`,
               which an agent may have written by hand — "Nimit – Nepal – 5N/6D" is a better
