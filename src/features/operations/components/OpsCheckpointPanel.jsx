@@ -18,7 +18,7 @@
 // Money is absent on purpose, matching OpsRowDetail: line costs sit behind
 // BOOKING_PROFIT_READ, and confirming a room must not require it.
 // ─────────────────────────────────────────────────────────────────────────────
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, ShieldCheck, TriangleAlert } from "lucide-react";
 
 import { getErrorMessage, isAlreadyReported } from "@shared/api/apiError";
@@ -55,14 +55,40 @@ const STATUS_TONE = {
   PENDING: "bg-amber-50 text-amber-700 border-amber-200",
 };
 
-const fmtWhen = (iso) =>
-  iso
-    ? new Date(iso).toLocaleString("en-IN", {
-        day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit",
-      })
-    : null;
+/**
+ * departureAt and dueAt, read as the TENANT's wall clock rather than the device's.
+ *
+ * These are OffsetDateTimes the server stamped with TenantTimeZone, and Jackson keeps that offset
+ * on the wire — so the wall clock is already in the string. `new Date(iso).toLocaleString(...)`
+ * re-zones it into the browser's, which turns an 18:00 IST cut-off into 12:30 on a device set to
+ * UTC. The parts are rebuilt as a local Date only to reuse the locale's formatting: byte-identical
+ * output for an in-zone device, correct for any other. The Today panel formats these the same way,
+ * so the two renderings of one checkpoint on one screen cannot disagree.
+ */
+const WHEN_PARTS = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/;
+const fmtWhen = (iso) => {
+  if (!iso) return null;
+  const m = WHEN_PARTS.exec(String(iso));
+  if (!m) return null;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5]));
+  return d.toLocaleString("en-IN", {
+    day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit",
+  });
+};
 
-export default function OpsCheckpointPanel({ bookingPublicId, onChanged }) {
+/**
+ * @param onRecord Optional. Called with (record, error) after every load and every successful
+ *   write, so a HOST can render the record's standing — severity, the departure countdown,
+ *   readyToTravel, the ops owner — without fetching the same endpoint a second time. The
+ *   operations detail page needs exactly that, and two fetches of one record is also two
+ *   answers: confirm the last mandatory checkpoint and the header would still say the trip
+ *   is not ready until something re-fetched it.
+ *
+ *   The second argument is the load error, because null-record and failed-load are different
+ *   facts that this panel deliberately collapses (it renders nothing either way). A host that
+ *   wants to say "could not load" rather than "this booking predates the model" needs them apart.
+ */
+export default function OpsCheckpointPanel({ bookingPublicId, onChanged, onRecord }) {
   // OPS_MANAGE, not BOOKING_UPDATE. The server draws the same line and an operations
   // executive is expected to hold one without the other — gating on the wrong key here
   // would show controls that 403 on click.
@@ -72,16 +98,25 @@ export default function OpsCheckpointPanel({ bookingPublicId, onChanged }) {
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState(null);
 
+  // Held in a ref so `load` does not depend on it. An inline arrow from the host would give
+  // this a new identity every render, and a load() that changed identity every render would
+  // re-fetch every render.
+  const onRecordRef = useRef(onRecord);
+  useEffect(() => { onRecordRef.current = onRecord; }, [onRecord]);
+
   const load = useCallback(async () => {
     if (!bookingPublicId) return;
     setLoading(true);
     try {
-      setRecord(await operationsService.checkpoints(bookingPublicId));
+      const next = await operationsService.checkpoints(bookingPublicId);
+      setRecord(next);
+      onRecordRef.current?.(next, null);
     } catch (err) {
       // A missing record is null, not an error — but a genuine failure must not masquerade
       // as "this booking predates the model", so it is logged and the panel stays absent.
       if (!isAlreadyReported(err)) console.warn("Ops checkpoints failed", err);
       setRecord(null);
+      onRecordRef.current?.(null, err);
     } finally {
       setLoading(false);
     }
@@ -111,11 +146,14 @@ export default function OpsCheckpointPanel({ bookingPublicId, onChanged }) {
       if (updated) await load();
       onChanged?.();
     } catch (err) {
+      // `toast` is an object of methods, not a callable — the (msg, "error") form here threw a
+      // TypeError from inside the catch, so the two failures this branch exists to explain were
+      // the two the user was never told about.
       if (err?.response?.status === 409) {
-        toast("Somebody else changed this checkpoint just now — reloading.", "error");
+        toast.error("Somebody else changed this checkpoint just now — reloading.");
         await load();
       } else if (!isAlreadyReported(err)) {
-        toast(getErrorMessage(err, "Could not update the checkpoint."), "error");
+        toast.error(getErrorMessage(err, "Could not update the checkpoint."));
       }
     } finally {
       setBusyId(null);

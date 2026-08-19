@@ -73,6 +73,30 @@ const operationsService = {
     return res?.data?.data ?? null;
   },
 
+  /**
+   * The booking one operations screen is about.
+   *
+   * WHY THE DETAIL PAGE IS COMPOSED FROM THIS AND NOT FROM A BOARD ROW: nothing returns one
+   * board row. /operations/board is windowed (from defaults to the tenant's today, the span is
+   * capped at 92 days), it only ever selects CONFIRMED / PENDING / COMPLETED bookings, and its
+   * search matches bookingCode and customer name — never a publicId. So a deep link to a trip
+   * six months out, one that has already left, or a cancelled one comes back with zero rows,
+   * which is precisely the case a detail page is opened to answer. This endpoint is keyed by
+   * publicId and has none of those windows.
+   *
+   * Single-booking read, so the response carries `tripSnapshot` — legs, travellers, rooms,
+   * vehicles, pickup and drop. The paged list omits it deliberately (LAZY association), so a
+   * page cannot be prefilled from a row it was opened from.
+   *
+   * Costs, margin and vendor identity are NULLED for anyone without BOOKING_PROFIT_READ and the
+   * request still 200s — an operations user typically holds neither, so nothing built on this
+   * may depend on those fields being present.
+   */
+  booking: async (bookingPublicId) => {
+    const res = await API.get(`/bookings/${bookingPublicId}`);
+    return res?.data?.data ?? null;
+  },
+
   /** The service lines behind a row — the detail panel's list. */
   serviceItems: async (bookingPublicId) => {
     const res = await API.get(`/bookings/${bookingPublicId}/services`);
@@ -270,6 +294,59 @@ const operationsService = {
   updateCheckpoint: async (checkpointPublicId, patch) => {
     const res = await API.put(`/operations/checkpoints/${checkpointPublicId}`, patch);
     return res?.data?.data ?? null;
+  },
+
+  /* ── Optional enrichment for the Today panel ───────────────────────────────
+     Three reads that may each legitimately be refused, and none of which the panel may fail on.
+     They are listed together because they share one rule: a 403, a 404 or an empty answer means
+     the block is ABSENT, never that the page is broken. */
+
+  /**
+   * The quotation a booking was sold from — the only per-day, per-activity TIMED plan anywhere
+   * in the product.
+   *
+   * Reached through booking.sourceQuotationPublicId, which is null on any booking taken over the
+   * phone. Sits behind QUOTATION_READ (class-level on QuotationController), which an operations
+   * executive routinely does not hold — so a 403 is a missing capability, not a failure, and the
+   * caller drops the block rather than showing an error.
+   *
+   * Everything under `sightseeing.days[]` is unvalidated free text: the day's `date` is
+   * VARCHAR(30), an activity's `startTime` is VARCHAR(20), and "15:00", "3 PM" and "afternoon"
+   * are all legal values. Render them verbatim and in the order they come back. Nothing may
+   * parse, sort by, or do arithmetic on them.
+   */
+  quotation: async (quotationPublicId) => {
+    const res = await API.get(`/quotations/${quotationPublicId}`);
+    return res?.data?.data ?? null;
+  },
+
+  /**
+   * The fleet trips somebody planned for this booking in their own Vehicle Diary.
+   *
+   * THE PARAM IS NAMED bookingId AND TAKES THE BOOKING'S publicId — FleetTripSpecification matches
+   * root.get("bookingPublicId"). Passing anything else silently returns nothing.
+   *
+   * Behind FLEET_READ, and ABSENCE MEANS NOTHING: a fleet trip cannot exist without both a vehicle
+   * and a driver from the diary, so an operator who typed a registration by hand has none, and a
+   * trip belongs to the OPERATOR's tenant rather than the buying agency's. Never phrase an empty
+   * answer as "no vehicle is arranged".
+   */
+  fleetTrips: async (bookingPublicId) => {
+    const res = await API.get("/fleet/trips", {
+      params: { bookingId: bookingPublicId, size: 20, page: 0 },
+    });
+    return res?.data?.data ?? [];
+  },
+
+  /**
+   * One fleet trip's legs — who was on which vehicle across which half-open window.
+   *
+   * The trip's own vehicle and driver always point at the CURRENT leg; these rows are the only
+   * place an earlier vehicle survives.
+   */
+  fleetTripLegs: async (tripPublicId) => {
+    const res = await API.get(`/fleet/trips/${tripPublicId}/legs`);
+    return res?.data?.data ?? [];
   },
 
   /**

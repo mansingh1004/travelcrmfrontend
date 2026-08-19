@@ -14,6 +14,12 @@ export function buildQuotationPayload({
   quotationStage = "Draft",
   templateStyle = "CLASSIC",   // public weblink template: "CLASSIC" | "MODERN"
 
+  // Whether THIS quotation prints the authorised signature / the company stamp. Defaulted here as
+  // well as in the form, because this builder is a WHITELIST — a field that is not destructured and
+  // returned below never reaches the server, however faithfully the form tracked it.
+  includeSignature = true,
+  includeStamp     = true,
+
   // Section `*Included` defaults ab sab FALSE hain (pehle flight/hotel/sightseeing/vehicle
   // `true` the). Ye builder ke gate ke baad DOOSRI fail-open layer thi: caller agar flag
   // chhod deta to section chupke se ON ho jaata, chahe lead ne wo service chuni hi na ho.
@@ -83,6 +89,9 @@ export function buildQuotationPayload({
     version,
     quotationStage,
     templateStyle,
+    includeSignature,
+    includeStamp,
+
 
     // ── Flight ───────────────────────────────────────────────
     flight: {
@@ -204,6 +213,13 @@ export function buildQuotationPayload({
       title    : vehicleTitle,
       amount   : Number(vehicleAmount) || 0,
       vehicles : vehicles.map(v => ({
+        // Where the line came from, when the agent PICKED rather than typed. Null on a hand-typed
+        // line, which is the common case. Whitelisted here deliberately: this map is the wire
+        // contract, and a field missing from it is silently dropped no matter what the tab emits.
+        vehicleMasterPublicId            : v.vehicleMasterPublicId            || null,
+        platformTransportProductPublicId : v.platformTransportProductPublicId || null,
+        platformRatePublicId             : v.platformRatePublicId             || null,
+        rateSource                       : v.rateSource                       || "MANUAL",
         type      : v.type      || "",
         model     : v.model     || "",
         pickup    : v.pickup    || "",

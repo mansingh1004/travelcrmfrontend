@@ -68,6 +68,21 @@ export const P = {
   // Sight of what the tenant owes the PLATFORM. Separate from BOOKING_PROFIT_READ because a payable
   // is a price, not a margin — gating it behind profit would hide it from TRAVEL_AGENT, the role that
   // actually places the orders and needs the number to quote a customer.
+  // Transport marketplace — the same four verbs as hotel, over the platform vehicle catalog. A
+  // separate family because the two are separately subscribable add-ons: an agency may buy stays
+  // without cars, or cars without stays, and one key covering both would sell them together.
+  TRANSPORT_MARKETPLACE_VIEW: "TRANSPORT_MARKETPLACE_VIEW",
+  TRANSPORT_MARKETPLACE_SYNC_MASTER: "TRANSPORT_MARKETPLACE_SYNC_MASTER",
+  TRANSPORT_MARKETPLACE_BOOK: "TRANSPORT_MARKETPLACE_BOOK",
+  TRANSPORT_MARKETPLACE_CANCEL: "TRANSPORT_MARKETPLACE_CANCEL",
+  // The SUPPLY side, held by a transport operator on the FLEET plan rather than by a buying agency.
+  // Same tenant world, opposite end of the trade.
+  TRANSPORT_SUPPLIER_LISTING_MANAGE: "TRANSPORT_SUPPLIER_LISTING_MANAGE",
+  TRANSPORT_SUPPLIER_ORDER_MANAGE: "TRANSPORT_SUPPLIER_ORDER_MANAGE",
+  // Sight of what the tenant owes the PLATFORM. Separate from BOOKING_PROFIT_READ because a payable
+  // is a price, not a margin — gating it behind profit would hide it from TRAVEL_AGENT, the role that
+  // actually places the orders and needs the number to quote a customer. Covers BOTH marketplaces:
+  // hotel and transport payables share the CRM expense column its filter keys on.
   MARKETPLACE_PAYABLE_READ: "MARKETPLACE_PAYABLE_READ",
   USER_READ: "USER_READ", USER_CREATE: "USER_CREATE", USER_UPDATE: "USER_UPDATE", USER_DELETE: "USER_DELETE",
   REPORT_VIEW: "REPORT_VIEW",
@@ -140,6 +155,9 @@ const ROLE_PERMISSIONS = {
     // Mirrors Permission.defaultsFor(MANAGER) — Permission.java:217-218.
     P.HOTEL_MARKETPLACE_VIEW, P.HOTEL_MARKETPLACE_SYNC_MASTER,
     P.HOTEL_MARKETPLACE_BOOK, P.HOTEL_MARKETPLACE_CANCEL, P.MARKETPLACE_PAYABLE_READ,
+    // Transport mirrors hotel exactly — same four verbs, same audience. Permission.java:379-380.
+    P.TRANSPORT_MARKETPLACE_VIEW, P.TRANSPORT_MARKETPLACE_SYNC_MASTER,
+    P.TRANSPORT_MARKETPLACE_BOOK, P.TRANSPORT_MARKETPLACE_CANCEL,
     // Mirrors Permission.defaultsFor(MANAGER) exactly — sees fleet money, does NOT settle it.
     P.FLEET_READ, P.FLEET_CREATE, P.FLEET_UPDATE, P.FLEET_DELETE, P.FLEET_MONEY_READ,
     P.ACCOUNTING_INVOICE_READ, P.ACCOUNTING_TDS_READ,
@@ -169,6 +187,9 @@ const ROLE_PERMISSIONS = {
     // CANCEL is granted too (Permission.java:252): the role that places the order is the one that
     // has to unwind it when the customer drops out, and withdrawing an unconfirmed request is free.
     P.HOTEL_MARKETPLACE_VIEW, P.HOTEL_MARKETPLACE_BOOK, P.HOTEL_MARKETPLACE_CANCEL,
+    // No SYNC_MASTER, exactly as with hotels: a sales role books, it does not curate masters.
+    // Permission.java:423.
+    P.TRANSPORT_MARKETPLACE_VIEW, P.TRANSPORT_MARKETPLACE_BOOK, P.TRANSPORT_MARKETPLACE_CANCEL,
     P.MARKETPLACE_PAYABLE_READ,
     // Deliberately NO FLEET_MONEY_*: a sales role plans and runs trips, but tenant-wide driver cash
     // positions, vendor rates and cost structure are not its business. Mirrors the backend.

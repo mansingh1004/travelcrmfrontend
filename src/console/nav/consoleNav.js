@@ -16,6 +16,7 @@ import {
   BedDouble,
   Building2,
   CalendarRange,
+  Car,
   ClipboardCheck,
   Coins,
   CreditCard,
@@ -161,6 +162,26 @@ export const CONSOLE_NAV_SECTIONS = [
         // sits unanswered.
         badge: "hotelRequests",
         keywords: "approval queue bookings",
+      },
+      {
+        id: "console.transportCatalog",
+        label: "Transport Catalog",
+        path: "/console/transport-catalog",
+        Icon: Car,
+        // The supply side. Listed above the request queue because it is the thing that has to exist
+        // first — an empty catalog produces an empty queue and no obvious reason why.
+        keywords: "vehicles cabs fleet catalog publish supply rates",
+      },
+      {
+        id: "console.transportRequests",
+        primary: 4,
+        label: "Transport Requests",
+        path: "/console/transport-requests",
+        Icon: Car,
+        // Deliberately NOT folded into the hotel queue. The two are answered with different
+        // knowledge — a room rate versus a duty roster — often by different people, and merging
+        // them would hide a car nobody has assigned behind a pile of hotel enquiries.
+        keywords: "approval queue transport vehicle cab duty slip assignment driver",
       },
       {
         id: "console.hotelOccupancy",

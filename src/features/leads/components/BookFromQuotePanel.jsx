@@ -5,7 +5,6 @@ import { bookingService } from "@features/bookings";
 import { vendorService } from "@features/vendors";
 import { useToast } from "@shared/ui/toast";
 import { getErrorMessage, isAlreadyReported } from "@shared/api/apiError";
-import { quotationService } from "@features/quotation";
 
 /**
  * Turn the quotation just written into a booking, without leaving the page.
@@ -83,56 +82,7 @@ export default function BookFromQuotePanel({ lead, quotationId, quotedAmount, on
     return () => { alive = false; };
   }, []);
 
-  /* ── "As per quotation" ───────────────────────────────────────────────────────────────────
-     Ticked, the booking is for exactly the quoted figure and the amount is not typeable — which is
-     what this panel always did implicitly, by never offering the field at all. Unticked, the agent
-     enters what the customer actually agreed to (a negotiated price, a changed party size). The
-     quotation is NOT rewritten: it is the offer the customer received and stays that way, and the
-     difference is a fact about this booking rather than an error in the older document. */
-  const [asPerQuotation, setAsPerQuotation] = useState(true);
-  const [agreedAmount, setAgreedAmount] = useState("");
-
-  /* Which quotation. A lead is often quoted more than once — a revised itinerary, a second version
-     after the customer pushed back — and only the agent knows which one was accepted. Defaults to
-     the quotation this panel was opened from (the one on screen), so the common single-quote case
-     needs no interaction. */
-  const [quotations, setQuotations] = useState([]);
-  const [chosenQuotationId, setChosenQuotationId] = useState(quotationId || "");
-  useEffect(() => { setChosenQuotationId(quotationId || ""); }, [quotationId]);
-
-  useEffect(() => {
-    const leadKey = lead?.publicId || lead?.id;
-    if (!leadKey) return undefined;
-    let alive = true;
-    quotationService
-      .getQuotationsByLead(leadKey)
-      .then((res) => {
-        if (!alive) return;
-        const body = res?.data?.data ?? res?.data ?? [];
-        setQuotations(Array.isArray(body) ? body : []);
-      })
-      // Silent. An empty list collapses the picker to the single quotation this panel already
-      // holds, which is the correct degraded state — never a reason to block a booking.
-      .catch(() => { if (alive) setQuotations([]); });
-    return () => { alive = false; };
-  }, [lead?.publicId, lead?.id]);
-
-  const chosenQuotation = useMemo(
-    () => quotations.find((q) => (q.publicId || q.id) === chosenQuotationId) || null,
-    [quotations, chosenQuotationId],
-  );
-
-  /* The quoted figure to compare against: the chosen quotation's total when the agent picked a
-     different one, else the amount this panel was opened with. */
-  const quotedFigure = Number(chosenQuotation?.grandTotal ?? quotedAmount) || 0;
-
-  const amount = asPerQuotation ? quotedFigure : (Number(agreedAmount) || 0);
-  /* Reported, not reconciled. The quotation is never rewritten, so this only decides whether the
-     screen tells the agent the two figures differ. Tolerance is a rupee, not a paisa: the quotation
-     total is derived through three HALF_UP roundings, so a paisa-level test flags bookings nobody
-     actually repriced. */
-  const priceDivergence = !asPerQuotation && chosenQuotationId && amount > 0
-    && Math.abs(amount - quotedFigure) >= 1;
+  const amount = Number(quotedAmount) || 0;
   const cost = Number(form.vendorCost) || 0;
   const paid = Number(form.paidAmount) || 0;
 
@@ -171,10 +121,7 @@ export default function BookFromQuotePanel({ lead, quotationId, quotedAmount, on
   const destination = (lead?.itinerary?.[0]?.destination || lead?.destination || "").trim();
 
   const problem =
-    /* A ₹0 booking is allowed — the price often follows the confirmation, and the server accepts a
-       null/zero amount as "not priced yet". Only a NEGATIVE figure is refused. The panel still
-       shows the total, so nobody books at zero without seeing it. */
-    amount < 0 ? "Amount cannot be negative."
+    !(amount > 0) ? "This quotation has no value to book against."
       : !customerName ? "This enquiry has no customer name — add one before booking it."
       : !customerPhone ? "This enquiry has no phone number — add one before booking it."
       : !destination ? "This enquiry has no destination — add one before booking it."
@@ -194,7 +141,7 @@ export default function BookFromQuotePanel({ lead, quotationId, quotedAmount, on
       const res = await bookingService.convertFromLead(
         lead.publicId || lead.id,
         {
-          quotationPublicId: chosenQuotationId || null,
+          quotationPublicId: quotationId || null,
           customerName,
           customerPhone,
           customerEmail: lead.email || "",
@@ -222,20 +169,6 @@ export default function BookFromQuotePanel({ lead, quotationId, quotedAmount, on
       setBooking(created);
       showToast(`Booking ${created?.bookingCode || ""} created.`, "success");
       onBooked?.(created);
-
-      /* REMOVED: the PATCH /bookings/{id}/sync-quotation call that fired here when the agreed price
-         differed from the quote — the same removal already made on the Create Booking form, kept in
-         step so the two doors cannot disagree about what a quotation is.
-
-         It rewrote the customer's own quotation IN PLACE, solving for `markup` until the derived
-         total hit the booking figure. Nothing survived it: Quotation carries no Envers audit, no
-         version was bumped, and the PDF renders live from the current row — so the document the
-         customer was holding quietly stopped matching the one on file. Under GST-inclusive pricing
-         it also targeted the back-derived PRE-TAX base, cutting the quoted price by the GST just
-         collected.
-
-         The quotation is the OFFER and the booking is the SALE. They are allowed to differ, and the
-         difference belongs on the booking rather than being erased from the older document. */
     } catch (error) {
       if (!isAlreadyReported(error)) {
         showToast(getErrorMessage(error, "Could not create the booking."), "error");
@@ -243,8 +176,8 @@ export default function BookFromQuotePanel({ lead, quotationId, quotedAmount, on
     } finally {
       setSubmitting(false);
     }
-  }, [problem, submitting, lead, chosenQuotationId, customerName,
-      customerPhone, destination, travelDate, amount, cost, paid, form, showToast, onBooked]);
+  }, [problem, submitting, lead, quotationId, customerName, customerPhone, destination,
+      travelDate, amount, cost, paid, form, showToast, onBooked]);
 
   /* Booked. The panel does NOT collapse back to the form — the agent's next words are the booking
      number, and the customer is still standing there. */
@@ -282,69 +215,6 @@ export default function BookFromQuotePanel({ lead, quotationId, quotedAmount, on
         <span className="ml-auto text-xs font-semibold text-slate-500">
           Customer pays {money(amount)}
         </span>
-      </div>
-
-      {/* ── As per quotation ────────────────────────────────────────────────────────────────
-          The one question that decides what this booking is FOR. Ticked (the default, and what
-          this panel always did) the price is the quote and cannot be typed over. Unticked, the
-          agent types what was actually agreed and the quotation is rewritten to match once the
-          booking is saved — so the customer's copy never drifts from the sale. */}
-      <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3">
-        <label className="flex cursor-pointer items-start gap-2.5">
-          <input
-            type="checkbox"
-            checked={asPerQuotation}
-            onChange={(e) => {
-              const next = e.target.checked;
-              setAsPerQuotation(next);
-              // Seed the box with the quoted figure rather than an empty field: the agreed price is
-              // almost always the quote plus or minus a little, and an empty box invites a typo on
-              // the digits that were already correct.
-              if (!next && !agreedAmount) setAgreedAmount(quotedFigure ? String(quotedFigure) : "");
-            }}
-            className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-blue-600 focus:ring-2 focus:ring-blue-100"
-          />
-          <span className="min-w-0">
-            <span className="block text-xs font-bold text-slate-800">As per quotation</span>
-            <span className="mt-0.5 block text-[11px] text-slate-500">
-              {asPerQuotation
-                ? `Booking for the quoted ${money(quotedFigure)}.`
-                : "Enter the price actually agreed — the quotation will be updated to match."}
-            </span>
-          </span>
-        </label>
-
-        {/* Only when there is a choice to make. One quotation needs no picker. */}
-        {quotations.length > 1 && (
-          <div className="mt-3">
-            <Labelled label="Which quotation" hint="The version the customer accepted.">
-              <Select value={chosenQuotationId} onChange={setChosenQuotationId}>
-                {quotations.map((q) => {
-                  const id = q.publicId || q.id;
-                  return (
-                    <option key={id} value={id}>
-                      {q.version ? `${q.version} · ` : ""}{q.title || "Quotation"}
-                      {q.grandTotal != null ? ` — ${money(Number(q.grandTotal))}` : ""}
-                    </option>
-                  );
-                })}
-              </Select>
-            </Labelled>
-          </div>
-        )}
-
-        {!asPerQuotation && (
-          <div className="mt-3">
-            <Labelled
-              label="Agreed price"
-              hint={priceDivergence
-                ? `Quoted ${money(quotedFigure)} — recorded on the booking. The quotation stays as the customer received it.`
-                : "Same as the quote."}
-            >
-              <Money value={agreedAmount} onChange={setAgreedAmount} placeholder="0.00" />
-            </Labelled>
-          </div>
-        )}
       </div>
 
       <div className="mt-3 grid gap-3 sm:grid-cols-3">

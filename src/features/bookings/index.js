@@ -3,8 +3,9 @@
 // bookingService is consumed by leads, fleet, dashboard and reports.
 
 export { default as Allbookings } from "./pages/Allbookings";
-// Create and Edit routes intentionally share the fast, mode-aware booking form page.
-export { default as EditBooking } from "./pages/CreateBookingEntry";
+/* PROTECTED FLOW — kept on this branch's own Create Booking. See the note beside CreateBooking
+   below; the two exports must stay on the same page or Create and Edit drift apart. */
+export { default as EditBooking } from "./pages/CreateBookingClean";
 export { default as BookingDetails } from "./pages/BookingDetails";
 export { default as bookingService } from "./api/bookingService";
 
@@ -30,5 +31,11 @@ export { default as BookingServices } from "./pages/BookingServices"
 export { default as DuplicateBookings } from "./pages/DuplicateBookings";
 // Previous Create Booking UI is intentionally kept for reference:
 // export { default as CreateBooking } from "./pages/CreateBooking";
-export { default as CreateBooking } from "./pages/CreateBookingEntry";
+/* PROTECTED FLOW — kept on this branch's own CreateBookingClean, deliberately.
+   develop repointed this at CreateBookingEntry, the FAST_ENTRY_FORMS switcher between this page and
+   CreateBookingFast. The router resolves the route through this barrel
+   (`lazyPage(bookings, "CreateBooking")`), so the barrel IS the switch — keeping the page file alone
+   would have protected nothing. CreateBookingEntry and CreateBookingFast are merged in and left
+   unreferenced rather than deleted, so flipping this one line turns the develop behaviour back on. */
+export { default as CreateBooking } from "./pages/CreateBookingClean";
 

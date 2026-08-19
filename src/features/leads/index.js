@@ -1,9 +1,15 @@
 
 
 export { default as AllLeads } from "./pages/AllLeads";
-export { default as CreateLead } from "./pages/CreateLeadEntry";
+/* PROTECTED FLOW — kept on this branch's own Create Lead, deliberately.
+   develop repointed both of these at CreateLeadEntry, the FAST_ENTRY_FORMS switcher that chooses
+   between this page and CreateLeadFast. The router resolves the route through this barrel
+   (`lazyPage(leads, "CreateLead")`), so the barrel IS the switch — protecting the page file alone
+   would have changed nothing. CreateLeadEntry and CreateLeadFast are merged in and left unreferenced
+   rather than deleted, so the develop work is recoverable by flipping these two lines back. */
+export { default as CreateLead } from "./pages/CreateLead";
 // Create and Edit routes intentionally use one mode-aware page so their UI and validation cannot drift.
-export { default as EditLead } from "./pages/CreateLeadEntry";
+export { default as EditLead } from "./pages/CreateLead";
 export { default as AllLeadLogs } from "./pages/AllLeadLogs";
 export { default as WhatsAppPanel } from "./pages/WhatsAppPanel";
 export { default as ItinerarySection } from "./components/ItinerarySection";
@@ -25,3 +31,4 @@ export { LEAD_STAGES, STAGE_FILTER_OPTIONS, isKnownStage } from "./lib/leadStage
 export { default as LeadAlerts } from "./pages/LeadAlerts";
 export { LeadAlertProvider, useLeadAlerts } from "./hooks/useLeadAlerts";
 export { leadAlertService, claimLostInfo, claimFailure } from "./api/leadAlertService";
+export { formatCountdown } from "./lib/leadAlertConstants";
