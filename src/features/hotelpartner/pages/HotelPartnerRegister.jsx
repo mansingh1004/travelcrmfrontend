@@ -2089,7 +2089,18 @@ export default function HotelPartnerRegister() {
           </Card>
 
           <Card id="location" title="Location" hint="The city and country decide where travel agents find you.">
+            {/* Six short fields, two to a row, in the order an address is written — street, city,
+                country, state, PIN. Narrow to wide is how everyone fills one in, and it is also the
+                sequence phone and browser autofill expect, which the old city-first order broke.
+                The three long fields stay full width below: a 2-row textarea in half a column is a
+                letterbox, and Coordinates is already two inputs of its own. */}
             <div className="grid gap-4 sm:grid-cols-2">
+              {/* One line, not a textarea: the area is what an agent filters on, and Full Address
+                  below is the block that gets printed on a voucher. Two fields, two jobs. */}
+              <Field label="Street / Area">
+                <input className={inputCls} value={form.street} disabled={ro} autoComplete="address-line1"
+                  onChange={(e) => patch({ street: e.target.value })} placeholder="Calangute Beach Road" />
+              </Field>
               <Field label="City" hint="required" error={fieldErrors["f-city"]}>
                 <input id="f-city" className={inputCls} value={form.cityName} disabled={ro}
                   autoComplete="address-level2" aria-invalid={Boolean(fieldErrors["f-city"])}
@@ -2119,12 +2130,6 @@ export default function HotelPartnerRegister() {
                   onChange={(e) => patch({ cityCode: e.target.value.toUpperCase() })} placeholder="GOI" />
               </Field>
             </div>
-            {/* One line, not a textarea: the area is what an agent filters on, and Full Address below
-                is the block that gets printed on a voucher. Two fields, two jobs. */}
-            <Row label="Street / Area">
-              <input className={inputCls} value={form.street} disabled={ro} autoComplete="address-line1"
-                onChange={(e) => patch({ street: e.target.value })} placeholder="Calangute Beach Road" />
-            </Row>
             <Row label="Full Address">
               <textarea className={inputCls} rows={2} value={form.address} disabled={ro}
                 autoComplete="street-address"
