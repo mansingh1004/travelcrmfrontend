@@ -26,6 +26,10 @@ export { default as ConsolePlatformHotels } from "./pages/PlatformHotels";
 export { default as ConsoleHotelPartners } from "./pages/HotelPartners";
 export { default as ConsoleHotelPartnerReview } from "./pages/HotelPartnerReview";
 export { default as ConsoleHotelNominations } from "./pages/HotelNominations";
+// The 360 shell IS the detail route now: it renders PlatformHotelDetail unchanged as its Overview
+// tab and adds Photos, Calendar and Bookings beside it. The old export stays because nothing is
+// gained by breaking a name other code may still reach for.
+export { default as ConsoleHotelMarketplace360 } from "./pages/HotelMarketplace360";
 export { default as ConsolePlatformHotelDetail } from "./pages/PlatformHotelDetail";
 export { default as ConsolePlatformHotelEditor } from "./pages/PlatformHotelEditor";
 export { default as ConsoleMarketplaceBookings } from "./pages/MarketplaceBookings";

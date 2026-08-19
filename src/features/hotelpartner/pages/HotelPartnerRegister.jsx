@@ -1321,6 +1321,7 @@ import {
   Btn, Card, Centered, Chip, Field, Notice, Page, PhotoUploader, ProgressBar, Row, Stars,
   Stepper, inputCls,
 } from "../components/partnerUi";
+import GoogleListingPicker from "../components/GoogleListingPicker";
 
 /* ── Vocabulary. Mirrors the backend enums exactly; a mismatch here is a silent data loss. ── */
 /* Wording matches MealPlanCode.defaultLabel on the backend CHARACTER FOR CHARACTER, so the partner
@@ -1344,6 +1345,67 @@ const OCCUPANCY = [
 ];
 const CURRENCIES = ["INR", "USD", "EUR", "GBP", "AED", "THB", "SGD"];
 
+/**
+ * The ten constants `platform_hotels.property_type` holds, with the sentence-case wording the
+ * marketplace already renders them in (MarketplaceSearch.jsx, FilterRail.jsx) — "Guest house", not
+ * "Guest House" and not GUEST_HOUSE.
+ *
+ * <p>The column has existed and been filterable on the marketplace all along; what was missing was
+ * anywhere to answer it. propertyTypeSuggestion.js:5 says so outright — "neither the console form
+ * nor the hotel-partner registration form has ever asked the question" — which is why every row in
+ * the catalog is null. This select is that question.</p>
+ *
+ * <p>Nothing is preselected, and "Not specified" is a real answer rather than a prompt to pick one.
+ * Seating HOTEL by default would turn every briskly-filled form into a hotel and mis-file the
+ * resorts and homestays among them — the same fabrication a migration default would have been, just
+ * arriving one save at a time.</p>
+ */
+const PROPERTY_TYPES = [
+  { value: "HOTEL", label: "Hotel" },
+  { value: "RESORT", label: "Resort" },
+  { value: "VILLA", label: "Villa" },
+  { value: "HOMESTAY", label: "Homestay" },
+  { value: "APARTMENT", label: "Apartment" },
+  { value: "GUEST_HOUSE", label: "Guest house" },
+  { value: "HOSTEL", label: "Hostel" },
+  { value: "BOUTIQUE", label: "Boutique" },
+  { value: "CAMP", label: "Camp" },
+  { value: "HOUSEBOAT", label: "Houseboat" },
+];
+
+/**
+ * Bed types offered on a room, in the order a property usually thinks about them: sizes first, then
+ * the supplementary arrangements.
+ *
+ * <p>`bedType` is a free-text column everywhere it exists — this form, the console catalog editor
+ * and the platform hotel detail page all store whatever string arrives, and the tenant hotel master
+ * offers a shorter list of its own ("King", not "King Bed"). So this list is a set of SUGGESTIONS,
+ * not a constraint the data has to satisfy, which is why the select below still carries whatever a
+ * room already holds. Narrowing an input that round-trips its own value is how the stored one gets
+ * quietly rewritten — the failure documented for Stars in partnerUi.jsx.</p>
+ */
+const BED_TYPES = [
+  "Single Bed", "Double Bed", "Twin Bed", "Queen Bed", "King Bed",
+  "Triple Bed", "Bunk Bed", "Sofa Bed", "Extra Bed", "Mattress / Floor Bed",
+];
+
+/**
+ * The tier a room sells at, separate from the name the property gives it.
+ *
+ * <p>"Deluxe Sea View" carries both today — the tier ("Deluxe") and the property's own name for it
+ * ("Sea View") — in one free-text box, so nothing downstream can group or filter by tier. Splitting
+ * them is what makes "show me the suites" answerable; the name stays exactly as it was for the
+ * voucher and the listing.</p>
+ *
+ * <p>Suggestions, not a constraint — same rule as {@link BED_TYPES}. The select carries whatever a
+ * room already holds so a whole-document save can never blank an unlisted value.</p>
+ */
+const ROOM_CATEGORIES = [
+  "Standard Room", "Deluxe Room", "Super Deluxe Room", "Executive Room",
+  "Premium Room", "Suite Room", "Family Room", "Twin Room",
+  "Triple Room", "Quad Room", "Dormitory", "Villa / Cottage",
+];
+
 const mealLabel = (code) => MEAL_PLANS.find((m) => m.code === code)?.label ?? code;
 const occLabel = (value) => OCCUPANCY.find((o) => o.value === value)?.label ?? value;
 
@@ -1352,12 +1414,26 @@ const OCCUPANCY_PREFERENCE = ["DOUBLE", "SINGLE", "TRIPLE", "EXTRA_BED", "CHILD_
 
 /**
  * What a hotel almost always ticks. Typing "Air conditioning" on a phone keyboard is the single
- * slowest thing on this form, and these fifteen cover most of what a listing needs.
+ * slowest thing on this form, and these twenty-three cover most of what a listing needs.
+ *
+ * <p>The eight below the original fifteen are the ones this market kept typing by hand — MICE and
+ * event space above all, which is a large part of what an Indian property sells and had no chip at
+ * all. Appended rather than slotted in beside their neighbours ("Rooftop restaurant" next to
+ * "Restaurant") on purpose: an owner returning to finish a draft finds the chips where they left
+ * them, and the tick state is read by string anyway, never by position.</p>
+ *
+ * <p>Adding to this list cannot lose data. It is only the quick-pick row; the stored value is the
+ * string itself, and both the "have I got this" test and the custom-chip filter compare
+ * case-insensitively — so a property that already typed "Conference Hall" by hand simply moves
+ * from the custom row up into the quick-picks, already ticked.</p>
  */
 const COMMON_AMENITIES = [
   "Free WiFi", "Air conditioning", "Swimming pool", "Restaurant", "Parking", "Room service",
   "Gym", "Spa", "Bar", "Elevator", "Laundry", "Power backup", "Airport shuttle",
   "Pet friendly", "Wheelchair access",
+  "Conference hall", "Banquet / Event lawn", "Business centre",
+  "Rooftop restaurant", "Garden / Lawn", "Kids play area",
+  "24-hour front desk", "Travel desk",
 ];
 
 const SECTIONS = [
@@ -1398,7 +1474,7 @@ const BLANK_RATE = {
  */
 const BLANK_ROOM = (mealPlanCodes = []) => ({
   _key: newKey(),
-  name: "", maxAdults: 2, maxChildren: 1, maxOccupancy: 3, bedType: "", size: "",
+  name: "", roomCategory: "", maxAdults: 2, maxChildren: 1, maxOccupancy: 3, bedType: "", size: "",
   description: "", active: true, images: [],
   rates: (mealPlanCodes.length ? mealPlanCodes : ["CP"])
     .map((code) => ({ ...BLANK_RATE, mealPlanCode: code, _key: newKey() })),
@@ -1429,6 +1505,12 @@ function nextFreeRate(room, offeredCodes) {
 function toForm(dto) {
   return {
     name: dto?.name ?? "",
+    /* propertyType is a real column on platform_hotels and the marketplace already filters on it;
+       totalRooms is not — the console's room figure is `roomCount ?? rooms.length` off the server
+       (PlatformHotels.jsx:176), which counts room TYPES, not doors. Both round-trip the same way
+       either case: the value comes back if the registration carries it and is "" if it does not. */
+    propertyType: dto?.propertyType ?? "",
+    totalRooms: dto?.totalRooms ?? "",
     countryCode: dto?.countryCode ?? "",
     stateName: dto?.stateName ?? "",
     cityName: dto?.cityName ?? "",
@@ -1446,6 +1528,9 @@ function toForm(dto) {
     rating: dto?.rating ?? "",
     website: dto?.website ?? "",
     mapUrl: dto?.mapUrl ?? "",
+    // Round-trips like every other field. `toPayload` spreads the whole form, so a key missing here
+    // is a key the next whole-document save writes back as absent — the way `rateCode` was lost.
+    googlePlaceId: dto?.googlePlaceId ?? "",
     overview: dto?.overview ?? "",
     phone: dto?.phone ?? "",
     email: dto?.email ?? "",
@@ -1460,7 +1545,11 @@ function toForm(dto) {
     })),
     rooms: (dto?.rooms ?? []).map((r) => ({
       _key: newKey(),
-      name: r.name ?? "", maxAdults: r.maxAdults ?? "", maxChildren: r.maxChildren ?? "",
+      name: r.name ?? "",
+      // No column on the room yet — rides the payload like every other key and comes back "" until
+      // there is one. Same arrangement as `street` above.
+      roomCategory: r.roomCategory ?? "",
+      maxAdults: r.maxAdults ?? "", maxChildren: r.maxChildren ?? "",
       maxOccupancy: r.maxOccupancy ?? "", bedType: r.bedType ?? "", size: r.size ?? "",
       description: r.description ?? "", active: r.active !== false, images: r.images ?? [],
       rates: (r.rates ?? []).map((t) => ({
@@ -1492,6 +1581,7 @@ function toPayload(f) {
     longitude: num(f.longitude),
     stars: num(f.stars),
     rating: num(f.rating),
+    totalRooms: num(f.totalRooms),
     mealPlans: f.mealPlans,
     rooms: f.rooms.map((r) => ({
       ...stripKey(r),
@@ -2068,6 +2158,27 @@ export default function HotelPartnerRegister() {
                 autoComplete="organization" aria-invalid={Boolean(fieldErrors["f-name"])}
                 onChange={(e) => patch({ name: e.target.value })} placeholder="Hotel Seaview" />
             </Row>
+            {/* Paired, and directly under the name, because both answer the same question the name
+                only hints at — what kind of place this is and how big. Two short controls in one
+                row rather than two full-width ones: neither needs the width, and the section is
+                already five rows long. */}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Property type">
+                <select className={inputCls} value={form.propertyType} disabled={ro}
+                  onChange={(e) => patch({ propertyType: e.target.value })}>
+                  <option value="">Not specified</option>
+                  {PROPERTY_TYPES.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
+                </select>
+              </Field>
+              {/* The hint is load-bearing. "Rooms & rates" below asks for room TYPES — a property
+                  with 40 doors usually has three or four of them — so without saying which number
+                  this is, the owner reasonably reads it as the same question asked twice. */}
+              <Field label="Total rooms" hint="the whole property; room types go below">
+                <input className={inputCls} type="number" min="1" max="9999" inputMode="numeric"
+                  value={form.totalRooms} disabled={ro} placeholder="40"
+                  onChange={(e) => patch({ totalRooms: e.target.value })} />
+              </Field>
+            </div>
             <Row label="Star rating">
               <Stars value={form.stars} disabled={ro} onChange={(v) => patch({ stars: v })} />
             </Row>
@@ -2089,7 +2200,18 @@ export default function HotelPartnerRegister() {
           </Card>
 
           <Card id="location" title="Location" hint="The city and country decide where travel agents find you.">
+            {/* Six short fields, two to a row, in the order an address is written — street, city,
+                country, state, PIN. Narrow to wide is how everyone fills one in, and it is also the
+                sequence phone and browser autofill expect, which the old city-first order broke.
+                The three long fields stay full width below: a 2-row textarea in half a column is a
+                letterbox, and Coordinates is already two inputs of its own. */}
             <div className="grid gap-4 sm:grid-cols-2">
+              {/* One line, not a textarea: the area is what an agent filters on, and Full Address
+                  below is the block that gets printed on a voucher. Two fields, two jobs. */}
+              <Field label="Street / Area">
+                <input className={inputCls} value={form.street} disabled={ro} autoComplete="address-line1"
+                  onChange={(e) => patch({ street: e.target.value })} placeholder="Calangute Beach Road" />
+              </Field>
               <Field label="City" hint="required" error={fieldErrors["f-city"]}>
                 <input id="f-city" className={inputCls} value={form.cityName} disabled={ro}
                   autoComplete="address-level2" aria-invalid={Boolean(fieldErrors["f-city"])}
@@ -2119,12 +2241,6 @@ export default function HotelPartnerRegister() {
                   onChange={(e) => patch({ cityCode: e.target.value.toUpperCase() })} placeholder="GOI" />
               </Field>
             </div>
-            {/* One line, not a textarea: the area is what an agent filters on, and Full Address below
-                is the block that gets printed on a voucher. Two fields, two jobs. */}
-            <Row label="Street / Area">
-              <input className={inputCls} value={form.street} disabled={ro} autoComplete="address-line1"
-                onChange={(e) => patch({ street: e.target.value })} placeholder="Calangute Beach Road" />
-            </Row>
             <Row label="Full Address">
               <textarea className={inputCls} rows={2} value={form.address} disabled={ro}
                 autoComplete="street-address"
@@ -2134,6 +2250,19 @@ export default function HotelPartnerRegister() {
               <input className={inputCls} type="url" inputMode="url" autoCapitalize="none"
                 value={form.mapUrl} disabled={ro}
                 onChange={(e) => patch({ mapUrl: e.target.value })} placeholder="https://maps.google.com/…" />
+            </Row>
+            {/* Separate from the Maps link above, and they are not interchangeable: that is a URL a
+                human clicks, this is the identifier Google's API answers to. Only the second one can
+                bring a live rating and review strip onto the marketplace page. Placed after the name,
+                address and city because the search defaults to exactly those. */}
+            <Row label="Your Google listing" hint="Optional">
+              <GoogleListingPicker
+                token={token}
+                value={form.googlePlaceId}
+                onChange={(placeId) => patch({ googlePlaceId: placeId })}
+                form={form}
+                disabled={ro}
+              />
             </Row>
             <Row label="Coordinates" hint="Optional">
               <div className="grid grid-cols-2 gap-3">
@@ -2443,6 +2572,48 @@ function RoomCard({
               onChange={(e) => onChange({ name: e.target.value })} placeholder="Deluxe Sea View" />
           </Row>
 
+          {/* What kind of room this is, in one band, directly under the name it qualifies: "Deluxe
+              Sea View" is the name, "Deluxe Room" the tier it sells at. The occupancy row below
+              answers a different question — how many people — so the two stay separate bands rather
+              than one long list of controls.
+
+              Two up before three: at the sm: breakpoint a third of the row is about 180px, which
+              clips "Super Deluxe Room" inside the select. The rate rows below take the same
+              staircase for the same reason. */}
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <Field label="Room category">
+              <select className={inputCls} value={room.roomCategory ?? ""} disabled={readOnly}
+                onChange={(e) => onChange({ roomCategory: e.target.value })}>
+                <option value="">Not specified</option>
+                {/* Whatever the room already holds stays pickable even when it is not one of ours —
+                    without it the select renders blank and the next whole-document save writes that
+                    blank back. Same guard as Bed type beside it. */}
+                {room.roomCategory && !ROOM_CATEGORIES.includes(room.roomCategory) && (
+                  <option value={room.roomCategory}>{room.roomCategory}</option>
+                )}
+                {ROOM_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </Field>
+            <Field label="Bed type">
+              <select className={inputCls} value={room.bedType} disabled={readOnly}
+                onChange={(e) => onChange({ bedType: e.target.value })}>
+                <option value="">Not specified</option>
+                {/* A room saved before this list existed holds something like "King size" or "2 single
+                    beds". Without this option the select would render blank and the next autosave —
+                    which sends the whole document — would write that blank back over it. The value
+                    stays pickable until the owner chooses one of ours. */}
+                {room.bedType && !BED_TYPES.includes(room.bedType) && (
+                  <option value={room.bedType}>{room.bedType}</option>
+                )}
+                {BED_TYPES.map((b) => <option key={b} value={b}>{b}</option>)}
+              </select>
+            </Field>
+            <Field label="Room size">
+              <input className={inputCls} value={room.size} disabled={readOnly}
+                onChange={(e) => onChange({ size: e.target.value })} placeholder="320 sq ft" />
+            </Field>
+          </div>
+
           <div className="grid gap-3 sm:grid-cols-3">
             <Field label="Max adults">
               <Stepper value={room.maxAdults} min={1} disabled={readOnly}
@@ -2455,17 +2626,6 @@ function RoomCard({
             <Field label="Max total">
               <Stepper value={room.maxOccupancy} min={1} disabled={readOnly}
                 onChange={(v) => onChange({ maxOccupancy: v })} />
-            </Field>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Bed type">
-              <input className={inputCls} value={room.bedType} disabled={readOnly}
-                onChange={(e) => onChange({ bedType: e.target.value })} placeholder="King" />
-            </Field>
-            <Field label="Room size">
-              <input className={inputCls} value={room.size} disabled={readOnly}
-                onChange={(e) => onChange({ size: e.target.value })} placeholder="320 sq ft" />
             </Field>
           </div>
 
@@ -2602,7 +2762,7 @@ function SaveBadge({ state, editable, complete, onRetry }) {
       </span>
     );
   }
-  /* "Draft saved", not "Saved", and slate rather than emerald when the form is still incomplete.
+  /* "Draft , not "Saved", and slate rather than emerald when the form is still incomplete.
      Green next to an empty form is a lie by tone: it answers "did the autosave reach the server"
      while the owner reads it as "this is done". They are different facts, and the one the owner
      cares about is the checklist. Emerald is kept for the case where both are true. */

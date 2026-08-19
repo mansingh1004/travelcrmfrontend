@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { safeHtml } from "@shared/lib/safeHtml";
 
 /* ─────────────────────────────────────────────
    TOAST SYSTEM (Converted to Tailwind)
@@ -169,7 +170,7 @@ function ViewModal({ cruise, onClose }) {
               <div className="w-full h-[140px] rounded-xl bg-slate-100 flex items-center justify-center text-5xl mb-4 border border-slate-200">🛳️</div>
             )}
             <h3 className="m-0 mb-2 text-[#0e4f8a] font-bold text-lg">{cruise.name}</h3>
-            <p className="text-slate-600 text-sm leading-relaxed m-0" dangerouslySetInnerHTML={{ __html: cruise.description || "No description." }} />
+            <p className="text-slate-600 text-sm leading-relaxed m-0" dangerouslySetInnerHTML={safeHtml(cruise.description || "No description.")} />
             <p className="text-xs text-slate-400 mt-3">Created: {cruise.created}</p>
           </div>
           
@@ -697,7 +698,7 @@ export default function CruiseMaster() {
                       <td className="px-4 py-3.5 text-sm align-middle border-b border-slate-200 max-w-[200px]">
                         <div
                           className="overflow-hidden text-ellipsis whitespace-nowrap text-slate-600 text-[13px]"
-                          dangerouslySetInnerHTML={{ __html: c.description || "—" }}
+                          dangerouslySetInnerHTML={safeHtml(c.description || "—")}
                         />
                       </td>
                       <td className="px-4 py-3.5 text-sm align-middle border-b border-slate-200">

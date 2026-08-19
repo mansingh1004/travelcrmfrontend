@@ -146,19 +146,27 @@ export function MarketplaceBookings() {
 
       <CreditSummary credit={credit} />
 
-      <Tabs
-        options={tabs}
-        value={status}
-        onChange={changeStatus}
-        className="mb-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-      />
+      {/* The count sits with the filter that produces it. It used to live in a header strip below,
+          which meant the number and the control that changed it were separated by a border. */}
+      <div className="mb-4 flex items-end justify-between gap-4">
+        <Tabs
+          options={tabs}
+          value={status}
+          onChange={changeStatus}
+          className="min-w-0 flex-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        />
+        {!loading && (
+          <span className="shrink-0 pb-2 text-xs tabular-nums text-slate-500">
+            {resultCount} request{resultCount === 1 ? "" : "s"}
+          </span>
+        )}
+      </div>
 
       <RequestList
         activeLabel={activeLabel}
         loading={loading}
         rows={rows}
         status={status}
-        total={resultCount}
         onBrowse={() => navigate("/marketplace")}
         onClear={() => changeStatus("")}
         onOpen={(publicId) => navigate(`/marketplace/bookings/${publicId}`)}
@@ -174,25 +182,24 @@ export function MarketplaceBookings() {
   );
 }
 
-function RequestList({ activeLabel, loading, rows, status, total, onBrowse, onClear, onOpen }) {
+function RequestList({ activeLabel, loading, rows, status, onBrowse, onClear, onOpen }) {
   return (
     <section
       aria-label={activeLabel}
       aria-busy={loading}
       className="overflow-hidden rounded-xl border border-slate-200 bg-white"
     >
-      <div className="flex min-h-14 items-center justify-between gap-4 border-b border-slate-100 px-4 py-3 sm:px-5">
-        <div>
-          <h2 className="text-sm font-semibold text-slate-900">{activeLabel}</h2>
-          <p className="mt-0.5 text-[11px] text-slate-400">Open a request to see its full timeline and actions.</p>
-        </div>
-        {!loading && (
-          <span className="shrink-0 text-xs tabular-nums text-slate-400">
-            {total} request{total === 1 ? "" : "s"}
-          </span>
-        )}
-      </div>
+      {/*
+        The list's own header is gone, and it was three separate redundancies in one strip:
 
+          - an <h2> repeating the tab that sits twelve pixels above it,
+          - "Open a request to see its full timeline and actions", which describes what clicking a row
+            in a list does,
+          - and a count, which now rides beside the tabs where the filtering actually happens.
+
+        A page whose content is one list does not need a caption over it. Removing the block also
+        removes its 56px min-height and its border, which is most of the emptiness above the first row.
+      */}
       {loading ? (
         <div className="px-5 py-2"><SkeletonRows count={6} /></div>
       ) : rows.length === 0 ? (
@@ -261,27 +268,27 @@ function BookingRow({ booking: b, onOpen }) {
           <p className="truncate text-sm font-semibold text-slate-900 group-hover:text-slate-950">{b.hotelName}</p>
           <p className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[12px] text-slate-500">
             {b.cityName && <span className="truncate">{b.cityName}</span>}
-            {b.cityName && b.bookingCode && <span className="text-slate-300">·</span>}
-            {b.bookingCode && <span className="shrink-0 font-mono text-[11px] text-slate-400">{b.bookingCode}</span>}
+            {b.cityName && b.bookingCode && <span className="text-slate-400">·</span>}
+            {b.bookingCode && <span className="shrink-0 font-mono text-[12px] text-slate-500">{b.bookingCode}</span>}
           </p>
         </div>
 
         <div className="col-start-2 col-end-4 grid items-end gap-2 min-[420px]:grid-cols-[minmax(0,1fr)_auto] min-[420px]:gap-3 md:hidden">
           <div className="min-w-0">
-            <p className="flex items-center gap-1.5 whitespace-nowrap text-[11px] font-medium text-slate-600">
-              <CalendarDays className="h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden="true" />
-              {fmtDate(b.checkIn)} <span className="text-slate-300">→</span> {fmtDate(b.checkOut)}
+            <p className="flex items-center gap-1.5 whitespace-nowrap text-[12px] font-medium text-slate-600">
+              <CalendarDays className="h-3.5 w-3.5 shrink-0 text-slate-500" aria-hidden="true" />
+              {fmtDate(b.checkIn)} <span className="text-slate-400">→</span> {fmtDate(b.checkOut)}
             </p>
-            <p className="mt-1 flex items-center gap-1.5 text-[11px] text-slate-400">
+            <p className="mt-1 flex items-center gap-1.5 text-[12px] text-slate-500">
               <BedDouble className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
               <span className="truncate">{roomSummary}{b.roomName ? ` · ${b.roomName}` : ""}</span>
             </p>
           </div>
           <div className="text-left min-[420px]:text-right">
-            <p className="whitespace-nowrap text-[13px] font-semibold tabular-nums text-slate-900">
+            <p className="whitespace-nowrap text-sm font-semibold tabular-nums text-slate-900">
               {fmtMoney(payable, b.currency)}
             </p>
-            <p className="mt-0.5 whitespace-nowrap text-[10px] text-slate-400">
+            <p className="mt-0.5 whitespace-nowrap text-[12px] text-slate-500">
               {needsApproval ? "proposed payable" : "platform payable"}
             </p>
           </div>
@@ -289,23 +296,23 @@ function BookingRow({ booking: b, onOpen }) {
 
         <div className="hidden md:col-start-3 md:block">
           <p className="whitespace-nowrap text-[12px] font-medium text-slate-700">
-            {fmtDate(b.checkIn)} <span className="text-slate-300">→</span> {fmtDate(b.checkOut)}
+            {fmtDate(b.checkIn)} <span className="text-slate-400">→</span> {fmtDate(b.checkOut)}
           </p>
-          <p className="mt-0.5 text-[11px] text-slate-400">{roomSummary}</p>
+          <p className="mt-0.5 text-[12px] text-slate-500">{roomSummary}</p>
         </div>
 
         <div className="hidden min-w-0 lg:col-start-4 lg:block">
           <p className="truncate text-[12px] text-slate-700">{b.roomName || "Room to advise"}</p>
-          <p className="mt-0.5 truncate text-[11px] text-slate-400">{b.leadGuestName || "Guest not added"}</p>
+          <p className="mt-0.5 truncate text-[12px] text-slate-500">{b.leadGuestName || "Guest not added"}</p>
         </div>
 
         <div className="hidden text-right md:col-start-4 md:block lg:col-start-5">
           {/* Only ever the tenant's payable — supplierTotal and platformEarning are absent from the
               tenant DTO by design, not merely hidden by the UI. */}
-          <p className="whitespace-nowrap text-[13px] font-semibold tabular-nums text-slate-900">
+          <p className="whitespace-nowrap text-sm font-semibold tabular-nums text-slate-900">
             {fmtMoney(payable, b.currency)}
           </p>
-          <p className="mt-0.5 whitespace-nowrap text-[11px] text-slate-400">
+          <p className="mt-0.5 whitespace-nowrap text-[12px] text-slate-500">
             {needsApproval ? "proposed payable" : "platform payable"}
           </p>
         </div>
@@ -370,13 +377,13 @@ function CreditSummary({ credit }) {
             <WalletCards className="h-4 w-4" aria-hidden="true" />
           </span>
           <div className="min-w-0">
-            <p className="text-[11px] font-medium text-slate-500">Outstanding with the platform</p>
+            <p className="text-[12px] font-medium text-slate-500">Outstanding with the platform</p>
             <div className="mt-0.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
               <p className="text-lg font-semibold tabular-nums tracking-[-0.02em] text-slate-900">
                 {fmtMoney(outstanding, credit.currency)}
               </p>
               {credit.unsettledBookings > 0 && (
-                <p className="text-[11px] text-slate-400">
+                <p className="text-[12px] text-slate-500">
                   across {credit.unsettledBookings} booking{credit.unsettledBookings === 1 ? "" : "s"}
                 </p>
               )}
@@ -387,7 +394,7 @@ function CreditSummary({ credit }) {
         {enforced && (
           <div className="border-t border-slate-200 pt-3 sm:border-l sm:border-t-0 sm:pl-5 sm:pt-0">
             <div className="flex items-baseline justify-between gap-3">
-              <p className="text-[11px] font-medium text-slate-500">Available credit</p>
+              <p className="text-[12px] font-medium text-slate-500">Available credit</p>
               <p className={cn("text-sm font-semibold tabular-nums", tight ? "text-amber-800" : "text-slate-800")}>
                 {fmtMoney(available, credit.currency)}
               </p>
@@ -405,7 +412,7 @@ function CreditSummary({ credit }) {
                 style={{ width: `${availablePercent}%` }}
               />
             </div>
-            <p className="mt-1.5 text-right text-[10px] text-slate-400">
+            <p className="mt-1.5 text-right text-[12px] text-slate-500">
               Limit {fmtMoney(limit, credit.currency)}
             </p>
           </div>

@@ -37,7 +37,7 @@ const fieldCls =
   "w-full px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-[12px] text-slate-700 " +
   "font-medium placeholder-slate-400 focus:border-emerald-400 outline-none";
 
-export default function VendorWhatsAppModal({ bookingPublicId, line, onSent, onClose }) {
+export default function VendorWhatsAppModal({ bookingPublicId, line, onSent, onClose, embedded = false }) {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [draft, setDraft] = useState(null);
@@ -87,11 +87,14 @@ export default function VendorWhatsAppModal({ bookingPublicId, line, onSent, onC
     return () => { cancelled = true; };
   }, [bookingPublicId, line.publicId]);
 
+  // Not bound when embedded: the drawer owns Escape there, and two handlers calling the same
+  // onClose would fire it twice on one keypress.
   useEffect(() => {
+    if (embedded) return undefined;
     const onKey = (e) => { if (e.key === "Escape" && !busy) onClose(); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, busy]);
+  }, [onClose, busy, embedded]);
 
   const digits = (to || "").replace(/\D/g, "");
 
@@ -134,36 +137,17 @@ export default function VendorWhatsAppModal({ bookingPublicId, line, onSent, onC
   const noRecipient = !loading && !digits;
   const apiReady = draft?.apiAvailable && Boolean(draft?.templateName);
 
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
-      onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label="WhatsApp the supplier"
-        className="w-full max-w-md max-h-[88vh] flex flex-col rounded-xl border border-slate-200 bg-white shadow-xl"
-        style={{ fontFamily: "'Plus Jakarta Sans',system-ui,sans-serif" }}
-      >
-        <div className="flex items-start gap-2 px-4 py-3 border-b border-slate-100">
-          <MessageCircle className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" />
-          <div className="min-w-0 flex-1">
-            <p className="text-[13px] font-extrabold text-slate-700 truncate">
-              {draft?.vendorName || line.vendorName || "Supplier"}
-            </p>
-            <p className="text-[11px] text-slate-400 truncate">{line.title}</p>
-          </div>
-          <button
-            onClick={onClose}
-            disabled={busy}
-            aria-label="Close"
-            className="shrink-0 p-1 rounded text-slate-400 hover:text-slate-600 hover:bg-slate-50 disabled:opacity-40"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
+  /*
+   * The composer itself, with no chrome of its own.
+   *
+   * Split out so this component can be either a centered dialog (opened straight from a service
+   * line) or a tab inside VendorConversationDrawer, WITHOUT the send logic being written twice.
+   * That logic is the whole value here — the 24-hour window check, the device-link rebuild from
+   * the current text, the release-date write and the PENDING → REQUESTED move — and a second copy
+   * of it in the drawer would drift from this one within a release.
+   */
+  const body = (
+    <>
         {loading ? (
           <div className="px-4 py-10 flex items-center justify-center gap-2 text-[12px] text-slate-400">
             <Loader2 className="w-4 h-4 animate-spin" /> Composing…
@@ -278,6 +262,45 @@ export default function VendorWhatsAppModal({ bookingPublicId, line, onSent, onC
             </div>
           </>
         )}
+    </>
+  );
+
+  // Inside the drawer the header, the close button and the Escape handling all belong to the
+  // drawer — two of each would be a panel arguing with itself.
+  if (embedded) {
+    return <div className="flex-1 flex flex-col min-h-0">{body}</div>;
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+      onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="WhatsApp the supplier"
+        className="w-full max-w-md max-h-[88vh] flex flex-col rounded-xl border border-slate-200 bg-white shadow-xl"
+        style={{ fontFamily: "'Plus Jakarta Sans',system-ui,sans-serif" }}
+      >
+        <div className="flex items-start gap-2 px-4 py-3 border-b border-slate-100">
+          <MessageCircle className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" />
+          <div className="min-w-0 flex-1">
+            <p className="text-[13px] font-extrabold text-slate-700 truncate">
+              {draft?.vendorName || line.vendorName || "Supplier"}
+            </p>
+            <p className="text-[11px] text-slate-400 truncate">{line.title}</p>
+          </div>
+          <button
+            onClick={onClose}
+            disabled={busy}
+            aria-label="Close"
+            className="shrink-0 p-1 rounded text-slate-400 hover:text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        {body}
       </div>
     </div>
   );

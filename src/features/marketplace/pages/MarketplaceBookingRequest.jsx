@@ -17,7 +17,7 @@ import { bookingService } from "@features/bookings";
 import { marketplaceService } from "../api/marketplaceService";
 import {
   BackLink, Button, Card, Combobox, Empty, Hint, Input, Loading, Notice, NumberInput, Page,
-  PageHeader, Row, RowGroup, SectionLabel, Select, Stepper, Textarea, Chip,
+  PageHeader, Photo, Row, RowGroup, SectionLabel, Select, Stepper, Textarea, Chip,
   errMsg, fmtDate, fmtMoney, isAlreadyReported, nightsBetween, todayISO, useFieldId, useHotkeys,
   useIdempotencyKey, useToast,
 } from "../components/marketplaceUi";
@@ -309,14 +309,14 @@ export function MarketplaceBookingRequest() {
               <p className="text-sm font-medium text-slate-900">
                 Waiting for platform confirmation
               </p>
-              <p className="mt-1 text-[13px] leading-relaxed text-slate-500">
+              <p className="mt-1 text-sm leading-relaxed text-slate-500">
                 Reference <span className="font-medium text-slate-700">{done.bookingCode}</span>.
                 The hotel is <span className="font-medium">not confirmed yet</span> — you'll be
                 notified when the platform confirms it with the supplier, and the voucher becomes
                 available then. Don't promise the room to your customer until it is.
               </p>
               {done.crmBookingCode && (
-                <p className="mt-2 text-[13px] text-slate-500">
+                <p className="mt-2 text-sm text-slate-500">
                   Attached to booking <span className="font-medium text-slate-700">{done.crmBookingCode}</span>.
                 </p>
               )}
@@ -338,7 +338,7 @@ export function MarketplaceBookingRequest() {
 
   // ── The form ──────────────────────────────────────────────────────────────
   return (
-    <Page width="max-w-3xl">
+    <Page width="max-w-6xl">
       <PageHeader
         back={<BackLink onClick={() => navigate(`/marketplace/${publicId}`)}>{hotel.name}</BackLink>}
         title="Request booking"
@@ -346,6 +346,21 @@ export function MarketplaceBookingRequest() {
       />
 
       {blocked && <Notice tone="error" className="mb-5">{blocked}</Notice>}
+
+      {/*
+        FORM LEFT, CONTEXT AND QUOTE RIGHT.
+
+        This was one `max-w-3xl` column, and two things went wrong in it. The agent filled a long form
+        with no reminder of WHICH property they were booking — the name appeared once in the header
+        subtitle and then scrolled away, which on a screen reached from a grid of ten similar hotels
+        is a real way to book the wrong one. And the live quote sat in the MIDDLE of the form, so the
+        number moved off-screen exactly while the fields that change it were being edited.
+
+        The rail fixes both by standing still: the property is always identifiable, and the price is
+        always visible while occupancy and dates are being typed.
+      */}
+      <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_20rem] lg:gap-10">
+        <div className="min-w-0">
 
       <SectionLabel>Stay</SectionLabel>
       <RowGroup>
@@ -415,7 +430,7 @@ export function MarketplaceBookingRequest() {
                 </Field>
                 {form.roomOccupancies.length > 1 && (
                   <button type="button" onClick={() => removeRoom(i)}
-                    className="ml-auto text-xs font-semibold text-slate-400 hover:text-rose-600">
+                    className="ml-auto text-xs font-semibold text-slate-500 hover:text-rose-600">
                     Remove
                   </button>
                 )}
@@ -435,9 +450,6 @@ export function MarketplaceBookingRequest() {
           </div>
         </Row>
       </RowGroup>
-
-      <QuotePanel quote={quote} quoting={quoting} nights={nights} rooms={totalRooms}
-                  hasChildren={totalChildren > 0} />
 
       <SectionLabel className="mt-8">Lead guest</SectionLabel>
       <RowGroup>
@@ -471,7 +483,7 @@ export function MarketplaceBookingRequest() {
         <ModeTab active={mode === "create"} onClick={() => setMode("create")} icon={Plus}>New trip</ModeTab>
         <ModeTab active={mode === "link"} onClick={() => setMode("link")} icon={Link2}>Existing booking</ModeTab>
       </div>
-      <p className="mb-2 text-[13px] leading-relaxed text-slate-500">
+      <p className="mb-2 text-sm leading-relaxed text-slate-500">
         {mode === "create"
           ? "A booking will be created in your CRM in the same step, and the amount you'll owe the platform is recorded against it as a cost."
           : "The hotel is added as a service line on a booking you already have. This does not use a new booking from your plan."}
@@ -500,7 +512,7 @@ export function MarketplaceBookingRequest() {
                   <Chip>New customer</Chip>
                   <button type="button"
                           onClick={() => set({ newCustomer: false, newCustomerName: "", newCustomerPhone: "", newCustomerEmail: "" })}
-                          className="text-[13px] text-slate-500 underline-offset-2 hover:text-slate-900 hover:underline">
+                          className="text-sm text-slate-500 underline-offset-2 hover:text-slate-900 hover:underline">
                     search existing instead
                   </button>
                 </div>
@@ -556,14 +568,63 @@ export function MarketplaceBookingRequest() {
         )}
       </RowGroup>
 
-      <div className="sticky bottom-0 mt-8 flex items-center justify-between gap-3 border-t border-slate-200 bg-white/95 py-3 backdrop-blur-sm">
-        <Hint keys={["mod", "enter"]} label="Send with" />
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" onClick={() => navigate(`/marketplace/${publicId}`)}>Cancel</Button>
-          <Button variant="primary" onClick={submit} loading={submitting}>
-            {submitting ? "Sending…" : "Send booking request"}
-          </Button>
+          {/* The footer bar is the MOBILE submit path. From `lg` up the rail carries the action, and
+              two live "Send booking request" buttons on one screen is a second thing to keep in step
+              and a moment's doubt about whether they do the same thing. */}
+          <div className="sticky bottom-0 mt-8 flex items-center justify-between gap-3 border-t border-slate-200 bg-white/95 py-3 backdrop-blur-sm lg:hidden">
+            <Hint keys={["mod", "enter"]} label="Send with" />
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" onClick={() => navigate(`/marketplace/${publicId}`)}>Cancel</Button>
+              <Button variant="primary" onClick={submit} loading={submitting}>
+                {submitting ? "Sending…" : "Send booking request"}
+              </Button>
+            </div>
+          </div>
         </div>
+
+        {/* ── The rail: what is being booked, what it costs, and the way to send it ───────────── */}
+        <aside className="lg:sticky lg:top-6 lg:self-start lg:space-y-4">
+          {/*
+            WHICH HOTEL. Reached from a grid of ten similar properties, the agent has been filling a
+            form whose only identification of the property was a header subtitle that scrolled away.
+            The cover shot is the fastest possible confirmation that this is the right one — faster
+            than re-reading the name, which is the point.
+          */}
+          <Card className="space-y-3">
+            {hotel.primaryImageUrl && (
+              <Photo
+                src={hotel.primaryImageUrl}
+                alt={hotel.name}
+                className="aspect-[4/3] w-full overflow-hidden rounded-lg"
+              />
+            )}
+            <div>
+              <p className="text-sm font-semibold leading-snug text-slate-900">{hotel.name}</p>
+              {[hotel.cityName, hotel.stateName].filter(Boolean).length > 0 && (
+                <p className="mt-0.5 text-sm text-slate-500">
+                  {[hotel.cityName, hotel.stateName].filter(Boolean).join(", ")}
+                </p>
+              )}
+            </div>
+          </Card>
+
+          {/* The quote used to sit in the middle of the form, so the figure left the screen exactly
+              while the dates and occupancy that determine it were being edited. */}
+          <div className="mt-4 lg:mt-0">
+            <QuotePanel quote={quote} quoting={quoting} nights={nights} rooms={totalRooms}
+                        hasChildren={totalChildren > 0} />
+          </div>
+
+          <div className="mt-4 hidden flex-col gap-2 lg:mt-0 lg:flex">
+            <Button variant="primary" onClick={submit} loading={submitting}>
+              {submitting ? "Sending…" : "Send booking request"}
+            </Button>
+            <Button variant="ghost" onClick={() => navigate(`/marketplace/${publicId}`)}>Cancel</Button>
+            <div className="pt-1 text-center">
+              <Hint keys={["mod", "enter"]} label="Send with" />
+            </div>
+          </div>
+        </aside>
       </div>
     </Page>
   );
@@ -575,7 +636,7 @@ function ModeTab({ active, onClick, icon: Icon, children }) {
       type="button"
       onClick={onClick}
       className={[
-        "inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-[13px] transition-colors",
+        "inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-sm transition-colors",
         "focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/10",
         active ? "bg-slate-900 font-medium text-white" : "text-slate-500 hover:text-slate-900",
       ].join(" ")}
@@ -589,7 +650,7 @@ function ModeTab({ active, onClick, icon: Icon, children }) {
 function Field({ label, children }) {
   return (
     <div className="flex flex-col gap-1">
-      <span className="text-[11px] text-slate-400">{label}</span>
+      <span className="text-[12px] text-slate-500">{label}</span>
       {children}
     </div>
   );
@@ -618,7 +679,7 @@ function QuotePanel({ quote, quoting, nights, rooms, hasChildren }) {
 
   if (quoting && !quote) {
     return (
-      <div className="mt-4 flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-[13px] text-slate-500">
+      <div className="mt-4 flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
         <Loader2 className="h-3.5 w-3.5 animate-spin" /> Checking price…
       </div>
     );
@@ -638,8 +699,8 @@ function QuotePanel({ quote, quoting, nights, rooms, hasChildren }) {
     <div className="mt-4 rounded-lg border border-slate-200 bg-white">
       <div className="flex items-baseline justify-between gap-4 px-4 py-3">
         <div className="min-w-0">
-          <p className="text-[11px] uppercase tracking-wide text-slate-400">Estimated payable</p>
-          <p className="text-[13px] text-slate-500">
+          <p className="text-[12px] uppercase tracking-wide text-slate-500">Estimated payable</p>
+          <p className="text-sm text-slate-500">
             {rooms} room{rooms === 1 ? "" : "s"} · {nights} night{nights === 1 ? "" : "s"}
             {quote.roomName ? ` · ${quote.roomName}` : ""}
             {quote.mealPlanName ? ` · ${quote.mealPlanName}` : ""}
@@ -650,18 +711,18 @@ function QuotePanel({ quote, quoting, nights, rooms, hasChildren }) {
             {fmtMoney(quote.tenantPayable, quote.currency || "INR")}
           </span>
           {quote.payablePerRoomNight != null && (
-            <span className="block text-[11px] text-slate-400">
+            <span className="block text-[12px] text-slate-500">
               {fmtMoney(quote.payablePerRoomNight, quote.currency || "INR")} per room-night
             </span>
           )}
           {quoting && (
-            <span className="mt-0.5 inline-flex items-center gap-1 text-[11px] text-slate-400">
+            <span className="mt-0.5 inline-flex items-center gap-1 text-[12px] text-slate-500">
               <Loader2 className="h-3 w-3 animate-spin" /> updating
             </span>
           )}
         </div>
       </div>
-      <p className="border-t border-slate-100 px-4 py-2.5 text-[11px] leading-relaxed text-slate-500">
+      <p className="border-t border-slate-100 px-4 py-2.5 text-[12px] leading-relaxed text-slate-500">
         {quote.note}
         {(hasChildren || quote.excludesChildCharges) && (
           <> Charges for children are set by the property and are not included here.</>
