@@ -6,6 +6,7 @@ export const createUserService = {
   create: async (form) => {
     const payload = {
       name:        (form.fullName || "").trim(),
+      username:    (form.username.trim()),
       email:       (form.email || "").trim(),
       password:    form.password,
       role:        LABEL_TO_ROLE[form.role] || "TRAVEL_AGENT",
