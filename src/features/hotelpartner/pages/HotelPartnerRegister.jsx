@@ -9,6 +9,7 @@ import {
   Btn, Card, Centered, Chip, Field, Notice, Page, PhotoUploader, ProgressBar, Row, Stars,
   Stepper, inputCls,
 } from "../components/partnerUi";
+import GoogleListingPicker from "../components/GoogleListingPicker";
 
 /* ── Vocabulary. Mirrors the backend enums exactly; a mismatch here is a silent data loss. ── */
 /* Wording matches MealPlanCode.defaultLabel on the backend CHARACTER FOR CHARACTER, so the partner
@@ -128,6 +129,9 @@ function toForm(dto) {
     rating: dto?.rating ?? "",
     website: dto?.website ?? "",
     mapUrl: dto?.mapUrl ?? "",
+    // Round-trips like every other field. `toPayload` spreads the whole form, so a key missing here
+    // is a key the next whole-document save writes back as absent — the way `rateCode` was lost.
+    googlePlaceId: dto?.googlePlaceId ?? "",
     overview: dto?.overview ?? "",
     phone: dto?.phone ?? "",
     email: dto?.email ?? "",
@@ -802,6 +806,19 @@ export default function HotelPartnerRegister() {
               <input className={inputCls} type="url" inputMode="url" autoCapitalize="none"
                 value={form.mapUrl} disabled={ro}
                 onChange={(e) => patch({ mapUrl: e.target.value })} placeholder="https://maps.google.com/…" />
+            </Row>
+            {/* Separate from the Maps link above, and they are not interchangeable: that is a URL a
+                human clicks, this is the identifier Google's API answers to. Only the second one can
+                bring a live rating and review strip onto the marketplace page. Placed after the name,
+                address and city because the search defaults to exactly those. */}
+            <Row label="Your Google listing" hint="Optional">
+              <GoogleListingPicker
+                token={token}
+                value={form.googlePlaceId}
+                onChange={(placeId) => patch({ googlePlaceId: placeId })}
+                form={form}
+                disabled={ro}
+              />
             </Row>
             <Row label="Coordinates" hint="Optional">
               <div className="grid grid-cols-2 gap-3">

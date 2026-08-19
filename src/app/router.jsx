@@ -57,9 +57,13 @@ const VendorDetails = lazyPage(vendors, "VendorDetails");
 const reminders = () => import("@features/reminders");
 const mailbox = () => import("@features/mailbox");
 const whatsapp = () => import("@features/whatsapp");
+const communication = () => import("@features/communication");
 const Reminders = lazyPage(reminders, "Reminders");
 const Mailbox = lazyPage(mailbox, "Mailbox");
-const WhatsAppInbox = lazyPage(whatsapp, "WhatsAppInbox");
+const WhatsAppConversations = lazyPage(communication, "WhatsAppConversations");
+const EmailConversations = lazyPage(communication, "EmailConversations");
+const MessageTemplates = lazyPage(communication, "MessageTemplates");
+const CommunicationInbox = lazyPage(communication, "CommunicationInbox");
 const CreateReminder = lazyPage(reminders, "CreateReminder");
 const BookingReminders = lazyPage(reminders, "BookingReminders");
 const Notifications = lazyPage(reminders, "Notifications");
@@ -130,7 +134,7 @@ const ConsolePlatformHotels = lazyPage(consoleFeature, "ConsolePlatformHotels");
 const ConsoleHotelPartners = lazyPage(consoleFeature, "ConsoleHotelPartners");
 const ConsoleHotelPartnerReview = lazyPage(consoleFeature, "ConsoleHotelPartnerReview");
 const ConsoleHotelNominations = lazyPage(consoleFeature, "ConsoleHotelNominations");
-const ConsolePlatformHotelDetail = lazyPage(consoleFeature, "ConsolePlatformHotelDetail");
+const ConsoleHotelMarketplace360 = lazyPage(consoleFeature, "ConsoleHotelMarketplace360");
 const ConsolePlatformHotelEditor = lazyPage(consoleFeature, "ConsolePlatformHotelEditor");
 const ConsoleMarketplaceBookings = lazyPage(consoleFeature, "ConsoleMarketplaceBookings");
 const ConsoleMarketplaceCommissions = lazyPage(consoleFeature, "ConsoleMarketplaceCommissions");
@@ -299,7 +303,7 @@ const AppRouter = () => {
               {/* new BEFORE :publicId, or "new" is read as an id and the editor never renders. */}
               <Route path="hotel-catalog/new" element={<ConsolePlatformHotelEditor />} />
               <Route path="hotel-catalog/:publicId/edit" element={<ConsolePlatformHotelEditor />} />
-              <Route path="hotel-catalog/:publicId" element={<ConsolePlatformHotelDetail />} />
+              <Route path="hotel-catalog/:publicId" element={<ConsoleHotelMarketplace360 />} />
               {/* The approval queue. Only a decision taken here can confirm a tenant's hotel. */}
               <Route path="hotel-requests" element={<ConsoleMarketplaceBookings />} />
               {/*
@@ -389,10 +393,31 @@ const AppRouter = () => {
               <Route path="AllVendors" element={<AllVendors />} />
               <Route path="CreateVendor" element={<CreateVendor />} />
               <Route path="Reminders" element={<Reminders />} />
-              <Route path="Mailbox" element={<Guard allow={hasPermission(P.COMM_READ) && hasModule("COMMUNICATION")}><Mailbox /></Guard>} />
+              {/* COMM_MAILBOX_READ, not COMM_READ. This screen serves the agency's whole IMAP
+                  mailbox with no row filter, while COMM_READ carries the own/team/all scope the
+                  Communication Center enforces — sharing one key let an OWN-scoped agent read every
+                  thread in the tenant through a second URL. */}
+              <Route path="Mailbox" element={<Guard allow={hasPermission(P.COMM_MAILBOX_READ) && hasModule("COMMUNICATION")}><Mailbox /></Guard>} />
               {/* Same gate as Mailbox: it reads the same conversations table behind the same
                   COMM_READ authority and the same plan module. */}
-              <Route path="WhatsApp" element={<Guard allow={hasPermission(P.COMM_READ) && hasModule("COMMUNICATION")}><WhatsAppInbox /></Guard>} />
+              {/* /WhatsApp is now a kept redirect, the same treatment /console/login gets. The
+                  screen it used to render was read-only and is superseded by the Communication
+                  Center's WhatsApp preset, which shows the same rows AND can reply. Kept rather
+                  than deleted because it has been a real URL in people's bookmarks and in the
+                  sidebar; the component it pointed at is no longer bundled. */}
+              <Route path="WhatsApp" element={<Navigate to="/communication/whatsapp" replace />} />
+              {/* Communication Center. ONE screen; the two paths below are presets of it with a
+                  channel pinned, because channel is a filter over one comm_conversations table and
+                  never a separate page. Same gate throughout: the same rows behind the same
+                  authority and plan module. Replying additionally needs COMM_SEND and triage
+                  COMM_ASSIGN, both enforced server-side. */}
+              <Route path="communication" element={<Guard allow={hasPermission(P.COMM_READ) && hasModule("COMMUNICATION")}><CommunicationInbox /></Guard>} />
+              <Route path="communication/whatsapp" element={<Guard allow={hasPermission(P.COMM_READ) && hasModule("COMMUNICATION")}><WhatsAppConversations /></Guard>} />
+              <Route path="communication/email" element={<Guard allow={hasPermission(P.COMM_READ) && hasModule("COMMUNICATION")}><EmailConversations /></Guard>} />
+              {/* COMM_TEMPLATE_MANAGE, not COMM_READ: this screen edits what the agency is allowed
+                  to send, and the backend grants that key per user — TENANT_ADMIN included. The
+                  Guard is defence in depth; @PreAuthorize on the controller is the real gate. */}
+              <Route path="communication/templates" element={<Guard allow={hasPermission(P.COMM_TEMPLATE_MANAGE) && hasModule("COMMUNICATION")}><MessageTemplates /></Guard>} />
               {/* Task & Team Calendar (gated by TASK_READ; sub-agents get a row-scoped personal calendar) */}
               <Route path="calendar" element={<Guard allow={hasPermission(P.TASK_READ)}><Calendar /></Guard>} />
               {/* All Tasks list — same TASK_READ gate and the same TASKS module as the calendar.

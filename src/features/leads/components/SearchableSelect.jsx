@@ -238,6 +238,17 @@ export default function SearchableSelect({
      option lands the caret on the following control, so one Enter still means "done, next". Off by
      default — Create Lead has no such contract and must keep behaving as it always has. */
   advanceOnSelect = false,
+  /* ── Server-side search, opt-in ───────────────────────────────────────────────────────────────
+     Given, the typed query is handed to the caller (debounced) and the local ranking pass is
+     SKIPPED — the options prop is then already the server's answer, and re-filtering it in the
+     browser would hide rows the server deliberately returned.
+
+     This exists for Create Booking's Link Lead picker. That control used to be fed one capped
+     fetch of the newest 200 leads and filtered here, so an enquiry taken in June and booked in
+     November was simply not in the list and could not be linked at all. Absent, everything below
+     behaves exactly as it always has, so no existing call site changes. */
+  onSearch = null,
+  searchDebounceMs = 250,
 }) {
   const tone = ACCENTS[accent] || ACCENTS.teal;
   const [isOpen, setIsOpen] = useState(false);
@@ -276,7 +287,18 @@ export default function SearchableSelect({
   // A single substring meant "goa bea" (or any two words typed in the order they are read) matched
   // nothing, and the rows that came back were in master order, so the obvious answer to a
   // three-letter query could sit thirty rows down.
+  /* Hand the query up, debounced, whenever the caller owns the searching. Cleared on close by the
+     `search` reset, which fires this with "" and lets the caller restore its default list. */
+  useEffect(() => {
+    if (!onSearch) return undefined;
+    const timer = setTimeout(() => onSearch(search.trim()), searchDebounceMs);
+    return () => clearTimeout(timer);
+  }, [onSearch, search, searchDebounceMs]);
+
   const filteredOptions = useMemo(() => {
+    // Server-searched: `options` IS the result set. Ranking it again here would drop rows the
+    // server matched on fields this component cannot see.
+    if (onSearch) return safeOptions;
     if (tokens.length === 0) return safeOptions;
     const query = search.trim().toLowerCase();
     const scored = [];
@@ -288,7 +310,7 @@ export default function SearchableSelect({
     });
     scored.sort((a, b) => a.score - b.score || a.index - b.index);
     return scored.map((entry) => entry.option);
-  }, [safeOptions, search, tokens]);
+  }, [safeOptions, search, tokens, onSearch]);
 
   const close = (returnFocus = true) => {
     setIsOpen(false);

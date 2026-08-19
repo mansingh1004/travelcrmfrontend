@@ -238,6 +238,9 @@ export default function EmailConfiguration() {
     fromEmail:    "",
     fromName:     "",
     signature:    "",
+    // Blank = derive the read host from the SMTP one, which is right for almost every provider.
+    imapHost:     "",
+    imapPort:     "",
   });
   const [showPass,     setShowPass]    = useState(false);
   const [errs,         setErrs]        = useState({});
@@ -245,6 +248,9 @@ export default function EmailConfiguration() {
   const [showTestModal,setTestModal]   = useState(false);
   const [toast,        setToast]       = useState(null);
   const [isConfigured, setIsConfigured]= useState(false);
+  // What the server will actually connect to — the override, or the smtp.x -> imap.x guess. Shown
+  // so an operator with an empty inbox can see which server was tried without reading the code.
+  const [derivedImapHost, setDerivedImapHost] = useState("");
 
   const showToast = useCallback((msg, type = "success") => setToast({ msg, type }), []);
 
@@ -264,7 +270,10 @@ export default function EmailConfiguration() {
           fromEmail:  d.fromEmail  || "",
           fromName:   d.fromName   || "",
           signature:  d.signature  || "",
+          imapHost:   d.imapHost   || "",
+          imapPort:   d.imapPort   || "",
         }));
+        setDerivedImapHost(d.effectiveImapHost || "");
         setIsConfigured(!!d.configured);
       })
       .catch(() => {});
@@ -440,6 +449,46 @@ export default function EmailConfiguration() {
                     )}
                   </div>
                   <FieldError msg={errs.smtpHost}/>
+                </div>
+
+                {/* Incoming mail (IMAP) — override only.
+                    Left blank for almost every tenant: the read host is derived from the SMTP one
+                    (smtp.x -> imap.x). This exists because that guess previously had NO escape
+                    hatch — a provider naming its servers differently left the Communication Center
+                    and the Mailbox permanently empty with no way to correct it. */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <FieldLabel
+                      label="IMAP Host"
+                      hint="Only if incoming mail is not working. Leave blank to derive it from the SMTP host."
+                    />
+                    <input
+                      type="text"
+                      value={form.imapHost}
+                      onChange={e => set("imapHost", e.target.value)}
+                      placeholder={derivedImapHost ? `Using ${derivedImapHost}` : "e.g., imap.gmail.com"}
+                      className={inputCls(errs.imapHost)}
+                    />
+                    {/* The server actually tried, not the field's value — this is the answer to
+                        "why is my inbox empty", and it is invisible everywhere else. */}
+                    {derivedImapHost && !form.imapHost && (
+                      <p className="mt-1 text-[11px] text-slate-400">
+                        Reading mail from <span className="font-semibold text-slate-500">{derivedImapHost}</span>
+                      </p>
+                    )}
+                    <FieldError msg={errs.imapHost}/>
+                  </div>
+                  <div>
+                    <FieldLabel label="IMAP Port" hint="Blank = 993 (SSL)"/>
+                    <input
+                      type="number"
+                      value={form.imapPort}
+                      onChange={e => set("imapPort", e.target.value)}
+                      placeholder="993"
+                      className={inputCls(errs.imapPort)}
+                    />
+                    <FieldError msg={errs.imapPort}/>
+                  </div>
                 </div>
 
                 {/* SMTP Port + Encryption — 2 cols */}

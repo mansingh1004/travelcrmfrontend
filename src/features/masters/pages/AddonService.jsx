@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, memo, useMemo } from "react";
 import { Search, Plus, Eye, Edit, Trash2, X, Settings, Bold, Italic, Underline, Strikethrough, AlignLeft, AlignCenter, List, ListOrdered, Eraser, ChevronDown, ChevronUp, Home, Package, IndianRupee, Sparkles, ToggleLeft, ToggleRight, CheckCircle, XCircle, Inbox, ArrowUp, ArrowDown } from "lucide-react";
+import { safeHtml } from "@shared/lib/safeHtml";
 
 /* ─── PAGINATION ─────────────────────────────────────────── */
 function buildPageNumbers(totalPages, pageIndex) {
@@ -214,7 +215,7 @@ function ViewServiceModal({ service, onClose, onEdit }) {
             <div>
               <p className="text-xs font-bold text-slate-500 mb-2 uppercase tracking-wide">Description</p>
               <div className="bg-slate-50 rounded-xl p-4 border border-slate-100 text-sm text-slate-600 leading-relaxed"
-                dangerouslySetInnerHTML={{ __html: service.description }} />
+                dangerouslySetInnerHTML={safeHtml(service.description)} />
             </div>
           ) : (
             <div className="bg-slate-50 rounded-xl p-4 border border-slate-100 text-sm text-slate-400 italic text-center">No description provided</div>
@@ -281,7 +282,7 @@ function ServiceCard({ service, onView, onEdit, onDelete }) {
       </div>
       {service.description && (
         <div className="text-xs text-slate-500 leading-relaxed line-clamp-2"
-          dangerouslySetInnerHTML={{ __html: service.description }} />
+          dangerouslySetInnerHTML={safeHtml(service.description)} />
       )}
       <div className="flex items-center justify-between pt-2 border-t border-slate-100">
         <span className="text-sm font-bold text-slate-800">{formatINR(service.price)}</span>
@@ -755,7 +756,7 @@ export default function AddOnServicesMaster() {
                       <td className="px-5 py-4 max-w-xs">
                         {service.description ? (
                           <div className="text-[13px] text-slate-500 leading-relaxed line-clamp-2"
-                            dangerouslySetInnerHTML={{ __html: service.description }} />
+                            dangerouslySetInnerHTML={safeHtml(service.description)} />
                         ) : (
                           <span className="text-slate-300 text-xs italic">No description</span>
                         )}

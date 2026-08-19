@@ -35,6 +35,21 @@ export const hotelPartnerService = {
   submit: (token) => partnerClient.post(path(token, "/submit")).then(unwrap),
 
   /**
+   * Candidate Google listings for this property, so the owner can pick their own.
+   *
+   * Stores nothing. The chosen place id rides along on the next autosave like any other field, which
+   * is what keeps it under the same partner-editability rule as the rest of the form.
+   *
+   * `q` is optional — blank makes the backend search on the property's own name and address, which
+   * is what the owner would have typed. An empty array is a NORMAL answer, not a failure: the
+   * feature may be off, Google may know nothing, or the hourly cap may be spent.
+   */
+  searchGoogle: (token, q) =>
+    partnerClient
+      .get(path(token, "/google/search"), { params: q ? { q } : {} })
+      .then((res) => unwrap(res) ?? []),
+
+  /**
    * Upload one photo (hotel or room) and get back its URL.
    *
    * The caller places the URL in the right array and the next autosave persists it — the endpoint
