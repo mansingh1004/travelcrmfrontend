@@ -6,6 +6,7 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "@shared/ui/toast";
 import { getErrorMessage } from "@shared/api/apiError";
 import { hotelNominationService } from "../api/marketplaceAdminService";
+import SuperAdminMfaActionModal from "../components/SuperAdminMfaActionModal";
 
 /**
  * Hotels the tenants have proposed for the marketplace catalog — the step BEFORE a partner invite.
@@ -148,6 +149,8 @@ function NominationDetail({ nomination: n, onDone }) {
   const [busy, setBusy] = useState("");
   const [mode, setMode] = useState("");     // "" | "accept" | "reject"
   const [note, setNote] = useState("");
+  const [mfaOpen, setMfaOpen] = useState(false);
+  const [mfaError, setMfaError] = useState("");
 
   const decided = n.status === "INVITED" || n.status === "REJECTED" || n.status === "WITHDRAWN";
 
@@ -159,6 +162,27 @@ function NominationDetail({ nomination: n, onDone }) {
       onDone();
     } catch (err) {
       toast.error(getErrorMessage(err, "That did not go through."));
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const confirmDecision = async (mfaCode) => {
+    const nextMode = mode;
+    setMfaError("");
+    setBusy(nextMode);
+    try {
+      if (nextMode === "reject") {
+        await hotelNominationService.reject(n.publicId, note.trim(), mfaCode);
+        toast.success("Nomination rejected.");
+      } else {
+        await hotelNominationService.accept(n.publicId, note.trim() || undefined, mfaCode);
+        toast.success("Invitation sent to the hotel.");
+      }
+      setMfaOpen(false);
+      onDone();
+    } catch (err) {
+      setMfaError(getErrorMessage(err, "That did not go through."));
     } finally {
       setBusy("");
     }
@@ -255,13 +279,7 @@ function NominationDetail({ nomination: n, onDone }) {
               <div className="flex gap-2">
                 <button
                   disabled={!!busy || (mode === "reject" && !note.trim())}
-                  onClick={() => run(
-                    mode,
-                    () => (mode === "reject"
-                      ? hotelNominationService.reject(n.publicId, note.trim())
-                      : hotelNominationService.accept(n.publicId, note.trim() || undefined)),
-                    mode === "reject" ? "Nomination rejected." : "Invitation sent to the hotel.",
-                  )}
+                  onClick={() => { setMfaError(""); setMfaOpen(true); }}
                   className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3.5 py-1.5 text-sm font-bold text-accent-text hover:bg-accent-hover disabled:opacity-50"
                 >
                   {busy ? <Loader2 size={13} className="animate-spin" /> : null}
@@ -277,6 +295,19 @@ function NominationDetail({ nomination: n, onDone }) {
             </div>
           )}
         </div>
+      )}
+      {mfaOpen && (
+        <SuperAdminMfaActionModal
+          title={mode === "reject" ? "Reject this nomination" : "Accept and invite this hotel"}
+          description={mode === "reject"
+            ? "The tenant will see the rejection and its reason."
+            : "This sends a registration invitation to the nominated hotel."}
+          confirmLabel={mode === "reject" ? "Reject" : "Send invitation"}
+          saving={!!busy}
+          error={mfaError}
+          onClose={busy ? undefined : () => setMfaOpen(false)}
+          onConfirm={confirmDecision}
+        />
       )}
     </div>
   );

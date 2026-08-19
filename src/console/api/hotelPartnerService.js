@@ -1,6 +1,8 @@
 import ConsoleAPI, { unwrap } from "./consoleHttp";
+import { SUPERADMIN_MFA_HEADER } from "./userService";
 
 const BASE = "/super-admin/hotel-partner";
+const stepUpHeaders = (mfaCode) => ({ headers: { [SUPERADMIN_MFA_HEADER]: mfaCode } });
 
 /**
  * SuperAdmin side of hotel-partner onboarding.
@@ -45,13 +47,15 @@ export const hotelPartnerService = {
   duplicates: (publicId) =>
     ConsoleAPI.get(`${BASE}/registrations/${publicId}/duplicates`).then(unwrap),
 
-  approve: (publicId) => ConsoleAPI.post(`${BASE}/registrations/${publicId}/approve`).then(unwrap),
+  approve: (publicId, mfaCode) =>
+    ConsoleAPI.post(`${BASE}/registrations/${publicId}/approve`, null, stepUpHeaders(mfaCode)).then(unwrap),
 
-  reject: (publicId, note) =>
-    ConsoleAPI.post(`${BASE}/registrations/${publicId}/reject`, { note }).then(unwrap),
+  reject: (publicId, note, mfaCode) =>
+    ConsoleAPI.post(`${BASE}/registrations/${publicId}/reject`, { note }, stepUpHeaders(mfaCode)).then(unwrap),
 
-  requestChanges: (publicId, note) =>
-    ConsoleAPI.post(`${BASE}/registrations/${publicId}/request-changes`, { note }).then(unwrap),
+  requestChanges: (publicId, note, mfaCode) =>
+    ConsoleAPI.post(`${BASE}/registrations/${publicId}/request-changes`, { note },
+      stepUpHeaders(mfaCode)).then(unwrap),
 };
 
 export const INVITE_STATUS = {

@@ -33,6 +33,7 @@ import { WeblinkAnalyticsModal } from "@features/quotation";
 import { SuggestPackagesModal } from "@features/quotation";
 import { QuotationStyleModal } from "@features/quotation";
 import ImportLeadsModal from "../components/ImportLeadsModal";
+import { LEAD_STATE_CHANGED_EVENT } from "../lib/leadEvents";
 
 /* @tanstack/react-table is no longer imported. It only supplied getPaginationRowModel() here —
    paginating a page the server had already paginated — and made every row a Row wrapper the markup
@@ -1737,6 +1738,47 @@ const Leads = () => {
     if (!hasPermission(P.LEAD_READ)) return;
     fetchStats();
   }, [fetchStats]);
+
+  /* Incoming Leads and All Leads can be open in different tabs. The global alert provider owns the
+     one SSE connection and forwards committed claim-window changes through this in-tab event. Patch
+     the visible row immediately, then re-read so server-side stage filters and paging stay exact. */
+  useEffect(() => {
+    const lastApplied = { current: null };
+    const onLeadStateChanged = (event) => {
+      const change = event.detail;
+      if (!change?.leadPublicId) return;
+
+      const signature = [
+        change.leadPublicId,
+        change.claimVersion,
+        change.openToClaim,
+        change.leadStage,
+        change.ownerPublicId,
+      ].join(":");
+      // The action response and its SSE broadcast describe the same commit; apply it once.
+      if (lastApplied.current === signature) return;
+      lastApplied.current = signature;
+
+      setLeads((prev) => prev.map((lead) => {
+        if ((lead.publicId || lead.id) !== change.leadPublicId) return lead;
+        return {
+          ...lead,
+          leadStage: change.leadStage ?? lead.leadStage,
+          openToClaim:
+            typeof change.openToClaim === "boolean" ? change.openToClaim : lead.openToClaim,
+          firstContactedAt: change.firstContactedAt ?? lead.firstContactedAt,
+          firstResponseSeconds: change.firstResponseSeconds ?? lead.firstResponseSeconds,
+          assignedUserName: change.ownerName ?? lead.assignedUserName,
+          claimVersion: change.claimVersion ?? lead.claimVersion,
+        };
+      }));
+      fetchLeads();
+      fetchStats();
+    };
+
+    window.addEventListener(LEAD_STATE_CHANGED_EVENT, onLeadStateChanged);
+    return () => window.removeEventListener(LEAD_STATE_CHANGED_EVENT, onLeadStateChanged);
+  }, [fetchLeads, fetchStats]);
 
   /* REMOVED: the second, uncapped `getAllLeads(0, 200)` overview fetch that used to live here.
      A whole extra list request on every mount, whose only job was to feed card and badge FALLBACKS

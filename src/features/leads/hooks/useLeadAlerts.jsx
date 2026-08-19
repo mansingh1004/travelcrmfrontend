@@ -20,6 +20,7 @@ import {
 import { notificationService } from "@features/reminders";
 import { hasPermission, P } from "@shared/lib/access";
 import { leadAlertService } from "../api/leadAlertService";
+import { publishLeadStateChanged } from "../lib/leadEvents";
 
 const LeadAlertContext = createContext(null);
 
@@ -252,6 +253,7 @@ export function LeadAlertProvider({ children }) {
         // firstResponseSeconds and no reopened flag, so this is stamped onto the row here or the
         // row can never know. It does not survive the 45s resync; that is the honest limit.
         const reopened = !!alert.actorName;
+        publishLeadStateChanged(alert);
         upsertLead(reopened ? { ...alert, reopened: true } : alert, "front");
         cardUpsert(alert, reopened ? "reopened" : "new");
         // Re-read rather than increment: the tiles include SLA maths (breaches accrue with elapsed
@@ -261,6 +263,7 @@ export function LeadAlertProvider({ children }) {
 
       leadClaimed: (alert) => {
         alive();
+        publishLeadStateChanged(alert);
         upsertLead(alert, "inplace");
         setCards((prev) => {
           const at = prev.findIndex((c) => c.leadPublicId === alert.leadPublicId);
@@ -286,6 +289,7 @@ export function LeadAlertProvider({ children }) {
 
       leadLocked: (alert) => {
         alive();
+        publishLeadStateChanged(alert);
         upsertLead(alert, "inplace");
         cardRemove(alert.leadPublicId);
         refreshStatsRef.current();
@@ -347,6 +351,9 @@ export function LeadAlertProvider({ children }) {
 
   const applyResult = useCallback((result) => {
     if (!result?.leadPublicId) return;
+    // The SSE broadcast normally follows this response, but publishing the committed result here
+    // keeps All Leads in sync even while this tab's stream is reconnecting.
+    publishLeadStateChanged(result);
     setLeads((prev) => {
       const at = prev.findIndex((l) => l.leadPublicId === result.leadPublicId);
       if (!result.openToClaim) return at >= 0 ? prev.filter((_, i) => i !== at) : prev;

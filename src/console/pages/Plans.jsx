@@ -3,7 +3,7 @@ import {
   Pencil, Loader2, X, CheckCircle2, AlertTriangle, RefreshCw, Users, Layers, Check,
   CalendarClock, HardDrive, BellRing, Network, HandCoins, Save, Info,
 } from "lucide-react";
-import { planService, ALL_MODULES } from "../api/planService";
+import { planService } from "../api/planService";
 import { subAgentPricingService } from "../api/subAgentPricingService";
 import SuperAdminMfaActionModal from "../components/SuperAdminMfaActionModal";
 
@@ -27,7 +27,7 @@ function Field({ label, children, hint }) {
   );
 }
 
-function PlanEditDrawer({ plan, onClose, onSaved, showToast }) {
+function PlanEditDrawer({ plan, availableModules, onClose, onSaved, showToast }) {
   const [form, setForm] = useState(() => ({
     displayName: plan.displayName ?? "",
     monthlyPrice: plan.monthlyPrice ?? 0,
@@ -141,7 +141,7 @@ function PlanEditDrawer({ plan, onClose, onSaved, showToast }) {
 
             <Field label="Modules unlocked">
               <div className="grid grid-cols-2 gap-1.5">
-                {ALL_MODULES.map((m) => {
+                {availableModules.map((m) => {
                   const on = form.modules.has(m);
                   return (
                     <button key={m} type="button" onClick={() => toggleModule(m)}
@@ -383,6 +383,9 @@ export default function Plans() {
   };
 
   const sweepSaving = mfaAction?.type === "expiry" ? expiring : dunning;
+  const availableModules = Array.from(
+    new Set(plans.flatMap((plan) => plan.modules || [])),
+  ).sort();
 
   return (
     <div className="space-y-5">
@@ -471,7 +474,7 @@ export default function Plans() {
       )}
 
       {editing && (
-        <PlanEditDrawer plan={editing} onClose={() => setEditing(null)}
+        <PlanEditDrawer plan={editing} availableModules={availableModules} onClose={() => setEditing(null)}
           onSaved={() => { setEditing(null); load(); }} showToast={showToast} />
       )}
 

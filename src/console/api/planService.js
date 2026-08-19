@@ -16,12 +16,3 @@ export const planService = {
   runDunning: (mfaCode) =>
     ConsoleAPI.post("/super-admin/subscriptions/run-dunning", null, stepUpHeaders(mfaCode)).then(unwrap),
 };
-
-/** Canonical module keys a plan can unlock (display/edit only this phase; enforced in Feature Flags). */
-export const ALL_MODULES = [
-  "LEADS", "BOOKINGS", "QUOTATIONS", "CUSTOMERS", "MASTERS",
-  "VENDORS", "REPORTS", "FLEET", "WHATSAPP", "DISHA_AI", "PORTAL",
-  // Optional paid add-on — the platform hotel catalog. Distinct from MASTERS on purpose: a tenant's
-  // own private hotel master must keep working on every plan even when the marketplace is off.
-  "HOTEL_MARKETPLACE",
-];
