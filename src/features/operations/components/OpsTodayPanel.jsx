@@ -367,6 +367,77 @@ export default function OpsTodayPanel({ booking, record, recordLoaded, refreshKe
     [quotation, viewDate]
   );
 
+  /* ── Tasks on this booking, for the day being read ────────────────────────
+     The only rows on this whole panel with a REAL clock. Everything else is a LocalDate walked
+     against the itinerary; a task carries startAt/endAt/dueDate as Instants because somebody typed
+     a time into a calendar. So these are shown with their times in ink, not as "not recorded".
+
+     Fetched by DAY and narrowed to this booking here, because no task endpoint filters by booking.
+     Behind TASK_READ, which an operations executive may not hold — in which case the block simply
+     does not render, like every other optional block on this panel. */
+  const canReadTasks = hasPermission(P.TASK_READ);
+  const [tasks, setTasks] = useState([]);
+
+  useEffect(() => {
+    if (!canReadTasks || !bookingPublicId || !viewDate) { setTasks([]); return undefined; }
+    let cancelled = false;
+    (async () => {
+      try {
+        /* A THREE-DAY window, then narrowed to the day here. The endpoint takes instants and this
+           browser cannot know the tenant's offset, so asking for exactly 00:00Z–23:59Z would cut
+           the day at the wrong place — in IST that drops anything before 05:30 and pulls in the
+           previous evening. Over-fetching by a day either side and filtering on the rendered date
+           costs one small request and cannot silently lose a 6am departure task. */
+        const all = await operationsService.tasksBetween(
+          `${addIsoDays(viewDate, -1)}T00:00:00Z`,
+          `${addIsoDays(viewDate, 1)}T23:59:59Z`
+        );
+        if (cancelled) return;
+        const onDay = (t) => {
+          const stamp = t?.startAt || t?.dueDate;
+          if (!stamp) return false;
+          const m = /^(\d{4}-\d{2}-\d{2})/.exec(String(stamp));
+          return m ? m[1] === viewDate : false;
+        };
+        setTasks((all || []).filter((t) => t?.bookingPublicId === bookingPublicId && onDay(t)));
+      } catch (err) {
+        if (cancelled) return;
+        if (!isAlreadyReported(err)) console.warn("Booking tasks lookup failed", err);
+        setTasks([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [canReadTasks, bookingPublicId, viewDate, refreshKey]);
+
+  /* ── What has already happened today ──────────────────────────────────────
+     Everything else on this panel is what SHOULD happen. This is the only block that reports what
+     did — and it is the difference between phoning a supplier and phoning them twice.
+
+     Not a live signal about the trip: it records what somebody did in this CRM, not that a party
+     checked in. And it is incomplete by construction — the server builds the timeline from EMAIL
+     messages only, so a WhatsApp sent to a supplier leaves no trace. The heading says "recorded"
+     rather than "happened" for exactly that reason. */
+  const [events, setEvents] = useState([]);
+
+  useEffect(() => {
+    if (!bookingPublicId) { setEvents([]); return undefined; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const all = await operationsService.timeline(bookingPublicId);
+        if (cancelled) return;
+        // occurredAt is a LocalDateTime with no offset — a string prefix compare is the honest
+        // match. Parsing it into a Date would attach the browser's zone to a server wall clock.
+        setEvents((all || []).filter((e) => String(e?.occurredAt || "").startsWith(viewDate)));
+      } catch (err) {
+        if (cancelled) return;
+        if (!isAlreadyReported(err)) console.warn("Booking timeline lookup failed", err);
+        setEvents([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [bookingPublicId, viewDate, refreshKey]);
+
   /* ── The fleet trip (optional) — the ONLY live signal in the product ──────── */
   const canReadFleet = hasPermission(P.FLEET_READ);
   const [fleetTrips, setFleetTrips] = useState([]);
@@ -755,6 +826,72 @@ export default function OpsTodayPanel({ booking, record, recordLoaded, refreshKe
             Quoted times are free text typed by whoever built the quotation, and the booking may have
             been changed since. They are shown as written and are not a confirmation.
           </p>
+        </div>
+      )}
+
+      {/* ── Already recorded today ────────────────────────────────────────────
+          "Recorded", never "happened": the timeline is built from EMAIL messages only, so a
+          WhatsApp to a supplier is absent. An empty block here does not mean nothing was done. */}
+      {events.length > 0 && (
+        <div className="px-4 py-3 border-t border-slate-100 bg-slate-50/50">
+          <div className="flex items-center gap-2 mb-2">
+            <ShieldCheck className="w-3.5 h-3.5 text-slate-400" />
+            <p className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider">
+              Recorded {isToday ? "today" : `on ${fmtDate(viewDate)}`}
+            </p>
+            <span className="text-[10px] font-bold text-slate-400">· email, calls and money only</span>
+          </div>
+          <ul className="space-y-1">
+            {events.map((e, i) => (
+              <li key={i} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                <span className="w-[86px] shrink-0 text-[11px] font-extrabold text-slate-600 tabular-nums">
+                  {String(e.occurredAt || "").slice(11, 16) || "—"}
+                </span>
+                <span className="text-[11px] font-extrabold text-slate-700">{e.title}</span>
+                {e.actor && <span className="text-[10px] font-bold text-slate-400">{e.actor}</span>}
+                {e.amount != null && (
+                  <span className="text-[11px] font-extrabold text-slate-700 tabular-nums">{money(e.amount)}</span>
+                )}
+                {e.detail && (
+                  <span className="text-[10px] font-bold text-slate-400 truncate max-w-[280px]">{e.detail}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* ── Tasks: the only rows here with a clock somebody actually typed ────── */}
+      {tasks.length > 0 && (
+        <div className="px-4 py-3 border-t border-slate-100">
+          <div className="flex items-center gap-2 mb-2">
+            <CalendarDays className="w-3.5 h-3.5 text-slate-400" />
+            <p className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider">
+              Tasks on this booking
+            </p>
+          </div>
+          <ul className="space-y-1.5">
+            {tasks.map((t) => (
+              <li key={t.publicId} className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                {/* A real instant, so it prints as a clock — the one place on this panel that can. */}
+                <span className="w-[86px] shrink-0 text-xs font-extrabold text-slate-800 tabular-nums">
+                  {t.allDay ? "all day" : (fmtWhen(t.startAt) || fmtWhen(t.dueDate) || "—")}
+                </span>
+                <span className="text-xs font-extrabold text-slate-700 truncate max-w-[240px]">{t.title}</span>
+                {t.status && (
+                  <Badge tone={t.status === "COMPLETED" ? "green" : t.status === "OVERDUE" ? "red" : "amber"}>
+                    {t.status}
+                  </Badge>
+                )}
+                {t.assignToName && (
+                  <span className="text-[11px] font-bold text-slate-500">{t.assignToName}</span>
+                )}
+                {t.location && (
+                  <span className="text-[10px] font-bold text-slate-400 truncate max-w-[160px]">{t.location}</span>
+                )}
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 

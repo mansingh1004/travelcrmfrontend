@@ -350,11 +350,72 @@ const operationsService = {
   },
 
   /**
-   * Name the operations executive for a booking, or clear it with userId = null.
+   * Everything the product recorded against this booking, newest last.
+   *
+   * The Today panel narrows it to the day being read, to answer "what has already been done today"
+   * — the question an operator asks before phoning a supplier a second time.
+   *
+   * COVERAGE IS NOT TOTAL, and a caller should not imply it is. The server builds this from booking
+   * lifecycle, payments, invoices, expenses, logged calls and EMAIL messages. WhatsApp is
+   * deliberately skipped by BookingTimelineServiceImpl (it filters to CommChannel.EMAIL), so a
+   * WhatsApp sent to a supplier leaves no mark here at all.
+   *
+   * `occurredAt` is a LocalDateTime — the server's own wall clock, with no offset. Compare it by
+   * string prefix against a yyyy-MM-dd; re-zoning it would be inventing information.
+   */
+  timeline: async (bookingPublicId) => {
+    const res = await API.get(`/bookings/${bookingPublicId}/timeline`);
+    return res?.data?.data ?? [];
+  },
+
+  /**
+   * Tasks falling inside a window, for the Today panel to narrow to one booking.
+   *
+   * WHY A WINDOW AND NOT A BOOKING. Task is the ONLY thing in this product that is both linked to a
+   * booking and carries a real clock (startAt / endAt / dueDate are Instants — every other dated
+   * thing on a booking is a bare LocalDate). But no task endpoint filters by booking: /tasks takes
+   * status, priority, category, assignee, from and to, and nothing else. So the day is fetched and
+   * the booking is matched here. A day's tasks for one agency is a small list; a per-booking filter
+   * on the server would be better and is worth adding, but this needs no backend change to be
+   * useful today.
+   *
+   * Returns a BARE ARRAY — this endpoint answers with List<TaskResponse>, not the ApiResponse
+   * envelope the rest of this file unwraps. Reading res.data.data here would silently yield
+   * undefined and an empty panel.
+   */
+  tasksBetween: async (fromIso, toIso) => {
+    const res = await API.get("/tasks", { params: { from: fromIso, to: toIso } });
+    return Array.isArray(res?.data) ? res.data : (res?.data?.data ?? []);
+  },
+
+  /**
+   * The people this booking's operations owner can be set to.
+   *
+   * Reuses the BOOKING ASSIGNMENT roster rather than a new ops-only one: the question
+   * "who at this agency can be given a booking to work" has one answer, and a second
+   * list would drift from it the first time somebody joined or left.
+   *
+   * GATED ON BOOKING_CREATE server-side, which an operations executive may not hold —
+   * so a 403 here is ORDINARY, not an error. Callers must degrade to showing the
+   * current owner without a picker rather than surfacing a failure.
+   *
+   * Returns [{ id: <publicId UUID>, name, email, role }].
+   */
+  assignableUsers: async () => {
+    const res = await API.get("/bookings/assignment/eligible-users");
+    return res?.data?.data ?? [];
+  },
+
+  /**
+   * Name the operations executive for a booking, or clear it by passing null.
    *
    * Deliberately not the same person as the booking's `assignedUserId`, who sold it.
    * Returns the whole refreshed record, so the caller can replace its copy rather
    * than patching one field.
+   *
+   * THE ARGUMENT IS A publicId (UUID), not an internal id. The query parameter is still
+   * spelled `userId` on the wire — the server renamed only the Java binding — so the URL
+   * shape is unchanged and nothing else here had to move.
    */
   assignOpsOwner: async (bookingPublicId, userId) => {
     const res = await API.put(
