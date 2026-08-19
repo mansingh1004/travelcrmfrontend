@@ -445,6 +445,130 @@ export function DaysBadge({ days }) {
   return <Badge tone="slate">{days} days</Badge>;
 }
 
+/* ── The checkpoint model ─────────────────────────────────────────────────────
+   Rendered from `entry.ops`, which is null on any booking confirmed before the
+   model shipped. Every component below returns null on a missing standing rather
+   than an empty chip, so a row falls back cleanly to OverallBadge/DaysBadge above
+   instead of growing a hole where a badge should be. */
+
+/** Severity → chip styling. Server-computed against the tenant's clock, never derived here. */
+export const SEVERITY_STYLE = {
+  NONE:     { cls: "bg-emerald-50 text-emerald-700 ring-emerald-200", label: "ON TRACK" },
+  WATCH:    { cls: "bg-sky-50 text-sky-700 ring-sky-200",             label: "WATCH" },
+  WARNING:  { cls: "bg-amber-50 text-amber-700 ring-amber-200",       label: "WARNING" },
+  CRITICAL: { cls: "bg-rose-50 text-rose-700 ring-rose-200",          label: "CRITICAL" },
+};
+
+/**
+ * How much trouble this booking is in, under the checkpoint model.
+ *
+ * Distinct from {@link OverallBadge}, which answers the same question from the derived
+ * readiness map. Both can be on screen at once during the changeover and they can
+ * disagree — the derived one reads eight dimensions inferred from service lines, this
+ * one reads nine checkpoints somebody actually moved. Where they differ, this is the
+ * one a human touched.
+ */
+export function SeverityBadge({ severity }) {
+  const style = SEVERITY_STYLE[severity];
+  if (!style) return null;
+  return (
+    <span className={`inline-flex items-center text-[10px] font-extrabold tracking-wide px-2.5 py-1 rounded-md ring-1 ${style.cls}`}>
+      {style.label}
+    </span>
+  );
+}
+
+/**
+ * Hours to departure, in the units an operator actually thinks in.
+ *
+ * Hours rather than days, because that is the difference the checkpoint model exists to
+ * capture: "2 days" and "in 5h" are the same day to a date-based board, and only one of
+ * them means somebody has to stop what they are doing.
+ *
+ * `sourceLabel` rides along on purpose. A pickup time the customer agreed and an hour we
+ * assumed produce identical-looking countdowns, and somebody acting on "leaves in 4h"
+ * deserves to know which of those they are reading.
+ */
+export function DepartureCountdown({ hours, sourceLabel }) {
+  if (hours == null) return null;
+
+  const tone =
+    hours < 0   ? "bg-slate-100 text-slate-600"
+    : hours <= 12 ? "bg-rose-50 text-rose-700"
+    : hours <= 48 ? "bg-amber-50 text-amber-700"
+    : "bg-slate-100 text-slate-600";
+
+  const text =
+    hours < 0  ? "Departed"
+    : hours < 1 ? "Leaving now"
+    : hours < 48 ? `in ${hours}h`
+    : `in ${Math.round(hours / 24)}d`;
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded ${tone}`}
+      title={sourceLabel ? `Departure from ${sourceLabel}` : undefined}
+    >
+      {text}
+      {/* "assumed" is the only source worth interrupting the eye for — the others are
+          times somebody stated. Shown as a suffix rather than a second chip so it cannot
+          be mistaken for a status of its own. */}
+      {sourceLabel === "assumed" && (
+        <span className="font-extrabold text-slate-400">~</span>
+      )}
+    </span>
+  );
+}
+
+/**
+ * The nine checkpoints as one strip of short codes.
+ *
+ * Codes rather than dots: nine dots are indistinguishable, and "Htl Trn Drv" tells the
+ * reader which one is red without a hover. NOT_APPLICABLE greys out rather than
+ * disappearing — a strip that changes width row to row cannot be scanned down a column.
+ */
+export function CheckpointStrip({ checkpoints = [] }) {
+  if (!checkpoints.length) return null;
+
+  const tone = (c) => {
+    if (c.status === "NOT_APPLICABLE") return "bg-slate-50 text-slate-300";
+    if (c.status === "CONFIRMED") return "bg-emerald-50 text-emerald-700";
+    if (c.status === "REJECTED" || c.status === "EXPIRED" || c.status === "BLOCKED")
+      return "bg-rose-50 text-rose-700";
+    if (c.status === "REQUESTED") return "bg-sky-50 text-sky-700";
+    // PENDING. Mandatory is what makes it worth a colour — an open optional checkpoint
+    // is a note to self, not a reason the trip cannot leave.
+    return c.mandatory ? "bg-amber-50 text-amber-700" : "bg-slate-100 text-slate-500";
+  };
+
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      {checkpoints.map((c) => (
+        <span
+          key={c.publicId ?? c.checkpoint}
+          className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded ${tone(c)}`}
+          title={`${c.checkpoint}: ${c.status}${c.mandatory ? "" : " (optional)"}`}
+        >
+          {SHORT_CODE[c.checkpoint] ?? c.checkpoint?.slice(0, 3)}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/** Mirrors OpsCheckpoint's shortCode on the server. Kept here so a strip needs no extra fetch. */
+const SHORT_CODE = {
+  HOTEL: "Htl",
+  TRANSPORT: "Trn",
+  DRIVER: "Drv",
+  SIGHTSEEING: "Sgt",
+  CUSTOMER_PAYMENT: "Cus",
+  VENDOR_PAYMENT: "Ven",
+  TRIP_ADVANCE: "Adv",
+  DOCS_VOUCHER: "Vch",
+  PRE_DEPARTURE_CHECK: "Pre",
+};
+
 /**
  * The travel span as a bar, positioned inside the visible window.
  *
