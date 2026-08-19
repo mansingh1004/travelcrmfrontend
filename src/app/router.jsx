@@ -106,6 +106,7 @@ const TrashPage = lazyPage(() => import("@features/trash"), "TrashPage");
 const Calendar = lazyPage(() => import("@features/calendar"), "Calendar");
 const AllTasks = lazyPage(() => import("@features/calendar"), "AllTasks");
 const Operations = lazyPage(() => import("@features/operations"), "Operations");
+const OperationsDetail = lazyPage(() => import("@features/operations"), "OperationsDetail");
 
 // ── Platform SuperAdmin Console — SEPARATE realm (own token "sa_token", violet/dark theme) ──
 const consoleFeature = () => import("@/console");
@@ -137,6 +138,8 @@ const ConsoleHotelNominations = lazyPage(consoleFeature, "ConsoleHotelNomination
 const ConsoleHotelMarketplace360 = lazyPage(consoleFeature, "ConsoleHotelMarketplace360");
 const ConsolePlatformHotelEditor = lazyPage(consoleFeature, "ConsolePlatformHotelEditor");
 const ConsoleMarketplaceBookings = lazyPage(consoleFeature, "ConsoleMarketplaceBookings");
+const ConsoleTransportRequests = lazyPage(consoleFeature, "ConsoleTransportRequests");
+const ConsolePlatformVehicles = lazyPage(consoleFeature, "ConsolePlatformVehicles");
 const ConsoleMarketplaceCommissions = lazyPage(consoleFeature, "ConsoleMarketplaceCommissions");
 const ConsoleMarketplaceOccupancy = lazyPage(consoleFeature, "ConsoleMarketplaceOccupancy");
 const ConsoleCommercialRules = lazyPage(consoleFeature, "ConsoleCommercialRules");
@@ -202,6 +205,11 @@ const MarketplaceHotel = lazyPage(marketplace, "MarketplaceHotel");
 const MarketplaceBookingRequest = lazyPage(marketplace, "MarketplaceBookingRequest");
 const MarketplaceBookings = lazyPage(marketplace, "MarketplaceBookings");
 const MarketplaceBookingDetail = lazyPage(marketplace, "MarketplaceBookingDetail");
+// Transport rides the SAME feature chunk on purpose: a tenant sees one Marketplace, and the two
+// catalogs share `marketplaceUi`. Splitting them into two thunks would download that kit twice.
+const TransportSearch = lazyPage(marketplace, "TransportSearch");
+const TransportRequest = lazyPage(marketplace, "TransportRequest");
+const TransportOrders = lazyPage(marketplace, "TransportOrders");
 
 
 // Route-level guard (defense-in-depth; backend is the real gate, menus already hide these).
@@ -306,6 +314,11 @@ const AppRouter = () => {
               <Route path="hotel-catalog/:publicId" element={<ConsoleHotelMarketplace360 />} />
               {/* The approval queue. Only a decision taken here can confirm a tenant's hotel. */}
               <Route path="hotel-requests" element={<ConsoleMarketplaceBookings />} />
+              {/* The transport queue. A separate screen from the hotel one on purpose — see consoleNav. */}
+              <Route path="transport-requests" element={<ConsoleTransportRequests />} />
+              {/* Where the transport catalog is actually filled. Nothing a tenant browses exists
+              until a row here is published. */}
+              <Route path="transport-catalog" element={<ConsolePlatformVehicles />} />
               {/*
                 What the platform has SOLD, night by night — not what is available. There is no
                 allotment to report on; this is the exposure the operator already carries.
@@ -430,6 +443,13 @@ const AppRouter = () => {
               the board shows booking data and nothing else — a new OPS_* permission would be a
               second name for the same access. */}
               <Route path="operations" element={<Guard allow={hasPermission(P.BOOKING_READ) && hasModule("BOOKINGS")}><Operations /></Guard>} />
+              {/* One booking's delivery view. The SAME gate as the board on purpose: it reads the
+              same booking data, and a stricter gate here would let an ops executive see a row on
+              the board and be bounced to the dashboard on opening it. Writes inside are gated per
+              surface — service lines on BOOKING_UPDATE, checkpoints and the ops owner on
+              OPS_MANAGE. The nav rail needs no entry: findActiveDestination matches subtrees, so
+              /operations/<id> keeps "Operations" lit by itself. */}
+              <Route path="operations/:bookingPublicId" element={<Guard allow={hasPermission(P.BOOKING_READ) && hasModule("BOOKINGS")}><OperationsDetail /></Guard>} />
 
               <Route path="createquotation" element={<Guard allow={(hasPermission(P.QUOTATION_CREATE) || hasPermission(P.QUOTATION_UPDATE)) && hasPermission(P.LEAD_READ)}><CreateQuotation /></Guard>} />
               {/*
@@ -541,6 +561,17 @@ const AppRouter = () => {
               so it gates on BOOK, not VIEW. More specific path, so route ranking picks it over
               ":publicId" regardless of declaration order. */}
               <Route path="marketplace/:publicId/request" element={<Guard allow={hasPermission(P.HOTEL_MARKETPLACE_BOOK)}><MarketplaceBookingRequest /></Guard>} />
+
+              {/* ── Transport Marketplace — the same screen family over the platform VEHICLE catalog.
+              A separately subscribable add-on, so it gates on its own TRANSPORT_MARKETPLACE_* keys;
+              an agency may hold stays without cars or cars without stays. "marketplace/transport" is
+              a STATIC segment and therefore outranks "marketplace/:publicId" — it can never be read
+              as a hotel publicId, whatever the declaration order. */}
+              <Route path="marketplace/transport" element={<Guard allow={hasPermission(P.TRANSPORT_MARKETPLACE_VIEW)}><TransportSearch /></Guard>} />
+              {/* Reading your own orders survives a lapsed add-on server-side (/api/me/**), so the
+              router gate here is VIEW rather than BOOK — the screen is the read surface. */}
+              <Route path="marketplace/transport/orders" element={<Guard allow={hasPermission(P.TRANSPORT_MARKETPLACE_VIEW)}><TransportOrders /></Guard>} />
+              <Route path="marketplace/transport/:publicId/request" element={<Guard allow={hasPermission(P.TRANSPORT_MARKETPLACE_BOOK)}><TransportRequest /></Guard>} />
 
               {/* ── Sub-Agents (B2B franchise) — TENANT_ADMIN only ── */}
               <Route path="subagents" element={<Guard allow={isTenantAdmin()}><SubAgents /></Guard>} />
