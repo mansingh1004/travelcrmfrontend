@@ -16,7 +16,7 @@ import { hasPermission, P } from "@shared/lib/access";
 import { transportMarketplaceService } from "../api/transportMarketplaceService";
 import {
   Button, Card, Chip, Empty, Hint, Input, Notice, Page, PageHeader, Pager, Photo,
-  SkeletonRows, errMsg, useHotkeys, useToast,
+  SkeletonRows, errMsg, fmtMoney, useHotkeys, useToast,
 } from "../components/marketplaceUi";
 
 const PAGE_SIZE = 12;
@@ -56,6 +56,30 @@ export function humanise(value) {
 function placeOf(v) {
   return [v?.cityName, v?.stateName].filter(Boolean).join(", ");
 }
+
+/**
+ * What ONE unit of a rate model is, in words.
+ *
+ * `fromPrice` is the price of a single unit of `fromPriceRateModel`, so the unit is not decoration —
+ * "₹2,400" against a per-day model and against a per-kilometre one are two numbers three orders of
+ * magnitude apart, and an agent quoting the wrong one quotes a trip they cannot deliver.
+ *
+ * A model this map lacks renders with NO unit rather than a guessed one: an unlabelled amount is
+ * ambiguous, an amount labelled "/day" that is really per km is wrong, and wrong is worse.
+ * `CUSTOM_QUOTE` is deliberately in the map with an empty unit — it has no unit by definition.
+ */
+const RATE_MODEL_UNIT = {
+  FLAT_PER_TRANSFER: "per transfer",
+  FLAT_PER_VEHICLE: "per vehicle",
+  PER_KILOMETRE: "per km",
+  PER_DAY: "per day",
+  PER_HOUR: "per hour",
+  PACKAGE: "per package",
+  ROUTE_FIXED: "per route",
+  CUSTOM_QUOTE: "",
+};
+
+const rateUnit = (model) => RATE_MODEL_UNIT[model] ?? "";
 
 export function TransportSearch() {
   const navigate = useNavigate();
@@ -253,11 +277,11 @@ export function TransportSearch() {
                     )}
                   </div>
 
-                  {/* v1 is ON_REQUEST everywhere. Saying so on the card is not a disclaimer — it is
-                      the actual product: there is no price here to quote and no seat to hold. */}
-                  <p className="text-[12px] text-slate-500">
-                    On request — the platform team confirms availability and price.
-                  </p>
+                  <FromPrice
+                    value={v.fromPrice}
+                    currency={v.fromPriceCurrency}
+                    rateModel={v.fromPriceRateModel}
+                  />
 
                   <div className="mt-auto flex items-center gap-2 pt-1">
                     <Button
@@ -301,6 +325,62 @@ export function TransportSearch() {
         </>
       )}
     </Page>
+  );
+}
+
+/**
+ * The starting price of a vehicle, or the honest absence of one.
+ *
+ * <h3>Why a "from" price and not a price</h3>
+ * The catalog row cannot know the journey — how many days, how far, which service type — so the
+ * server prices ONE unit of the vehicle's cheapest rate model and sends that. It is a floor to
+ * compare cards by, not the amount anybody pays, which is why the unit is rendered beside it and
+ * why the word "indicative" is on the card rather than buried in a tooltip. The real figure comes
+ * from the quote on the request form, and the binding one from the platform's approval.
+ *
+ * <h3>null is not zero</h3>
+ * A vehicle whose rate card the engine cannot price yet has NO price — the field arrives null, and
+ * rendering ₹0 would put a number in front of an agent that they could quote to a customer and then
+ * be held to. "Quoted on request" is also the sentence they have to say on the phone, so it is the
+ * useful thing to show. Tested for null explicitly rather than falsiness: a genuinely free transfer
+ * would still be a price.
+ *
+ * <h3>Availability is still on request either way</h3>
+ * v1 holds nothing. A priced card is not a bookable seat — the line under the amount says so, and
+ * removing it would turn an indicative floor into a promise the platform has not made.
+ */
+function FromPrice({ value, currency, rateModel }) {
+  if (value === null || value === undefined) {
+    /* Kept in slate: an absent price is an ordinary state of an ON_REQUEST marketplace, and
+       colouring it would make it look like something went wrong. */
+    return (
+      <p className="text-[12px] text-slate-500">
+        Quoted on request — the platform team confirms availability and price.
+      </p>
+    );
+  }
+
+  const unit = rateUnit(rateModel);
+  return (
+    <div>
+      <p className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
+        <span className="text-[11px] uppercase tracking-wide text-slate-500">from</span>
+        {/* Emerald and larger than the chips beside it, matching the hotel card: a grid of vehicles
+            is scanned by price far more often than by name. */}
+        <span className="text-[17px] font-semibold tracking-[-0.01em] text-emerald-700">
+          {fmtMoney(value, currency || "INR")}
+        </span>
+        {unit && <span className="text-[12px] text-slate-500">{unit}</span>}
+        {/* Quiet on purpose. It has to be readable next to every price — a loud badge repeated
+            twelve times down a grid stops being read by the third card. */}
+        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-500">
+          indicative
+        </span>
+      </p>
+      <p className="mt-0.5 text-[12px] text-slate-500">
+        On request — the platform team confirms availability and the final price.
+      </p>
+    </div>
   );
 }
 

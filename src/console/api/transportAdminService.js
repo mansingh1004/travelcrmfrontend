@@ -49,10 +49,43 @@ export const transportAdminService = {
 
   getVehicle: async (publicId) => unwrap(await ConsoleAPI.get(`${CATALOG}/vehicles/${publicId}`)),
 
-  createVehicle: async (payload) => unwrap(await ConsoleAPI.post(`${CATALOG}/vehicles`, payload)),
+  /*
+   * EVERY WRITE BELOW TAKES `mfaCode`, and every one of them needs it.
+   *
+   * The backend has always required step-up on these — create, update, publish, unpublish, delete
+   * and all three rate verbs each carry `@RequireSuperAdminStepUp`, and `SuperAdminStepUpAspect`
+   * reads `X-SuperAdmin-Mfa-Code` off the request. This file used to send none of them. It looked
+   * like it worked because `SuperAdminStepUpService.requireCode` returns early when dev-login mode
+   * is on, which it is locally and is not in production: there, every save on this screen was a 403
+   * nobody could get past. Do not drop the argument to "simplify" a call — a missing code is not a
+   * silent no-op.
+   */
 
-  updateVehicle: async (publicId, payload) =>
-    unwrap(await ConsoleAPI.put(`${CATALOG}/vehicles/${publicId}`, payload)),
+  createVehicle: async (payload, mfaCode) =>
+    unwrap(await ConsoleAPI.post(`${CATALOG}/vehicles`, payload, stepUpHeaders(mfaCode))),
+
+  updateVehicle: async (publicId, payload, mfaCode) =>
+    unwrap(await ConsoleAPI.put(`${CATALOG}/vehicles/${publicId}`, payload, stepUpHeaders(mfaCode))),
+
+  /**
+   * Put a photo on the CDN and hand back its URL; the URL only becomes catalog when the vehicle is
+   * saved, which is why this one carries NO step-up. The twin of `platformHotelService.uploadImage`.
+   *
+   * Content-Type is set explicitly here to match that twin. The browser would set a correct
+   * multipart boundary on its own, so this is belt-and-braces rather than load-bearing.
+   */
+  uploadImage: async (file, onUploadProgress) => {
+    const body = new FormData();
+    body.append("file", file);
+    const res = await ConsoleAPI.post(`${CATALOG}/vehicles/upload-image`, body, {
+      headers: { "Content-Type": "multipart/form-data" },
+      // Generous on purpose: a 10 MB photo on a slow uplink beats the shared 30s default, and an
+      // axios timeout arrives with no `error.response` at all, so it reads as a network failure.
+      timeout: 120000,
+      onUploadProgress,
+    });
+    return unwrap(res)?.imagePath ?? null;
+  },
 
   /**
    * Publish is what makes a product visible to tenants; approve/create only mints a DRAFT.
@@ -60,20 +93,23 @@ export const transportAdminService = {
    * Unpublishing blocks NEW sale and damages nothing already sold — existing orders, assignments and
    * duty slips are untouched, and tenants that imported a projection keep it.
    */
-  publishVehicle: async (publicId) => unwrap(await ConsoleAPI.post(`${CATALOG}/vehicles/${publicId}/publish`)),
-  unpublishVehicle: async (publicId) => unwrap(await ConsoleAPI.post(`${CATALOG}/vehicles/${publicId}/unpublish`)),
+  publishVehicle: async (publicId, mfaCode) =>
+    unwrap(await ConsoleAPI.post(`${CATALOG}/vehicles/${publicId}/publish`, null, stepUpHeaders(mfaCode))),
+  unpublishVehicle: async (publicId, mfaCode) =>
+    unwrap(await ConsoleAPI.post(`${CATALOG}/vehicles/${publicId}/unpublish`, null, stepUpHeaders(mfaCode))),
 
   /** Refuses while any tenant holds a projection — the count is what makes it refuse. */
-  deleteVehicle: async (publicId) => unwrap(await ConsoleAPI.delete(`${CATALOG}/vehicles/${publicId}`)),
+  deleteVehicle: async (publicId, mfaCode) =>
+    unwrap(await ConsoleAPI.delete(`${CATALOG}/vehicles/${publicId}`, stepUpHeaders(mfaCode))),
 
   // Rate cards are DISPLAY-ONLY in v1: they drive no pricing and no tenant ever sees `netRate`.
   // They exist so the operator's contracted terms are on screen while an approval figure is typed.
-  addRate: async (publicId, payload) =>
-    unwrap(await ConsoleAPI.post(`${CATALOG}/vehicles/${publicId}/rates`, payload)),
-  updateRate: async (publicId, ratePublicId, payload) =>
-    unwrap(await ConsoleAPI.put(`${CATALOG}/vehicles/${publicId}/rates/${ratePublicId}`, payload)),
-  deleteRate: async (publicId, ratePublicId) =>
-    unwrap(await ConsoleAPI.delete(`${CATALOG}/vehicles/${publicId}/rates/${ratePublicId}`)),
+  addRate: async (publicId, payload, mfaCode) =>
+    unwrap(await ConsoleAPI.post(`${CATALOG}/vehicles/${publicId}/rates`, payload, stepUpHeaders(mfaCode))),
+  updateRate: async (publicId, ratePublicId, payload, mfaCode) =>
+    unwrap(await ConsoleAPI.put(`${CATALOG}/vehicles/${publicId}/rates/${ratePublicId}`, payload, stepUpHeaders(mfaCode))),
+  deleteRate: async (publicId, ratePublicId, mfaCode) =>
+    unwrap(await ConsoleAPI.delete(`${CATALOG}/vehicles/${publicId}/rates/${ratePublicId}`, stepUpHeaders(mfaCode))),
 
   // ── The order queue ─────────────────────────────────────────────────────
 

@@ -36,6 +36,13 @@ export { default as ConsoleMarketplaceBookings } from "./pages/MarketplaceBookin
 export { default as ConsoleTransportRequests } from "./pages/TransportRequests";
 export { default as ConsolePlatformVehicles } from "./pages/PlatformVehicles";
 export { default as ConsoleTransportCommissions } from "./pages/TransportCommissions";
+export { default as ConsoleTransportPartners } from "./pages/TransportPartners";
+export { default as ConsoleTransportPartnerReview } from "./pages/TransportPartnerReview";
+// The transport half of the platform's margin structure. A SEPARATE page from CommercialRules
+// (hotels) rather than a tab on it: a transport rule is keyed by vehicle AND service type and is
+// applied against a rate model — per km, per day, per transfer — none of which a hotel rule has a
+// field for. One screen serving both would be two forms sharing a heading.
+export { default as ConsoleTransportPricing } from "./pages/TransportPricing";
 export { default as ConsoleMarketplaceCommissions } from "./pages/MarketplaceCommissions";
 export { default as ConsoleMarketplaceOccupancy } from "./pages/MarketplaceOccupancy";
 export { default as ConsoleCommercialRules } from "./pages/CommercialRules";

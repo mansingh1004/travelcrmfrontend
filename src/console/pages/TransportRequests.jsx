@@ -10,9 +10,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Car, CheckCircle2, ClipboardCheck, Download, FileText, Loader2, RefreshCw, Trash2, Upload, X, XCircle,
+  Car, CheckCircle2, ClipboardCheck, Download, FileText, Info, Loader2, RefreshCw, Trash2, Upload, X, XCircle,
 } from "lucide-react";
 import { transportAdminService as svc } from "../api/transportAdminService";
+import { transportPriceService } from "../api/transportPricingService";
 import { ConsolePageHeader, ConsolePanel } from "../components/ConsoleUi";
 import { ConsoleTable, ConsolePager } from "../components/ConsoleTable";
 import SuperAdminMfaActionModal from "../components/SuperAdminMfaActionModal";
@@ -362,11 +363,18 @@ export default function TransportRequests() {
    ═══════════════════════════════════════════════════════════════════════════ */
 
 function OrderPanel({ order, rates, ledger, busy, onClose, onReview, onRevise, onAction, onVoucher, error }) {
-  const [approve, setApprove] = useState({ supplierAmount: "", tenantPayable: "", supplierConfirmationNumber: "", cancellationTerms: "" });
+  const [approve, setApprove] = useState({ supplierAmount: "", tenantPayable: "", supplierConfirmationNumber: "", cancellationTerms: "", overrideReason: "" });
   const [revise, setRevise] = useState({ revisedSupplierAmount: "", revisedTenantPayable: "", reason: "" });
   const [assign, setAssign] = useState({ supplierName: "", vehicleRegistration: "", vehicleMakeModel: "", driverName: "", driverPhone: "" });
   const [quote, setQuote] = useState({ charge: "", retainedEarning: "", note: "" });
   const [file, setFile] = useState(null);
+
+  // What the commercial-rule engine makes of this order. Fetched separately from the order because
+  // it is a CALCULATION over the current rules and rate card, not a fact stored on the row — an
+  // order two months old would otherwise show the price it was approved at as if the rule still
+  // said so.
+  const [preview, setPreview] = useState(null);
+  const [previewState, setPreviewState] = useState("idle"); // idle | loading | ready | failed
 
   const s = order.status;
   const canApprove = ["REQUESTED", "UNDER_REVIEW", "TENANT_ACCEPTED"].includes(s);
@@ -375,6 +383,77 @@ function OrderPanel({ order, rates, ledger, busy, onClose, onReview, onRevise, o
   const canQuote = s === "CANCEL_REQUESTED";
   const issued = order.voucherStatus === "ISSUED";
   const uploaded = order.voucherSource === "UPLOADED";
+
+  /**
+   * Prefill the approval from the engine, once per order, only where approving is possible.
+   *
+   * The reason this exists at all: the approver is about to commit the platform to paying an
+   * operator and billing an agency, and the one thing they must not do is type two numbers with no
+   * idea where they came from. The rule, the fallback flag and the derivation below are the working
+   * they reconcile against the operator's email.
+   */
+  useEffect(() => {
+    if (!canApprove) return undefined;
+    let alive = true;
+    setPreviewState("loading");
+    transportPriceService
+      .preview(order.publicId)
+      .then((p) => {
+        if (!alive) return;
+        setPreview(p ?? null);
+        setPreviewState("ready");
+        // Prefill only what the engine could actually price. `priceable:false` is a normal answer —
+        // a custom-quote rate, a per-km rate on a journey with no distance, a vehicle with no rate
+        // card — and the fields then stay empty for a human to type into.
+        if (p?.priceable) {
+          setApprove((f) => ({
+            ...f,
+            supplierAmount: p.supplierTotal == null ? "" : String(p.supplierTotal),
+            tenantPayable: p.tenantPayable == null ? "" : String(p.tenantPayable),
+          }));
+        }
+      })
+      .catch(() => {
+        // Not fatal and not a toast: the screen falls back to what it did before the engine existed,
+        // which is both amounts typed by hand.
+        if (!alive) return;
+        setPreview(null);
+        setPreviewState("failed");
+      });
+    return () => {
+      alive = false;
+    };
+  }, [order.publicId, canApprove]);
+
+  /**
+   * One paisa of tolerance, because that is what the server uses. It re-derives the earning by
+   * subtraction after scaling both ends, so a console that recomputes the same price its own way can
+   * legitimately land a cent apart — and demanding a written reason for rounding drift would train
+   * operators to type "n/a" into the one field that is supposed to mean something.
+   */
+  const departsFromEngine = (typed, engineFigure) =>
+    typed !== "" && engineFigure != null && Math.abs(Number(typed) - Number(engineFigure)) > 0.01;
+
+  const priceable = previewState === "ready" && !!preview?.priceable;
+  const edited =
+    priceable &&
+    (departsFromEngine(approve.supplierAmount, preview.supplierTotal) ||
+      departsFromEngine(approve.tenantPayable, preview.tenantPayable));
+
+  // Three states, three different asks:
+  //  · priced and untouched → send NO amounts. Omitting them is the accurate way to say "the rule is
+  //    right"; echoing the prefilled figures back is indistinguishable, to the writer, from a human
+  //    deliberately typing the same numbers.
+  //  · priced and edited    → send both amounts AND a reason. The server answers 400 without one.
+  //  · not priceable        → both amounts are typed and NO reason is wanted: there is no rule-based
+  //    figure to have departed from, so asking for one would be asking about nothing.
+  const mustType = !priceable && previewState !== "loading";
+  const reasonRequired = edited;
+  // A preview that failed to load is the one case we cannot classify: the engine may well be able to
+  // price this journey, so the field is offered but not demanded, and the server's own 400 is what
+  // decides if it was needed.
+  const reasonOffered = edited || previewState === "failed";
+  const effectivePayable = approve.tenantPayable !== "" ? approve.tenantPayable : preview?.tenantPayable;
 
   return (
     <div className="fixed inset-0 z-40 flex justify-end">
@@ -464,25 +543,83 @@ function OrderPanel({ order, rates, ledger, busy, onClose, onReview, onRevise, o
 
           {canApprove && (
             <Action label="Approve" hint="Confirms the journey, writes one line onto the agency's CRM booking and accrues the platform's earning exactly once.">
+              <PriceWorking preview={preview} state={previewState} fallbackCurrency={order.currency} />
+
+              {/* The agency accepted a NUMBER, not a permission to confirm at any figure — the writer
+                  refuses an effective payable that is not the one they said yes to. Worth saying
+                  right here, because the engine's prefill is the thing most likely to differ from
+                  it: the rules may have moved since the revision was sent. */}
+              {s === "TENANT_ACCEPTED" && order.tenantPayable != null && (
+                <p className="mb-3 rounded-lg border border-border bg-page px-3 py-2 text-[11px] leading-relaxed text-body">
+                  The agency accepted {money(order.tenantPayable, order.currency)}. Approval is refused at any
+                  other payable — if the rule now says something else, send a new revision rather than
+                  confirming over their answer.
+                </p>
+              )}
+
               <div className="grid gap-2 sm:grid-cols-2">
                 <Field label="Supplier amount" value={approve.supplierAmount} onChange={(v) => setApprove((f) => ({ ...f, supplierAmount: v }))} type="number" />
                 <Field label="Agency pays" value={approve.tenantPayable} onChange={(v) => setApprove((f) => ({ ...f, tenantPayable: v }))} type="number" />
                 <Field label="Operator ref" value={approve.supplierConfirmationNumber} onChange={(v) => setApprove((f) => ({ ...f, supplierConfirmationNumber: v }))} />
                 <Field label="Cancellation terms" value={approve.cancellationTerms} onChange={(v) => setApprove((f) => ({ ...f, cancellationTerms: v }))} />
               </div>
+
+              {priceable && (
+                <p className="mt-2 text-[11px] leading-relaxed text-muted">
+                  {edited
+                    ? "These are no longer the rule's figures. Say why below — six months from now an override with no stated reason is indistinguishable from a typo."
+                    : "Leave these as they are to confirm at the rule's price; the amounts are then not sent at all, so the engine's own figures stand. Change either one and a reason becomes required."}
+                </p>
+              )}
+              {previewState === "ready" && !priceable && (
+                <p className="mt-2 text-[11px] leading-relaxed text-muted">
+                  Both amounts are typed by hand here. No reason is asked for — there is no rule-based
+                  price to have departed from.
+                </p>
+              )}
+
+              {reasonOffered && (
+                <div className="mt-2">
+                  <Field
+                    label={reasonRequired ? "Reason for the override — required" : "Reason for the override"}
+                    value={approve.overrideReason}
+                    onChange={(v) => setApprove((f) => ({ ...f, overrideReason: v }))}
+                  />
+                  <p className="mt-1 text-[11px] leading-relaxed text-muted">
+                    Recorded on the order and in the platform audit log, against your name and the time.
+                  </p>
+                </div>
+              )}
+
               <div className="mt-2 flex gap-2">
                 <Btn
                   tone="primary"
-                  disabled={!approve.supplierAmount || !approve.tenantPayable}
+                  disabled={
+                    previewState === "loading" ||
+                    (mustType && (!approve.supplierAmount || !approve.tenantPayable)) ||
+                    (reasonRequired && !approve.overrideReason.trim())
+                  }
                   onClick={() =>
                     onAction({
                       kind: "approve",
                       label: "Approve this journey",
-                      description: `${order.orderCode} — the agency will owe ${money(approve.tenantPayable, order.currency)}.`,
+                      description: `${order.orderCode} — the agency will owe ${money(effectivePayable, preview?.currency || order.currency)}${
+                        edited ? ", which is not the rule-based price." : priceable ? ", the rule-based price." : "."
+                      }`,
                       confirmLabel: "Approve",
                       payload: {
-                        supplierAmount: Number(approve.supplierAmount),
-                        tenantPayable: Number(approve.tenantPayable),
+                        // Deliberately ABSENT when the engine's figures stand. Omitting them is how
+                        // the writer is told "the rule is right"; echoing the prefill back would be
+                        // indistinguishable from a human typing those numbers on purpose.
+                        ...(mustType || edited
+                          ? {
+                              supplierAmount: approve.supplierAmount === "" ? null : Number(approve.supplierAmount),
+                              tenantPayable: approve.tenantPayable === "" ? null : Number(approve.tenantPayable),
+                            }
+                          : {}),
+                        ...(reasonOffered && approve.overrideReason.trim()
+                          ? { overrideReason: approve.overrideReason.trim() }
+                          : {}),
                         supplierConfirmationNumber: approve.supplierConfirmationNumber || null,
                         cancellationTerms: approve.cancellationTerms || null,
                       },
@@ -738,6 +875,122 @@ function OrderPanel({ order, rates, ledger, busy, onClose, onReview, onRevise, o
           </Action>
         </div>
       </aside>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   The engine's working, shown above the approval fields.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * What the commercial rules made of this journey, and how they got there.
+ *
+ * ⚠ SUPERADMIN-ONLY, WITHOUT EXCEPTION. `supplierTotal` is what the platform pays the operator, and
+ * `explanation` is the operator's contracted rate card written out in prose — "Driver allowance ₹300
+ * × 1 vehicle × 2 days". Neither may be mirrored onto a tenant surface; the tenant's counterpart
+ * carries one payable and no way to decompose it, and a backend ArchUnit test fails the build if
+ * that ever stops being true.
+ *
+ * It sits above the fields rather than inside the confirmation dialog because an approver reconciles
+ * these lines against the operator's email WHILE they decide, not after they have committed to a
+ * dialog they can only cancel out of.
+ */
+function PriceWorking({ preview, state, fallbackCurrency }) {
+  if (state === "loading") {
+    return (
+      <p className="mb-3 flex items-center gap-2 text-xs text-muted">
+        <Loader2 size={13} className="animate-spin" /> Working out the rule-based price…
+      </p>
+    );
+  }
+
+  if (state === "failed") {
+    return (
+      <p className="mb-3 rounded-lg border border-border bg-page px-3 py-2 text-[11px] leading-relaxed text-body">
+        The rule-based price could not be fetched, so there is nothing to prefill. Enter both amounts
+        by hand. If the engine can price this journey after all, the server asks for a reason when
+        the figures differ from its own — the field below is there for that.
+      </p>
+    );
+  }
+
+  if (!preview) return null;
+
+  const ccy = preview.currency || fallbackCurrency;
+
+  // Not an error and not a zero: a custom-quote rate, a per-kilometre rate on a journey with no
+  // distance, or a vehicle with no rate card are all normal states in which a human types the
+  // number — which is what this screen was for before the engine existed.
+  if (!preview.priceable) {
+    return (
+      <p className="mb-3 rounded-lg border border-border bg-page px-3 py-2 text-[11px] leading-relaxed text-body">
+        <span className="font-semibold text-heading">No rule-based price. </span>
+        {preview.unpriceableReason || "The engine has nothing to price this journey with."}
+      </p>
+    );
+  }
+
+  const quantities = [
+    preview.vehicleCount ? `${preview.vehicleCount} vehicle${preview.vehicleCount === 1 ? "" : "s"}` : null,
+    preview.days ? `${preview.days} day${preview.days === 1 ? "" : "s"}` : null,
+    preview.nights ? `${preview.nights} night${preview.nights === 1 ? "" : "s"}` : null,
+    preview.hours ? `${preview.hours} h` : null,
+    preview.km ? `${preview.km} km` : null,
+  ].filter(Boolean);
+
+  return (
+    <div className="mb-3 rounded-xl border border-border bg-page p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-muted">Rule-based price</span>
+        <span className="min-w-0 truncate text-xs font-semibold text-heading">{preview.ruleLabel || "Unnamed rule"}</span>
+        {preview.fallbackRule && (
+          // Not decoration. It says no configured rule matched and the built-in default markup
+          // produced this figure — a margin nobody chose — and the person about to approve is the
+          // right one to notice that this vehicle still has no rule of its own.
+          <span className="rounded-full bg-hue-amber-soft px-2 py-0.5 text-[10px] font-bold text-hue-amber">
+            Fallback — no rule matched
+          </span>
+        )}
+      </div>
+
+      <div className="mt-2 grid gap-x-4 gap-y-1 text-sm sm:grid-cols-3">
+        <Figure label="Supplier" value={money(preview.supplierTotal, ccy)} />
+        <Figure label="Agency pays" value={money(preview.tenantPayable, ccy)} />
+        <Figure label="Platform earns" value={money(preview.platformEarning, ccy)} />
+      </div>
+
+      <p className="mt-2 text-[11px] text-muted">
+        {[human(preview.model), human(preview.rateModel), human(preview.serviceType), quantities.join(" · ")]
+          .filter(Boolean)
+          .join(" · ")}
+      </p>
+
+      {preview.explanation?.length > 0 && (
+        <ol className="mt-2 space-y-0.5 border-t border-border pt-2 text-[11px] leading-relaxed text-body">
+          {preview.explanation.map((line, i) => (
+            <li key={i} className="flex gap-2">
+              <span className="text-muted">{i + 1}.</span>
+              <span>{line}</span>
+            </li>
+          ))}
+        </ol>
+      )}
+
+      <p className="mt-2 flex gap-1.5 text-[10px] leading-relaxed text-muted">
+        <Info size={12} className="mt-px shrink-0" />
+        The platform's own working — the operator's contracted terms. It is never shown to the agency.
+      </p>
+    </div>
+  );
+}
+
+/** One figure in the working. Right-aligned digits so the three can be compared by eye. */
+function Figure({ label, value }) {
+  return (
+    <div>
+      <div className="text-[10px] font-semibold uppercase tracking-wide text-muted">{label}</div>
+      <div className="tabular-nums font-semibold text-heading">{value}</div>
     </div>
   );
 }
