@@ -381,7 +381,7 @@ export default function ConsoleSidebar({ sections, collapsed, mobileOpen, onClos
     <>
       {mobileOpen && (
         <div
-          className="fixed inset-0 z-40 bg-black/50 sm:hidden"
+          className="fixed inset-0 z-40 bg-scrim sm:hidden"
           onClick={onCloseMobile}
           aria-hidden="true"
         />
@@ -433,7 +433,7 @@ export default function ConsoleSidebar({ sections, collapsed, mobileOpen, onClos
             type="button"
             onClick={onCloseMobile}
             aria-label="Close navigation"
-            className="rounded-lg p-1.5 text-muted transition-colors hover:bg-surface-hover hover:text-body sm:hidden"
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded-lg p-1.5 text-muted transition-colors hover:bg-surface-hover hover:text-body sm:hidden"
           >
             <X size={18} />
           </button>
@@ -481,7 +481,7 @@ export default function ConsoleSidebar({ sections, collapsed, mobileOpen, onClos
               onOpenLauncher(e.currentTarget);
             }}
             title="All console areas"
-            className={`flex w-full items-center justify-center gap-2.5 rounded-xl border border-border bg-surface-hover/40 py-2.5 text-[13px] font-semibold text-body transition-colors hover:bg-surface-hover hover:text-heading ${
+            className={`focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus flex w-full items-center justify-center gap-2.5 rounded-xl border border-border bg-surface-hover/40 py-2.5 text-[13px] font-semibold text-body transition-colors hover:bg-surface-hover hover:text-heading ${
               compact ? "px-0" : "px-3"
             }`}
           >

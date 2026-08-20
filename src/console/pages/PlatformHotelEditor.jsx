@@ -275,7 +275,7 @@ export default function PlatformHotelEditor() {
       <div ref={rootRef} onKeyDown={onKeyDown} className="pb-28">
         <button
           onClick={() => navigate(isNew ? "/console/hotel-catalog" : `/console/hotel-catalog/${publicId}`)}
-          className="mb-3 inline-flex items-center gap-1.5 text-sm font-semibold text-muted transition hover:text-heading"
+          className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus mb-3 inline-flex items-center gap-1.5 text-sm font-semibold text-muted transition hover:text-heading"
         >
           <ArrowLeft size={15} /> {isNew ? "Catalog" : "Back to hotel"}
         </button>
@@ -463,7 +463,7 @@ export default function PlatformHotelEditor() {
               >
                 <div className="grid gap-3 sm:grid-cols-[2fr_1fr_1fr_auto]">
                   <div>
-                    <Label>Room name <span className="text-rose-500">*</span></Label>
+                    <Label>Room name <span className="text-hue-rose">*</span></Label>
                     <Input value={room.name} onChange={(e) => patchRoom(room._key, { name: e.target.value })} placeholder="Deluxe Sea View" />
                   </div>
                   <div>
@@ -526,7 +526,7 @@ export default function PlatformHotelEditor() {
                 </div>
 
                 {room.rates.filter((t) => !t._deleted).length === 0 ? (
-                  <p className="mt-2 text-xs font-semibold text-amber-600">
+                  <p className="mt-2 text-xs font-semibold text-hue-amber">
                     No rate on this room — it cannot be sold.
                   </p>
                 ) : (
@@ -670,7 +670,7 @@ function RoomPhotos({ images = [], onAdd, onRemove, onError }) {
                 type="button"
                 onClick={() => onRemove(i)}
                 title="Remove this photo"
-                className="absolute -right-1.5 -top-1.5 rounded-full border border-border bg-surface p-0.5 text-muted shadow-sm transition hover:text-heading"
+                className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus absolute -right-1.5 -top-1.5 rounded-full border border-border bg-surface p-0.5 text-muted shadow-sm transition hover:text-heading"
               >
                 <X size={11} />
               </button>
@@ -724,7 +724,7 @@ function F({ id, label, hint, required, ...rest }) {
     <div>
       <Label htmlFor={id}>
         {label}
-        {required && <span className="ml-0.5 text-rose-500">*</span>}
+        {required && <span className="ml-0.5 text-hue-rose">*</span>}
         {hint && <span className="ml-1 font-normal text-muted">· {hint}</span>}
       </Label>
       <Input id={id} {...rest} onChange={(e) => rest.onChange(e.target.value)} />

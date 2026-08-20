@@ -149,7 +149,7 @@ export function ConsoleTable({
               hint={error || "Something went wrong."}
               action={onRetry && (
                 <button type="button" onClick={onRetry}
-                  className="mt-3 rounded-lg border border-border-strong bg-surface px-3 py-1.5 text-xs font-semibold text-heading hover:bg-surface-hover">
+                  className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus mt-3 rounded-lg border border-border-strong bg-surface px-3 py-1.5 text-xs font-semibold text-heading hover:bg-surface-hover">
                   Try again
                 </button>
               )} />
@@ -260,12 +260,12 @@ export function ConsolePager({ page, size, total, onPage, busy }) {
       <span className="tabular-nums">{from}–{to} of {total}</span>
       <div className="flex items-center gap-1">
         <button type="button" disabled={page <= 0 || busy} onClick={() => onPage(page - 1)}
-          className="rounded-lg border border-border px-2.5 py-1.5 font-semibold text-body hover:bg-surface-hover disabled:opacity-40">
+          className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded-lg border border-border px-2.5 py-1.5 font-semibold text-body hover:bg-surface-hover disabled:opacity-40">
           Previous
         </button>
         <span className="px-2 tabular-nums">{page + 1} / {pages}</span>
         <button type="button" disabled={page + 1 >= pages || busy} onClick={() => onPage(page + 1)}
-          className="rounded-lg border border-border px-2.5 py-1.5 font-semibold text-body hover:bg-surface-hover disabled:opacity-40">
+          className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded-lg border border-border px-2.5 py-1.5 font-semibold text-body hover:bg-surface-hover disabled:opacity-40">
           Next
         </button>
       </div>

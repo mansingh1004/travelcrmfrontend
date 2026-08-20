@@ -109,11 +109,11 @@ export default function HotelPartnerReview() {
     return (
       <Shell onBack={() => navigate("/console/hotel-partners")}>
         <div className="mx-auto mt-16 max-w-md text-center">
-          <AlertTriangle className="mx-auto h-6 w-6 text-amber-500" />
+          <AlertTriangle className="mx-auto h-6 w-6 text-hue-amber" />
           <p className="mt-2 text-sm font-semibold text-heading">{loadError}</p>
           <button
             onClick={load}
-            className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-semibold text-body hover:bg-surface-hover"
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus mt-4 inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-semibold text-body hover:bg-surface-hover"
           >
             <RefreshCw size={14} /> Try again
           </button>
@@ -172,7 +172,7 @@ export default function HotelPartnerReview() {
         {reg.promotedPlatformHotelPublicId && (
           <button
             onClick={() => navigate(`/console/hotel-catalog/${reg.promotedPlatformHotelPublicId}`)}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-2 text-xs font-semibold text-body hover:bg-surface-hover"
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-2 text-xs font-semibold text-body hover:bg-surface-hover"
           >
             <ExternalLink size={13} /> Open catalog hotel
           </button>
@@ -197,7 +197,7 @@ export default function HotelPartnerReview() {
                 {i > 0 && ", "}
                 <button
                   onClick={() => navigate(`/console/hotel-partners/${d.publicId}`)}
-                  className="font-semibold underline underline-offset-2 hover:opacity-80"
+                  className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus font-semibold underline underline-offset-2 hover:opacity-80"
                 >
                   {d.name || "Untitled"}{d.cityName ? ` · ${d.cityName}` : ""}
                 </button>
@@ -344,7 +344,7 @@ export default function HotelPartnerReview() {
             {rooms.map((room) => (
               <div
                 key={room.publicId}
-                className={`rounded-xl border p-4 ${room.active === false ? "border-amber-300 bg-amber-50/40" : "border-border bg-surface"}`}
+                className={`rounded-xl border p-4 ${room.active === false ? "border-hue-amber/40 bg-hue-amber-soft" : "border-border bg-surface"}`}
               >
                 <div className="flex flex-wrap items-baseline gap-2">
                   <BedDouble size={14} className="shrink-0 text-muted" />
@@ -370,7 +370,7 @@ export default function HotelPartnerReview() {
                 )}
 
                 {(room.rates || []).length === 0 ? (
-                  <p className="mt-3 text-xs font-semibold text-amber-700">No rates on this room.</p>
+                  <p className="mt-3 text-xs font-semibold text-hue-amber">No rates on this room.</p>
                 ) : (
                   <div className="mt-3 overflow-x-auto">
                     {/* The old table had no thead at all — four unlabeled columns of enum values
@@ -424,21 +424,21 @@ export default function HotelPartnerReview() {
             <button
               onClick={() => { setMfaError(""); setMfaAction({ kind: "approve" }); }}
               disabled={busy}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-sm font-bold text-accent-text hover:bg-accent-hover disabled:opacity-50"
+              className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-sm font-bold text-accent-text hover:bg-accent-hover disabled:opacity-50"
             >
               <Check size={15} /> Approve
             </button>
             <button
               onClick={() => { setMode("changes"); setNote(""); }}
               disabled={busy}
-              className="rounded-lg border border-border px-4 py-2 text-sm font-semibold text-body hover:bg-surface-hover disabled:opacity-50"
+              className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded-lg border border-border px-4 py-2 text-sm font-semibold text-body hover:bg-surface-hover disabled:opacity-50"
             >
               Request changes
             </button>
             <button
               onClick={() => { setMode("reject"); setNote(""); }}
               disabled={busy}
-              className="rounded-lg border border-border px-4 py-2 text-sm font-semibold text-hue-rose hover:bg-hue-rose-soft disabled:opacity-50"
+              className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded-lg border border-border px-4 py-2 text-sm font-semibold text-hue-rose hover:bg-hue-rose-soft disabled:opacity-50"
             >
               Reject
             </button>
@@ -464,13 +464,13 @@ export default function HotelPartnerReview() {
                   setMfaAction({ kind: mode === "reject" ? "reject" : "changes", note });
                 }}
                 disabled={busy || !note.trim()}
-                className="rounded-lg bg-accent px-4 py-2 text-sm font-bold text-accent-text hover:bg-accent-hover disabled:opacity-40"
+                className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded-lg bg-accent px-4 py-2 text-sm font-bold text-accent-text hover:bg-accent-hover disabled:opacity-40"
               >
                 {busy ? "Sending…" : mode === "reject" ? "Reject submission" : "Send back"}
               </button>
               <button
                 onClick={() => setMode("")}
-                className="rounded-lg px-3 py-2 text-sm font-semibold text-muted hover:text-heading"
+                className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded-lg px-3 py-2 text-sm font-semibold text-muted hover:text-heading"
               >
                 Cancel
               </button>
@@ -512,7 +512,7 @@ function Shell({ onBack, children }) {
     <div className="pb-8">
       <button
         onClick={onBack}
-        className="mb-3 inline-flex items-center gap-1.5 text-sm font-semibold text-muted transition hover:text-heading"
+        className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus mb-3 inline-flex items-center gap-1.5 text-sm font-semibold text-muted transition hover:text-heading"
       >
         <ArrowLeft size={15} /> Hotel partners
       </button>
@@ -616,21 +616,21 @@ function Thumb({ url, badge, small, onClick }) {
 
 function Lightbox({ images, index, onClose, onStep }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-6" onClick={onClose}>
-      <button onClick={onClose} className="absolute right-4 top-4 rounded-lg p-2 text-white/70 hover:text-white">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-6" onClick={onClose}>
+      <button onClick={onClose} className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus absolute right-4 top-4 rounded-lg p-2 text-white/70 hover:text-white">
         <X size={20} />
       </button>
       {images.length > 1 && (
         <>
           <button
             onClick={(e) => { e.stopPropagation(); onStep(-1); }}
-            className="absolute left-4 rounded-full bg-white/10 p-2 text-white hover:bg-white/20"
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus absolute left-4 rounded-full bg-white/10 p-2 text-white hover:bg-white/20"
           >
             <ChevronLeft size={20} />
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); onStep(1); }}
-            className="absolute right-4 rounded-full bg-white/10 p-2 text-white hover:bg-white/20"
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus absolute right-4 rounded-full bg-white/10 p-2 text-white hover:bg-white/20"
           >
             <ChevronRight size={20} />
           </button>

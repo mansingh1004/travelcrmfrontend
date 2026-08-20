@@ -119,12 +119,12 @@ export default function CommercialRules() {
         </div>
         <div className="flex gap-2">
           <button type="button" onClick={load} disabled={loading}
-            className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-semibold text-body hover:bg-surface-hover disabled:opacity-60">
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-semibold text-body hover:bg-surface-hover disabled:opacity-60">
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
             Refresh
           </button>
           <button type="button" onClick={() => setEditing({ ...BLANK })}
-            className="inline-flex items-center gap-2 rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover">
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-2 rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover">
             <Plus className="h-4 w-4" /> New rule
           </button>
         </div>
@@ -224,11 +224,11 @@ function RuleTable({ title, rows, loading, empty, onEdit, onDelete }) {
       cell: ({ row }) => (
         <div className="flex justify-end gap-1">
           <button onClick={() => onEdit(row.original)}
-            className="rounded-lg border border-border px-2.5 py-1.5 text-xs font-semibold text-body hover:bg-surface-hover">
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded-lg border border-border px-2.5 py-1.5 text-xs font-semibold text-body hover:bg-surface-hover">
             Edit
           </button>
           <button onClick={() => onDelete(row.original)} aria-label="Delete rule"
-            className="rounded-lg border border-border px-2 py-1.5 text-hue-rose hover:bg-hue-rose-soft">
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded-lg border border-border px-2 py-1.5 text-hue-rose hover:bg-hue-rose-soft">
             <Trash2 className="h-3.5 w-3.5" />
           </button>
         </div>
@@ -301,14 +301,14 @@ function RuleDialog({ rule, options, hotels, onClose, onSaved }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/40 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-scrim p-4" onClick={onClose}>
       <div className="my-8 w-full max-w-lg rounded-xl border border-border bg-surface p-5 shadow-xl"
            onClick={(e) => e.stopPropagation()}>
         <div className="mb-4 flex items-start justify-between">
           <h2 className="text-base font-bold text-heading">
             {rule.publicId ? "Edit commercial rule" : "New commercial rule"}
           </h2>
-          <button onClick={onClose} className="rounded p-1 text-muted hover:text-body">
+          <button onClick={onClose} className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded p-1 text-muted hover:text-body">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -408,12 +408,12 @@ function RuleDialog({ rule, options, hotels, onClose, onSaved }) {
 
         <div className="mt-5 flex justify-end gap-2">
           <button onClick={onClose}
-                  className="rounded-lg border border-border px-3 py-2 text-sm font-semibold text-body hover:bg-surface-hover">
+                  className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded-lg border border-border px-3 py-2 text-sm font-semibold text-body hover:bg-surface-hover">
             Cancel
           </button>
           <button onClick={() => { setMfaError(""); setMfaOpen(true); }}
                   disabled={invalid || datesInvalid || busy}
-                  className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-50">
+                  className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-50">
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
             Save
           </button>

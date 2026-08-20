@@ -75,14 +75,14 @@ export default function ConsoleSetup() {
             type="button"
             onClick={logout}
             title="Sign out"
-            className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:bg-surface-hover hover:text-body"
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:bg-surface-hover hover:text-body"
           >
             <LogOut size={17} />
           </button>
         </div>
 
         {error && (
-          <p className="mt-5 flex items-start gap-2 rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-700 ring-1 ring-red-500/20">
+          <p className="mt-5 flex items-start gap-2 rounded-lg bg-hue-rose-soft px-3 py-2 text-sm text-hue-rose ring-1 ring-hue-rose/20">
             <AlertTriangle size={15} className="mt-0.5 shrink-0" />
             {error}
           </p>
@@ -140,7 +140,7 @@ export default function ConsoleSetup() {
         <button
           type="submit"
           disabled={busy}
-          className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-60"
+          className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus mt-6 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-60"
         >
           {busy ? <Loader2 size={16} className="animate-spin" /> : <KeyRound size={16} />}
           {busy ? "Saving..." : "Change password"}

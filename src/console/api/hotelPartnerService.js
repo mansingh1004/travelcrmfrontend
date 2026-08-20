@@ -70,7 +70,7 @@ export const INVITE_STATUS = {
 export const REG_STATUS = {
   DRAFT:             { label: "In progress",     cls: "bg-surface-hover text-muted" },
   SUBMITTED:         { label: "Awaiting review", cls: "bg-hue-amber-soft text-hue-amber" },
-  CHANGES_REQUESTED: { label: "Sent back",       cls: "bg-hue-sky-soft text-hue-sky" },
+  CHANGES_REQUESTED: { label: "Sent back",       cls: "bg-hue-orange-soft text-hue-orange" },
   APPROVED:          { label: "Approved",        cls: "bg-hue-emerald-soft text-hue-emerald" },
   REJECTED:          { label: "Rejected",        cls: "bg-hue-rose-soft text-hue-rose" },
 };

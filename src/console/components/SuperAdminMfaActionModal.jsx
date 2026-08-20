@@ -27,7 +27,7 @@ export default function SuperAdminMfaActionModal({
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" onClick={(e) => e.stopPropagation()}>
-      <div className="absolute inset-0 bg-slate-950/50" onClick={saving ? undefined : onClose} />
+      <div className="absolute inset-0 bg-scrim" onClick={saving ? undefined : onClose} />
       <form
         onSubmit={submit}
         className="relative w-full max-w-sm rounded-xl border border-border bg-surface p-5 shadow-xl"
@@ -40,7 +40,7 @@ export default function SuperAdminMfaActionModal({
           {mfaDisabled ? "MFA is disabled for local development. Confirm to continue." : description}
         </p>
         {mfaDisabled ? (
-          <p className="mt-4 rounded-lg bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-700 ring-1 ring-amber-500/20">
+          <p className="mt-4 rounded-lg bg-hue-amber-soft px-3 py-2 text-xs font-semibold text-hue-amber ring-1 ring-hue-amber/20">
             Local development bypass active
           </p>
         ) : (
@@ -63,7 +63,7 @@ export default function SuperAdminMfaActionModal({
           </div>
         )}
         {error && (
-          <p className="mt-3 flex items-start gap-1.5 rounded-lg bg-red-500/10 px-3 py-2 text-[11px] text-red-700 ring-1 ring-red-500/20">
+          <p className="mt-3 flex items-start gap-1.5 rounded-lg bg-hue-rose-soft px-3 py-2 text-[11px] text-hue-rose ring-1 ring-hue-rose/20">
             <AlertTriangle size={13} className="mt-px shrink-0" />
             {error}
           </p>
@@ -85,14 +85,14 @@ export default function SuperAdminMfaActionModal({
             type="button"
             onClick={onClose}
             disabled={saving}
-            className="rounded-lg border border-border-strong bg-surface px-4 py-2 text-sm font-semibold text-body hover:bg-surface-hover disabled:opacity-60"
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded-lg border border-border-strong bg-surface px-4 py-2 text-sm font-semibold text-body hover:bg-surface-hover disabled:opacity-60"
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={saving || (!mfaDisabled && code.length !== 6)}
-            className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-60"
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-60"
           >
             {saving && <Loader2 size={15} className="animate-spin" />}
             {confirmLabel}

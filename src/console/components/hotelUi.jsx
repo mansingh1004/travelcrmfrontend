@@ -10,6 +10,11 @@
 //   bg-surface / bg-surface-hover / bg-page · text-heading / text-body / text-muted
 //   border-border / border-border-strong   · bg-accent / hover:bg-accent-hover / text-accent-text
 //   bg-accent-soft / text-accent-soft-text · ring-focus · bg-hue-*-soft + text-hue-* chips
+//   bg-scrim (modal/drawer backdrops)
+//
+// STATUS colour is now token-only too: every BADGE_VARIANTS entry and every `dot` in the six
+// status maps is a hue-token pair, so nothing renders a light pastel badge on the near-black
+// dark-mode card any more. Raw palette classes carry no `dark:` variant — that was the bug.
 //
 // Do NOT reintroduce raw slate-*/blue-*/bg-white here — inside `.sa-console` those are simply a
 // different, clashing palette. The reverse also holds: these utilities resolve to NOTHING outside
@@ -18,7 +23,7 @@
 // Self-contained UI kit for the platform hotel catalog screens.
 //   • Plain Tailwind only — NO shadcn / cva dependency
 //   • surface cards, accent actions, rounded-2xl
-//   • Plus Jakarta Sans + shared keyframes injected per page
+//   • shared keyframes injected per page (the font is loaded globally in src/index.css)
 //   • inline Toast facade (app convention — no toast library)
 //   • form primitives, portal Dialog, status maps + safe formatters
 // Nothing outside this feature imports from here — the module's public
@@ -46,8 +51,11 @@ const BUTTON_VARIANTS = {
   secondary: "bg-surface-hover text-body hover:bg-border",
   outline: "border border-border bg-surface text-body hover:border-border-strong hover:bg-surface-hover",
   ghost: "text-body hover:bg-surface-hover hover:text-heading",
-  destructive: "bg-red-600 text-accent-text shadow-sm shadow-red-600/20 hover:bg-red-700",
-  success: "bg-green-600 text-accent-text shadow-sm shadow-green-600/20 hover:bg-green-700",
+  // Solid hue fills pair with `text-surface`, NOT `text-accent-text` (white): the strong hue
+  // token flips to a LIGHT tint in dark mode, so white-on-hue would go unreadable there while
+  // surface-on-hue stays legible in both modes.
+  destructive: "bg-hue-rose text-surface shadow-sm shadow-hue-rose/20 hover:opacity-90",
+  success: "bg-hue-emerald text-surface shadow-sm shadow-hue-emerald/20 hover:opacity-90",
   link: "text-accent underline-offset-4 hover:underline",
 };
 
@@ -80,16 +88,21 @@ export const Button = React.forwardRef(function Button(
 const BADGE_BASE =
   "inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-bold whitespace-nowrap";
 
+// Every hue variant is a token PAIR (soft background + strong foreground) so it flips with
+// light/dark automatically. `blue` deliberately resolves to the SKY hue and no longer to
+// accent-soft: violet/accent is the console's identity and primary-action colour, so a plain
+// row status must never wear it.
 const BADGE_VARIANTS = {
   default: "bg-surface-hover text-body",
-  blue: "bg-accent-soft text-accent-hover",
-  green: "bg-green-50 text-green-700",
-  amber: "bg-amber-50 text-amber-700",
-  red: "bg-red-50 text-red-700",
+  blue: "bg-hue-sky-soft text-hue-sky",
+  green: "bg-hue-emerald-soft text-hue-emerald",
+  amber: "bg-hue-amber-soft text-hue-amber",
+  red: "bg-hue-rose-soft text-hue-rose",
   slate: "bg-surface-hover text-body",
-  purple: "bg-purple-50 text-purple-700",
-  teal: "bg-teal-50 text-teal-700",
-  indigo: "bg-indigo-50 text-indigo-700",
+  purple: "bg-hue-violet-soft text-hue-violet",
+  teal: "bg-hue-teal-soft text-hue-teal",
+  indigo: "bg-hue-indigo-soft text-hue-indigo",
+  orange: "bg-hue-orange-soft text-hue-orange",
 };
 
 export function Badge({ className, variant = "default", ...props }) {
@@ -137,7 +150,7 @@ export const Label = React.forwardRef(function Label({ className, required, chil
       {...props}
     >
       {children}
-      {required && <span className="ml-1 text-red-500">*</span>}
+      {required && <span className="ml-1 text-hue-rose">*</span>}
     </label>
   );
 });
@@ -213,12 +226,26 @@ export function Dialog({ open, onOpenChange, children }) {
   }, [open, onOpenChange]);
 
   if (!open) return null;
+
+  // Portal target MUST be inside `.sa-console`, not document.body. Every --sa-* token is declared
+  // on `.sa-console` and CSS custom properties inherit down the PAINTED DOM tree, not the React
+  // tree — body's only child is #root and `.sa-console` sits deep inside it, so a body portal
+  // lands OUTSIDE the token scope and this dialog's bg-surface / text-heading / border-border
+  // resolve to nothing. Same target resolution (and same reason) as the rail flyout portal in
+  // ConsoleSidebar.jsx — do NOT "simplify" this back to document.body.
+  const target = typeof document === "undefined"
+    ? null
+    : document.querySelector(".sa-console") || document.body;
+  if (!target) return null;
+
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-heading/60 backdrop-blur-sm" onClick={() => onOpenChange?.(false)} />
+      {/* bg-scrim, never a text token: --sa-text-heading is near-black in light mode but near-WHITE
+          in dark, so bg-heading/60 inverted into a pale wash instead of darkening the page. */}
+      <div className="absolute inset-0 bg-scrim backdrop-blur-sm" onClick={() => onOpenChange?.(false)} />
       {children}
     </div>,
-    document.body
+    target
   );
 }
 
@@ -262,14 +289,18 @@ export function DialogFooter({ className, ...props }) {
    PAGE CHROME
 ═════════════════════════════════════════════════════════════ */
 export function HotelStyles() {
+  // Plus Jakarta Sans is already loaded globally at src/index.css:1 — re-@importing it here just
+  // refetched the same stylesheet on every hotel page. Keyframes only.
   return (
     <style>{`
-      @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap');
       @keyframes hfadeUp { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:translateY(0)} }
       @keyframes hpopIn  { from{transform:scale(.92);opacity:0} to{transform:scale(1);opacity:1} }
       .hfade-up { animation:hfadeUp .4s ease both; }
       @keyframes hshimmer { 0%{background-position:-400px 0} 100%{background-position:400px 0} }
-      .hskeleton { background:linear-gradient(90deg,#eef2f7 25%,#e2e8f0 37%,#eef2f7 63%); background-size:800px 100%; animation:hshimmer 1.4s ease-in-out infinite; }
+      /* Token vars, not fixed hex: the old #eef2f7/#e2e8f0 shimmer stayed light-grey in dark mode.
+         Vars resolve because every skeleton renders inside .sa-console; hex fallbacks are the
+         light values, matching the inline-fallback idiom in ConsoleSidebar.jsx. */
+      .hskeleton { background:linear-gradient(90deg,var(--sa-border,#e7e5f2) 25%,var(--sa-border-strong,#d3cfe6) 37%,var(--sa-border,#e7e5f2) 63%); background-size:800px 100%; animation:hshimmer 1.4s ease-in-out infinite; }
     `}</style>
   );
 }
@@ -604,7 +635,7 @@ export function StarRating({ value = 0, size = 16, showValue = false, className 
             <Star className="absolute inset-0 text-border" style={{ width: size, height: size }} fill="currentColor" />
             {(active || isHalf) && (
               <span className="absolute inset-0 overflow-hidden" style={{ width: isHalf ? size / 2 : size }}>
-                <Star className="text-amber-400" style={{ width: size, height: size }} fill="currentColor" />
+                <Star className="text-hue-amber" style={{ width: size, height: size }} fill="currentColor" />
               </span>
             )}
           </span>
@@ -618,46 +649,52 @@ export function StarRating({ value = 0, size = 16, showValue = false, className 
 /* ═════════════════════════════════════════════════════════════
    STATUS / LABEL CONFIG
 ═════════════════════════════════════════════════════════════ */
+// Each entry's `dot` is the SOLID hue token matching its `variant` chip, so the two always agree
+// and both flip with light/dark. Two rules encoded here:
+//   • `bg-focus` is the focus-RING token — it must never double as a status colour, so the former
+//     bg-focus dots are now bg-hue-sky, matching their `blue` (= sky) variant.
+//   • terminal-neutral states (Inactive / Checked Out / Blocked) stay on the neutral pair
+//     `slate` + bg-muted — they get no hue at all.
 export const HOTEL_STATUS = {
-  ACTIVE: { label: "Active", variant: "green", dot: "bg-green-500" },
+  ACTIVE: { label: "Active", variant: "green", dot: "bg-hue-emerald" },
   INACTIVE: { label: "Inactive", variant: "slate", dot: "bg-muted" },
-  MAINTENANCE: { label: "Maintenance", variant: "amber", dot: "bg-amber-500" },
+  MAINTENANCE: { label: "Maintenance", variant: "amber", dot: "bg-hue-amber" },
 };
 
 export const ROOM_STATUS = {
-  ACTIVE: { label: "Active", variant: "green", dot: "bg-green-500" },
+  ACTIVE: { label: "Active", variant: "green", dot: "bg-hue-emerald" },
   INACTIVE: { label: "Inactive", variant: "slate", dot: "bg-muted" },
-  SOLD_OUT: { label: "Sold Out", variant: "red", dot: "bg-red-500" },
+  SOLD_OUT: { label: "Sold Out", variant: "red", dot: "bg-hue-rose" },
 };
 
 export const BOOKING_STATUS = {
-  CONFIRMED: { label: "Confirmed", variant: "blue", dot: "bg-focus" },
-  CHECKED_IN: { label: "Checked In", variant: "green", dot: "bg-green-500" },
+  CONFIRMED: { label: "Confirmed", variant: "blue", dot: "bg-hue-sky" },
+  CHECKED_IN: { label: "Checked In", variant: "green", dot: "bg-hue-emerald" },
   CHECKED_OUT: { label: "Checked Out", variant: "slate", dot: "bg-muted" },
-  CANCELLED: { label: "Cancelled", variant: "red", dot: "bg-red-500" },
-  PENDING: { label: "Pending", variant: "amber", dot: "bg-amber-500" },
+  CANCELLED: { label: "Cancelled", variant: "red", dot: "bg-hue-rose" },
+  PENDING: { label: "Pending", variant: "amber", dot: "bg-hue-amber" },
 };
 
 export const PAYMENT_STATUS = {
-  PAID: { label: "Paid", variant: "green", dot: "bg-green-500" },
-  PENDING: { label: "Pending", variant: "amber", dot: "bg-amber-500" },
-  REFUNDED: { label: "Refunded", variant: "purple", dot: "bg-purple-500" },
-  FAILED: { label: "Failed", variant: "red", dot: "bg-red-500" },
+  PAID: { label: "Paid", variant: "green", dot: "bg-hue-emerald" },
+  PENDING: { label: "Pending", variant: "amber", dot: "bg-hue-amber" },
+  REFUNDED: { label: "Refunded", variant: "purple", dot: "bg-hue-violet" },
+  FAILED: { label: "Failed", variant: "red", dot: "bg-hue-rose" },
 };
 
 export const HK_STATUS = {
-  READY: { label: "Ready", variant: "green", dot: "bg-green-500" },
-  CLEANING: { label: "Cleaning", variant: "blue", dot: "bg-focus" },
-  DIRTY: { label: "Dirty", variant: "amber", dot: "bg-amber-500" },
-  INSPECTED: { label: "Inspected", variant: "teal", dot: "bg-teal-500" },
-  MAINTENANCE: { label: "Maintenance", variant: "red", dot: "bg-red-500" },
+  READY: { label: "Ready", variant: "green", dot: "bg-hue-emerald" },
+  CLEANING: { label: "Cleaning", variant: "blue", dot: "bg-hue-sky" },
+  DIRTY: { label: "Dirty", variant: "amber", dot: "bg-hue-amber" },
+  INSPECTED: { label: "Inspected", variant: "teal", dot: "bg-hue-teal" },
+  MAINTENANCE: { label: "Maintenance", variant: "red", dot: "bg-hue-rose" },
 };
 
 export const ROOM_STATE = {
-  AVAILABLE: { label: "Available", variant: "green", dot: "bg-green-500" },
-  OCCUPIED: { label: "Occupied", variant: "blue", dot: "bg-focus" },
-  CLEANING: { label: "Cleaning", variant: "amber", dot: "bg-amber-500" },
-  MAINTENANCE: { label: "Maintenance", variant: "red", dot: "bg-red-500" },
+  AVAILABLE: { label: "Available", variant: "green", dot: "bg-hue-emerald" },
+  OCCUPIED: { label: "Occupied", variant: "blue", dot: "bg-hue-sky" },
+  CLEANING: { label: "Cleaning", variant: "amber", dot: "bg-hue-amber" },
+  MAINTENANCE: { label: "Maintenance", variant: "red", dot: "bg-hue-rose" },
   BLOCKED: { label: "Blocked", variant: "slate", dot: "bg-muted" },
 };
 

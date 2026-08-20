@@ -13,11 +13,11 @@ const money = (a, c) =>
 
 function BillingStatusPill({ status, overdue }) {
   const map = {
-    PAID: "bg-emerald-500/10 text-emerald-600 ring-emerald-500/20",
-    UNPAID: "bg-amber-500/10 text-amber-600 ring-amber-500/20",
-    VOID: "bg-slate-500/10 text-slate-500 ring-slate-500/20",
+    PAID: "bg-hue-emerald-soft text-hue-emerald ring-hue-emerald/20",
+    UNPAID: "bg-hue-amber-soft text-hue-amber ring-hue-amber/20",
+    VOID: "bg-surface-hover text-muted ring-border",
     // Credit note (negative amount) from a mid-cycle downgrade proration.
-    CREDIT: "bg-sky-500/10 text-sky-600 ring-sky-500/20",
+    CREDIT: "bg-hue-sky-soft text-hue-sky ring-hue-sky/20",
   };
   return (
     <span className="inline-flex items-center gap-1">
@@ -25,7 +25,7 @@ function BillingStatusPill({ status, overdue }) {
         {status}
       </span>
       {overdue && (
-        <span className="rounded bg-red-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-red-600 ring-1 ring-red-500/20">
+        <span className="rounded bg-hue-orange-soft px-1.5 py-0.5 text-[10px] font-semibold text-hue-orange ring-1 ring-hue-orange/20">
           overdue
         </span>
       )}
@@ -211,7 +211,7 @@ export default function BillingDrawer({ tenant, onClose, onChanged, showToast })
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
-      <div className="absolute inset-0 bg-slate-950/50" onClick={onClose} />
+      <div className="absolute inset-0 bg-scrim" onClick={onClose} />
       <div className="relative flex h-full w-full max-w-lg flex-col border-l border-border bg-surface shadow-xl">
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
           <div className="flex items-center gap-2">
@@ -221,7 +221,7 @@ export default function BillingDrawer({ tenant, onClose, onChanged, showToast })
               <div className="font-mono text-xs text-muted">{tenant.plan}</div>
             </div>
           </div>
-          <button onClick={onClose} className="text-muted hover:text-body"><X size={18} /></button>
+          <button onClick={onClose} className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus text-muted hover:text-body"><X size={18} /></button>
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 py-4">
@@ -259,7 +259,7 @@ export default function BillingDrawer({ tenant, onClose, onChanged, showToast })
                       placeholder={`Default ${money(seatInfo.effectiveRate)}`} />
                   </div>
                   <button onClick={saveSeatFee} disabled={seatSaving}
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-60">
+                    className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-60">
                     {seatSaving ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />} Save
                   </button>
                 </div>
@@ -275,7 +275,7 @@ export default function BillingDrawer({ tenant, onClose, onChanged, showToast })
           {!showForm && (
             <div className="mb-3 flex justify-end">
               <button onClick={() => setShowForm(true)}
-                className="inline-flex items-center gap-2 rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-accent-text hover:bg-accent-hover">
+                className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-2 rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-accent-text hover:bg-accent-hover">
                 <Plus size={15} /> Issue invoice
               </button>
             </div>
@@ -322,7 +322,7 @@ export default function BillingDrawer({ tenant, onClose, onChanged, showToast })
                     setCustomAmount(e.target.checked);
                     if (e.target.checked && form.amount === "" && planPrice != null) set("amount", String(planPrice));
                   }}
-                  className="h-4 w-4 rounded border-border-strong accent-violet-600" />
+                  className="h-4 w-4 rounded border-border-strong accent-accent" />
                 Set a custom amount (sub-agent seat fee not auto-added)
               </label>
               <div>
@@ -339,11 +339,11 @@ export default function BillingDrawer({ tenant, onClose, onChanged, showToast })
               </div>
               <div className="flex justify-end gap-2">
                 <button type="button" onClick={() => setShowForm(false)} disabled={saving}
-                  className="rounded-lg border border-border-strong bg-surface px-3 py-1.5 text-sm font-semibold text-body hover:bg-surface-hover">
+                  className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded-lg border border-border-strong bg-surface px-3 py-1.5 text-sm font-semibold text-body hover:bg-surface-hover">
                   Cancel
                 </button>
                 <button type="submit" disabled={saving}
-                  className="inline-flex items-center gap-2 rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-60">
+                  className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-2 rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-60">
                   {saving && <Loader2 size={14} className="animate-spin" />} Issue
                 </button>
               </div>
@@ -374,12 +374,12 @@ export default function BillingDrawer({ tenant, onClose, onChanged, showToast })
                       <div className="mt-1">
                         {r.status === "PAID" ? (
                           <button onClick={() => setPaid(r, false)} disabled={busyId === r.publicId}
-                            className="inline-flex items-center gap-1 text-xs font-semibold text-muted hover:text-body disabled:opacity-60">
+                            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-1 text-xs font-semibold text-muted hover:text-body disabled:opacity-60">
                             {busyId === r.publicId ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />} Mark unpaid
                           </button>
                         ) : r.status === "UNPAID" ? (
                           <button onClick={() => setPaid(r, true)} disabled={busyId === r.publicId}
-                            className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 hover:text-emerald-700 disabled:opacity-60">
+                            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-1 text-xs font-semibold text-hue-emerald hover:opacity-80 disabled:opacity-60">
                             {busyId === r.publicId ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={12} />} Mark paid
                           </button>
                         ) : null}

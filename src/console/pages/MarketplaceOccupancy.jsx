@@ -171,7 +171,7 @@ export default function MarketplaceOccupancy() {
           type="button"
           onClick={load}
           disabled={loading}
-          className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-semibold text-body hover:bg-surface-hover disabled:opacity-60"
+          className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-semibold text-body hover:bg-surface-hover disabled:opacity-60"
         >
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
           Refresh
@@ -183,7 +183,7 @@ export default function MarketplaceOccupancy() {
         <button
           type="button"
           onClick={() => shift(-1)}
-          className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border-strong text-body hover:bg-surface-hover"
+          className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border-strong text-body hover:bg-surface-hover"
           aria-label="Previous period"
         >
           <ChevronLeft className="h-4 w-4" />
@@ -212,7 +212,7 @@ export default function MarketplaceOccupancy() {
         <button
           type="button"
           onClick={() => shift(1)}
-          className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border-strong text-body hover:bg-surface-hover"
+          className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border-strong text-body hover:bg-surface-hover"
           aria-label="Next period"
         >
           <ChevronRight className="h-4 w-4" />
@@ -221,7 +221,7 @@ export default function MarketplaceOccupancy() {
         <button
           type="button"
           onClick={() => { setFrom(today); setTo(addDays(today, DEFAULT_DAYS - 1)); }}
-          className="ml-1 rounded-lg px-2 py-2 text-sm font-semibold text-accent hover:underline"
+          className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ml-1 rounded-lg px-2 py-2 text-sm font-semibold text-accent hover:underline"
         >
           Next 4 weeks
         </button>
