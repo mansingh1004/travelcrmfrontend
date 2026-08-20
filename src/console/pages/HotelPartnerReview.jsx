@@ -241,14 +241,26 @@ export default function HotelPartnerReview() {
       <div className="mt-5 grid gap-4 lg:grid-cols-3">
         <Card title="Identity">
           <KV k="Name" v={reg.name} />
+          {/* Arrives as the PropertyType constant (RESORT, GUEST_HOUSE). `human` is already the
+              screen's enum formatter and lands on exactly the sentence case the marketplace filter
+              renders — "Guest house", not "Guest House". Guarded rather than passed straight through
+              because human(null) returns a "—" STRING, which KV would then print as a bold value
+              instead of the muted dash it shows for a genuinely empty field. */}
+          <KV k="Property type" v={reg.propertyType ? human(reg.propertyType) : null} />
+          <KV k="Total rooms" v={reg.totalRooms} />
           <KV k="Stars" v={reg.stars} />
           <KV k="Guest rating" v={reg.rating} />
           <KV k="Website" v={reg.website} href={reg.website} />
         </Card>
         <Card title="Location">
+          {/* Street first, then the printable block — the order an address is written, and the same
+              order the partner form asks in. Two separate fields on purpose: Street/Area is the half
+              an agent filters on, Address is what gets printed on a voucher. */}
+          <KV k="Street / Area" v={reg.street} />
           <KV k="Address" v={reg.address} />
           <KV k="City" v={[reg.cityName, reg.cityCode && `(${reg.cityCode})`].filter(Boolean).join(" ")} />
           <KV k="State / country" v={[reg.stateName, reg.countryCode].filter(Boolean).join(", ")} />
+          <KV k="PIN Code" v={reg.pincode} />
           <KV k="Coordinates" v={reg.latitude && reg.longitude ? `${reg.latitude}, ${reg.longitude}` : null} />
           <KV k="Map" v={reg.mapUrl && "Open map"} href={reg.mapUrl} />
           {/* WORTH ONE CLICK BEFORE APPROVING. This is the only field on the form whose wrong value
@@ -352,6 +364,11 @@ export default function HotelPartnerReview() {
                   {room.active === false && <InactiveTag />}
                   <span className="text-xs text-muted">
                     {[
+                      // The tier ("Deluxe Room") leads, because room.name beside it is the
+                      // property's own wording ("Deluxe Sea View") and the two answer different
+                      // questions. filter(Boolean) already drops it on the rooms that predate the
+                      // field, so no row grows an empty separator.
+                      room.roomCategory,
                       room.bedType,
                       room.size,
                       occupancy(room),

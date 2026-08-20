@@ -48,6 +48,7 @@ import {
   UserCog,
   Users,
   Zap,
+  BedDouble,
   BellRing,
   Inbox,
   CircleUser,
@@ -427,30 +428,6 @@ export const NAV_SECTIONS = [
             label: "Hotel requests",
             path: "/marketplace/bookings",
             keywords: "approval queue status",
-          },
-        ],
-      },
-      {
-        id: "transport",
-        label: "Platform Transport",
-        Icon: Car,
-        tone: "blue",
-        keywords: "marketplace transport vehicle cab car b2b catalog fleet supply",
-        // Its OWN add-on, not part of the hotel one: an agency may buy stays without cars or cars
-        // without stays. The tenant's own private Vehicle Master keeps working on every plan regardless.
-        can: () => hasPermission(P.TRANSPORT_MARKETPLACE_VIEW) && hasModule("TRANSPORT_MARKETPLACE"),
-        children: [
-          {
-            id: "transport.browse",
-            label: "Browse vehicles",
-            path: "/marketplace/transport",
-            keywords: "search vehicles import cab suv tempo",
-          },
-          {
-            id: "transport.requests",
-            label: "Transport requests",
-            path: "/marketplace/transport/orders",
-            keywords: "approval queue status duty slip voucher",
           },
         ],
       },
