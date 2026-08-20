@@ -40,9 +40,9 @@ export default function ChangePasswordModal({ onClose, onChanged }) {
   if (done) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div className="absolute inset-0 bg-slate-950/50" />
+        <div className="absolute inset-0 bg-scrim" />
         <div className="relative w-full max-w-sm rounded-xl border border-border bg-surface p-5 shadow-xl">
-          <div className="flex items-center gap-2 text-emerald-600">
+          <div className="flex items-center gap-2 text-hue-emerald">
             <CheckCircle2 size={18} />
             <h3 className="text-sm font-bold">Password changed</h3>
           </div>
@@ -53,7 +53,7 @@ export default function ChangePasswordModal({ onClose, onChanged }) {
             <button
               type="button"
               onClick={onChanged || onClose}
-              className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover"
+              className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover"
             >
               Sign in again
             </button>
@@ -65,7 +65,7 @@ export default function ChangePasswordModal({ onClose, onChanged }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-slate-950/50" onClick={saving ? undefined : onClose} />
+      <div className="absolute inset-0 bg-scrim" onClick={saving ? undefined : onClose} />
       <form
         onSubmit={submit}
         className="relative w-full max-w-sm rounded-xl border border-border bg-surface p-5 shadow-xl"
@@ -147,7 +147,7 @@ export default function ChangePasswordModal({ onClose, onChanged }) {
         </div>
 
         {error && (
-          <p className="mt-3 flex items-start gap-1.5 rounded-lg bg-red-500/10 px-3 py-2 text-[11px] text-red-700 ring-1 ring-red-500/20">
+          <p className="mt-3 flex items-start gap-1.5 rounded-lg bg-hue-rose-soft px-3 py-2 text-[11px] text-hue-rose ring-1 ring-hue-rose/20">
             <AlertTriangle size={13} className="mt-px shrink-0" />
             {error}
           </p>
@@ -158,14 +158,14 @@ export default function ChangePasswordModal({ onClose, onChanged }) {
             type="button"
             onClick={onClose}
             disabled={saving}
-            className="rounded-lg border border-border-strong bg-surface px-4 py-2 text-sm font-semibold text-body hover:bg-surface-hover disabled:opacity-60"
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded-lg border border-border-strong bg-surface px-4 py-2 text-sm font-semibold text-body hover:bg-surface-hover disabled:opacity-60"
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={saving}
-            className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-60"
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-60"
           >
             {saving && <Loader2 size={14} className="animate-spin" />}
             {saving ? "Changing..." : "Change password"}

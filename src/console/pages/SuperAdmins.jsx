@@ -40,9 +40,9 @@ function isPendingInvite(invite) {
 
 function Pill({ tone = "slate", children }) {
   const tones = {
-    green: "bg-emerald-500/10 text-emerald-700 ring-emerald-500/20",
-    amber: "bg-amber-500/10 text-amber-700 ring-amber-500/20",
-    red: "bg-red-500/10 text-red-700 ring-red-500/20",
+    green: "bg-hue-emerald-soft text-hue-emerald ring-hue-emerald/20",
+    amber: "bg-hue-amber-soft text-hue-amber ring-hue-amber/20",
+    red: "bg-hue-rose-soft text-hue-rose ring-hue-rose/20",
     violet: "bg-accent-soft text-accent-soft-text ring-accent/20",
     slate: "bg-surface-hover text-body ring-border",
   };
@@ -79,7 +79,7 @@ function MfaActionModal({ title, description, confirmLabel, saving, error, onClo
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-slate-950/50" onClick={saving ? undefined : onClose} />
+      <div className="absolute inset-0 bg-scrim" onClick={saving ? undefined : onClose} />
       <form
         onSubmit={submit}
         className="relative w-full max-w-sm rounded-xl border border-border bg-surface p-5 shadow-xl"
@@ -109,12 +109,12 @@ function MfaActionModal({ title, description, confirmLabel, saving, error, onClo
           />
         </div>}
         {mfaDisabled && (
-          <p className="mt-4 rounded-lg bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-700 ring-1 ring-amber-500/20">
+          <p className="mt-4 rounded-lg bg-hue-amber-soft px-3 py-2 text-xs font-semibold text-hue-amber ring-1 ring-hue-amber/20">
             Local development bypass active
           </p>
         )}
         {error && (
-          <p className="mt-3 flex items-start gap-1.5 rounded-lg bg-red-500/10 px-3 py-2 text-[11px] text-red-700 ring-1 ring-red-500/20">
+          <p className="mt-3 flex items-start gap-1.5 rounded-lg bg-hue-rose-soft px-3 py-2 text-[11px] text-hue-rose ring-1 ring-hue-rose/20">
             <AlertTriangle size={13} className="mt-px shrink-0" />
             {error}
           </p>
@@ -124,14 +124,14 @@ function MfaActionModal({ title, description, confirmLabel, saving, error, onClo
             type="button"
             onClick={onClose}
             disabled={saving}
-            className="rounded-lg border border-border-strong bg-surface px-4 py-2 text-sm font-semibold text-body hover:bg-surface-hover disabled:opacity-60"
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded-lg border border-border-strong bg-surface px-4 py-2 text-sm font-semibold text-body hover:bg-surface-hover disabled:opacity-60"
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={saving || (!mfaDisabled && code.length !== 6)}
-            className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-60"
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-60"
           >
             {saving && <Loader2 size={15} className="animate-spin" />}
             {confirmLabel}
@@ -273,26 +273,26 @@ export default function SuperAdmins() {
           <div className="flex items-center justify-end gap-1">
             {account.mfaEnabled && (
               <button type="button" title="Reset MFA" onClick={() => openResetMfa(account)} disabled={busy}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-surface-hover hover:text-body disabled:opacity-50">
+                className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-surface-hover hover:text-body disabled:opacity-50">
                 {busy ? <Loader2 size={15} className="animate-spin" /> : <KeyRound size={16} className="text-accent" />}
               </button>
             )}
             {account.locked && (
               <button type="button" title="Unlock account" aria-label="Unlock account"
                 onClick={() => openAccountAction("unlock", account)} disabled={busy}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-hue-emerald hover:bg-surface-hover disabled:opacity-50">
+                className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex h-8 w-8 items-center justify-center rounded-lg text-hue-emerald hover:bg-surface-hover disabled:opacity-50">
                 <Unlock size={15} />
               </button>
             )}
             <button type="button" title="Revoke all sessions" aria-label="Revoke all sessions"
               onClick={() => openAccountAction("revokeSessions", account)} disabled={busy}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-surface-hover hover:text-body disabled:opacity-50">
+              className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-surface-hover hover:text-body disabled:opacity-50">
               <LogOut size={15} />
             </button>
             <button type="button" title={account.enabled ? "Disable account" : "Enable account"}
               aria-label={account.enabled ? "Disable account" : "Enable account"}
               onClick={() => openAccountAction(account.enabled ? "disable" : "enable", account)} disabled={busy}
-              className={`inline-flex h-8 w-8 items-center justify-center rounded-lg hover:bg-surface-hover disabled:opacity-50 ${account.enabled ? "text-hue-rose" : "text-hue-emerald"}`}>
+              className={`focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex h-8 w-8 items-center justify-center rounded-lg hover:bg-surface-hover disabled:opacity-50 ${account.enabled ? "text-hue-rose" : "text-hue-emerald"}`}>
               <Power size={15} />
             </button>
           </div>
@@ -439,7 +439,7 @@ export default function SuperAdmins() {
           type="button"
           onClick={() => load(true)}
           disabled={loading}
-          className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-semibold text-body hover:bg-surface-hover disabled:opacity-60"
+          className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-semibold text-body hover:bg-surface-hover disabled:opacity-60"
         >
           {loading ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
           Refresh
@@ -459,14 +459,14 @@ export default function SuperAdmins() {
       </section>
 
       {error && (
-        <p className="flex items-start gap-2 rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-700 ring-1 ring-red-500/20">
+        <p className="flex items-start gap-2 rounded-lg bg-hue-rose-soft px-3 py-2 text-sm text-hue-rose ring-1 ring-hue-rose/20">
           <AlertTriangle size={15} className="mt-0.5 shrink-0" />
           {error}
         </p>
       )}
 
       {notice && (
-        <p className="flex items-start gap-2 rounded-lg bg-emerald-500/10 px-3 py-2 text-sm text-emerald-700 ring-1 ring-emerald-500/20">
+        <p className="flex items-start gap-2 rounded-lg bg-hue-emerald-soft px-3 py-2 text-sm text-hue-emerald ring-1 ring-hue-emerald/20">
           <CheckCircle2 size={15} className="mt-0.5 shrink-0" />
           {notice}
         </p>
@@ -517,7 +517,7 @@ export default function SuperAdmins() {
           <button
             type="submit"
             disabled={busy}
-            className="inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-60"
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-60"
           >
             {busy ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />}
             Invite
@@ -528,7 +528,7 @@ export default function SuperAdmins() {
         </p>
 
         {created && (
-          <div className="mt-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3">
+          <div className="mt-4 rounded-lg border border-hue-emerald/30 bg-hue-emerald-soft p-3">
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <p className="text-sm font-semibold text-heading">Invite token created</p>
@@ -537,7 +537,7 @@ export default function SuperAdmins() {
               <button
                 type="button"
                 onClick={copyInvite}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-2 text-xs font-semibold text-body hover:bg-surface-hover"
+                className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-2 text-xs font-semibold text-body hover:bg-surface-hover"
               >
                 {copied ? <CheckCircle2 size={14} /> : <Copy size={14} />}
                 {copied ? "Copied" : "Copy"}
@@ -568,7 +568,7 @@ export default function SuperAdmins() {
                     <Pill tone={invite.role === "SUPER_ADMIN" ? "violet" : "slate"}>
                       {invite.role === "SUPER_ADMIN" ? "SuperAdmin" : "Platform Admin"}
                     </Pill>
-                    <Pill tone={invite.consumedAt ? "green" : expired ? "red" : "amber"}>
+                    <Pill tone={invite.consumedAt ? "green" : expired ? "slate" : "amber"}>
                       {invite.consumedAt ? "Accepted" : expired ? "Expired" : "Pending"}
                     </Pill>
                     <span>Expires {formatDate(invite.expiresAt)}</span>
@@ -578,7 +578,7 @@ export default function SuperAdmins() {
                           type="button"
                           onClick={() => openInviteAction("resendInvite", invite)}
                           disabled={busyId === invite.publicId}
-                          className="inline-flex items-center gap-1 rounded-lg border border-border px-2 py-1 font-semibold text-body hover:bg-surface-hover disabled:opacity-50"
+                          className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-1 rounded-lg border border-border px-2 py-1 font-semibold text-body hover:bg-surface-hover disabled:opacity-50"
                         >
                           <Send size={12} /> Resend
                         </button>
@@ -586,7 +586,7 @@ export default function SuperAdmins() {
                           type="button"
                           onClick={() => openInviteAction("revokeInvite", invite)}
                           disabled={busyId === invite.publicId}
-                          className="inline-flex items-center gap-1 rounded-lg border border-hue-rose/30 px-2 py-1 font-semibold text-hue-rose hover:bg-hue-rose-soft disabled:opacity-50"
+                          className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-1 rounded-lg border border-hue-rose/30 px-2 py-1 font-semibold text-hue-rose hover:bg-hue-rose-soft disabled:opacity-50"
                         >
                           <Power size={12} /> Revoke
                         </button>

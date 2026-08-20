@@ -240,7 +240,7 @@ export default function ConsoleLayout() {
                   setLauncherOpen(false);
                   setPaletteOpen(true);
                 }}
-                className="ml-1 flex min-w-0 items-center gap-2 rounded-lg border border-border bg-surface-hover/40 px-2.5 py-1.5 text-xs text-muted transition-colors hover:border-border-strong hover:text-body sm:px-3"
+                className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ml-1 flex min-w-0 items-center gap-2 rounded-lg border border-border bg-surface-hover/40 px-2.5 py-1.5 text-xs text-muted transition-colors hover:border-border-strong hover:text-body sm:px-3"
                 aria-label="Search the console"
               >
                 <Search size={14} className="shrink-0" />

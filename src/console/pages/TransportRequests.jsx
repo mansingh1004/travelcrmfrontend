@@ -276,7 +276,7 @@ export default function TransportRequests() {
         actions={
           <button
             onClick={load}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm font-semibold text-body hover:bg-page"
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm font-semibold text-body hover:bg-page"
           >
             <RefreshCw size={14} /> Refresh
           </button>
@@ -291,7 +291,7 @@ export default function TransportRequests() {
               setStatus(value);
               setPage(0);
             }}
-            className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${
+            className={`focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded-lg px-3 py-1.5 text-sm font-semibold ${
               status === value ? "bg-accent text-white" : "border border-border text-body hover:bg-page"
             }`}
           >
@@ -457,7 +457,7 @@ function OrderPanel({ order, rates, ledger, busy, onClose, onReview, onRevise, o
 
   return (
     <div className="fixed inset-0 z-40 flex justify-end">
-      <div className="absolute inset-0 bg-slate-950/40" onClick={onClose} />
+      <div className="absolute inset-0 bg-scrim" onClick={onClose} />
       <aside className="relative flex h-full w-full max-w-2xl flex-col overflow-y-auto border-l border-border bg-surface shadow-2xl">
         <header className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-border bg-surface px-6 py-4">
           <div className="min-w-0">
@@ -467,12 +467,12 @@ function OrderPanel({ order, rates, ledger, busy, onClose, onReview, onRevise, o
               {busy && <Loader2 className="ml-2 inline size-3 animate-spin" />}
             </p>
           </div>
-          <button onClick={onClose} className="text-muted hover:text-body"><X size={18} /></button>
+          <button onClick={onClose} className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus text-muted hover:text-body"><X size={18} /></button>
         </header>
 
         <div className="space-y-6 px-6 py-5">
           {error && (
-            <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</p>
+            <p className="rounded-lg border border-hue-rose/40 bg-hue-rose-soft px-3 py-2 text-sm text-hue-rose">{error}</p>
           )}
 
           <Section title="The journey">
@@ -1045,7 +1045,7 @@ function Btn({ children, onClick, disabled, tone = "default", className = "" }) 
   const tones = {
     default: "border border-border text-body hover:bg-page",
     primary: "bg-accent text-white hover:opacity-90",
-    danger: "border border-red-200 text-red-700 hover:bg-red-50",
+    danger: "border border-hue-rose/40 text-hue-rose hover:bg-hue-rose-soft",
   };
   return (
     <button

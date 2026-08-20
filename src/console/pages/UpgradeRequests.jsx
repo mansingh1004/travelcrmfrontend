@@ -130,7 +130,7 @@ function DecisionModal({ req, type, onClose, onDone }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={busy ? undefined : onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-4" onClick={busy ? undefined : onClose}>
       <div className="w-full max-w-md rounded-2xl border border-border bg-surface p-5 shadow-[var(--sa-card-shadow)]"
         onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between">
@@ -147,7 +147,7 @@ function DecisionModal({ req, type, onClose, onDone }) {
             </p>
           </div>
           <button onClick={onClose} disabled={busy}
-            className="rounded-lg p-1 text-muted hover:bg-surface-hover hover:text-heading">
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded-lg p-1 text-muted hover:bg-surface-hover hover:text-heading">
             <X size={18} />
           </button>
         </div>
@@ -182,11 +182,11 @@ function DecisionModal({ req, type, onClose, onDone }) {
 
         <div className="mt-5 flex justify-end gap-2">
           <button onClick={onClose} disabled={busy}
-            className="rounded-lg px-3 py-2 text-xs font-medium text-body hover:bg-surface-hover">
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded-lg px-3 py-2 text-xs font-medium text-body hover:bg-surface-hover">
             Cancel
           </button>
           <button onClick={submit} disabled={busy}
-            className={`inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-semibold text-white shadow-[var(--sa-card-shadow)] disabled:opacity-60 ${isReject ? "bg-red-600 hover:bg-red-700" : ""}`}
+            className={`focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-semibold shadow-[var(--sa-card-shadow)] disabled:opacity-60 ${isReject ? "bg-hue-rose text-surface hover:bg-hue-rose/90" : "text-white"}`}
             style={isReject ? undefined : { backgroundImage: "var(--sa-gradient)" }}>
             {busy ? <Loader2 size={14} className="animate-spin" /> : isReject ? <Ban size={14} /> : <Check size={14} />}
             {isReject ? "Reject request" : "Approve"}
@@ -289,7 +289,7 @@ function RequestCard({ req, onApprove, onReject }) {
       {isPending && (
         <div className="mt-4 flex items-center justify-end gap-2">
           <button onClick={() => onReject(req)}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-body hover:bg-surface-hover">
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-body hover:bg-surface-hover">
             <Ban size={14} /> Reject
           </button>
           <button onClick={() => onApprove(req)} disabled={onlineUnpaid}
@@ -359,7 +359,7 @@ export default function UpgradeRequests() {
           </p>
         </div>
         <button onClick={load}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-body hover:bg-surface-hover">
+          className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-body hover:bg-surface-hover">
           <RefreshCw size={14} /> Refresh
         </button>
       </div>
@@ -370,7 +370,7 @@ export default function UpgradeRequests() {
           const active = tab === t.key;
           return (
             <button key={t.label} onClick={() => setTab(t.key)}
-              className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+              className={`focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
                 active ? "bg-accent-soft text-accent-soft-text ring-1 ring-inset ring-accent/15" : "text-body hover:bg-surface-hover"
               }`}>
               {t.label}
@@ -385,7 +385,7 @@ export default function UpgradeRequests() {
       {loading ? (
         <div className="py-24 text-center text-muted"><Loader2 size={22} className="mx-auto animate-spin" /></div>
       ) : error ? (
-        <div className="py-24 text-center text-red-500">{error}</div>
+        <div className="py-24 text-center text-hue-rose">{error}</div>
       ) : rows.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-border bg-surface py-16 text-center text-sm text-muted">
           No {tab ? tab.toLowerCase() : ""} requests.

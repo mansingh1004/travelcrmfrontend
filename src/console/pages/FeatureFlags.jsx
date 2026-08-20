@@ -61,7 +61,7 @@ function ModulesModal({ tenant, onClose, showToast }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-slate-950/50" onClick={saving ? undefined : onClose} />
+      <div className="absolute inset-0 bg-scrim" onClick={saving ? undefined : onClose} />
       <div className="relative w-full max-w-md rounded-xl border border-border bg-surface p-5 shadow-xl">
         <div className="flex items-start justify-between">
           <div>
@@ -70,7 +70,7 @@ function ModulesModal({ tenant, onClose, showToast }) {
               Plan <span className="font-mono">{tenant.plan}</span> · toggle module access
             </p>
           </div>
-          <button onClick={onClose} className="text-muted hover:text-body" disabled={saving}><X size={18} /></button>
+          <button onClick={onClose} className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus text-muted hover:text-body" disabled={saving}><X size={18} /></button>
         </div>
 
         {loading ? (
@@ -83,7 +83,7 @@ function ModulesModal({ tenant, onClose, showToast }) {
                 const inPlan = planModules.has(m);
                 return (
                   <button key={m} type="button" onClick={() => toggle(m)}
-                    className={`flex items-center justify-between gap-2 rounded-lg border px-2.5 py-2 text-xs font-medium transition-colors ${
+                    className={`focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus flex items-center justify-between gap-2 rounded-lg border px-2.5 py-2 text-xs font-medium transition-colors ${
                       on ? "border-accent bg-accent-soft text-accent-soft-text"
                          : "border-border bg-surface text-muted hover:bg-surface-hover"
                     }`}>
@@ -95,7 +95,7 @@ function ModulesModal({ tenant, onClose, showToast }) {
                       {m}
                     </span>
                     {!inPlan && (
-                      <span title="Not in the tenant's plan" className="rounded bg-amber-500/10 px-1 text-[9px] font-semibold text-amber-600">extra</span>
+                      <span title="Not in the tenant's plan" className="rounded bg-hue-amber-soft px-1 text-[9px] font-semibold text-hue-amber">extra</span>
                     )}
                   </button>
                 );
@@ -104,16 +104,16 @@ function ModulesModal({ tenant, onClose, showToast }) {
 
             <div className="mt-4 flex items-center justify-between">
               <button type="button" onClick={() => setEnabled(new Set(planModules))}
-                className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted hover:text-body">
+                className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-1.5 text-xs font-semibold text-muted hover:text-body">
                 <RotateCcw size={13} /> Reset to plan
               </button>
               <div className="flex gap-3">
                 <button onClick={onClose} disabled={saving}
-                  className="rounded-lg border border-border-strong bg-surface px-4 py-2 text-sm font-semibold text-body hover:bg-surface-hover">
+                  className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded-lg border border-border-strong bg-surface px-4 py-2 text-sm font-semibold text-body hover:bg-surface-hover">
                   Cancel
                 </button>
                 <button onClick={save} disabled={saving}
-                  className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-60">
+                  className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-60">
                   {saving ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />} Save
                 </button>
               </div>
@@ -199,7 +199,7 @@ export default function FeatureFlags() {
     { id: "modules", header: "Modules", enableSorting: false, meta: { numeric: true },
       cell: ({ row }) => (
         <button onClick={() => setModalTenant(row.original)}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-border-strong bg-surface px-3 py-1.5 text-xs font-semibold text-body hover:bg-surface-hover">
+          className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-1.5 rounded-lg border border-border-strong bg-surface px-3 py-1.5 text-xs font-semibold text-body hover:bg-surface-hover">
           <ToggleLeft size={14} /> Manage
         </button>
       ) },
@@ -242,8 +242,8 @@ export default function FeatureFlags() {
       )}
 
       {toast && (
-        <div className={`fixed bottom-6 right-6 z-[60] flex items-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold text-white shadow-lg ${
-          toast.type === "success" ? "bg-emerald-600" : "bg-red-600"
+        <div className={`fixed bottom-6 right-6 z-[60] flex items-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold text-surface shadow-lg ${
+          toast.type === "success" ? "bg-hue-emerald" : "bg-hue-rose"
         }`}>
           {toast.type === "success" ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
           {toast.msg}
