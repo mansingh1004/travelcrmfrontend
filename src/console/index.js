@@ -33,6 +33,9 @@ export { default as ConsoleHotelMarketplace360 } from "./pages/HotelMarketplace3
 export { default as ConsolePlatformHotelDetail } from "./pages/PlatformHotelDetail";
 export { default as ConsolePlatformHotelEditor } from "./pages/PlatformHotelEditor";
 export { default as ConsoleMarketplaceBookings } from "./pages/MarketplaceBookings";
+export { default as ConsoleTransportRequests } from "./pages/TransportRequests";
+export { default as ConsolePlatformVehicles } from "./pages/PlatformVehicles";
+export { default as ConsoleTransportCommissions } from "./pages/TransportCommissions";
 export { default as ConsoleMarketplaceCommissions } from "./pages/MarketplaceCommissions";
 export { default as ConsoleMarketplaceOccupancy } from "./pages/MarketplaceOccupancy";
 export { default as ConsoleCommercialRules } from "./pages/CommercialRules";

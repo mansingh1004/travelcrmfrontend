@@ -29,7 +29,7 @@ const GOOGLE_OAUTH_ERRORS = {
     "Your Google account is not on this app's approved list yet. Send your Google email address to "
     + "your administrator, then try connecting again once they confirm.",
 };
-import { Pen as FiEdit2, Save as FiSave, MapPin as FiMapPin, Calendar as FiCalendar, Key as FiKey, ChevronDown as FiChevronDown, Upload as FiUpload, Plus as FiPlus, Trash2 as FiTrash2, TriangleAlert as FiAlertTriangle, Info as FiInfo, CircleCheck as FiCheckCircle, RefreshCw as FiRefreshCw, ExternalLink as FiExternalLink, Share2 as FiShare2, CircleAlert as FiAlertCircle, Building2 as FaBuilding, ReceiptText as FaFileInvoiceDollar, Crown as FaCrown, BriefcaseBusiness as MdBusinessCenter, Building as MdLocationCity, Sparkles as HiSparkles } from "lucide-react";
+import { Pen as FiEdit2, Save as FiSave, MapPin as FiMapPin, Calendar as FiCalendar, Key as FiKey, ChevronDown as FiChevronDown, Upload as FiUpload, Plus as FiPlus, Trash2 as FiTrash2, TriangleAlert as FiAlertTriangle, Info as FiInfo, CircleCheck as FiCheckCircle, RefreshCw as FiRefreshCw, ExternalLink as FiExternalLink, Share2 as FiShare2, CircleAlert as FiAlertCircle, Building2 as FaBuilding, ReceiptText as FaFileInvoiceDollar, Crown as FaCrown, BriefcaseBusiness as MdBusinessCenter, Building as MdLocationCity } from "lucide-react";
 
 
 /* ─── EMPTY COMPANY STATE ───────────────────────────────────── */
@@ -67,7 +67,7 @@ const TAX_TYPES = ["GST", "TCS", "TDS", "Service Tax", "VAT", "Other"];
 const CALCULATIONS = ["Additive", "Inclusive", "Exclusive"];
 
 // Every tenant user can view this page — the backend serves GET /api/company,
-// /subscription, /ai-credits and /api/tax-rates to any authenticated user. Writes need
+// /subscription and /api/tax-rates to any authenticated user. Writes need
 // SETTINGS_MANAGE, so the "edit" tab is filtered out for everyone else rather than
 // offering them a Save button that would 403.
 const TABS = [
@@ -95,6 +95,22 @@ const TABS = [
 // where a company name is still null, because it is the page you open to set it.
 const initials = (name) =>
   (name || "").trim().split(" ").filter(Boolean).map(w => w[0]).join("").slice(0, 2).toUpperCase() || "CO";
+
+/* Plan module keys arrive as backend enum names ("HOTEL_MARKETPLACE"). Title-cased here rather than
+   kept in a hand-written map: a map goes stale the moment a module is added server-side, and
+   "Hotel Marketplace" is worth more than the two keys a map would render slightly prettier. */
+const moduleLabel = (key) =>
+  String(key || "").replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+
+/* Subscription status to badge tone. This was a hardcoded emerald pill, so PAST_DUE and SUSPENDED —
+   the two states an owner most needs to notice — rendered as healthy green. */
+const SUB_STATUS_TONE = {
+  ACTIVE: "bg-emerald-100 text-emerald-700",
+  TRIAL: "bg-blue-100 text-blue-700",
+  PAST_DUE: "bg-amber-100 text-amber-700",
+  SUSPENDED: "bg-red-100 text-red-700",
+  EXPIRED: "bg-red-100 text-red-700",
+};
 
 /* ─── TOAST ──────────────────────────────────────────────────── */
 function Toast({ msg, type, onClose }) {
@@ -225,7 +241,6 @@ function SkeletonCard() {
 function Sidebar({
   company,
   subscription,
-  aiCredits,
 }) {
   const inits = initials(company.name);
 
@@ -292,65 +307,38 @@ function Sidebar({
             ))}
             <div className="flex justify-between items-center py-2">
               <span className="text-xs text-slate-500 font-medium">Status</span>
-              <span className="text-xs font-extrabold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">
-                {subscription?.status}
+              <span className={`text-xs font-extrabold px-2 py-0.5 rounded-full ${SUB_STATUS_TONE[subscription?.status] || "bg-slate-100 text-slate-600"}`}>
+                {subscription?.status || "—"}
               </span>
             </div>
             <div className="py-2">
               <span className="text-xs text-slate-500 font-medium">Features</span>
+              {/* The tenant's real module list. This read "All Core Features" for every tenant on
+                  every plan — the one line on the card that could never be wrong and never told
+                  anyone anything, while /company/subscription had been returning the actual keys
+                  all along. */}
               <div className="mt-1.5 flex flex-wrap gap-1">
-                <span className="text-xs bg-blue-50 text-blue-700 border border-blue-100 font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
-                  <FiCheckCircle className="w-3 h-3" /> All Core Features
-                </span>
+                {subscription?.features?.length
+                  ? subscription.features.map((key) => (
+                    <span key={key} className="text-xs bg-blue-50 text-blue-700 border border-blue-100 font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <FiCheckCircle className="w-3 h-3" /> {moduleLabel(key)}
+                    </span>
+                  ))
+                  : <span className="text-xs text-slate-400">No modules enabled on this plan</span>}
               </div>
             </div>
           </div>
-          <div className={`mt-3 flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-bold
-            ${subscription?.daysLeft <= 7
-              ? "bg-red-50 border-red-200 text-red-600"
-              : "bg-slate-50 border-slate-200 text-slate-600"}`}>
-            <FiCalendar className="w-3 h-3 flex-shrink-0" />
-            {subscription?.daysLeft} day{subscription?.daysLeft !== 1 ? "s" : ""} remaining
-          </div>
-        </div>
-      </div>
-
-      {/* ── AI Credits ── */}
-      <div className="bg-white/80 backdrop-blur-md rounded-2xl border border-slate-200/60 shadow-sm p-5"
-        style={{ animation: "fadeUp .6s ease both" }}>
-        <div className="flex items-center gap-2 mb-3">
-          <HiSparkles className="w-4 h-4 text-amber-500" />
-          <span className="text-sm font-extrabold text-slate-700">AI Features Credits</span>
-        </div>
-        <div className="text-center mb-2">
-          <span className="text-2xl font-extrabold text-slate-800">{aiCredits?.used}</span>
-          <span className="text-slate-400 font-bold"> / {aiCredits?.total}</span>
-          <p className="text-xs text-slate-400 mt-0.5">remaining lifetime</p>
-        </div>
-        <div className="w-full bg-slate-200 rounded-full h-2 mb-3 overflow-hidden">
-          <div className="bg-red-500 h-2 rounded-full transition-all duration-700"
-            style={{
-              width: `${aiCredits?.total
-                ? Math.round(
-                  (aiCredits.used /
-                    aiCredits.total) *
-                  100
-                )
-                : 0
-                }%`,
-            }} />
-        </div>
-        <div className="space-y-1.5">
-          {[
-            ["bg-green-400", `Limit: ${aiCredits?.total}`],
-            ["bg-blue-400", `Users used: $${aiCredits?.usedCost}`],
-            ["bg-orange-400", "One-time limit — contact admin to upgrade"],
-          ].map(([dot, txt]) => (
-            <div key={txt} className="flex items-start gap-2">
-              <span className={`w-2 h-2 rounded-full ${dot} flex-shrink-0 mt-1`} />
-              <span className="text-xs text-slate-500 leading-snug">{txt}</span>
+          {/* daysLeft is null when the plan carries no end date, and this rendered a bare
+              " days remaining" with nothing in front of it. Nothing to count means nothing to say. */}
+          {subscription?.daysLeft != null && (
+            <div className={`mt-3 flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-bold
+              ${subscription.daysLeft <= 7
+                ? "bg-red-50 border-red-200 text-red-600"
+                : "bg-slate-50 border-slate-200 text-slate-600"}`}>
+              <FiCalendar className="w-3 h-3 flex-shrink-0" />
+              {subscription.daysLeft} day{subscription.daysLeft !== 1 ? "s" : ""} remaining
             </div>
-          ))}
+          )}
         </div>
       </div>
     </div>
@@ -406,39 +394,15 @@ function AdminSettings() {
 ══════════════════════════════════════════════════════════════ */
 function OverviewTab({
   company,
-  aiCredits,
 }) {
-  const totalAiCredits =
-    Number(aiCredits?.total);
-
-  const usedAiCredits =
-    Number(aiCredits?.used);
-
-  const aiCreditsLeft =
-    Number.isFinite(totalAiCredits) &&
-      Number.isFinite(usedAiCredits)
-      ? Math.max(
-        totalAiCredits -
-        usedAiCredits,
-        0
-      )
-      : "—";
   return (
     <div className="space-y-5">
       {/* Stat cards — same system as Customers.jsx */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
         {[
           { icon: "⭐", label: "Total Reviews", value: company.totalReviews, gradient: "from-amber-500 to-orange-500", delay: 0 },
           { icon: "✈️", label: "Trips Sold", value: company.tripsSold || 0, gradient: "from-blue-600 to-blue-700", delay: 60 },
           { icon: "📅", label: "Operating Since", value: company.operatingSince, gradient: "from-teal-500 to-teal-600", delay: 120 },
-          {
-            icon: "🤖",
-            label: "AI Credits Left",
-            value: aiCreditsLeft,
-            gradient:
-              "from-violet-500 to-purple-600",
-            delay: 180,
-          }
         ].map(c => (
           <div key={c.label} className="fade-up" style={{ animationDelay: `${c.delay}ms` }}>
             <StatCard {...c} />
@@ -967,7 +931,7 @@ function EditProfileTab({
 /* ══════════════════════════════════════════════════════════════
    TAB 3 — BUSINESS INFO
 ══════════════════════════════════════════════════════════════ */
-function BusinessInfoTab({ company }) {
+function BusinessInfoTab({ company, onOpenTax }) {
   return (
     <div className="space-y-5">
       <SectionCard title="Business Details" icon={<MdBusinessCenter className="w-4 h-4" />} delay={0}>
@@ -976,10 +940,15 @@ function BusinessInfoTab({ company }) {
         <InfoRow label="Trips Sold" value={company.tripsSold || 0} />
         <InfoRow label="GSTIN" value={company.gstin || "—"} />
         <InfoRow label="TAN" value={company.tan || "Not provided"} />
-        <InfoRow
-          label="Tax Rates"
-          value="View Tax Configuration"
-        />
+        {/* Was a static "View Tax Configuration" string that did nothing. The row exists to get
+            someone to the rates, so it is now the button it was pretending to be. */}
+        <div className="flex items-start justify-between gap-4 py-3 border-b border-slate-100 last:border-0">
+          <span className="text-xs font-bold text-slate-500 uppercase tracking-wide flex-shrink-0 w-32 pt-0.5">Tax Rates</span>
+          <button type="button" onClick={onOpenTax}
+            className="text-sm font-semibold text-blue-600 hover:text-blue-700 transition-colors">
+            Open Tax Configuration
+          </button>
+        </div>
         <InfoRow label="Website" value={company.website} href={company.website} />
       </SectionCard>
       <AdminSettings />
@@ -1003,16 +972,12 @@ function AddressTab({ company }) {
             </div>
           )}
         </div>
-        {/* Info banner — matches your CRM style */}
-        <div className="bg-gradient-to-r from-teal-500 to-cyan-500 rounded-xl px-4 py-3 flex items-center gap-3">
-          <FiInfo className="w-4 h-4 text-white flex-shrink-0" />
-          <p className="text-sm text-white font-medium">Map integration will be available in future updates.</p>
-        </div>
       </SectionCard>
       <AdminSettings />
     </div>
   );
 }
+
 
 /* ══════════════════════════════════════════════════════════════
    TAB 5 — TAX CONFIGURATION
@@ -1290,7 +1255,6 @@ export default function CompanyProfile() {
   }, [setSearchParams]);
   const [company, setCompany] = useState(null);
   const [subscription, setSubscription] = useState(null);
-  const [aiCredits, setAiCredits] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [toast, setToast] = useState(null);
@@ -1315,12 +1279,10 @@ export default function CompanyProfile() {
       const [
         companyResult,
         subscriptionResult,
-        aiCreditsResult,
         googleConnectionResult,
       ] = await Promise.allSettled([
         companyService.get(),
         companyService.getSubscription(),
-        companyService.getAiCredits(),
         googleReviewsService.getConnection(),
       ]);
 
@@ -1378,24 +1340,6 @@ export default function CompanyProfile() {
           console.error(
             "Failed to load subscription:",
             subscriptionResult.reason
-          );
-        }
-
-        if (
-          aiCreditsResult.status ===
-          "fulfilled"
-        ) {
-          setAiCredits(
-            unwrap(
-              aiCreditsResult.value
-            ) ?? null
-          );
-        } else {
-          setAiCredits(null);
-
-          console.error(
-            "Failed to load AI credits:",
-            aiCreditsResult.reason
           );
         }
 
@@ -1611,7 +1555,6 @@ export default function CompanyProfile() {
             <Sidebar
               company={company}
               subscription={subscription}
-              aiCredits={aiCredits}
             />
 
             {/* RIGHT CONTENT */}
@@ -1635,7 +1578,7 @@ export default function CompanyProfile() {
               </div>
 
               {/* TAB CONTENT */}
-              {activeTab === "overview" && <OverviewTab company={company} aiCredits={aiCredits} />}
+              {activeTab === "overview" && <OverviewTab company={company} />}
               {activeTab === "edit" &&
                 canManage && (
                   <EditProfileTab
@@ -1649,7 +1592,7 @@ export default function CompanyProfile() {
                     onOpenReviews={() => selectTab("reviews")}
                   />
                 )}
-              {activeTab === "business" && <BusinessInfoTab company={company} />}
+              {activeTab === "business" && <BusinessInfoTab company={company} onOpenTax={() => selectTab("tax")} />}
               {activeTab === "address" && <AddressTab company={company} />}
               {activeTab === "tax" && <TaxConfigTab showToast={showToast} canManage={canManage} />}
               {/* SectionCard is passed down rather than re-declared in the tab: it carries this

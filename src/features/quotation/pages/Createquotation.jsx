@@ -170,6 +170,17 @@ export default function CreateQuotation() {
     return fromUrl === "MODERN" || fromUrl === "PREMIUM" ? fromUrl : "CLASSIC";
   });
 
+  /* ── Signature / stamp on THIS quotation ──
+     Company Profile → Signature decides whether the agency HAS an authorised signature at all.
+     These two decide whether this particular document carries it, which is the call an agent makes
+     while writing it — a draft sent for internal pricing review and a final offer to the customer
+     are not the same document.
+     Default ON, matching the backend column default: a company that went to the trouble of setting
+     a signature up expects it on their quotations, so unticking is how you make an exception rather
+     than how you opt in. Edit mode overrides both from the stored values once the quotation loads. */
+  const [includeSignature, setIncludeSignature] = useState(true);
+  const [includeStamp, setIncludeStamp] = useState(true);
+
   const [leadData, setLeadData] = useState(null);
   const [leadLoading, setLeadLoading] = useState(false);
   const [destinationId, setDestinationId] = useState(null);
@@ -271,6 +282,10 @@ export default function CreateQuotation() {
         const data = res.data?.data || res.data || {};
         setQtTitle(data.title || "");
         setTemplateStyle(data.templateStyle || "CLASSIC");
+        // !== false, not a truthy check: a row saved before these columns existed comes back
+        // undefined and must read as ON, the same zero-regression rule the backend applies.
+        setIncludeSignature(data.includeSignature !== false);
+        setIncludeStamp(data.includeStamp !== false);
         // Tabs isi se apni internal state seed karte hain (initialData prop).
         setLoadedData(data);
         if (data.flight) setFlightData(data.flight);
@@ -321,6 +336,8 @@ export default function CreateQuotation() {
     version,
     quotationStage: "Draft",
     templateStyle,
+    includeSignature,
+    includeStamp,
     // `?? true` fail-open tha: jis tab pe user gaya hi nahi uska `included` undefined rehta
     // hai, aur section lead ke against bhi ON chala jaata tha. Fallback ab lead-derived gate
     // hai. User ka explicit tick (included === true) hamesha jeetta hai — kahin clamp nahi.
@@ -363,6 +380,7 @@ export default function CreateQuotation() {
     // leadData bhi dep hai — svcOn() isi se derive hota hai, warna lead aane ke baad bhi
     // ye callback purane (sab-ON) gate ke saath memoized reh jaata.
   }), [leadId, destinationId, leadData, qtTitle, version, stage, templateStyle,
+    includeSignature, includeStamp,
     flightData, hotelData, sightseeingData, cruiseData,
     vehicleData, addonData, inclusionsData, summaryData]);
 
@@ -1247,9 +1265,28 @@ export default function CreateQuotation() {
         {/* ── FOOTER ACTIONS ── */}
         <div className="flex flex-col-reverse sm:flex-row items-center justify-between gap-3 pb-4 sm:pb-6 fade-up"
           style={{ animationDelay: "240ms" }}>
-          <p className="text-xs text-slate-400 font-medium">
-            Fields marked <span className="text-rose-400 font-bold">*</span> are required
-          </p>
+          <div className="flex flex-col gap-2 w-full sm:w-auto">
+            {/* Sits with the Create button rather than in a tab: it is the last decision taken about
+                the document, and it is about the document as a whole rather than any one section. */}
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input type="checkbox" checked={includeSignature}
+                  onChange={(e) => { setIncludeSignature(e.target.checked); if (!hydratingRef.current) setIsDirty(true); }}
+                  className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer" />
+                <span className="text-xs font-bold text-slate-600">Include signature</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input type="checkbox" checked={includeStamp}
+                  onChange={(e) => { setIncludeStamp(e.target.checked); if (!hydratingRef.current) setIsDirty(true); }}
+                  className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer" />
+                <span className="text-xs font-bold text-slate-600">Include company stamp</span>
+              </label>
+            </div>
+            <p className="text-xs text-slate-400 font-medium">
+              Fields marked <span className="text-rose-400 font-bold">*</span> are required
+            </p>
+          </div>
+
           <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full sm:w-auto">
             <button type="button" onClick={() => navigate(-1)}
               className="flex-1 sm:flex-none px-4 sm:px-6 py-2.5 border-2 border-slate-200 hover:border-slate-300
