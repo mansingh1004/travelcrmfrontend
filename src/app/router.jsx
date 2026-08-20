@@ -106,6 +106,7 @@ const TrashPage = lazyPage(() => import("@features/trash"), "TrashPage");
 const Calendar = lazyPage(() => import("@features/calendar"), "Calendar");
 const AllTasks = lazyPage(() => import("@features/calendar"), "AllTasks");
 const Operations = lazyPage(() => import("@features/operations"), "Operations");
+const OperationsDetail = lazyPage(() => import("@features/operations"), "OperationsDetail");
 
 // ── Platform SuperAdmin Console — SEPARATE realm (own token "sa_token", violet/dark theme) ──
 const consoleFeature = () => import("@/console");
@@ -137,6 +138,9 @@ const ConsoleHotelNominations = lazyPage(consoleFeature, "ConsoleHotelNomination
 const ConsoleHotelMarketplace360 = lazyPage(consoleFeature, "ConsoleHotelMarketplace360");
 const ConsolePlatformHotelEditor = lazyPage(consoleFeature, "ConsolePlatformHotelEditor");
 const ConsoleMarketplaceBookings = lazyPage(consoleFeature, "ConsoleMarketplaceBookings");
+const ConsoleTransportRequests = lazyPage(consoleFeature, "ConsoleTransportRequests");
+const ConsolePlatformVehicles = lazyPage(consoleFeature, "ConsolePlatformVehicles");
+const ConsoleTransportCommissions = lazyPage(consoleFeature, "ConsoleTransportCommissions");
 const ConsoleMarketplaceCommissions = lazyPage(consoleFeature, "ConsoleMarketplaceCommissions");
 const ConsoleMarketplaceOccupancy = lazyPage(consoleFeature, "ConsoleMarketplaceOccupancy");
 const ConsoleCommercialRules = lazyPage(consoleFeature, "ConsoleCommercialRules");
@@ -174,6 +178,8 @@ const FleetTripDetail = lazyPage(fleet, "FleetTripDetail");
 const FleetExpenses = lazyPage(fleet, "FleetExpenses");
 const FleetSettlements = lazyPage(fleet, "FleetSettlements");
 const FleetCompliance = lazyPage(fleet, "FleetCompliance");
+const SupplierOrders = lazyPage(fleet, "SupplierOrders");
+const SupplierListings = lazyPage(fleet, "SupplierListings");
 const FleetPeriods = lazyPage(fleet, "FleetPeriods");
 
 const accounting = () => import("@features/accounting");
@@ -202,19 +208,6 @@ const MarketplaceHotel = lazyPage(marketplace, "MarketplaceHotel");
 const MarketplaceBookingRequest = lazyPage(marketplace, "MarketplaceBookingRequest");
 const MarketplaceBookings = lazyPage(marketplace, "MarketplaceBookings");
 const MarketplaceBookingDetail = lazyPage(marketplace, "MarketplaceBookingDetail");
-
-// ── Hotel Management module (self-contained feature; restored) ──
-const hotels = () => import("@features/hotels");
-const HotelDashboard = lazyPage(hotels, "HotelDashboard");
-const HotelList = lazyPage(hotels, "HotelList");
-const HotelDetails = lazyPage(hotels, "HotelDetails");
-const HotelRoomTypes = lazyPage(hotels, "RoomTypes");
-const HotelInventory = lazyPage(hotels, "InventoryCalendar");
-const HotelBookings = lazyPage(hotels, "HotelBookings");
-const HotelPricing = lazyPage(hotels, "HotelPricing");
-const HotelAmenities = lazyPage(hotels, "HotelAmenities");
-const HotelHousekeeping = lazyPage(hotels, "Housekeeping");
-const HotelReports = lazyPage(hotels, "HotelReports");
 
 
 // Route-level guard (defense-in-depth; backend is the real gate, menus already hide these).
@@ -319,6 +312,12 @@ const AppRouter = () => {
               <Route path="hotel-catalog/:publicId" element={<ConsoleHotelMarketplace360 />} />
               {/* The approval queue. Only a decision taken here can confirm a tenant's hotel. */}
               <Route path="hotel-requests" element={<ConsoleMarketplaceBookings />} />
+              {/* The transport queue. A separate screen from the hotel one on purpose — see consoleNav. */}
+              <Route path="transport-requests" element={<ConsoleTransportRequests />} />
+              {/* Where the transport catalog is actually filled. Nothing a tenant browses exists
+              until a row here is published. */}
+              <Route path="transport-catalog" element={<ConsolePlatformVehicles />} />
+              <Route path="transport-earnings" element={<ConsoleTransportCommissions />} />
               {/*
                 What the platform has SOLD, night by night — not what is available. There is no
                 allotment to report on; this is the exposure the operator already carries.
@@ -443,6 +442,13 @@ const AppRouter = () => {
               the board shows booking data and nothing else — a new OPS_* permission would be a
               second name for the same access. */}
               <Route path="operations" element={<Guard allow={hasPermission(P.BOOKING_READ) && hasModule("BOOKINGS")}><Operations /></Guard>} />
+              {/* One booking's delivery view. The SAME gate as the board on purpose: it reads the
+              same booking data, and a stricter gate here would let an ops executive see a row on
+              the board and be bounced to the dashboard on opening it. Writes inside are gated per
+              surface — service lines on BOOKING_UPDATE, checkpoints and the ops owner on
+              OPS_MANAGE. The nav rail needs no entry: findActiveDestination matches subtrees, so
+              /operations/<id> keeps "Operations" lit by itself. */}
+              <Route path="operations/:bookingPublicId" element={<Guard allow={hasPermission(P.BOOKING_READ) && hasModule("BOOKINGS")}><OperationsDetail /></Guard>} />
 
               <Route path="createquotation" element={<Guard allow={(hasPermission(P.QUOTATION_CREATE) || hasPermission(P.QUOTATION_UPDATE)) && hasPermission(P.LEAD_READ)}><CreateQuotation /></Guard>} />
               {/*
@@ -502,6 +508,11 @@ const AppRouter = () => {
 
               {/* ── Fleet / Vehicle Diary (guarded by FLEET_* permissions) ── */}
               <Route path="fleet" element={<Guard allow={hasPermission(P.FLEET_READ)}><FleetDashboard /></Guard>} />
+              {/* ── The SUPPLY side of the Transport Marketplace. Under /fleet because the operator is
+              a Vehicle Diary tenant and assigning a platform job picks their own vehicles and
+              drivers. Its own permissions — a fleet reader is not automatically a platform supplier. */}
+              <Route path="fleet/platform-jobs" element={<Guard allow={hasPermission(P.TRANSPORT_SUPPLIER_ORDER_MANAGE)}><SupplierOrders /></Guard>} />
+              <Route path="fleet/platform-listings" element={<Guard allow={hasPermission(P.TRANSPORT_SUPPLIER_LISTING_MANAGE)}><SupplierListings /></Guard>} />
               <Route path="fleet/vehicles" element={<Guard allow={hasPermission(P.FLEET_READ)}><FleetVehicles /></Guard>} />
               <Route path="fleet/vehicles/new" element={<Guard allow={hasPermission(P.FLEET_CREATE)}><FleetVehicleForm /></Guard>} />
               <Route path="fleet/vehicles/:publicId" element={<Guard allow={hasPermission(P.FLEET_READ)}><FleetVehicleDetail /></Guard>} />
@@ -554,21 +565,6 @@ const AppRouter = () => {
               so it gates on BOOK, not VIEW. More specific path, so route ranking picks it over
               ":publicId" regardless of declaration order. */}
               <Route path="marketplace/:publicId/request" element={<Guard allow={hasPermission(P.HOTEL_MARKETPLACE_BOOK)}><MarketplaceBookingRequest /></Guard>} />
-
-              {/* ── Hotel Management module (self-contained; open to logged-in staff) ──
-              Ungated on purpose: the feature runs on its own mocked service and has no backend
-              endpoints behind it, so there is no permission or module key that describes it. */}
-              <Route path="hotels" element={<HotelList />} />
-              <Route path="hotels/dashboard" element={<HotelDashboard />} />
-              <Route path="hotels/room-types" element={<HotelRoomTypes />} />
-              <Route path="hotels/inventory" element={<HotelInventory />} />
-              <Route path="hotels/bookings" element={<HotelBookings />} />
-              <Route path="hotels/pricing" element={<HotelPricing />} />
-              <Route path="hotels/amenities" element={<HotelAmenities />} />
-              <Route path="hotels/housekeeping" element={<HotelHousekeeping />} />
-              <Route path="hotels/reports" element={<HotelReports />} />
-              {/* Last for readability; route ranking prefers the static segments above regardless. */}
-              <Route path="hotels/:id" element={<HotelDetails />} />
 
               {/* ── Sub-Agents (B2B franchise) — TENANT_ADMIN only ── */}
               <Route path="subagents" element={<Guard allow={isTenantAdmin()}><SubAgents /></Guard>} />

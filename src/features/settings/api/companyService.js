@@ -65,17 +65,8 @@ export const companyService = {
   getSubscription: () => {
     return API.get("/company/subscription");
   },
-
-  // ── GET AI CREDITS ─────────────────────────────────────────
-  // GET /api/company/ai-credits
-  // @GetMapping("/api/company/ai-credits")
-  // public ResponseEntity<AiCreditsDTO> getAiCredits()
-  //
-  // Returns: { used, total, usedCost }
-  getAiCredits: () => {
-    return API.get("/company/ai-credits");
-  },
 };
+
 
 
 // ═════════════════════════════════════════════════════════════

@@ -103,6 +103,8 @@ export default function Operations() {
   // than on every change: reloading mid-edit flips usePagedList's `loading`, which unmounts
   // every row — including the one being worked in — and replaces it with skeletons.
   const staleRef = useRef(false);
+  // When the open row was expanded. Read only by the double-click guard below.
+  const expandedAtRef = useRef(0);
 
   /* ── Window ─────────────────────────────────────────────────────────────── */
   const { from, to, label } = useMemo(() => {
@@ -353,8 +355,35 @@ export default function Operations() {
       if (staleRef.current) refreshAll();
     } else {
       setExpandedId(id);
+      expandedAtRef.current = Date.now();
     }
   }, [expandedId, refreshAll]);
+
+  /**
+   * The whole booking, on its own page — everything the expanded row cannot hold: the trip
+   * sheet, the travellers, the pickup and drop, and the ops owner.
+   *
+   * The row keeps expanding on a single click, because the queue is worked by expanding rows;
+   * this is the second gesture, not a replacement for the first.
+   */
+  const openDetail = useCallback((id) => {
+    navigate(`/operations/${id}`);
+  }, [navigate]);
+
+  /**
+   * A click on the row itself.
+   *
+   * The second click of a DOUBLE click must not undo the first. Without this, double-clicking a
+   * collapsed row expands it, collapses it — unmounting OpsRowDetail and killing the two fetches
+   * it just started, and firing the deferred board refresh at a screen that is navigating away —
+   * and only then opens the page. Only an undo of an expansion younger than the double-click
+   * threshold is swallowed, so deliberately clicking a row shut a moment later still works.
+   */
+  const handleRowClick = useCallback((index, id) => {
+    setCursor(index);
+    if (expandedId === id && Date.now() - expandedAtRef.current < 400) return;
+    toggleRow(id);
+  }, [expandedId, toggleRow]);
 
   /* ── Keyboard ────────────────────────────────────────────────────────────
      j/k and the arrows move a cursor, Enter opens it, Esc closes. Ignored while
@@ -384,11 +413,16 @@ export default function Operations() {
       } else if (e.key === "Enter" && cursor >= 0) {
         e.preventDefault();
         toggleRow(tableRows[cursor].id);
+      } else if (e.key === "o" && cursor >= 0) {
+        // The keyboard twin of the double-click. Enter stays the expand, because expanding is
+        // what working the queue is made of and leaving the board is the rarer act.
+        e.preventDefault();
+        openDetail(tableRows[cursor].id);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [tableRows, cursor, expandedId, toggleRow]);
+  }, [tableRows, cursor, expandedId, toggleRow, openDetail]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -603,7 +637,8 @@ export default function Operations() {
                       {flexRender(header.column.columnDef.header, header.getContext())}
                     </th>
                   ))}
-                  <th className="w-10 border-b border-slate-200" />
+                  {/* Open + the expand chevron. Wider than the chevron alone needs. */}
+                  <th className="w-24 border-b border-slate-200" />
                 </tr>
               </thead>
 
@@ -646,7 +681,11 @@ export default function Operations() {
                     <Fragment key={row.id}>
                       <tr
                         data-row-index={index}
-                        onClick={() => { setCursor(index); toggleRow(row.id); }}
+                        onClick={() => handleRowClick(index, row.id)}
+                        /* Second gesture, second question. One click asks "what is missing here",
+                           which is answered in place; two asks "let me work this whole booking",
+                           which is a page. */
+                        onDoubleClick={() => openDetail(row.id)}
                         aria-expanded={expanded}
                         className={`border-b border-slate-50 cursor-pointer transition-colors ${
                           expanded ? "bg-blue-50/60"
@@ -661,7 +700,22 @@ export default function Operations() {
                           </td>
                         ))}
                         <td className="px-2 text-slate-300">
-                          <ChevronDown className={`w-4 h-4 transition-transform ${expanded ? "rotate-180 text-blue-500" : ""}`} />
+                          <div className="flex items-center justify-end gap-1">
+                            {/* stopPropagation is load-bearing: without it this click also runs
+                                the row's own handler and toggles the expansion under the
+                                navigation. Discoverability for the double-click, and the only
+                                affordance a mouse-only user has for the page. */}
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); openDetail(row.id); }}
+                              title="Open the full delivery view for this booking"
+                              aria-label={`Open ${row.original.bookingCode || "this booking"}`}
+                              className="px-2 py-1 rounded-lg text-[10px] font-extrabold border border-slate-200 bg-white text-slate-400 hover:text-blue-600 hover:border-blue-300 transition-colors"
+                            >
+                              Open
+                            </button>
+                            <ChevronDown className={`w-4 h-4 transition-transform ${expanded ? "rotate-180 text-blue-500" : ""}`} />
+                          </div>
                         </td>
                       </tr>
 
@@ -707,7 +761,8 @@ export default function Operations() {
 
         <p className="text-[11px] font-bold text-slate-400 text-center">
           <kbd className="px-1 rounded bg-slate-100">j</kbd> / <kbd className="px-1 rounded bg-slate-100">k</kbd> move ·
-          <kbd className="px-1 rounded bg-slate-100 ml-1">Enter</kbd> open ·
+          <kbd className="px-1 rounded bg-slate-100 ml-1">Enter</kbd> expand ·
+          <kbd className="px-1 rounded bg-slate-100 ml-1">o</kbd> open full view (or double-click) ·
           <kbd className="px-1 rounded bg-slate-100 ml-1">/</kbd> search ·
           <kbd className="px-1 rounded bg-slate-100 ml-1">Esc</kbd> close
         </p>

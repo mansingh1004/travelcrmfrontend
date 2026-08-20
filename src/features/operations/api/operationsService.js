@@ -73,6 +73,30 @@ const operationsService = {
     return res?.data?.data ?? null;
   },
 
+  /**
+   * The booking one operations screen is about.
+   *
+   * WHY THE DETAIL PAGE IS COMPOSED FROM THIS AND NOT FROM A BOARD ROW: nothing returns one
+   * board row. /operations/board is windowed (from defaults to the tenant's today, the span is
+   * capped at 92 days), it only ever selects CONFIRMED / PENDING / COMPLETED bookings, and its
+   * search matches bookingCode and customer name — never a publicId. So a deep link to a trip
+   * six months out, one that has already left, or a cancelled one comes back with zero rows,
+   * which is precisely the case a detail page is opened to answer. This endpoint is keyed by
+   * publicId and has none of those windows.
+   *
+   * Single-booking read, so the response carries `tripSnapshot` — legs, travellers, rooms,
+   * vehicles, pickup and drop. The paged list omits it deliberately (LAZY association), so a
+   * page cannot be prefilled from a row it was opened from.
+   *
+   * Costs, margin and vendor identity are NULLED for anyone without BOOKING_PROFIT_READ and the
+   * request still 200s — an operations user typically holds neither, so nothing built on this
+   * may depend on those fields being present.
+   */
+  booking: async (bookingPublicId) => {
+    const res = await API.get(`/bookings/${bookingPublicId}`);
+    return res?.data?.data ?? null;
+  },
+
   /** The service lines behind a row — the detail panel's list. */
   serviceItems: async (bookingPublicId) => {
     const res = await API.get(`/bookings/${bookingPublicId}/services`);
@@ -272,12 +296,126 @@ const operationsService = {
     return res?.data?.data ?? null;
   },
 
+  /* ── Optional enrichment for the Today panel ───────────────────────────────
+     Three reads that may each legitimately be refused, and none of which the panel may fail on.
+     They are listed together because they share one rule: a 403, a 404 or an empty answer means
+     the block is ABSENT, never that the page is broken. */
+
   /**
-   * Name the operations executive for a booking, or clear it with userId = null.
+   * The quotation a booking was sold from — the only per-day, per-activity TIMED plan anywhere
+   * in the product.
+   *
+   * Reached through booking.sourceQuotationPublicId, which is null on any booking taken over the
+   * phone. Sits behind QUOTATION_READ (class-level on QuotationController), which an operations
+   * executive routinely does not hold — so a 403 is a missing capability, not a failure, and the
+   * caller drops the block rather than showing an error.
+   *
+   * Everything under `sightseeing.days[]` is unvalidated free text: the day's `date` is
+   * VARCHAR(30), an activity's `startTime` is VARCHAR(20), and "15:00", "3 PM" and "afternoon"
+   * are all legal values. Render them verbatim and in the order they come back. Nothing may
+   * parse, sort by, or do arithmetic on them.
+   */
+  quotation: async (quotationPublicId) => {
+    const res = await API.get(`/quotations/${quotationPublicId}`);
+    return res?.data?.data ?? null;
+  },
+
+  /**
+   * The fleet trips somebody planned for this booking in their own Vehicle Diary.
+   *
+   * THE PARAM IS NAMED bookingId AND TAKES THE BOOKING'S publicId — FleetTripSpecification matches
+   * root.get("bookingPublicId"). Passing anything else silently returns nothing.
+   *
+   * Behind FLEET_READ, and ABSENCE MEANS NOTHING: a fleet trip cannot exist without both a vehicle
+   * and a driver from the diary, so an operator who typed a registration by hand has none, and a
+   * trip belongs to the OPERATOR's tenant rather than the buying agency's. Never phrase an empty
+   * answer as "no vehicle is arranged".
+   */
+  fleetTrips: async (bookingPublicId) => {
+    const res = await API.get("/fleet/trips", {
+      params: { bookingId: bookingPublicId, size: 20, page: 0 },
+    });
+    return res?.data?.data ?? [];
+  },
+
+  /**
+   * One fleet trip's legs — who was on which vehicle across which half-open window.
+   *
+   * The trip's own vehicle and driver always point at the CURRENT leg; these rows are the only
+   * place an earlier vehicle survives.
+   */
+  fleetTripLegs: async (tripPublicId) => {
+    const res = await API.get(`/fleet/trips/${tripPublicId}/legs`);
+    return res?.data?.data ?? [];
+  },
+
+  /**
+   * Everything the product recorded against this booking, newest last.
+   *
+   * The Today panel narrows it to the day being read, to answer "what has already been done today"
+   * — the question an operator asks before phoning a supplier a second time.
+   *
+   * COVERAGE IS NOT TOTAL, and a caller should not imply it is. The server builds this from booking
+   * lifecycle, payments, invoices, expenses, logged calls and EMAIL messages. WhatsApp is
+   * deliberately skipped by BookingTimelineServiceImpl (it filters to CommChannel.EMAIL), so a
+   * WhatsApp sent to a supplier leaves no mark here at all.
+   *
+   * `occurredAt` is a LocalDateTime — the server's own wall clock, with no offset. Compare it by
+   * string prefix against a yyyy-MM-dd; re-zoning it would be inventing information.
+   */
+  timeline: async (bookingPublicId) => {
+    const res = await API.get(`/bookings/${bookingPublicId}/timeline`);
+    return res?.data?.data ?? [];
+  },
+
+  /**
+   * Tasks falling inside a window, for the Today panel to narrow to one booking.
+   *
+   * WHY A WINDOW AND NOT A BOOKING. Task is the ONLY thing in this product that is both linked to a
+   * booking and carries a real clock (startAt / endAt / dueDate are Instants — every other dated
+   * thing on a booking is a bare LocalDate). But no task endpoint filters by booking: /tasks takes
+   * status, priority, category, assignee, from and to, and nothing else. So the day is fetched and
+   * the booking is matched here. A day's tasks for one agency is a small list; a per-booking filter
+   * on the server would be better and is worth adding, but this needs no backend change to be
+   * useful today.
+   *
+   * Returns a BARE ARRAY — this endpoint answers with List<TaskResponse>, not the ApiResponse
+   * envelope the rest of this file unwraps. Reading res.data.data here would silently yield
+   * undefined and an empty panel.
+   */
+  tasksBetween: async (fromIso, toIso) => {
+    const res = await API.get("/tasks", { params: { from: fromIso, to: toIso } });
+    return Array.isArray(res?.data) ? res.data : (res?.data?.data ?? []);
+  },
+
+  /**
+   * The people this booking's operations owner can be set to.
+   *
+   * Reuses the BOOKING ASSIGNMENT roster rather than a new ops-only one: the question
+   * "who at this agency can be given a booking to work" has one answer, and a second
+   * list would drift from it the first time somebody joined or left.
+   *
+   * GATED ON BOOKING_CREATE server-side, which an operations executive may not hold —
+   * so a 403 here is ORDINARY, not an error. Callers must degrade to showing the
+   * current owner without a picker rather than surfacing a failure.
+   *
+   * Returns [{ id: <publicId UUID>, name, email, role }].
+   */
+  assignableUsers: async () => {
+    const res = await API.get("/bookings/assignment/eligible-users");
+    return res?.data?.data ?? [];
+  },
+
+  /**
+   * Name the operations executive for a booking, or clear it by passing null.
    *
    * Deliberately not the same person as the booking's `assignedUserId`, who sold it.
    * Returns the whole refreshed record, so the caller can replace its copy rather
    * than patching one field.
+   *
+   * THE ARGUMENT IS A publicId (UUID), not an internal id. The query parameter is still
+   * spelled `userId` on the wire — the server renamed only the Java binding — so the URL
+   * shape is unchanged and nothing else here had to move.
    */
   assignOpsOwner: async (bookingPublicId, userId) => {
     const res = await API.put(

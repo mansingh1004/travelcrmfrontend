@@ -358,6 +358,10 @@ export const BOOKING_STATUS = {
   CONFIRMED:                { label: "Confirmed",       dot: "bg-emerald-500", tone: "text-emerald-700" },
   REJECTED:                 { label: "Rejected",        dot: "bg-red-500",     tone: "text-red-700" },
   CANCEL_REQUESTED:         { label: "Cancelling",      dot: "bg-orange-500",  tone: "text-orange-700" },
+  // Transport only, and a genuinely different thing from CANCEL_REQUESTED: the platform has come
+  // back with a CHARGE and is waiting for the agency to accept or decline it. Naming it "Cancelling"
+  // would hide the fact that a decision is owed and a quote is expiring.
+  CANCELLATION_QUOTED:      { label: "Charge quoted",   dot: "bg-amber-600",   tone: "text-amber-800" },
   CANCELLED:                { label: "Cancelled",       dot: "bg-slate-400",   tone: "text-slate-600" },
   EXPIRED:                  { label: "Expired",         dot: "bg-slate-400",   tone: "text-slate-600" },
 };

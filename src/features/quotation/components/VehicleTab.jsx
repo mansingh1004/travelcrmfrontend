@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Car, Plus, IndianRupee, Users, Image as ImageIcon } from "lucide-react";
 import { Label, Input, Textarea, SectionCard, RemoveBtn, IncludeToggle, EmptyState } from "./Ui";
 import { vehicleService } from "@features/masters";
+import { transportMarketplaceService } from "@features/marketplace";
 
 // export default function VehicleTab({ onDataChange }) {
 //   const [included, setIncluded] = useState(true);
@@ -26,7 +27,58 @@ import { vehicleService } from "@features/masters";
       const list = Array.isArray(raw) ? raw
         : Array.isArray(raw?.content) ? raw.content : [];
       // master loaded
-      setMasterList(list);
+      // The tenant's OWN vehicles, plus the platform catalog — as ONE list.
+      //
+      // Deliberately merged rather than given a second "Book via Platform" mode: this tab's whole
+      // interaction is type then model, and a parallel mode would fork it into two things that
+      // drift. A platform row is just another option, marked so the agent knows what they picked.
+      //
+      // A LINKED PRODUCT MUST APPEAR ONCE, not once from each source (design doc §8). Importing a
+      // catalog product creates a projection in the tenant's own master, so a naive concat shows the
+      // same vehicle twice — once as theirs, once as the platform's — and the agent has no way to
+      // tell which is which. So an imported product ANNOTATES its projection with the catalog ids
+      // instead of adding a row, and only un-imported products are appended.
+      let platform = [];
+      try {
+        const { rows } = await transportMarketplaceService.searchVehicles({ page: 0, size: 100 });
+        platform = rows ?? [];
+      } catch {
+        // No TRANSPORT_MARKETPLACE add-on is the ordinary case, and it answers 403. The tab then
+        // shows the tenant's own master exactly as it always did.
+      }
+
+      const byProjection = new Map(
+        platform.filter((p) => p.tenantVehiclePublicId).map((p) => [p.tenantVehiclePublicId, p]),
+      );
+
+      const merged = list.map((m) => {
+        const linked = byProjection.get(m.publicId);
+        if (!linked) return m;
+        // Their own row, still theirs — it just also knows where it came from. Recording BOTH ids
+        // is what keeps a saved line meaningful if the projection is later deleted.
+        return {
+          ...m,
+          _platform: true,
+          _platformPublicId: linked.publicId,
+          _tenantProjectionPublicId: m.publicId,
+        };
+      });
+
+      for (const p of platform) {
+        if (p.tenantVehiclePublicId) continue; // already folded into its projection above
+        merged.push({
+          publicId: p.publicId,
+          name: p.name,
+          type: p.vehicleType,
+          capacity: p.passengerCapacity,
+          imagePath: p.primaryImageUrl,
+          _platform: true,
+          _platformPublicId: p.publicId,
+          _tenantProjectionPublicId: null,
+        });
+      }
+
+      setMasterList(merged);
     } catch (err) {
       console.error("Vehicle master load error:", err);
       setMasterList([]);
@@ -49,6 +101,8 @@ import { vehicleService } from "@features/masters";
     return {
       id: Date.now() + Math.random(),
       type: "", model: "", pickup: "", drop: "",
+      vehicleMasterPublicId: null, platformTransportProductPublicId: null, platformRatePublicId: null,
+      rateSource: "MANUAL",
       startDate: "", endDate: "",
       pricePerVehicle: 0, qty: 1, notes: "",
       // model select hone par auto-fill hote hain:
@@ -95,7 +149,11 @@ import { vehicleService } from "@features/masters";
   // ── Type change → model reset (us type ke models filter honge) ──
   const handleTypeChange = (id, type) => {
     setVehicles(p => p.map(vh => vh.id === id
-      ? { ...vh, type, model: "", imagePath: "", capacity: "", _vehicleId: null }
+      ? { ...vh, type, model: "", imagePath: "", capacity: "", _vehicleId: null,
+          // Cleared with the model. A stale platform id under a newly chosen type would quietly
+          // attribute the line to a vehicle the agent had moved away from.
+          vehicleMasterPublicId: null, platformTransportProductPublicId: null, platformRatePublicId: null,
+          rateSource: "MANUAL" }
       : vh));
   };
 
@@ -115,6 +173,19 @@ import { vehicleService } from "@features/masters";
           imagePath: img,
           capacity:  found?.capacity != null ? String(found.capacity) : "",
           _vehicleId: found?.publicId || found?.id || null,
+          // Which row this line actually came from. A platform pick records BOTH ids where it can:
+          // the catalog id is the one that survives the tenant deleting their imported projection.
+          vehicleMasterPublicId: found?._platform
+            ? (found._tenantProjectionPublicId ?? null)
+            : (found?.publicId ?? null),
+          platformTransportProductPublicId: found?._platform ? found._platformPublicId : null,
+          // Rates are display-only in v1 and this tab shows none, so there is nothing honest to put
+          // here yet. Left null rather than guessed.
+          platformRatePublicId: null,
+          // What this line was priced from, recorded at save time. PLATFORM only when the pick came
+          // from the catalog; MASTER when it is the tenant's own row; MANUAL is the default a
+          // hand-typed line keeps.
+          rateSource: found ? (found._platform ? "PLATFORM" : "MASTER") : "MANUAL",
         }
       : vh));
   };
@@ -187,7 +258,7 @@ import { vehicleService } from "@features/masters";
                       </option>
                       {models.map(m => (
                         <option key={m.publicId || m.id} value={m.name}>
-                          {m.name}{m.capacity ? ` (${m.capacity} seats)` : ""}
+                          {m.name}{m.capacity ? ` (${m.capacity} seats)` : ""}{m._platform ? " · Platform" : ""}
                         </option>
                       ))}
                     </select>
