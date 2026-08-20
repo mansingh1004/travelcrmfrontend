@@ -173,7 +173,7 @@ export default function CreateUser() {
   const strength = getStrength(form.password);
   const passedCount = ruleResults.filter(r => r.passed).length;
 
-  /* validation */
+  /* valiation */
   const validate = () => {
     const e = {};
     if (!form.username.trim())   e.username = "Username is required";
