@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import {
-  Search, Loader2, ChevronLeft, ChevronRight, ToggleLeft, Check, X,
-  CheckCircle2, AlertTriangle, RotateCcw, Building2,
+  Search, Loader2, ToggleLeft, Check, X,
+  CheckCircle2, AlertTriangle, RotateCcw,
 } from "lucide-react";
 import { tenantService } from "../api/tenantService";
 import { featureFlagService } from "../api/featureFlagService";
 import StatusPill from "../components/StatusPill";
+import { ConsoleTable, ConsolePager } from "../components/ConsoleTable";
 import SuperAdminMfaActionModal from "../components/SuperAdminMfaActionModal";
 
 const inputCls =
@@ -135,6 +137,8 @@ function ModulesModal({ tenant, onClose, showToast }) {
 }
 
 export default function FeatureFlags() {
+  const [searchParams] = useSearchParams();
+  const tenantId = searchParams.get("tenantId") || "";
   const [rows, setRows] = useState([]);
   const [pagination, setPagination] = useState({});
   const [loading, setLoading] = useState(true);
@@ -172,7 +176,34 @@ export default function FeatureFlags() {
 
   useEffect(() => { load(); }, [load]);
 
-  const totalPages = pagination.totalPages ?? 1;
+  useEffect(() => {
+    if (!tenantId) return;
+    tenantService.get(tenantId)
+      .then(setModalTenant)
+      .catch(() => showToast("error", "Selected tenant could not be loaded."));
+  }, [tenantId, showToast]);
+
+
+  const flagColumns = [
+    { id: "org", header: "Organization", accessorKey: "organizationName",
+      cell: ({ row }) => (
+        <div className="min-w-0">
+          <div className="truncate font-semibold text-heading">{row.original.organizationName}</div>
+          <div className="font-mono text-[11px] text-muted">{row.original.organizationCode}</div>
+        </div>
+      ) },
+    { id: "plan", header: "Plan", accessorKey: "plan",
+      cell: ({ row }) => <span className="font-mono text-xs text-body">{row.original.plan}</span> },
+    { id: "status", header: "Status", accessorKey: "status",
+      cell: ({ row }) => <StatusPill status={row.original.status} /> },
+    { id: "modules", header: "Modules", enableSorting: false, meta: { numeric: true },
+      cell: ({ row }) => (
+        <button onClick={() => setModalTenant(row.original)}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-border-strong bg-surface px-3 py-1.5 text-xs font-semibold text-body hover:bg-surface-hover">
+          <ToggleLeft size={14} /> Manage
+        </button>
+      ) },
+  ];
 
   return (
     <div className="space-y-5">
@@ -181,72 +212,30 @@ export default function FeatureFlags() {
         <p className="text-sm text-body">Toggle module access per tenant. Defaults come from the plan; overrides stick until you reset.</p>
       </div>
 
+      {tenantId && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-accent/25 bg-accent-soft px-4 py-3 text-sm text-body">
+          <span>Tenant entitlement workspace opened from Tenant 360.</span>
+          <Link to="/console/feature-flags" className="text-xs font-semibold text-accent hover:underline">Show all tenants</Link>
+        </div>
+      )}
+
       <div className="relative min-w-[240px] max-w-md">
         <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
         <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search tenants…"
           className={`${inputCls} pl-9`} />
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-border bg-surface">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] text-left text-sm">
-            <thead className="border-b border-border bg-surface-hover text-xs uppercase tracking-wide text-muted">
-              <tr>
-                <th className="px-4 py-3 font-semibold">Organization</th>
-                <th className="px-4 py-3 font-semibold">Plan</th>
-                <th className="px-4 py-3 font-semibold">Status</th>
-                <th className="px-4 py-3 text-right font-semibold">Modules</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {loading ? (
-                <tr><td colSpan={4} className="px-4 py-12 text-center text-muted">
-                  <Loader2 size={18} className="mx-auto animate-spin" />
-                </td></tr>
-              ) : error ? (
-                <tr><td colSpan={4} className="px-4 py-12 text-center text-red-500">{error}</td></tr>
-              ) : rows.length === 0 ? (
-                <tr><td colSpan={4} className="px-4 py-12 text-center text-muted">
-                  <Building2 size={28} className="mx-auto mb-2 opacity-50" /> No tenants found.
-                </td></tr>
-              ) : (
-                rows.map((t) => (
-                  <tr key={t.publicId} className="hover:bg-surface-hover/60">
-                    <td className="px-4 py-3">
-                      <div className="font-semibold text-heading">{t.organizationName}</div>
-                      <div className="font-mono text-xs text-muted">{t.organizationCode}</div>
-                    </td>
-                    <td className="px-4 py-3 font-mono text-xs text-body">{t.plan}</td>
-                    <td className="px-4 py-3"><StatusPill status={t.status} /></td>
-                    <td className="px-4 py-3 text-right">
-                      <button onClick={() => setModalTenant(t)}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-border-strong bg-surface px-3 py-1.5 text-xs font-semibold text-body hover:bg-surface-hover">
-                        <ToggleLeft size={14} /> Manage
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between border-t border-border px-4 py-3 text-sm">
-            <span className="text-muted">Page {page + 1} of {totalPages}</span>
-            <div className="flex gap-1">
-              <button disabled={page <= 0} onClick={() => setPage((p) => Math.max(0, p - 1))}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border-strong text-body hover:bg-surface-hover disabled:opacity-40">
-                <ChevronLeft size={16} />
-              </button>
-              <button disabled={page + 1 >= totalPages} onClick={() => setPage((p) => p + 1)}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border-strong text-body hover:bg-surface-hover disabled:opacity-40">
-                <ChevronRight size={16} />
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
+      <ConsoleTable
+        columns={flagColumns}
+        rows={rows}
+        state={loading ? "loading" : error ? "error" : "ready"}
+        error={error}
+        onRetry={load}
+        filtered={Boolean(debounced)}
+        emptyTitle="No tenants found"
+        emptyHint="Module entitlements appear here once tenants exist."
+      />
+      <ConsolePager page={page} size={20} total={pagination.totalElements || 0} onPage={setPage} />
 
       {modalTenant && (
         <ModulesModal tenant={modalTenant} onClose={() => setModalTenant(null)} showToast={showToast} />

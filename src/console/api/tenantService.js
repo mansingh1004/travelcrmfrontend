@@ -34,9 +34,12 @@ export const tenantService = {
   setSeatFee: (publicId, payload, mfaCode) =>
     ConsoleAPI.put(`/super-admin/tenants/${publicId}/seat-fee`, payload, stepUpHeaders(mfaCode)).then(unwrap),
 
-  suspend: (publicId) => ConsoleAPI.post(`/super-admin/tenants/${publicId}/suspend`),
-  reactivate: (publicId) => ConsoleAPI.post(`/super-admin/tenants/${publicId}/reactivate`),
+  suspend: (publicId, mfaCode) =>
+    ConsoleAPI.post(`/super-admin/tenants/${publicId}/suspend`, null, stepUpHeaders(mfaCode)),
+  reactivate: (publicId, mfaCode) =>
+    ConsoleAPI.post(`/super-admin/tenants/${publicId}/reactivate`, null, stepUpHeaders(mfaCode)),
   remove: (publicId, mfaCode) =>
     ConsoleAPI.delete(`/super-admin/tenants/${publicId}`, stepUpHeaders(mfaCode)),
-  restore: (publicId) => ConsoleAPI.post(`/super-admin/tenants/${publicId}/restore`),
+  restore: (publicId, mfaCode) =>
+    ConsoleAPI.post(`/super-admin/tenants/${publicId}/restore`, null, stepUpHeaders(mfaCode)),
 };

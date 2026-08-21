@@ -219,6 +219,45 @@ function transformFormData(formData, services = [], itinerary = []) {
     returnDate:     formData.returnDate             || null,
     hotelCategory:  formData.hotelCategory?.trim()  || null,
     mealPlanPreference: formData.mealPlanPreference?.trim() || null,
+    /* ── The customer's own address, and the requirement rows ────────────────────────────────
+       THIS TRANSFORM IS A WHITELIST. It builds an explicit object, so a field that is not named
+       here never leaves the browser — no error, no warning, and the form looks like it saved.
+       That is exactly what happened to `fromCity` (see the note on it in CreateLead), and it is
+       why every new field has to be added in TWO places: the form, and this list.
+
+       customerCity / customerState / customerCountry are where the PERSON lives. Deliberately not
+       named city / country, because departCity and departCountry below are where the JOURNEY
+       starts, and those two are routinely different. */
+    customerCity:    formData.customerCity?.trim()    || null,
+    customerState:   formData.customerState?.trim()   || null,
+    customerCountry: formData.customerCountry?.trim() || null,
+    /* WhatsApp. `whatsappSame` is a UI latch, not data — while it is ticked the number IS the
+       phone, so that is what gets sent rather than a flag the server would have to interpret. */
+    whatsappNumber: (formData.whatsappSame ? formData.phone : formData.whatsappNumber)?.trim() || null,
+    /* What the trip NEEDS — the same shapes the booking form already sends, so a requirement
+       written on the lead survives conversion unchanged. Half-filled rows are dropped: a row
+       somebody opened and abandoned is not a requirement. */
+    vehicleRequirements: (Array.isArray(formData.vehicleRequirements) ? formData.vehicleRequirements : [])
+      .filter((row) =>
+  row?.vehicleType ||
+  row?.vehicleId ||
+  row?.model
+)
+      .map((row) => ({
+        vehicleType: row.vehicleType || null,
+        vehicleId:  toMasterId(row.vehicleId),
+        model:       row.model       || null,
+        capacity:    row.capacity === "" || row.capacity == null ? null : Number(row.capacity),
+        quantity:    Number(row.quantity) || 1,
+      })),
+    roomRequirements: (Array.isArray(formData.roomRequirements) ? formData.roomRequirements : [])
+      .filter((row) => row?.roomType)
+      .map((row) => ({
+        roomType:  row.roomType,
+        acType:    row.acType || "Any",
+        count:     Number(row.count) || 1,
+        extraBeds: Number(row.extraBeds) || 0,
+      })),
     departCountry:  formData.departCountry          || "Not Specified",
     departCity:     formData.departCity             || "Not Specified",
     departureMode:  formData.departureMode          || null,
@@ -230,6 +269,16 @@ function transformFormData(formData, services = [], itinerary = []) {
     preferredTrainTime: formData.preferredTrainTime || null,
     pickupAddress:  formData.pickupAddress?.trim()   || null,
     pickupDateTime: formData.pickupDateTime          || null,
+    /* DROP — the other half of the journey, mirroring the pickup fields above and matching the
+       booking form field for field. Without these a converted lead arrives with a pickup and no
+       drop, and whoever is doing the conversion has to ring the customer back for a detail that
+       was taken on the original call and then thrown away.
+       Remember: this transform is a WHITELIST — a field missing from here never leaves the
+       browser. */
+    dropDateTime:   formData.dropDateTime            || null,
+    dropMode:       formData.dropMode                || null,
+    dropCity:       formData.dropCity?.trim()        || null,
+    dropCountry:    formData.dropCountry?.trim()     || null,
     vehiclePreference: formData.vehiclePreference?.trim() || null,
     // Outside the departureMode-gated trio above, deliberately: the server clears each transport
     // group whose mode does not match, and a party arriving by train but dropped back by the hired

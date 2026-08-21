@@ -5,19 +5,21 @@ import {
 import { opsService } from "../api/opsService";
 import { tenantService } from "../api/tenantService";
 import StatusPill from "../components/StatusPill";
+import { isLocalSuperAdminMfaDisabled } from "../lib/consoleEnvironment";
 
 function HardDeleteModal({ tenant, onClose, onDeleted, showToast }) {
   const [typed, setTyped] = useState("");
   const [mfaCode, setMfaCode] = useState("");
   const [busy, setBusy] = useState(false);
+  const mfaDisabled = isLocalSuperAdminMfaDisabled();
   const match = typed.trim().toLowerCase() === (tenant.organizationCode || "").toLowerCase();
-  const mfaReady = /^\d{6}$/.test(mfaCode);
+  const mfaReady = mfaDisabled || /^\d{6}$/.test(mfaCode);
 
   const confirm = async () => {
     if (!match || !mfaReady) return;
     setBusy(true);
     try {
-      await opsService.hardDeleteTenant(tenant.publicId, typed.trim(), mfaCode);
+      await opsService.hardDeleteTenant(tenant.publicId, typed.trim(), mfaDisabled ? "" : mfaCode);
       showToast("success", `Permanently deleted ${tenant.organizationCode}`);
       onDeleted(tenant.publicId);
     } catch (e) {
@@ -43,6 +45,10 @@ function HardDeleteModal({ tenant, onClose, onDeleted, showToast }) {
           This <b>irreversibly</b> removes <b>{tenant.organizationName}</b> and all its user accounts.
           Billing &amp; audit records are kept. This cannot be undone.
         </p>
+        {/* Typing the organisation code is the destructive-action safeguard, not a second factor —
+            it stays whatever the MFA policy is, otherwise `match` can never become true and the
+            Delete button below is permanently disabled. Only the authenticator field follows the
+            local-development bypass. */}
         <div className="mt-4">
           <label className="mb-1 block text-xs font-semibold text-muted">
             Type <span className="font-mono text-red-500">{tenant.organizationCode}</span> to confirm
@@ -50,7 +56,7 @@ function HardDeleteModal({ tenant, onClose, onDeleted, showToast }) {
           <input autoFocus value={typed} onChange={(e) => setTyped(e.target.value)}
             className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-heading focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/30" />
         </div>
-        <div className="mt-4">
+        {!mfaDisabled && <div className="mt-4">
           <label className="mb-1 block text-xs font-semibold text-muted">Authenticator code</label>
           <input
             type="text"
@@ -61,7 +67,7 @@ function HardDeleteModal({ tenant, onClose, onDeleted, showToast }) {
             placeholder="000000"
             className="w-full rounded-lg border border-border bg-surface px-3 py-2 font-mono text-sm tracking-[0.24em] text-heading focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/30"
           />
-        </div>
+        </div>}
         <div className="mt-5 flex justify-end gap-3">
           <button onClick={onClose} disabled={busy}
             className="rounded-lg border border-border-strong bg-surface px-4 py-2 text-sm font-semibold text-body hover:bg-surface-hover">
@@ -79,7 +85,8 @@ function HardDeleteModal({ tenant, onClose, onDeleted, showToast }) {
 
 function StepUpModal({ busy, onClose, onConfirm }) {
   const [mfaCode, setMfaCode] = useState("");
-  const ready = /^\d{6}$/.test(mfaCode);
+  const mfaDisabled = isLocalSuperAdminMfaDisabled();
+  const ready = mfaDisabled || /^\d{6}$/.test(mfaCode);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -91,8 +98,10 @@ function StepUpModal({ busy, onClose, onConfirm }) {
           </div>
           <h3 className="text-sm font-bold text-heading">Export tenant registry</h3>
         </div>
-        <p className="mt-2 text-sm text-body">Enter the current authenticator code to continue.</p>
-        <label className="mt-4 block text-xs font-semibold text-body">
+        <p className="mt-2 text-sm text-body">
+          {mfaDisabled ? "MFA is disabled for local development. Confirm to continue." : "Enter the current authenticator code to continue."}
+        </p>
+        {!mfaDisabled && <label className="mt-4 block text-xs font-semibold text-body">
           Authenticator code
           <input
             autoFocus
@@ -104,13 +113,13 @@ function StepUpModal({ busy, onClose, onConfirm }) {
             placeholder="000000"
             className="mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 font-mono text-sm tracking-[0.24em] text-heading focus:border-accent focus:outline-none focus:ring-2 focus:ring-focus"
           />
-        </label>
+        </label>}
         <div className="mt-5 flex justify-end gap-3">
           <button onClick={onClose} disabled={busy}
             className="rounded-lg border border-border-strong bg-surface px-4 py-2 text-sm font-semibold text-body hover:bg-surface-hover">
             Cancel
           </button>
-          <button onClick={() => onConfirm(mfaCode)} disabled={!ready || busy}
+          <button onClick={() => onConfirm(mfaDisabled ? "" : mfaCode)} disabled={!ready || busy}
             className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-60">
             {busy ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />} Export
           </button>

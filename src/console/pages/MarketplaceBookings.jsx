@@ -14,15 +14,13 @@
 // hotel and enters the final amounts at approval time — at approval, at revision, and at
 // cancellation, because none of those numbers is derivable from data the platform holds.
 //
-// Step-up MFA guards exactly the three calls that move money: approve, reject and cancel. Requesting
-// a revision and the voucher actions carry no code, and that asymmetry is deliberate — putting
-// friction on the safe alternative to approving a moved price is how you push an operator towards
-// approving it instead.
+// Step-up MFA guards irreversible financial decisions and voucher publication. Requesting a price
+// revision or cancellation quote remains a low-friction proposal because it commits neither party.
 
 import { useCallback, useEffect, useState } from "react";
 import {
   AlertTriangle, Ban, Building2, Check, ChevronRight, Download, FileText, Loader2, PencilLine,
-  RefreshCw, Search, Undo2, X,
+  RefreshCw, Search, Undo2, Upload, X,
 } from "lucide-react";
 import SuperAdminMfaActionModal from "../components/SuperAdminMfaActionModal";
 import { marketplaceBookingService as svc } from "../api/marketplaceBookingService";
@@ -44,6 +42,7 @@ const STATUS = {
   CONFIRMED:                { label: "Confirmed",     dot: "bg-emerald-500" },
   REJECTED:                 { label: "Rejected",      dot: "bg-red-500" },
   CANCEL_REQUESTED:         { label: "Cancelling",    dot: "bg-orange-500" },
+  CANCELLATION_QUOTED:      { label: "Awaiting cancellation decision", dot: "bg-amber-500" },
   CANCELLED:                { label: "Cancelled",     dot: "bg-slate-400" },
   EXPIRED:                  { label: "Expired",       dot: "bg-slate-400" },
 };
@@ -62,6 +61,7 @@ const TABS = [
   { value: "UNDER_REVIEW",     label: "Under review" },
   { value: "TENANT_ACCEPTED",  label: "Tenant accepted" },
   { value: "CANCEL_REQUESTED", label: "Cancel requested" },
+  { value: "CANCELLATION_QUOTED", label: "Awaiting cancellation decision" },
   { value: "CONFIRMED",        label: "Confirmed" },
   { value: "REJECTED",         label: "Rejected" },
   { value: "",                 label: "All" },
@@ -83,6 +83,21 @@ const MFA_COPY = {
     title: "Settle this cancellation",
     description: "This fixes what the supplier retained and what the tenant is refunded. It cannot be undone.",
     confirmLabel: "Cancel booking",
+  },
+  "voucher-issue": {
+    title: "Issue this voucher",
+    description: "The tenant will be able to download and send this document to the traveller.",
+    confirmLabel: "Issue voucher",
+  },
+  "voucher-upload": {
+    title: "Upload and issue this voucher",
+    description: "The supplier document will become the tenant's active voucher.",
+    confirmLabel: "Upload voucher",
+  },
+  "voucher-revoke": {
+    title: "Revoke this voucher",
+    description: "The tenant will no longer be able to download the currently issued voucher.",
+    confirmLabel: "Revoke voucher",
   },
 };
 
@@ -129,6 +144,7 @@ export default function MarketplaceBookings() {
   const [mfaOpen, setMfaOpen] = useState(false);
   const [mfaError, setMfaError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(null);
   // Errors from the actions that run without leaving the panel. The page-level banner sits behind
   // it, so on a narrow viewport a 409 there would be invisible — and every one of these can 409.
   const [panelError, setPanelError] = useState("");
@@ -180,11 +196,22 @@ export default function MarketplaceBookings() {
       "Could not send the revised price."
     );
 
-  const issueVoucher = () =>
-    runPanelAction(() => svc.issueVoucher(selected.publicId), "Could not issue the voucher.");
+  const quoteCancellation = (payload) =>
+    runPanelAction(
+      () => svc.quoteCancellation(selected.publicId, payload),
+      "Could not send the cancellation quote."
+    );
 
-  const revokeVoucher = (reason) =>
-    runPanelAction(() => svc.revokeVoucher(selected.publicId, reason), "Could not revoke the voucher.");
+  const openSensitiveAction = (next) => {
+    setAction(next);
+    setMfaError("");
+    setUploadProgress(null);
+    setMfaOpen(true);
+  };
+
+  const issueVoucher = () => openSensitiveAction({ kind: "voucher-issue" });
+  const uploadVoucher = (file) => openSensitiveAction({ kind: "voucher-upload", file });
+  const revokeVoucher = (reason) => openSensitiveAction({ kind: "voucher-revoke", reason });
 
   const downloadVoucher = async () => {
     setBusy(true);
@@ -211,16 +238,28 @@ export default function MarketplaceBookings() {
     setBusy(true);
     setMfaError("");
     try {
+      let updated;
       if (action.kind === "approve") {
-        await svc.approve(selected.publicId, action.payload, mfaCode);
+        updated = await svc.approve(selected.publicId, action.payload, mfaCode);
       } else if (action.kind === "cancel") {
-        await svc.cancel(selected.publicId, action.payload, mfaCode);
+        updated = await svc.cancel(selected.publicId, action.payload, mfaCode);
+      } else if (action.kind === "voucher-issue") {
+        updated = await svc.issueVoucher(selected.publicId, mfaCode);
+      } else if (action.kind === "voucher-upload") {
+        setUploadProgress(0);
+        updated = await svc.uploadVoucher(selected.publicId, action.file, mfaCode, (event) => {
+          if (!event.total) return;
+          setUploadProgress(Math.min(100, Math.round((event.loaded * 100) / event.total)));
+        });
+      } else if (action.kind === "voucher-revoke") {
+        updated = await svc.revokeVoucher(selected.publicId, action.reason, mfaCode);
       } else {
-        await svc.reject(selected.publicId, action.reason, mfaCode);
+        updated = await svc.reject(selected.publicId, action.reason, mfaCode);
       }
+      const keepPanelOpen = action.kind.startsWith("voucher-");
       setMfaOpen(false);
       setAction(null);
-      setSelected(null);
+      setSelected(keepPanelOpen ? (updated ?? selected) : null);
       await load();
     } catch (e) {
       // Stays inside the MFA modal: a wrong code must be retryable without losing the amounts the
@@ -228,6 +267,7 @@ export default function MarketplaceBookings() {
       setMfaError(getErrorMessage(e, "Could not complete this decision."));
     } finally {
       setBusy(false);
+      setUploadProgress(null);
     }
   };
 
@@ -347,11 +387,13 @@ export default function MarketplaceBookings() {
           error={panelError}
           onClose={() => { setSelected(null); setPanelError(""); }}
           onReview={() => takeUnderReview(selected)}
-          onApprove={(payload) => { setAction({ kind: "approve", payload }); setMfaError(""); setMfaOpen(true); }}
-          onReject={(reason) => { setAction({ kind: "reject", reason }); setMfaError(""); setMfaOpen(true); }}
+          onApprove={(payload) => openSensitiveAction({ kind: "approve", payload })}
+          onReject={(reason) => openSensitiveAction({ kind: "reject", reason })}
           onRevise={requestRevision}
-          onCancel={(payload) => { setAction({ kind: "cancel", payload }); setMfaError(""); setMfaOpen(true); }}
+          onQuoteCancellation={quoteCancellation}
+          onCancel={(payload) => openSensitiveAction({ kind: "cancel", payload })}
           onIssueVoucher={issueVoucher}
+          onUploadVoucher={uploadVoucher}
           onRevokeVoucher={revokeVoucher}
           onDownloadVoucher={downloadVoucher}
         />
@@ -363,8 +405,9 @@ export default function MarketplaceBookings() {
           description={MFA_COPY[action?.kind]?.description}
           confirmLabel={MFA_COPY[action?.kind]?.confirmLabel ?? "Confirm"}
           saving={busy}
+          progress={action?.kind === "voucher-upload" ? uploadProgress : null}
           error={mfaError}
-          onClose={busy ? undefined : () => setMfaOpen(false)}
+          onClose={busy ? undefined : () => { setMfaOpen(false); setAction(null); setUploadProgress(null); }}
           onConfirm={runDecision}
         />
       )}
@@ -412,7 +455,7 @@ function PagerBtn({ disabled, onClick, children }) {
  */
 function DecisionPanel({
   row, busy, error, onClose, onReview, onApprove, onReject, onRevise, onCancel,
-  onIssueVoucher, onRevokeVoucher, onDownloadVoucher,
+  onQuoteCancellation, onIssueVoucher, onUploadVoucher, onRevokeVoucher, onDownloadVoucher,
 }) {
   const [supplierTotal, setSupplierTotal] = useState(row.supplierTotal ?? "");
   const [tenantPayable, setTenantPayable] = useState(row.tenantPayable ?? row.quotedTenantPayable ?? "");
@@ -424,7 +467,7 @@ function DecisionPanel({
   const [internalNotes, setInternalNotes] = useState(row.internalNotes ?? "");
   const [rejectReason, setRejectReason] = useState("");
   const [revokeReason, setRevokeReason] = useState("");
-  const [mode, setMode] = useState(null);           // null | 'approve' | 'reject' | 'revise' | 'cancel' | 'revoke'
+  const [mode, setMode] = useState(null);           // null | approve | reject | revise | quote-cancel | cancel | upload | revoke
 
   const s = Number(supplierTotal);
   const t = Number(tenantPayable);
@@ -443,7 +486,8 @@ function DecisionPanel({
   // The server would also allow rejecting a CANCEL_REQUESTED booking. We don't offer it: that room
   // is already held with a supplier, and the honest answer there is a settled cancellation.
   const canReject  = canRevise;
-  const committed  = st === "CONFIRMED" || st === "CANCEL_REQUESTED";
+  const committed  = st === "CONFIRMED" || st === "CANCEL_REQUESTED" || st === "CANCELLATION_QUOTED";
+  const canQuoteCancellation = st === "CANCEL_REQUESTED" || st === "CANCELLATION_QUOTED";
   const canCancel  = committed;
 
   const voucher = row.voucherStatus ?? "NOT_ISSUED";
@@ -454,7 +498,7 @@ function DecisionPanel({
   const canDownloadVoucher = committed || !!row.voucherNumber;
 
   const nothingToDo =
-    !canApprove && !canReject && !canRevise && !canCancel &&
+    !canApprove && !canReject && !canRevise && !canQuoteCancellation && !canCancel &&
     !canIssueVoucher && !canRevokeVoucher && !canDownloadVoucher;
 
   const toggle = (next) => setMode((m) => (m === next ? null : next));
@@ -502,6 +546,18 @@ function DecisionPanel({
             </div>
           )}
 
+          {st === "CANCELLATION_QUOTED" && (
+            <div className="mb-4 rounded-lg bg-amber-500/10 px-3 py-2.5 text-xs text-amber-700 ring-1 ring-amber-500/20">
+              <p className="flex items-start gap-1.5 font-semibold">
+                <AlertTriangle size={13} className="mt-px shrink-0" />
+                Waiting for the tenant to accept or decline the cancellation charge
+              </p>
+              <p className="mt-1 pl-[18px] text-[11px]">
+                Quoted {money(row.quotedCancellationCharge, row.currency)} · valid until {fmtDateTime(row.cancellationQuoteExpiresAt)}
+              </p>
+            </div>
+          )}
+
           <Section title="Request">
             <KV k="Stay" v={`${fmtDate(row.checkIn)} → ${fmtDate(row.checkOut)} · ${row.nights} night${row.nights === 1 ? "" : "s"}`} />
             <KV k="Rooms" v={`${row.rooms} · ${row.adults} adult${row.adults === 1 ? "" : "s"}${row.children > 0 ? ` · ${row.children} child` : ""}`} />
@@ -538,7 +594,9 @@ function DecisionPanel({
             </Section>
           )}
 
-          {(row.cancelledAt || row.cancellationCharge != null) && (
+          {row.cancelRequestedAt && <CancellationTimeline row={row} />}
+
+          {(row.cancelRequestedAt || row.cancelledAt || row.cancellationCharge != null) && (
             <Section title="Cancellation">
               {row.cancelRequestedAt && <KV k="Tenant asked" v={fmtDateTime(row.cancelRequestedAt)} />}
               {row.cancelRequestReason && <KV k="Their reason" v={row.cancelRequestReason} />}
@@ -546,6 +604,18 @@ function DecisionPanel({
               {row.cancellationReason && <KV k="Settled because" v={row.cancellationReason} />}
               <KV k="Supplier retained" v={money(row.cancellationCharge, row.currency)} />
               <KV k="Tenant refund" v={money(row.tenantRefundAmount, row.currency)} />
+            </Section>
+          )}
+
+
+          {row.cancellationQuotedAt && (
+            <Section title="Cancellation quote">
+              <KV k="Supplier retains" v={money(row.quotedCancellationCharge, row.currency)} />
+              <KV k="Platform retains" v={money(row.quotedRetainedEarning, row.currency)} />
+              <KV k="Tenant refund" v={money(Number(row.tenantPayable || 0) - Number(row.quotedCancellationCharge || 0), row.currency)} />
+              <KV k="Reason shown" v={row.cancellationQuoteNote} />
+              <KV k="Sent" v={fmtDateTime(row.cancellationQuotedAt)} />
+              {row.cancellationQuoteExpiresAt && <KV k="Valid until" v={fmtDateTime(row.cancellationQuoteExpiresAt)} />}
             </Section>
           )}
 
@@ -626,14 +696,26 @@ function DecisionPanel({
                   </button>
                 )}
                 {canCancel && (
+                  <>
+                  {canQuoteCancellation && (
+                    <button
+                      onClick={() => toggle("quote-cancel")}
+                      className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold ${
+                        mode === "quote-cancel" ? "bg-accent text-accent-text" : "border border-border bg-surface text-body hover:bg-surface-hover"
+                      }`}
+                    >
+                      <FileText size={15} /> {st === "CANCELLATION_QUOTED" ? "Revise cancellation quote" : "Send cancellation quote"}
+                    </button>
+                  )}
                   <button
                     onClick={() => toggle("cancel")}
                     className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold ${
                       mode === "cancel" ? "bg-red-600 text-white" : "border border-border bg-surface text-body hover:bg-surface-hover"
                     }`}
                   >
-                    <Ban size={15} /> Cancel booking
+                    <Ban size={15} /> Emergency cancel
                   </button>
+                  </>
                 )}
               </div>
 
@@ -646,6 +728,17 @@ function DecisionPanel({
                       className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-semibold text-body hover:bg-surface-hover disabled:opacity-60"
                     >
                       <FileText size={15} /> {voucher === "REVOKED" ? "Re-issue voucher" : "Issue voucher"}
+                    </button>
+                  )}
+                  {canIssueVoucher && (
+                    <button
+                      onClick={() => toggle("upload")}
+                      disabled={busy}
+                      className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold disabled:opacity-60 ${
+                        mode === "upload" ? "bg-accent text-accent-text" : "border border-border bg-surface text-body hover:bg-surface-hover"
+                      }`}
+                    >
+                      <Upload size={15} /> Upload hotel voucher
                     </button>
                   )}
                   {canRevokeVoucher && (
@@ -779,7 +872,16 @@ function DecisionPanel({
                 <ReviseForm row={row} busy={busy} onSubmit={(payload) => run(() => onRevise(payload))} />
               )}
 
+              {mode === "quote-cancel" && (
+                <CancellationQuoteForm row={row} busy={busy}
+                  onSubmit={(payload) => run(() => onQuoteCancellation(payload))} />
+              )}
+
               {mode === "cancel" && <CancelForm row={row} busy={busy} onSubmit={onCancel} />}
+
+              {mode === "upload" && (
+                <VoucherUploadForm busy={busy} onSubmit={(file) => run(() => onUploadVoucher(file))} />
+              )}
 
               {mode === "revoke" && (
                 <div className="mt-4 space-y-3 rounded-lg border border-border bg-surface p-4">
@@ -908,10 +1010,168 @@ function ReviseForm({ row, busy, onSubmit }) {
   );
 }
 
+/** Normal cancellation path: quote the supplier charge and let the tenant make the binding choice. */
+function CancellationQuoteForm({ row, busy, onSubmit }) {
+  const [charge, setCharge] = useState(row.quotedCancellationCharge ?? "");
+  const [retained, setRetained] = useState(row.quotedRetainedEarning ?? "0");
+  const [note, setNote] = useState(row.cancellationQuoteNote ?? "");
+  const [validForHours, setValidForHours] = useState(DEFAULT_REVISION_HOURS);
+  const [internalNotes, setInternalNotes] = useState(row.internalNotes ?? "");
+
+  const payable = Number(row.tenantPayable ?? 0);
+  const c = charge === "" ? Number.NaN : Number(charge);
+  const r = retained === "" ? 0 : Number(retained);
+  const hours = Number(validForHours);
+  const chargeOk = Number.isFinite(c) && c >= 0 && c <= payable;
+  const retainedOk = Number.isFinite(r) && r >= 0 && r <= c;
+  const ready = chargeOk && retainedOk && note.trim() && Number.isFinite(hours) && hours >= 1 && !busy;
+
+  return (
+    <div className="mt-4 space-y-3 rounded-lg border border-accent/30 bg-accent-soft/30 p-4">
+      <p className="text-[11px] text-body">
+        Recommended path: send the confirmed supplier charge to the tenant. Their acceptance completes
+        the cancellation using these exact stored amounts.
+      </p>
+      <Labelled label="Cancellation charge" required hint="What the supplier will retain if the tenant accepts.">
+        <input type="number" min="0" step="0.01" className={inputCls} value={charge}
+          onChange={(e) => setCharge(e.target.value)} placeholder="0.00" />
+      </Labelled>
+      <Labelled label="Retained platform earning" hint="Cannot exceed the cancellation charge.">
+        <input type="number" min="0" step="0.01" className={inputCls} value={retained}
+          onChange={(e) => setRetained(e.target.value)} placeholder="0.00" />
+      </Labelled>
+      {chargeOk && retainedOk && (
+        <p className="text-[11px] text-muted">
+          Tenant refund if accepted <span className="font-semibold text-heading">{money(payable - c, row.currency)}</span>
+        </p>
+      )}
+      {(!chargeOk || !retainedOk) && (
+        <p className="flex items-start gap-1.5 rounded-lg bg-red-500/10 px-3 py-2 text-[11px] text-red-700 ring-1 ring-red-500/20">
+          <AlertTriangle size={13} className="mt-px shrink-0" />
+          Charge must be between zero and {money(payable, row.currency)}, and retained earning cannot exceed it.
+        </p>
+      )}
+      <Labelled label="Reason shown to tenant" required hint="Explain the hotel policy or exception behind this amount.">
+        <textarea rows={3} className={inputCls} value={note} onChange={(e) => setNote(e.target.value)}
+          placeholder="Inside the hotel's 48-hour window; the hotel will retain one night…" />
+      </Labelled>
+      <Labelled label="Valid for hours" required>
+        <input type="number" min="1" className={inputCls} value={validForHours}
+          onChange={(e) => setValidForHours(e.target.value)} />
+      </Labelled>
+      <Labelled label="Internal notes" hint="Platform-only; never shown to the tenant.">
+        <textarea rows={2} className={inputCls} value={internalNotes}
+          onChange={(e) => setInternalNotes(e.target.value)} />
+      </Labelled>
+      <button disabled={!ready} onClick={() => onSubmit({
+        cancellationCharge: c,
+        retainedPlatformEarning: r,
+        note: note.trim(),
+        validForHours: hours,
+        internalNotes: internalNotes.trim() || undefined,
+      })}
+        className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-50">
+        <FileText size={15} /> Send cancellation quote
+      </button>
+    </div>
+  );
+}
+
+/** Hotel-supplied voucher upload. The backend validates type and enforces the same 10 MB cap. */
+function VoucherUploadForm({ busy, onSubmit }) {
+  const [file, setFile] = useState(null);
+  const [error, setError] = useState("");
+
+  const choose = (event) => {
+    const next = event.target.files?.[0] || null;
+    if (next && next.size > 10 * 1024 * 1024) {
+      setFile(null);
+      setError("Voucher must be 10 MB or smaller.");
+      return;
+    }
+    setFile(next);
+    setError("");
+  };
+
+  return (
+    <div className="mt-4 space-y-3 rounded-lg border border-border bg-surface p-4">
+      <Labelled label="Hotel voucher" required hint="PDF, JPG, PNG or WEBP · maximum 10 MB. Uploading also issues it to the tenant.">
+        <input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" onChange={choose}
+          className="block w-full text-xs text-body file:mr-3 file:rounded-lg file:border-0 file:bg-accent-soft file:px-3 file:py-2 file:font-semibold file:text-accent-soft-text" />
+      </Labelled>
+      {file && <p className="text-[11px] text-muted">{file.name} · {(file.size / 1024 / 1024).toFixed(2)} MB</p>}
+      {error && <p className="text-xs text-red-600">{error}</p>}
+      <button disabled={!file || busy} onClick={() => onSubmit(file)}
+        className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-50">
+        {busy ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
+        Upload and issue voucher
+      </button>
+    </div>
+  );
+}
+
+function CancellationTimeline({ row }) {
+  const steps = [
+    {
+      label: "Cancellation requested",
+      detail: row.cancelRequestReason || "Tenant requested cancellation",
+      at: row.cancelRequestedAt,
+      done: true,
+    },
+  ];
+
+  if (row.cancellationQuotedAt) {
+    steps.push({
+      label: "Quote sent to tenant",
+      detail: `${money(row.quotedCancellationCharge, row.currency)} supplier charge`,
+      at: row.cancellationQuotedAt,
+      done: true,
+    });
+  } else if (row.status === "CANCEL_REQUESTED") {
+    steps.push({ label: "Cancellation quote pending", detail: "Waiting for platform action", done: false });
+  }
+
+  if (row.cancelledAt) {
+    steps.push({
+      label: "Cancellation settled",
+      detail: `${money(row.tenantRefundAmount, row.currency)} refunded to tenant`,
+      at: row.cancelledAt,
+      done: true,
+    });
+  } else if (row.status === "CANCELLATION_QUOTED") {
+    steps.push({
+      label: "Tenant decision pending",
+      detail: row.cancellationQuoteExpiresAt
+        ? `Quote valid until ${fmtDateTime(row.cancellationQuoteExpiresAt)}`
+        : "Waiting for tenant response",
+      done: false,
+    });
+  } else if (row.cancellationQuotedAt && row.status === "CONFIRMED") {
+    steps.push({ label: "Booking retained", detail: "Cancellation was not completed", done: true });
+  }
+
+  return (
+    <Section title="Cancellation timeline">
+      <ol className="space-y-3">
+        {steps.map((step, index) => (
+          <li key={`${step.label}-${index}`} className="flex gap-3">
+            <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${step.done ? "bg-accent" : "border-2 border-accent bg-surface"}`} />
+            <div className="min-w-0">
+              <p className="text-xs font-semibold text-heading">{step.label}</p>
+              <p className="text-[11px] text-muted">
+                {step.detail}{step.at ? ` · ${fmtDateTime(step.at)}` : ""}
+              </p>
+            </div>
+          </li>
+        ))}
+      </ol>
+    </Section>
+  );
+}
+
 /**
- * Settle a cancellation. The charge is entered, not computed: there is no machine-readable policy in
- * this release, so what the hotel actually retained on the day is something an operator learns by
- * asking. The refund is derived server-side and never posted from here.
+ * Emergency cancellation override. The normal tenant-request path uses CancellationQuoteForm above;
+ * this is retained for supplier closure, fraud, or another unwind where tenant consent is impossible.
  */
 function CancelForm({ row, busy, onSubmit }) {
   const [charge, setCharge] = useState("");
@@ -931,6 +1191,11 @@ function CancelForm({ row, busy, onSubmit }) {
 
   return (
     <div className="mt-4 space-y-3 rounded-lg border border-border bg-surface p-4">
+      <p className="flex items-start gap-1.5 rounded-lg bg-red-500/10 px-3 py-2 text-[11px] text-red-700 ring-1 ring-red-500/20">
+        <AlertTriangle size={13} className="mt-px shrink-0" />
+        Emergency override: this settles without tenant acceptance. Use only when the supplier or
+        platform must unwind the booking and the normal quote flow cannot apply.
+      </p>
       <p className="text-[11px] text-muted">
         Tenant payable <span className="font-semibold text-heading">{money(payable, row.currency)}</span>
         {row.platformEarning != null && <> · platform earning {money(row.platformEarning, row.currency)}</>}
@@ -989,7 +1254,7 @@ function CancelForm({ row, busy, onSubmit }) {
         }
         className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
       >
-        <Ban size={15} /> Settle cancellation
+        <Ban size={15} /> Emergency settle cancellation
       </button>
     </div>
   );

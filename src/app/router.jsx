@@ -1,5 +1,5 @@
 import { useState, lazy, Suspense } from "react";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import ScrollToTop from './ScrollToTop';
 import Layout from "./Layout";
 import PageLoader from "./PageLoader";
@@ -112,6 +112,8 @@ const ConsoleHome = lazyPage(consoleFeature, "ConsoleHome");
 const ConsoleSetup = lazyPage(consoleFeature, "ConsoleSetup");
 const ConsolePalette = lazyPage(consoleFeature, "ConsolePalette");
 const ConsoleTenants = lazyPage(consoleFeature, "ConsoleTenants");
+const ConsoleTenantDetail = lazyPage(consoleFeature, "ConsoleTenantDetail");
+const ConsoleBilling = lazyPage(consoleFeature, "ConsoleBilling");
 const ConsolePlans = lazyPage(consoleFeature, "ConsolePlans");
 const ConsoleUpgradeRequests = lazyPage(consoleFeature, "ConsoleUpgradeRequests");
 const ConsoleUsage = lazyPage(consoleFeature, "ConsoleUsage");
@@ -119,6 +121,7 @@ const ConsoleUsers = lazyPage(consoleFeature, "ConsoleUsers");
 const ConsoleFeatureFlags = lazyPage(consoleFeature, "ConsoleFeatureFlags");
 const ConsoleGlobalConfig = lazyPage(consoleFeature, "ConsoleGlobalConfig");
 const ConsolePlatformEmail = lazyPage(consoleFeature, "ConsolePlatformEmail");
+const ConsolePlatformHealth = lazyPage(consoleFeature, "ConsolePlatformHealth");
 const ConsoleAuditLog = lazyPage(consoleFeature, "ConsoleAuditLog");
 const ConsoleAnnouncements = lazyPage(consoleFeature, "ConsoleAnnouncements");
 const ConsoleOps = lazyPage(consoleFeature, "ConsoleOps");
@@ -202,6 +205,12 @@ function Guard({ allow, children }) {
   return allow ? children : <Navigate to="/" replace />;
 }
 
+/** Preserve old/bookmarked billing links without letting them fall into the tenant auth realm. */
+function LegacyConsoleBillingRedirect() {
+  const { search } = useLocation();
+  return <Navigate to={{ pathname: "/console/billing", search }} replace />;
+}
+
 
 const AppRouter = () => {
   // ✅ FIX: Check localStorage right away so the app remembers the user on refresh.
@@ -258,10 +267,13 @@ const AppRouter = () => {
             <Route path="/superadmin/login" element={<ConsoleLogin />} />
             <Route path="/superadmin/invite" element={<ConsoleInviteAccept />} />
             <Route path="/console/login" element={<Navigate to="/superadmin/login" replace />} />
+            <Route path="/billing" element={<LegacyConsoleBillingRedirect />} />
             <Route path="/console" element={<ConsoleLayout />}>
               <Route index element={<ConsoleHome />} />
               <Route path="setup" element={<ConsoleSetup />} />
               <Route path="tenants" element={<ConsoleTenants />} />
+              <Route path="tenants/:publicId" element={<ConsoleTenantDetail />} />
+              <Route path="billing" element={<ConsoleBilling />} />
               <Route path="plans" element={<ConsolePlans />} />
               <Route path="upgrade-requests" element={<ConsoleUpgradeRequests />} />
               <Route path="usage" element={<ConsoleUsage />} />
@@ -269,6 +281,7 @@ const AppRouter = () => {
               <Route path="feature-flags" element={<ConsoleFeatureFlags />} />
               <Route path="config" element={<ConsoleGlobalConfig />} />
               <Route path="platform-email" element={<ConsolePlatformEmail />} />
+              <Route path="platform-health" element={<ConsolePlatformHealth />} />
               <Route path="audit" element={<ConsoleAuditLog />} />
               <Route path="announcements" element={<ConsoleAnnouncements />} />
               <Route path="ops" element={<ConsoleOps />} />

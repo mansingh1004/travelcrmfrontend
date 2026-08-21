@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import {
-  Search, Loader2, ChevronLeft, ChevronRight, ScrollText, CheckCircle2, XCircle, RotateCcw,
+  Search, CheckCircle2, XCircle, RotateCcw,
 } from "lucide-react";
 import { auditService } from "../api/auditService";
+import { ConsoleTable, ConsolePager } from "../components/ConsoleTable";
 
 const inputCls =
   "rounded-lg border border-border bg-surface px-3 py-2 text-sm text-heading placeholder:text-muted focus:border-accent focus:outline-none focus:ring-2 focus:ring-focus";
@@ -77,7 +78,37 @@ export default function AuditLog() {
     setPage(0);
   };
 
-  const totalPages = pagination.totalPages ?? 1;
+  const auditColumns = [
+    { id: "time", header: "Time", accessorKey: "createdAt",
+      cell: ({ row }) => <span className="whitespace-nowrap text-xs text-muted">{fmt(row.original.createdAt)}</span> },
+    { id: "actor", header: "Actor", accessorKey: "actorEmail",
+      cell: ({ row }) => (
+        <div className="min-w-0">
+          <div className="truncate text-xs font-semibold text-heading">{row.original.actorEmail || "—"}</div>
+          {row.original.ipAddress && <div className="font-mono text-[11px] text-muted">{row.original.ipAddress}</div>}
+        </div>
+      ) },
+    { id: "action", header: "Action", accessorKey: "action",
+      cell: ({ row }) => (
+        <span className="flex items-center gap-1.5">
+          {row.original.success
+            ? <CheckCircle2 size={13} className="shrink-0 text-hue-emerald" />
+            : <XCircle size={13} className="shrink-0 text-hue-rose" />}
+          <ActionChip action={row.original.action} success={row.original.success} />
+        </span>
+      ) },
+    { id: "target", header: "Target", accessorKey: "targetTenantCode",
+      cell: ({ row }) => (
+        <span className="text-xs">
+          {row.original.targetTenantCode
+            ? <span className="font-mono font-semibold text-body">{row.original.targetTenantCode}</span>
+            : <span className="text-muted">platform</span>}
+          {row.original.targetType && <span className="ml-1 text-muted">· {row.original.targetType}</span>}
+        </span>
+      ) },
+    { id: "details", header: "Details", enableSorting: false,
+      cell: ({ row }) => <span className="block max-w-[360px] text-xs text-body">{row.original.description || "—"}</span> },
+  ];
   const hasFilters = filters.action || filters.success !== "" || filters.from || filters.to || search;
 
   return (
@@ -113,73 +144,17 @@ export default function AuditLog() {
       </div>
 
       {/* Table */}
-      <div className="overflow-hidden rounded-xl border border-border bg-surface">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[860px] text-left text-sm">
-            <thead className="border-b border-border bg-surface-hover text-xs uppercase tracking-wide text-muted">
-              <tr>
-                <th className="px-4 py-3 font-semibold">Time</th>
-                <th className="px-4 py-3 font-semibold">Actor</th>
-                <th className="px-4 py-3 font-semibold">Action</th>
-                <th className="px-4 py-3 font-semibold">Target</th>
-                <th className="px-4 py-3 font-semibold">Details</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {loading ? (
-                <tr><td colSpan={5} className="px-4 py-12 text-center text-muted"><Loader2 size={18} className="mx-auto animate-spin" /></td></tr>
-              ) : error ? (
-                <tr><td colSpan={5} className="px-4 py-12 text-center text-red-500">{error}</td></tr>
-              ) : rows.length === 0 ? (
-                <tr><td colSpan={5} className="px-4 py-12 text-center text-muted">
-                  <ScrollText size={28} className="mx-auto mb-2 opacity-50" /> No audit entries match.
-                </td></tr>
-              ) : (
-                rows.map((r) => (
-                  <tr key={r.publicId} className="align-top hover:bg-surface-hover/60">
-                    <td className="whitespace-nowrap px-4 py-3 text-xs text-muted">{fmt(r.createdAt)}</td>
-                    <td className="px-4 py-3">
-                      <div className="text-xs font-medium text-heading">{r.actorEmail || "—"}</div>
-                      {r.ipAddress && <div className="font-mono text-[11px] text-muted">{r.ipAddress}</div>}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="flex items-center gap-1.5">
-                        {r.success
-                          ? <CheckCircle2 size={13} className="shrink-0 text-emerald-500" />
-                          : <XCircle size={13} className="shrink-0 text-red-500" />}
-                        <ActionChip action={r.action} success={r.success} />
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-xs">
-                      {r.targetTenantCode
-                        ? <span className="font-mono font-semibold text-body">{r.targetTenantCode}</span>
-                        : <span className="text-muted">platform</span>}
-                      {r.targetType && <span className="ml-1 text-muted">· {r.targetType}</span>}
-                    </td>
-                    <td className="max-w-[360px] px-4 py-3 text-xs text-body">{r.description || "—"}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        <div className="flex items-center justify-between border-t border-border px-4 py-3 text-sm">
-          <span className="text-muted">
-            {pagination.totalElements ?? 0} entries · page {page + 1} of {totalPages}
-          </span>
-          <div className="flex gap-1">
-            <button disabled={page <= 0} onClick={() => setPage((p) => Math.max(0, p - 1))}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border-strong text-body hover:bg-surface-hover disabled:opacity-40">
-              <ChevronLeft size={16} />
-            </button>
-            <button disabled={page + 1 >= totalPages} onClick={() => setPage((p) => p + 1)}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border-strong text-body hover:bg-surface-hover disabled:opacity-40">
-              <ChevronRight size={16} />
-            </button>
-          </div>
-        </div>
-      </div>
+      <ConsoleTable
+        columns={auditColumns}
+        rows={rows}
+        state={loading ? "loading" : error ? "error" : "ready"}
+        error={error}
+        onRetry={load}
+        filtered={Boolean(filters.action || filters.success !== "" || filters.from || filters.to || debounced)}
+        emptyTitle="No audit entries"
+        emptyHint="Platform actions are recorded here as they happen."
+      />
+      <ConsolePager page={page} size={20} total={pagination.totalElements || 0} onPage={setPage} />
     </div>
   );
 }

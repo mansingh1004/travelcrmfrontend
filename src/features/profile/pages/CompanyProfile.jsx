@@ -1,11 +1,34 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   companyService,
   taxRateService,
 } from "@features/settings";
 import { hasPermission, P } from "@shared/lib/access";
 import { SOCIAL_NETWORKS, EMPTY_SOCIAL, connectedSocials } from "../lib/socialNetworks";
+import GoogleReviewsTab from "../components/GoogleReviewsTab";
+import BusinessListingRows from "../components/BusinessListingRows";
+import { toListingRows, toListingsPayload, savedListings } from "../lib/businessListings";
+import SignatureSection from "../components/SignatureSection";
+import { googleReviewsService } from "../api/googleReviewsService";
+
+/* Copy for the two OAuth failures the server can name. Anything else falls back to the generic
+   line, so the backend can add reasons without a frontend release.
+
+   `app_not_approved` deserves its own message because it is not a fault the user can fix by
+   retrying — their Google account has to be added to the app's test-user list first. Note that
+   while the OAuth app sits in Google's Testing status this message will rarely be SEEN: a
+   non-whitelisted account is stopped on Google's own error page and never returns here. The
+   pre-flight warning on the connect panel is what actually covers that case; this is the safety
+   net for the paths where Google does redirect back. */
+const GOOGLE_OAUTH_ERRORS = {
+  access_denied:
+    "Google sign-in was not completed, so nothing has been connected. If you did not cancel, your "
+    + "Google account may not be approved for this app yet — check with your administrator.",
+  app_not_approved:
+    "Your Google account is not on this app's approved list yet. Send your Google email address to "
+    + "your administrator, then try connecting again once they confirm.",
+};
 import { Pen as FiEdit2, Save as FiSave, MapPin as FiMapPin, Calendar as FiCalendar, Key as FiKey, ChevronDown as FiChevronDown, Upload as FiUpload, Plus as FiPlus, Trash2 as FiTrash2, TriangleAlert as FiAlertTriangle, Info as FiInfo, CircleCheck as FiCheckCircle, RefreshCw as FiRefreshCw, ExternalLink as FiExternalLink, Share2 as FiShare2, CircleAlert as FiAlertCircle, Building2 as FaBuilding, ReceiptText as FaFileInvoiceDollar, Crown as FaCrown, BriefcaseBusiness as MdBusinessCenter, Building as MdLocationCity, Sparkles as HiSparkles } from "lucide-react";
 
 
@@ -53,6 +76,18 @@ const TABS = [
   { id: "business", label: "Business Info", manageOnly: false },
   { id: "address", label: "Address", manageOnly: false },
   { id: "tax", label: "Tax Configuration", manageOnly: false },
+  /* manageOnly: false, like the other read tabs. Every tenant user may SEE whose signature goes
+     on the quotations they send; only SETTINGS_MANAGE may change it, and that is gated inside the
+     section on canManage rather than by hiding the tab.
+     Its own tab rather than a card inside Edit Profile: that tab is one big <form>, so a section
+     living inside it would be one missing type="button" away from submitting the company profile —
+     the payload that feeds the quotation PDF header. Edit Profile is also manageOnly, which would
+     put the signature out of reach of the read-only users who are supposed to see it. */
+  { id: "signature", label: "Signature", manageOnly: false },
+  /* manageOnly: false — READING reviews is something any tenant user should be able to do, the
+     same as the other read tabs. Connecting an account and replying are gated inside the tab on
+     `canManage`, because those write to the company's public Google presence. */
+  { id: "reviews", label: "Google Reviews", manageOnly: false },
 ];
 
 /* ─── HELPERS ────────────────────────────────────────────────── */
@@ -433,7 +468,7 @@ function OverviewTab({
           look like a form rather than a summary. The whole card is hidden while none are set, with
           one line pointing at where to add them — an empty card is a dead end. */}
       <SectionCard
-        title="Social Media"
+        title="Social Media & Listings"
         icon={<FiShare2 className="w-4 h-4" />}
         subtitle="Where customers can find and message you"
         delay={90}
@@ -441,7 +476,7 @@ function OverviewTab({
         {connectedSocials(company).length === 0 ? (
           <p className="text-sm text-slate-400">
             No social accounts added yet — add them under{" "}
-            <span className="font-semibold text-slate-500">Edit Profile → Social Media</span>.
+            <span className="font-semibold text-slate-500">Edit Profile → Social Media &amp; Listings</span>.
           </p>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -463,6 +498,40 @@ function OverviewTab({
             ))}
           </div>
         )}
+
+        {/* Directory listings, below the social tiles and visually separated — same reason as in
+            the editor: found-on rather than followed-on. Rendered only when there are any; a
+            heading over nothing is worse than no heading. The LABEL leads, because on a page of
+            near-identical directory URLs "Lucknow branch" is the only part anyone can read. */}
+        {savedListings(company).length > 0 && (
+          <div className="mt-5 border-t border-slate-100 pt-5">
+            <p className="mb-3 text-[11px] font-bold uppercase tracking-wide text-slate-400">
+              Business Listings
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {savedListings(company).map(({ url, display, label, platformLabel, Icon, tone }) => (
+                <a
+                  key={url}
+                  href={url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="group flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3.5 py-3 transition-all hover:border-blue-300 hover:shadow-sm"
+                >
+                  <span className={`flex-shrink-0 ${tone}`}><Icon className="w-5 h-5" /></span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-xs font-extrabold uppercase tracking-wide text-slate-500">
+                      {/* The user's own label leads; the directory name is the fallback when they
+                          did not give one. */}
+                      {label || platformLabel}
+                    </span>
+                    <span className="block truncate text-sm font-semibold text-slate-800">{display}</span>
+                  </span>
+                  <FiExternalLink className="w-3.5 h-3.5 flex-shrink-0 text-slate-300 transition-colors group-hover:text-blue-500" />
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
       </SectionCard>
 
       <AdminSettings />
@@ -478,6 +547,9 @@ function EditProfileTab({
   onSave,
   showToast,
   onOpenTax,
+  // Whether a Google Business Profile owns the review count — see the Total Reviews field below.
+  googleConnected = false,
+  onOpenReviews,
 }) {
   const [form, setForm] = useState({
     name: company.name, prefix: company.prefix, email: company.email,
@@ -492,6 +564,10 @@ function EditProfileTab({
     ...Object.fromEntries(
       SOCIAL_NETWORKS.map((n) => [n.field, company[n.field] || ""])
     ),
+    /* Directory listings are a LIST, not a field per platform — a branch in another city gets
+       its own Justdial page, and one column could never hold three. toListingRows tolerates the
+       field being absent entirely, which it is on every company saved before this existed. */
+    businessListings: toListingRows(company.businessListings),
   });
   const [errs, setErrs] = useState({});
   const [saving, setSaving] = useState(false);
@@ -569,7 +645,13 @@ function EditProfileTab({
       const unwrap = (r) =>
         (r?.data && typeof r.data === "object" && "data" in r.data) ? r.data.data : r.data;
 
-      const res = await companyService.update(form);
+      /* businessListings is transformed on the way out: rows carry a client-side `rowId` for
+         React keys which is not data, and a row someone added and abandoned has no URL and is
+         not a listing. Everything else in `form` is sent exactly as before. */
+      const res = await companyService.update({
+        ...form,
+        businessListings: toListingsPayload(form.businessListings),
+      });
       const updated = unwrap(res) || {};
 
       if (logoFile) {
@@ -641,9 +723,40 @@ function EditProfileTab({
             <Label hint="Year operations began">Operating Since</Label>
             <input type="number" value={form.operatingSince} onChange={e => set("operatingSince", e.target.value)} className={inp(false)} placeholder="e.g. 2015" />
           </div>
+          {/* ── Total Reviews ────────────────────────────────────────────────────────────────
+              Read-only once Google is connected. This field and the Google Reviews tab both claim
+              to be "the number of reviews", on the same page, and once Google is the live source
+              the typed number is guaranteed to be stale — it was someone's estimate on some past
+              afternoon. Two different figures under the same label is worse than one.
+
+              DISABLED, not hidden: the saved value stays visible, so nobody wonders where their
+              number went, and it comes straight back if Google is disconnected. The value is also
+              still submitted, because it is a real column and blanking it on save would destroy
+              data for anyone who later disconnects. */}
           <div>
-            <Label hint="Number of customer reviews">Total Reviews</Label>
-            <input type="number" value={form.totalReviews} onChange={e => set("totalReviews", e.target.value)} className={inp(false)} placeholder="0" />
+            <Label hint={googleConnected
+              ? "Managed by your connected Google Business Profile"
+              : "Number of customer reviews"}>
+              Total Reviews
+            </Label>
+            <input
+              type="number"
+              value={form.totalReviews}
+              onChange={e => set("totalReviews", e.target.value)}
+              disabled={googleConnected}
+              className={inp(false) + (googleConnected ? " bg-slate-50 text-slate-500 cursor-not-allowed" : "")}
+              placeholder="0"
+            />
+            {googleConnected && (
+              <p className="mt-1.5 text-[11px] leading-relaxed text-slate-400">
+                Google is connected, so the live count is shown on the{" "}
+                <button type="button" onClick={onOpenReviews}
+                  className="font-semibold text-blue-600 hover:underline">
+                  Google Reviews
+                </button>{" "}
+                tab. Disconnect there to edit this by hand again.
+              </p>
+            )}
           </div>
           <div>
             <Label hint="Total number of trips sold">Trips Sold</Label>
@@ -734,7 +847,7 @@ function EditProfileTab({
           have to remember which. The value is normalised into a real link when the field loses
           focus, so what is stored is what is shown. */}
       <SectionCard
-        title="Social Media"
+        title="Social Media & Listings"
         icon={<FiShare2 className="w-4 h-4" />}
         subtitle="Where customers can find and message you — shown on quotations and web links"
         delay={100}
@@ -778,6 +891,26 @@ function EditProfileTab({
             );
           })}
         </div>
+
+        {/* ── Business listings ──────────────────────────────────────────────────────────────
+            Separated by a rule because it answers a different question from the fields above.
+            Those are accounts customers FOLLOW you on, one per company. These are directories they
+            FIND you on — and an agency with branches has one listing per city, which is why this is
+            a repeatable list rather than a field per platform. */}
+        <div className="mt-6 border-t border-slate-100 pt-5">
+          <Label hint="Directories where customers find you — add one row per listing">
+            <span className="inline-flex items-center gap-2">
+              <FiShare2 className="w-4 h-4 text-slate-400" />
+              Business Listings
+            </span>
+          </Label>
+          <div className="mt-3">
+            <BusinessListingRows
+              rows={form.businessListings || []}
+              onChange={(rows) => set("businessListings", rows)}
+            />
+          </div>
+        </div>
       </SectionCard>
 
       {/* Address */}
@@ -815,7 +948,7 @@ function EditProfileTab({
               : <><FiSave className="w-4 h-4" />Update Profile</>}
           </button>
           <button type="button" disabled={saving}
-            onClick={() => { setForm({ name: company.name, prefix: company.prefix, email: company.email, website: company.website || "", phone: company.phone, operatingSince: company.operatingSince, totalReviews: company.totalReviews, tripsSold: company.tripsSold || 0, gstin: company.gstin || "", tan: company.tan || "", address: company.address || "", state: company.state || "" }); setErrs({}); showToast("Form reset to saved values."); }}
+            onClick={() => { setForm({ name: company.name, prefix: company.prefix, email: company.email, website: company.website || "", phone: company.phone, operatingSince: company.operatingSince, totalReviews: company.totalReviews, tripsSold: company.tripsSold || 0, gstin: company.gstin || "", tan: company.tan || "", address: company.address || "", state: company.state || "", ...EMPTY_SOCIAL, ...Object.fromEntries(SOCIAL_NETWORKS.map((n) => [n.field, company[n.field] || ""])), businessListings: toListingRows(company.businessListings) }); setErrs({}); showToast("Form reset to saved values."); }}
             className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-3 rounded-xl border-2 border-red-100
               hover:border-red-200 text-red-400 hover:text-red-600 font-bold text-sm transition-all bg-white hover:bg-red-50 disabled:opacity-40">
             <FiRefreshCw className="w-4 h-4" /> Reset
@@ -1115,7 +1248,46 @@ export default function CompanyProfile() {
   // Viewable by every tenant user; only SETTINGS_MANAGE holders see the write affordances.
   const canManage = hasPermission(P.SETTINGS_MANAGE);
   const visibleTabs = TABS.filter(t => canManage || !t.manageOnly);
-  const [activeTab, setActiveTab] = useState("overview");
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  /* The active tab is seeded from ?tab= — LAZILY, in the useState initialiser, so the right tab is
+     chosen on the very first render. Doing it in an effect would paint Company Details first and
+     then jump, and would be a synchronous setState in an effect, which this repo lints against.
+
+     Validated against visibleTabs, not TABS: ?tab=edit must not hand a manage-only tab to a user
+     without SETTINGS_MANAGE. Deep-linking a tab is a convenience; it is not a way around a
+     permission check.
+
+     This exists because of the OAuth round trip. Google sends the user to
+     /CompanyProfile?tab=reviews&googleConnected=1, and without this they landed on Company Details
+     with nothing acknowledging what had just happened — at the single most important moment in the
+     feature. Every tab gets shareable URLs as a side effect. */
+  const [activeTab, setActiveTab] = useState(() => {
+    const requested = searchParams.get("tab");
+    return visibleTabs.some(t => t.id === requested) ? requested : "overview";
+  });
+
+  /* Whether a Google Business Profile is connected — one boolean, not the reviews state.
+     It lives up here for one reason: the tab that knows the answer is CONDITIONALLY MOUNTED, so a
+     callback from it alone can never inform the Edit Profile tab of a user who never opened
+     Reviews. See the getConnection call in loadCompanyProfile. */
+  const [googleConnected, setGoogleConnected] = useState(false);
+
+  /* Tab changes mirror into the URL so the address bar always describes what is on screen and a
+     link can be shared. `replace`, not push: a tab is not a destination the user thinks of as
+     history, and pushing would turn Back into "walk backwards through tabs" instead of "leave this
+     page", which is what people expect from a settings screen. */
+  const selectTab = useCallback((id) => {
+    setActiveTab(id);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set("tab", id);
+      // Stale one-shot params must not survive a tab change and re-fire on refresh.
+      next.delete("googleConnected");
+      next.delete("googleError");
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
   const [company, setCompany] = useState(null);
   const [subscription, setSubscription] = useState(null);
   const [aiCredits, setAiCredits] = useState(null);
@@ -1131,14 +1303,25 @@ export default function CompanyProfile() {
       setLoading(true);
       setLoadError("");
 
+      /* googleConnection joins the existing batch rather than being fetched separately.
+         The Edit Profile tab needs to know whether Google owns the review count, and it can be
+         opened without ever visiting the Reviews tab — which is conditionally mounted, so no
+         callback from it would have fired. One boolean, resolved before either tab renders.
+
+         It costs one request to OUR OWN server reading OUR OWN database. It does not touch Google
+         and consumes none of the Business Profile quota — that is only spent on an explicit sync.
+         allSettled already tolerates a rejection, so a 404 while the endpoints are undeployed is
+         handled by the existing shape. */
       const [
         companyResult,
         subscriptionResult,
         aiCreditsResult,
+        googleConnectionResult,
       ] = await Promise.allSettled([
         companyService.get(),
         companyService.getSubscription(),
         companyService.getAiCredits(),
+        googleReviewsService.getConnection(),
       ]);
 
       try {
@@ -1215,6 +1398,20 @@ export default function CompanyProfile() {
             aiCreditsResult.reason
           );
         }
+
+        /* Silent on failure, by design. A rejection here means the endpoints are not deployed yet
+           — the expected state until the backend ships — and it must not be logged as an error or
+           surfaced, because the Reviews tab already explains that situation properly. False simply
+           leaves the manual Total Reviews field editable, which is the pre-Google behaviour.
+           CONNECTED only: a revoked token (NEEDS_RECONNECT) is not a live source of truth for the
+           review count, so the manual field stays editable in that state. */
+        if (googleConnectionResult.status === "fulfilled") {
+          const conn = unwrap(googleConnectionResult.value) || {};
+          const connStatus = conn.status || (conn.connected ? "CONNECTED" : "NOT_CONNECTED");
+          setGoogleConnected(connStatus === "CONNECTED");
+        } else {
+          setGoogleConnected(false);
+        }
       } catch (error) {
         console.error(
           "Failed to load company profile:",
@@ -1238,6 +1435,47 @@ export default function CompanyProfile() {
   useEffect(() => {
     loadCompanyProfile();
   }, [loadCompanyProfile]);
+
+  /* ── OAuth return ────────────────────────────────────────────────────────────────────────────
+     The server bounces the browser back here after the Google round trip, carrying either
+     googleConnected=1 or googleError=<reason>. Before this, both were ignored entirely: the user
+     completed a consent flow and arrived at a page that said nothing at all about it.
+
+     The params are ONE-SHOT — stripped immediately after they are read, so a refresh (or the
+     browser restoring the tab tomorrow) does not replay "Connected!" over a connection that may
+     since have been removed. The tab itself is left in the URL.
+
+     Started from a microtask rather than run in the effect body: showToast and setSearchParams are
+     both state writes, and this repo lints react-hooks/set-state-in-effect. */
+  useEffect(() => {
+    const connected = searchParams.get("googleConnected");
+    const error = searchParams.get("googleError");
+    if (!connected && !error) return undefined;
+
+    let alive = true;
+    Promise.resolve().then(() => {
+      if (!alive) return;
+      if (connected) {
+        showToast("Google Business Profile connected. Loading your reviews…");
+        // The connection changed, so the Edit Profile field must lock without a page reload.
+        setGoogleConnected(true);
+      } else {
+        showToast(
+          GOOGLE_OAUTH_ERRORS[error]
+          || "Google sign-in didn't complete, so nothing has been connected. Please try again.",
+          "error"
+        );
+      }
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete("googleConnected");
+        next.delete("googleError");
+        return next;
+      }, { replace: true });
+    });
+
+    return () => { alive = false; };
+  }, [searchParams, setSearchParams, showToast]);
 
 
 
@@ -1296,7 +1534,7 @@ export default function CompanyProfile() {
               </div>
             </div>
             {canManage && company && !loadError && (
-              <button onClick={() => setActiveTab("edit")}
+              <button onClick={() => selectTab("edit")}
                 className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-sm font-bold
                   shadow-md shadow-blue-200 hover:shadow-lg transition-all w-full sm:w-auto">
                 <FiEdit2 className="w-3.5 h-3.5" /> Edit Profile
@@ -1384,7 +1622,7 @@ export default function CompanyProfile() {
                 <div className="overflow-x-auto">
                   <div className="flex min-w-max gap-1">
                     {visibleTabs.map(tab => (
-                      <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+                      <button key={tab.id} onClick={() => selectTab(tab.id)}
                         className={`px-4 sm:px-6 py-2.5 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all
                           ${activeTab === tab.id
                             ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-200"
@@ -1405,13 +1643,43 @@ export default function CompanyProfile() {
                     onSave={setCompany}
                     showToast={showToast}
                     onOpenTax={() =>
-                      setActiveTab("tax")
+                      selectTab("tax")
                     }
+                    googleConnected={googleConnected}
+                    onOpenReviews={() => selectTab("reviews")}
                   />
                 )}
               {activeTab === "business" && <BusinessInfoTab company={company} />}
               {activeTab === "address" && <AddressTab company={company} />}
               {activeTab === "tax" && <TaxConfigTab showToast={showToast} canManage={canManage} />}
+              {/* SectionCard is passed down rather than re-declared in the tab: it carries this
+                  page's card chrome (the gradient icon tile, the fade-up animation, the exact
+                  border and blur), and a second copy would drift from it the first time either is
+                  touched. */}
+              {/* The SectionCard note above applies here too. companyName is read-only: the
+                  section holds its own state, calls only signatureService, and never touches the
+                  company form object or companyService.update() — the payload the quotation PDF
+                  header is rendered from. */}
+              {activeTab === "signature" && (
+                <SignatureSection
+                  showToast={showToast}
+                  canManage={canManage}
+                  SectionCard={SectionCard}
+                  companyName={company?.name}
+                />
+              )}
+              {/* onConnectionChange keeps the Edit Profile field in step when the user connects or
+                  disconnects while this page is open — the page-load fetch alone would go stale the
+                  moment they act. It carries a boolean, not the reviews state: the summary, the
+                  list, the filters and the composer all stay inside the tab. */}
+              {activeTab === "reviews" && (
+                <GoogleReviewsTab
+                  showToast={showToast}
+                  canManage={canManage}
+                  SectionCard={SectionCard}
+                  onConnectionChange={setGoogleConnected}
+                />
+              )}
 
             </div>
           </div>

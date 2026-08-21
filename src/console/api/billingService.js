@@ -7,6 +7,13 @@ const stepUpHeaders = (mfaCode) => ({
 
 /** Platform billing (SuperAdmin → tenant invoices). */
 export const billingService = {
+  list: async ({ search = "", status = "", overdue = false, page = 0, size = 25 } = {}) => {
+    const params = { page, size, overdue };
+    if (search) params.search = search;
+    if (status) params.status = status;
+    const res = await ConsoleAPI.get("/super-admin/billing", { params });
+    return { rows: res?.data?.data ?? [], pagination: res?.data?.pagination ?? {} };
+  },
   listForTenant: (tenantPublicId) =>
     ConsoleAPI.get(`/super-admin/tenants/${tenantPublicId}/billing`).then(unwrap),
   create: (tenantPublicId, payload, mfaCode) =>
