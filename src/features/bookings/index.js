@@ -42,7 +42,8 @@ export { default as CreateBooking } from "./pages/CreateBookingClean";
 // Requirement row editors, shared with the LEAD form so both screens ask for a vehicle the same
 // way. Exported here rather than deep-imported: eslint no-restricted-imports blocks @features/*/*,
 // and a second copy of this editor would drift from the booking one the first time either changed.
-export { VehicleRequirementRows, RoomRequirementRows } from "./components/RequirementRows";
+// Already exported at line 17; a second active export here causes an ESM duplicate-export error.
+// export { VehicleRequirementRows, RoomRequirementRows } from "./components/RequirementRows";
 export { emptyVehicleRow, emptyRoomRow } from "./lib/bookingTripModel";
 
 
