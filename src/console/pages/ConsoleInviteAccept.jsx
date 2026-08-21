@@ -127,7 +127,7 @@ function InviteAcceptView() {
           <p className="mt-1 text-sm text-body">{setup?.email || "Platform operator setup"}</p>
 
           {displayError && (
-            <p className="mt-5 flex items-start gap-2 rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-700 ring-1 ring-red-500/20">
+            <p className="mt-5 flex items-start gap-2 rounded-lg bg-hue-rose-soft px-3 py-2 text-sm text-hue-rose ring-1 ring-hue-rose/20">
               <AlertTriangle size={15} className="mt-0.5 shrink-0" />
               {displayError}
             </p>
@@ -155,7 +155,7 @@ function InviteAcceptView() {
                   <button
                     type="button"
                     onClick={copyManualKey}
-                    className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-semibold text-accent-soft-text hover:bg-surface"
+                    className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-semibold text-accent-soft-text hover:bg-surface"
                   >
                     {copied ? <CheckCircle2 size={14} /> : <Copy size={14} />}
                     {copied ? "Copied" : "Copy"}
@@ -174,7 +174,7 @@ function InviteAcceptView() {
               </div>}
 
               {mfaDisabled && (
-                <p className="rounded-lg bg-amber-500/10 px-3.5 py-3 text-sm font-semibold text-amber-700 ring-1 ring-amber-500/20">
+                <p className="rounded-lg bg-hue-amber-soft px-3.5 py-3 text-sm font-semibold text-hue-amber ring-1 ring-hue-amber/20">
                   MFA enrollment is disabled for local development.
                 </p>
               )}
@@ -218,7 +218,7 @@ function InviteAcceptView() {
               <button
                 type="submit"
                 disabled={busy}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-60"
+                className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-60"
               >
                 {busy ? <Loader2 size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
                 {busy ? "Creating account..." : "Create account"}

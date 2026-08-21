@@ -10,6 +10,12 @@
 // `bg-accent`) — raw `slate-*`/`blue-*` resolve to the tenant palette and would break the violet
 // console theme. The tenant-side marketplace kit is deliberately NOT imported here.
 //
+// That rule covers STATUS colour too, which is the part that used to escape it: every dot, chip and
+// alert box below is a `hue-*` token (`bg-hue-amber-soft` + `text-hue-amber`, `bg-hue-rose` …) and
+// the drawer backdrop is `bg-scrim`. A raw palette class carries no `dark:` partner, so it would
+// render a light pastel badge on the near-black console card. The tokens flip on their own — never
+// pair one with an explicit `dark:` class.
+//
 // This release is ON_REQUEST: there is no rate calendar and no allotment, so the operator phones the
 // hotel and enters the final amounts at approval time — at approval, at revision, and at
 // cancellation, because none of those numbers is derivable from data the platform holds.
@@ -35,23 +41,23 @@ const DEFAULT_REVISION_HOURS = 48;
 
 /** Mirrors MarketplaceBookingStatus. Unmapped values fall through to a neutral chip. */
 const STATUS = {
-  REQUESTED:                { label: "Requested",     dot: "bg-amber-500" },
-  UNDER_REVIEW:             { label: "Under review",  dot: "bg-blue-500" },
-  TENANT_APPROVAL_REQUIRED: { label: "Awaiting tenant", dot: "bg-orange-500" },
-  TENANT_ACCEPTED:          { label: "Tenant accepted", dot: "bg-indigo-500" },
-  CONFIRMED:                { label: "Confirmed",     dot: "bg-emerald-500" },
-  REJECTED:                 { label: "Rejected",      dot: "bg-red-500" },
-  CANCEL_REQUESTED:         { label: "Cancelling",    dot: "bg-orange-500" },
-  CANCELLATION_QUOTED:      { label: "Awaiting cancellation decision", dot: "bg-amber-500" },
-  CANCELLED:                { label: "Cancelled",     dot: "bg-slate-400" },
-  EXPIRED:                  { label: "Expired",       dot: "bg-slate-400" },
+  REQUESTED:                { label: "Requested",     dot: "bg-hue-amber" },
+  UNDER_REVIEW:             { label: "Under review",  dot: "bg-hue-sky" },
+  TENANT_APPROVAL_REQUIRED: { label: "Awaiting tenant", dot: "bg-hue-orange" },
+  TENANT_ACCEPTED:          { label: "Tenant accepted", dot: "bg-hue-indigo" },
+  CONFIRMED:                { label: "Confirmed",     dot: "bg-hue-emerald" },
+  REJECTED:                 { label: "Rejected",      dot: "bg-hue-rose" },
+  CANCEL_REQUESTED:         { label: "Cancelling",    dot: "bg-hue-orange" },
+  CANCELLATION_QUOTED:      { label: "Awaiting cancellation decision", dot: "bg-hue-amber" },
+  CANCELLED:                { label: "Cancelled",     dot: "bg-muted" },
+  EXPIRED:                  { label: "Expired",       dot: "bg-muted" },
 };
 
 /** The voucher lifecycle is a second axis, not a booking state — see VoucherStatus on the backend. */
 const VOUCHER = {
-  NOT_ISSUED: { label: "Not issued", dot: "bg-slate-400" },
-  ISSUED:     { label: "Issued",     dot: "bg-emerald-500" },
-  REVOKED:    { label: "Revoked",    dot: "bg-red-500" },
+  NOT_ISSUED: { label: "Not issued", dot: "bg-muted" },
+  ISSUED:     { label: "Issued",     dot: "bg-hue-emerald" },
+  REVOKED:    { label: "Revoked",    dot: "bg-hue-rose" },
 };
 
 // CANCEL_REQUESTED sits next to the other queues the platform owes an answer to, not with the
@@ -311,7 +317,7 @@ export default function MarketplaceBookings() {
       </div>
 
       {error && (
-        <p className="mb-4 flex items-start gap-1.5 rounded-lg bg-red-500/10 px-3 py-2 text-xs text-red-700 ring-1 ring-red-500/20">
+        <p className="mb-4 flex items-start gap-1.5 rounded-lg bg-hue-rose-soft px-3 py-2 text-xs text-hue-rose ring-1 ring-hue-rose/25">
           <AlertTriangle size={13} className="mt-px shrink-0" /> {error}
         </p>
       )}
@@ -343,7 +349,7 @@ export default function MarketplaceBookings() {
                     {/* A tenant is waiting on us with a room still held at the hotel — it must read
                         as work owed, not as one more row in a list. */}
                     {r.status === "CANCEL_REQUESTED" && r.cancelRequestedAt && (
-                      <p className="mt-1 truncate text-[11px] font-semibold text-amber-700">
+                      <p className="mt-1 truncate text-[11px] font-semibold text-hue-amber">
                         Cancel requested {fmtDateTime(r.cancelRequestedAt)}
                         {r.cancelRequestReason ? ` — ${r.cancelRequestReason}` : ""}
                       </p>
@@ -419,7 +425,7 @@ function StatusChip({ status }) {
   const c = STATUS[status];
   return (
     <span className="inline-flex w-36 shrink-0 items-center justify-end gap-1.5 text-xs text-body">
-      <span className={`h-1.5 w-1.5 rounded-full ${c?.dot ?? "bg-slate-400"}`} />
+      <span className={`h-1.5 w-1.5 rounded-full ${c?.dot ?? "bg-muted"}`} />
       {c?.label ?? status ?? "—"}
     </span>
   );
@@ -430,7 +436,7 @@ function VoucherChip({ status }) {
   const c = VOUCHER[status];
   return (
     <span className="inline-flex items-center gap-1.5 rounded-full border border-border px-2 py-0.5 text-[11px] font-semibold text-body">
-      <span className={`h-1.5 w-1.5 rounded-full ${c?.dot ?? "bg-slate-400"}`} />
+      <span className={`h-1.5 w-1.5 rounded-full ${c?.dot ?? "bg-muted"}`} />
       Voucher {(c?.label ?? status).toLowerCase()}
     </span>
   );
@@ -511,7 +517,7 @@ function DecisionPanel({
 
   return (
     <div className="fixed inset-0 z-[60] flex justify-end">
-      <div className="absolute inset-0 bg-slate-950/40" onClick={busy ? undefined : onClose} />
+      <div className="absolute inset-0 bg-scrim" onClick={busy ? undefined : onClose} />
       <aside className="relative flex h-full w-full max-w-xl flex-col overflow-y-auto border-l border-border bg-page shadow-2xl">
         <header className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-border bg-surface px-5 py-4">
           <div className="min-w-0">
@@ -534,7 +540,7 @@ function DecisionPanel({
           {/* A tenant waiting on the platform, with the supplier still holding the room. Above the
               fold, not filed under a heading further down. */}
           {st === "CANCEL_REQUESTED" && (
-            <div className="mb-4 rounded-lg bg-amber-500/10 px-3 py-2.5 text-xs text-amber-700 ring-1 ring-amber-500/20">
+            <div className="mb-4 rounded-lg bg-hue-amber-soft px-3 py-2.5 text-xs text-hue-amber ring-1 ring-hue-amber/25">
               <p className="flex items-start gap-1.5 font-semibold">
                 <AlertTriangle size={13} className="mt-px shrink-0" />
                 The tenant asked to cancel {row.cancelRequestedAt ? `on ${fmtDateTime(row.cancelRequestedAt)}` : ""}
@@ -547,7 +553,7 @@ function DecisionPanel({
           )}
 
           {st === "CANCELLATION_QUOTED" && (
-            <div className="mb-4 rounded-lg bg-amber-500/10 px-3 py-2.5 text-xs text-amber-700 ring-1 ring-amber-500/20">
+            <div className="mb-4 rounded-lg bg-hue-amber-soft px-3 py-2.5 text-xs text-hue-amber ring-1 ring-hue-amber/25">
               <p className="flex items-start gap-1.5 font-semibold">
                 <AlertTriangle size={13} className="mt-px shrink-0" />
                 Waiting for the tenant to accept or decline the cancellation charge
@@ -585,7 +591,7 @@ function DecisionPanel({
               <KV k="Valid until" v={fmtDateTime(row.revisionExpiresAt)} />
               {row.revisionRespondedAt && <KV k="Answered" v={fmtDateTime(row.revisionRespondedAt)} />}
               {st === "TENANT_APPROVAL_REQUIRED" && revisionExpired(row) && (
-                <p className="flex items-start gap-1.5 rounded-lg bg-amber-500/10 px-3 py-2 text-[11px] text-amber-700 ring-1 ring-amber-500/20">
+                <p className="flex items-start gap-1.5 rounded-lg bg-hue-amber-soft px-3 py-2 text-[11px] text-hue-amber ring-1 ring-hue-amber/25">
                   <AlertTriangle size={13} className="mt-px shrink-0" />
                   This offer has expired — the tenant can no longer accept it. Re-check availability
                   and send a fresh revision.
@@ -629,7 +635,7 @@ function DecisionPanel({
           )}
 
           {row.crmSyncState && row.crmSyncState !== "SYNCED" && (
-            <p className="mb-4 flex items-start gap-1.5 rounded-lg bg-amber-500/10 px-3 py-2 text-[11px] text-amber-700 ring-1 ring-amber-500/20">
+            <p className="mb-4 flex items-start gap-1.5 rounded-lg bg-hue-amber-soft px-3 py-2 text-[11px] text-hue-amber ring-1 ring-hue-amber/25">
               <AlertTriangle size={13} className="mt-px shrink-0" />
               CRM sync {row.crmSyncState.toLowerCase()}
               {row.crmSyncAttempts ? ` after ${row.crmSyncAttempts} attempt${row.crmSyncAttempts === 1 ? "" : "s"}` : ""}
@@ -643,7 +649,7 @@ function DecisionPanel({
           {/* Rendered inside the panel, not on the page behind it: the panel covers the viewport on
               anything narrow, and a 409 the operator cannot see is a button that does nothing. */}
           {error && (
-            <p className="mt-4 flex items-start gap-1.5 rounded-lg bg-red-500/10 px-3 py-2 text-xs text-red-700 ring-1 ring-red-500/20">
+            <p className="mt-4 flex items-start gap-1.5 rounded-lg bg-hue-rose-soft px-3 py-2 text-xs text-hue-rose ring-1 ring-hue-rose/25">
               <AlertTriangle size={13} className="mt-px shrink-0" /> {error}
             </p>
           )}
@@ -689,7 +695,7 @@ function DecisionPanel({
                   <button
                     onClick={() => toggle("reject")}
                     className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold ${
-                      mode === "reject" ? "bg-red-600 text-white" : "border border-border bg-surface text-body hover:bg-surface-hover"
+                      mode === "reject" ? "bg-hue-rose text-surface" : "border border-border bg-surface text-body hover:bg-surface-hover"
                     }`}
                   >
                     <X size={15} /> Reject
@@ -710,7 +716,7 @@ function DecisionPanel({
                   <button
                     onClick={() => toggle("cancel")}
                     className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold ${
-                      mode === "cancel" ? "bg-red-600 text-white" : "border border-border bg-surface text-body hover:bg-surface-hover"
+                      mode === "cancel" ? "bg-hue-rose text-surface" : "border border-border bg-surface text-body hover:bg-surface-hover"
                     }`}
                   >
                     <Ban size={15} /> Emergency cancel
@@ -745,7 +751,7 @@ function DecisionPanel({
                     <button
                       onClick={() => toggle("revoke")}
                       className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold ${
-                        mode === "revoke" ? "bg-red-600 text-white" : "border border-border bg-surface text-body hover:bg-surface-hover"
+                        mode === "revoke" ? "bg-hue-rose text-surface" : "border border-border bg-surface text-body hover:bg-surface-hover"
                       }`}
                     >
                       <Undo2 size={15} /> Revoke
@@ -775,7 +781,7 @@ function DecisionPanel({
                   </Labelled>
 
                   {amountsValid && !marginOk && (
-                    <p className="flex items-start gap-1.5 rounded-lg bg-red-500/10 px-3 py-2 text-[11px] text-red-700 ring-1 ring-red-500/20">
+                    <p className="flex items-start gap-1.5 rounded-lg bg-hue-rose-soft px-3 py-2 text-[11px] text-hue-rose ring-1 ring-hue-rose/25">
                       <AlertTriangle size={13} className="mt-px shrink-0" />
                       Tenant payable is below the supplier total — the platform would take a loss. The
                       server rejects this too.
@@ -861,7 +867,7 @@ function DecisionPanel({
                   <button
                     disabled={!rejectReason.trim() || busy}
                     onClick={() => onReject(rejectReason.trim())}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-hue-rose px-4 py-2 text-sm font-semibold text-surface hover:bg-hue-rose/90 disabled:opacity-50"
                   >
                     <X size={15} /> Reject request
                   </button>
@@ -896,7 +902,7 @@ function DecisionPanel({
                   <button
                     disabled={busy}
                     onClick={() => run(() => onRevokeVoucher(revokeReason.trim() || undefined))}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-hue-rose px-4 py-2 text-sm font-semibold text-surface hover:bg-hue-rose/90 disabled:opacity-50"
                   >
                     <Undo2 size={15} /> Revoke voucher
                   </button>
@@ -953,7 +959,7 @@ function ReviseForm({ row, busy, onSubmit }) {
       </Labelled>
 
       {amountsValid && !marginOk && (
-        <p className="flex items-start gap-1.5 rounded-lg bg-red-500/10 px-3 py-2 text-[11px] text-red-700 ring-1 ring-red-500/20">
+        <p className="flex items-start gap-1.5 rounded-lg bg-hue-rose-soft px-3 py-2 text-[11px] text-hue-rose ring-1 ring-hue-rose/25">
           <AlertTriangle size={13} className="mt-px shrink-0" />
           The revised payable is below the revised supplier total — the platform would take a loss.
           The server rejects this too.
@@ -962,7 +968,7 @@ function ReviseForm({ row, busy, onSubmit }) {
       {amountsValid && (
         <p className="text-[11px] text-muted">
           Platform earning{" "}
-          <span className={`font-semibold ${marginOk ? "text-heading" : "text-red-700"}`}>
+          <span className={`font-semibold ${marginOk ? "text-heading" : "text-hue-rose"}`}>
             {money(t - s, row.currency)}
           </span>
           {marginOk && row.tenantPayable != null && Number(row.tenantPayable) !== t && (
@@ -1046,7 +1052,7 @@ function CancellationQuoteForm({ row, busy, onSubmit }) {
         </p>
       )}
       {(!chargeOk || !retainedOk) && (
-        <p className="flex items-start gap-1.5 rounded-lg bg-red-500/10 px-3 py-2 text-[11px] text-red-700 ring-1 ring-red-500/20">
+        <p className="flex items-start gap-1.5 rounded-lg bg-hue-rose-soft px-3 py-2 text-[11px] text-hue-rose ring-1 ring-hue-rose/25">
           <AlertTriangle size={13} className="mt-px shrink-0" />
           Charge must be between zero and {money(payable, row.currency)}, and retained earning cannot exceed it.
         </p>
@@ -1100,7 +1106,7 @@ function VoucherUploadForm({ busy, onSubmit }) {
           className="block w-full text-xs text-body file:mr-3 file:rounded-lg file:border-0 file:bg-accent-soft file:px-3 file:py-2 file:font-semibold file:text-accent-soft-text" />
       </Labelled>
       {file && <p className="text-[11px] text-muted">{file.name} · {(file.size / 1024 / 1024).toFixed(2)} MB</p>}
-      {error && <p className="text-xs text-red-600">{error}</p>}
+      {error && <p className="text-xs text-hue-rose">{error}</p>}
       <button disabled={!file || busy} onClick={() => onSubmit(file)}
         className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-50">
         {busy ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
@@ -1191,7 +1197,7 @@ function CancelForm({ row, busy, onSubmit }) {
 
   return (
     <div className="mt-4 space-y-3 rounded-lg border border-border bg-surface p-4">
-      <p className="flex items-start gap-1.5 rounded-lg bg-red-500/10 px-3 py-2 text-[11px] text-red-700 ring-1 ring-red-500/20">
+      <p className="flex items-start gap-1.5 rounded-lg bg-hue-rose-soft px-3 py-2 text-[11px] text-hue-rose ring-1 ring-hue-rose/25">
         <AlertTriangle size={13} className="mt-px shrink-0" />
         Emergency override: this settles without tenant acceptance. Use only when the supplier or
         platform must unwind the booking and the normal quote flow cannot apply.
@@ -1206,7 +1212,7 @@ function CancelForm({ row, busy, onSubmit }) {
                onChange={(e) => setCharge(e.target.value)} placeholder="0.00" />
       </Labelled>
       {!chargeOk && (
-        <p className="flex items-start gap-1.5 rounded-lg bg-red-500/10 px-3 py-2 text-[11px] text-red-700 ring-1 ring-red-500/20">
+        <p className="flex items-start gap-1.5 rounded-lg bg-hue-rose-soft px-3 py-2 text-[11px] text-hue-rose ring-1 ring-hue-rose/25">
           <AlertTriangle size={13} className="mt-px shrink-0" />
           The charge cannot exceed what the tenant owes ({money(payable, row.currency)}).
         </p>
@@ -1220,7 +1226,7 @@ function CancelForm({ row, busy, onSubmit }) {
                onChange={(e) => setRetained(e.target.value)} placeholder="0.00" />
       </Labelled>
       {chargeOk && !retainedOk && (
-        <p className="flex items-start gap-1.5 rounded-lg bg-red-500/10 px-3 py-2 text-[11px] text-red-700 ring-1 ring-red-500/20">
+        <p className="flex items-start gap-1.5 rounded-lg bg-hue-rose-soft px-3 py-2 text-[11px] text-hue-rose ring-1 ring-hue-rose/25">
           <AlertTriangle size={13} className="mt-px shrink-0" />
           Retained earning exceeds the cancellation charge — the platform would be keeping commission
           out of the tenant's refund. The server rejects this too.
@@ -1252,7 +1258,7 @@ function CancelForm({ row, busy, onSubmit }) {
             internalNotes: notes.trim() || undefined,
           })
         }
-        className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+        className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-hue-rose px-4 py-2 text-sm font-semibold text-surface hover:bg-hue-rose/90 disabled:opacity-50"
       >
         <Ban size={15} /> Emergency settle cancellation
       </button>
@@ -1282,7 +1288,7 @@ function Labelled({ label, hint, required, children }) {
   return (
     <div>
       <label className="mb-1 block text-xs font-semibold text-body">
-        {label}{required && <span className="ml-0.5 text-red-500">*</span>}
+        {label}{required && <span className="ml-0.5 text-hue-rose">*</span>}
       </label>
       {children}
       {hint && <p className="mt-1 text-[11px] text-muted">{hint}</p>}

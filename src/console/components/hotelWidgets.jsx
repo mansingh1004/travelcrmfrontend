@@ -26,14 +26,17 @@ export function Gallery({ images = [], alt = "Hotel", className }) {
         {images.length > 1 && (
           <>
             <button onClick={() => go(-1)} aria-label="Previous"
-              className="absolute left-3 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-surface/85 text-body shadow-md transition-all hover:bg-surface">
+              className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus absolute left-3 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-surface/85 text-body shadow-md transition-all hover:bg-surface">
               <ChevronLeft className="h-5 w-5" />
             </button>
             <button onClick={() => go(1)} aria-label="Next"
-              className="absolute right-3 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-surface/85 text-body shadow-md transition-all hover:bg-surface">
+              className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus absolute right-3 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-surface/85 text-body shadow-md transition-all hover:bg-surface">
               <ChevronRight className="h-5 w-5" />
             </button>
-            <div className="absolute bottom-3 right-3 rounded-full bg-heading/60 px-2.5 py-1 text-[11px] font-bold text-accent-text backdrop-blur">
+            {/* bg-scrim, not bg-heading/60: --sa-text-heading is near-black in light mode but
+                near-WHITE in dark, so this counter became white-on-white and vanished. A dark
+                translucent overlay is a scrim, never a text token — same fix as hotelUi's Dialog. */}
+            <div className="absolute bottom-3 right-3 rounded-full bg-scrim px-2.5 py-1 text-[11px] font-bold text-accent-text backdrop-blur">
               {active + 1} / {images.length}
             </div>
           </>
@@ -43,7 +46,7 @@ export function Gallery({ images = [], alt = "Hotel", className }) {
         <div className="flex gap-2 overflow-x-auto pb-1">
           {images.map((src, i) => (
             <button key={i} onClick={() => setActive(i)}
-              className={cn("h-16 w-24 shrink-0 overflow-hidden rounded-xl border-2 transition-all",
+              className={cn("focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus h-16 w-24 shrink-0 overflow-hidden rounded-xl border-2 transition-all",
                 i === active ? "border-accent shadow-sm" : "border-transparent opacity-70 hover:opacity-100")}>
               <img src={src} alt={`thumb ${i + 1}`} loading="lazy" className="h-full w-full object-cover" />
             </button>
@@ -109,8 +112,8 @@ export function DonutLegend({ segments, className }) {
    VERTICAL TIMELINE — booking lifecycle / guest journey
 ═════════════════════════════════════════════════════════════ */
 const TONE_DOT = {
-  blue: "bg-focus", green: "bg-green-500", amber: "bg-amber-500", red: "bg-red-500",
-  purple: "bg-purple-500", teal: "bg-teal-500", indigo: "bg-indigo-500", slate: "bg-muted",
+  blue: "bg-hue-sky", green: "bg-hue-emerald", amber: "bg-hue-amber", red: "bg-hue-rose",
+  purple: "bg-hue-violet", teal: "bg-hue-teal", indigo: "bg-hue-indigo", slate: "bg-muted",
 };
 export function Timeline({ steps = [], className }) {
   return (
@@ -120,8 +123,8 @@ export function Timeline({ steps = [], className }) {
         return (
           <li key={i} className="relative flex gap-4 pb-5 last:pb-0">
             {i < steps.length - 1 && <span className="absolute left-[7px] top-4 h-full w-px bg-border" />}
-            <span className={cn("relative z-10 mt-1 h-3.5 w-3.5 shrink-0 rounded-full ring-4 ring-white",
-              done ? (TONE_DOT[s.tone] || "bg-focus") : "bg-border-strong")} />
+            <span className={cn("relative z-10 mt-1 h-3.5 w-3.5 shrink-0 rounded-full ring-4 ring-surface",
+              done ? (TONE_DOT[s.tone] || "bg-hue-sky") : "bg-border-strong")} />
             <div className="min-w-0 flex-1">
               <div className="flex items-center justify-between gap-2">
                 <p className={cn("text-sm font-bold", done ? "text-body" : "text-muted")}>{s.title}</p>
@@ -192,9 +195,9 @@ export function ERDiagram({ className }) {
    AI INSIGHT CARD
 ═════════════════════════════════════════════════════════════ */
 const TONE_BG = {
-  blue: "from-focus to-accent-hover", green: "from-green-500 to-emerald-700",
-  amber: "from-amber-500 to-orange-600", purple: "from-purple-500 to-violet-700",
-  teal: "from-teal-500 to-cyan-700", red: "from-rose-500 to-red-700",
+  blue: "from-hue-sky to-hue-indigo", green: "from-hue-emerald to-hue-teal",
+  amber: "from-hue-amber to-hue-orange", purple: "from-hue-violet to-hue-indigo",
+  teal: "from-hue-teal to-hue-sky", red: "from-hue-rose to-hue-orange",
 };
 export function InsightCard({ title, value, note, tone = "blue", trend }) {
   const Trend = trend === "down" ? TrendingDown : TrendingUp;
@@ -202,7 +205,7 @@ export function InsightCard({ title, value, note, tone = "blue", trend }) {
     <GlassCard className="p-4">
       <div className="flex items-start justify-between gap-2">
         <p className="text-[11px] font-bold uppercase tracking-wide text-muted">{title}</p>
-        <span className={cn("flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br text-accent-text", TONE_BG[tone] || TONE_BG.blue)}>
+        <span className={cn("flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br text-surface", TONE_BG[tone] || TONE_BG.blue)}>
           <Trend className="h-3.5 w-3.5" />
         </span>
       </div>

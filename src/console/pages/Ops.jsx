@@ -31,14 +31,14 @@ function HardDeleteModal({ tenant, onClose, onDeleted, showToast }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-slate-950/60" onClick={busy ? undefined : onClose} />
-      <div className="relative w-full max-w-md rounded-xl border border-red-500/40 bg-surface p-5 shadow-xl">
+      <div className="absolute inset-0 bg-scrim" onClick={busy ? undefined : onClose} />
+      <div className="relative w-full max-w-md rounded-xl border border-hue-rose/40 bg-surface p-5 shadow-xl">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-red-500/15 text-red-500"><ShieldAlert size={18} /></div>
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-hue-rose/15 text-hue-rose"><ShieldAlert size={18} /></div>
             <h3 className="text-sm font-bold text-heading">Permanently delete tenant</h3>
           </div>
-          <button onClick={onClose} disabled={busy} className="text-muted hover:text-body"><X size={18} /></button>
+          <button onClick={onClose} disabled={busy} className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus text-muted hover:text-body"><X size={18} /></button>
         </div>
 
         <p className="mt-3 text-sm text-body">
@@ -51,10 +51,10 @@ function HardDeleteModal({ tenant, onClose, onDeleted, showToast }) {
             local-development bypass. */}
         <div className="mt-4">
           <label className="mb-1 block text-xs font-semibold text-muted">
-            Type <span className="font-mono text-red-500">{tenant.organizationCode}</span> to confirm
+            Type <span className="font-mono text-hue-rose">{tenant.organizationCode}</span> to confirm
           </label>
           <input autoFocus value={typed} onChange={(e) => setTyped(e.target.value)}
-            className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-heading focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/30" />
+            className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-heading focus:border-hue-rose focus:outline-none focus:ring-2 focus:ring-hue-rose/30" />
         </div>
         {!mfaDisabled && <div className="mt-4">
           <label className="mb-1 block text-xs font-semibold text-muted">Authenticator code</label>
@@ -65,16 +65,16 @@ function HardDeleteModal({ tenant, onClose, onDeleted, showToast }) {
             value={mfaCode}
             onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
             placeholder="000000"
-            className="w-full rounded-lg border border-border bg-surface px-3 py-2 font-mono text-sm tracking-[0.24em] text-heading focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/30"
+            className="w-full rounded-lg border border-border bg-surface px-3 py-2 font-mono text-sm tracking-[0.24em] text-heading focus:border-hue-rose focus:outline-none focus:ring-2 focus:ring-hue-rose/30"
           />
         </div>}
         <div className="mt-5 flex justify-end gap-3">
           <button onClick={onClose} disabled={busy}
-            className="rounded-lg border border-border-strong bg-surface px-4 py-2 text-sm font-semibold text-body hover:bg-surface-hover">
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded-lg border border-border-strong bg-surface px-4 py-2 text-sm font-semibold text-body hover:bg-surface-hover">
             Cancel
           </button>
           <button onClick={confirm} disabled={!match || !mfaReady || busy}
-            className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-40">
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-2 rounded-lg bg-hue-rose px-4 py-2 text-sm font-semibold text-surface hover:bg-hue-rose/90 disabled:opacity-40">
             {busy ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />} Delete forever
           </button>
         </div>
@@ -90,7 +90,7 @@ function StepUpModal({ busy, onClose, onConfirm }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-slate-950/50" onClick={busy ? undefined : onClose} />
+      <div className="absolute inset-0 bg-scrim" onClick={busy ? undefined : onClose} />
       <div className="relative w-full max-w-sm rounded-xl border border-border bg-surface p-5 shadow-xl">
         <div className="flex items-center gap-2">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent-soft text-accent-soft-text">
@@ -116,11 +116,11 @@ function StepUpModal({ busy, onClose, onConfirm }) {
         </label>}
         <div className="mt-5 flex justify-end gap-3">
           <button onClick={onClose} disabled={busy}
-            className="rounded-lg border border-border-strong bg-surface px-4 py-2 text-sm font-semibold text-body hover:bg-surface-hover">
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded-lg border border-border-strong bg-surface px-4 py-2 text-sm font-semibold text-body hover:bg-surface-hover">
             Cancel
           </button>
           <button onClick={() => onConfirm(mfaDisabled ? "" : mfaCode)} disabled={!ready || busy}
-            className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-60">
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-60">
             {busy ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />} Export
           </button>
         </div>
@@ -198,17 +198,17 @@ export default function Ops() {
             </div>
           </div>
           <button onClick={() => setExportMfaOpen(true)} disabled={exporting}
-            className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-60">
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-60">
             {exporting ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />} Download CSV
           </button>
         </div>
       </section>
 
       {/* Danger zone */}
-      <section className="overflow-hidden rounded-xl border border-red-500/40 bg-surface">
-        <div className="flex items-center gap-2 border-b border-red-500/30 bg-red-500/5 px-4 py-3">
-          <ShieldAlert size={16} className="text-red-500" />
-          <h2 className="text-sm font-bold text-red-600 dark:text-red-400">Danger Zone — permanent tenant deletion</h2>
+      <section className="overflow-hidden rounded-xl border border-hue-rose/40 bg-surface">
+        <div className="flex items-center gap-2 border-b border-hue-rose/30 bg-hue-rose/5 px-4 py-3">
+          <ShieldAlert size={16} className="text-hue-rose" />
+          <h2 className="text-sm font-bold text-hue-rose">Danger Zone — permanent tenant deletion</h2>
         </div>
         <p className="px-4 pt-3 text-xs text-muted">
           Only soft-deleted tenants (in Trash) can be permanently deleted. This removes the tenant + its users and cannot be undone.
@@ -231,7 +231,7 @@ export default function Ops() {
                 <div className="flex items-center gap-3">
                   <StatusPill status={t.status} />
                   <button onClick={() => setTarget(t)}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-red-500/40 bg-red-500/5 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-500/10 dark:text-red-400">
+                    className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-1.5 rounded-lg border border-hue-rose/40 bg-hue-rose/5 px-3 py-1.5 text-xs font-semibold text-hue-rose hover:bg-hue-rose-soft">
                     <Trash2 size={14} /> Delete permanently
                   </button>
                 </div>
@@ -259,8 +259,8 @@ export default function Ops() {
       )}
 
       {toast && (
-        <div className={`fixed bottom-6 right-6 z-[60] flex items-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold text-white shadow-lg ${
-          toast.type === "success" ? "bg-emerald-600" : "bg-red-600"
+        <div className={`fixed bottom-6 right-6 z-[60] flex items-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold text-surface shadow-lg ${
+          toast.type === "success" ? "bg-hue-emerald" : "bg-hue-rose"
         }`}>
           {toast.type === "success" ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
           {toast.msg}

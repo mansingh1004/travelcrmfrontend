@@ -120,8 +120,8 @@ export default function PlatformHotelDetail() {
       />
 
       {!canPublish && hotel.status !== "ACTIVE" && (
-        <GlassCard className="mb-5 border-amber-200 bg-amber-50/70 p-4">
-          <p className="text-sm font-semibold text-amber-800">
+        <GlassCard className="mb-5 border-hue-amber/40 bg-hue-amber-soft p-4">
+          <p className="text-sm font-semibold text-hue-amber">
             This hotel has no active room, so it cannot be published. A published hotel with nothing
             sellable appears in tenant search and dead-ends there.
           </p>
@@ -379,7 +379,7 @@ function RoomRates({ rates }) {
           title={[r.rateCode, r.refundable === false ? "Non-refundable" : r.refundable === true ? "Refundable" : null]
             .filter(Boolean).join(" · ") || undefined}
           className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold ${
-            r.active ? "bg-accent-soft text-accent-soft-text" : "bg-surface-hover text-muted"}`}>
+            r.active ? "bg-hue-emerald-soft text-hue-emerald" : "bg-surface-hover text-muted"}`}>
           <span className="opacity-70">{r.mealPlanCode}·{OCCUPANCY_SHORT[r.occupancyBasis] ?? r.occupancyBasis}</span>
           {netMoney(r.netRate, r.currency)}
         </span>
@@ -460,7 +460,7 @@ function RoomsSection({ hotel, onChanged }) {
                       <Pencil className="h-4 w-4" />
                     </Button>
                     <Button size="icon" variant="ghost" onClick={() => remove(r)} aria-label="Remove room">
-                      <Trash2 className="h-4 w-4 text-red-500" />
+                      <Trash2 className="h-4 w-4 text-hue-rose" />
                     </Button>
                   </div>
                 </TableCell>
@@ -618,7 +618,7 @@ function MealPlansSection({ hotel, onChanged }) {
                       <Pencil className="h-4 w-4" />
                     </Button>
                     <Button size="icon" variant="ghost" onClick={() => remove(m)} aria-label="Remove meal plan">
-                      <Trash2 className="h-4 w-4 text-red-500" />
+                      <Trash2 className="h-4 w-4 text-hue-rose" />
                     </Button>
                   </div>
                 </TableCell>

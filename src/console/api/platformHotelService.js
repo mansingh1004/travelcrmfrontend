@@ -205,10 +205,10 @@ export const platformHotelService = {
 
 /** Catalog lifecycle. Only ACTIVE is sellable and visible to tenants. */
 export const CATALOG_STATUS = {
-  DRAFT:     { label: "Draft",     className: "bg-slate-100 text-slate-600" },
-  ACTIVE:    { label: "Published", className: "bg-green-50 text-green-700" },
-  INACTIVE:  { label: "Withdrawn", className: "bg-amber-50 text-amber-700" },
-  SUSPENDED: { label: "Suspended", className: "bg-red-50 text-red-600" },
+  DRAFT:     { label: "Draft",     className: "bg-surface-hover text-muted" },
+  ACTIVE:    { label: "Published", className: "bg-hue-emerald-soft text-hue-emerald" },
+  INACTIVE:  { label: "Withdrawn", className: "bg-hue-amber-soft text-hue-amber" },
+  SUSPENDED: { label: "Suspended", className: "bg-hue-rose-soft text-hue-rose" },
 };
 
 export const MEAL_PLAN_CODES = [

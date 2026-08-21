@@ -87,13 +87,13 @@ function PlanEditDrawer({ plan, availableModules, onClose, onSaved, showToast })
 
   return (
     <div className="fixed inset-0 z-40 flex justify-end">
-      <div className="absolute inset-0 bg-slate-950/50" onClick={saving ? undefined : onClose} />
+      <div className="absolute inset-0 bg-scrim" onClick={saving ? undefined : onClose} />
       <div className="relative flex h-full w-full max-w-md flex-col border-l border-border bg-surface shadow-xl">
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
           <h2 className="text-sm font-bold text-heading">
             Edit plan · <span className="font-mono text-accent">{plan.code}</span>
           </h2>
-          <button onClick={onClose} className="text-muted hover:text-body" disabled={saving}>
+          <button onClick={onClose} className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus text-muted hover:text-body" disabled={saving}>
             <X size={18} />
           </button>
         </div>
@@ -145,7 +145,7 @@ function PlanEditDrawer({ plan, availableModules, onClose, onSaved, showToast })
                   const on = form.modules.has(m);
                   return (
                     <button key={m} type="button" onClick={() => toggleModule(m)}
-                      className={`flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                      className={`focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${
                         on
                           ? "border-accent bg-accent-soft text-accent-soft-text"
                           : "border-border bg-surface text-muted hover:bg-surface-hover"
@@ -162,18 +162,18 @@ function PlanEditDrawer({ plan, availableModules, onClose, onSaved, showToast })
 
             <label className="flex items-center gap-2 text-sm text-body">
               <input type="checkbox" checked={form.active} onChange={(e) => set("active", e.target.checked)}
-                className="h-4 w-4 rounded border-border-strong accent-violet-600" />
+                className="h-4 w-4 rounded border-border-strong accent-accent" />
               Plan is active (available to assign)
             </label>
           </div>
 
           <div className="flex items-center justify-end gap-3 border-t border-border px-5 py-4">
             <button type="button" onClick={onClose} disabled={saving}
-              className="rounded-lg border border-border-strong bg-surface px-4 py-2 text-sm font-semibold text-body hover:bg-surface-hover">
+              className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded-lg border border-border-strong bg-surface px-4 py-2 text-sm font-semibold text-body hover:bg-surface-hover">
               Cancel
             </button>
             <button type="submit" disabled={saving}
-              className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-60">
+              className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-60">
               {saving ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
               Save
             </button>
@@ -297,7 +297,7 @@ function SeatPricingCard({ showToast }) {
                 : `Unlock: ${ccy} ${Number(effLicense ?? 0).toLocaleString()} · recurring: ${ccy} ${Number(data?.recurringSeatFee ?? 0).toLocaleString()} /mo.`}
             </span>
             <button type="submit" disabled={saving}
-              className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-60">
+              className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-60">
               {saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
               Save pricing
             </button>
@@ -396,12 +396,12 @@ export default function Plans() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button onClick={runDunning} disabled={dunning} title="ACTIVE→PAST_DUE (overdue) and PAST_DUE→EXPIRED (past grace)"
-            className="inline-flex items-center gap-2 rounded-lg border border-border-strong bg-surface px-4 py-2 text-sm font-semibold text-body hover:bg-surface-hover disabled:opacity-60">
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-2 rounded-lg border border-border-strong bg-surface px-4 py-2 text-sm font-semibold text-body hover:bg-surface-hover disabled:opacity-60">
             {dunning ? <Loader2 size={15} className="animate-spin" /> : <BellRing size={15} />}
             Run dunning sweep
           </button>
           <button onClick={runExpiry} disabled={expiring}
-            className="inline-flex items-center gap-2 rounded-lg border border-border-strong bg-surface px-4 py-2 text-sm font-semibold text-body hover:bg-surface-hover disabled:opacity-60">
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-2 rounded-lg border border-border-strong bg-surface px-4 py-2 text-sm font-semibold text-body hover:bg-surface-hover disabled:opacity-60">
             {expiring ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
             Run expiry sweep
           </button>
@@ -421,13 +421,13 @@ export default function Plans() {
                   <div className="flex items-center gap-2">
                     <h2 className="text-base font-bold text-heading">{p.displayName}</h2>
                     {!p.active && (
-                      <span className="rounded bg-slate-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500">inactive</span>
+                      <span className="rounded bg-surface-hover px-1.5 py-0.5 text-[10px] font-semibold text-muted">inactive</span>
                     )}
                   </div>
                   <div className="font-mono text-xs text-muted">{p.code}</div>
                 </div>
                 <button onClick={() => setEditing(p)} title="Edit plan"
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-surface-hover hover:text-body">
+                  className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-surface-hover hover:text-body">
                   <Pencil size={15} />
                 </button>
               </div>
@@ -495,8 +495,8 @@ export default function Plans() {
       )}
 
       {toast && (
-        <div className={`fixed bottom-6 right-6 z-[60] flex items-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold text-white shadow-lg ${
-          toast.type === "success" ? "bg-emerald-600" : "bg-red-600"
+        <div className={`fixed bottom-6 right-6 z-[60] flex items-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold text-surface shadow-lg ${
+          toast.type === "success" ? "bg-hue-emerald" : "bg-hue-rose"
         }`}>
           {toast.type === "success" ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
           {toast.msg}

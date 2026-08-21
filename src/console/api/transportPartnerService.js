@@ -1,18 +1,24 @@
 import ConsoleAPI, { unwrap } from "./consoleHttp";
 import { SUPERADMIN_MFA_HEADER } from "./userService";
 
-const BASE = "/super-admin/hotel-partner";
+const BASE = "/super-admin/transport-partner";
 const stepUpHeaders = (mfaCode) => ({ headers: { [SUPERADMIN_MFA_HEADER]: mfaCode } });
 
 /**
- * SuperAdmin side of hotel-partner onboarding.
+ * SuperAdmin side of transport-partner onboarding — the operator equivalent of
+ * `hotelPartnerService`, against `/super-admin/transport-partner`.
  *
  * Note on `create`/`resend`: the response carries `registrationLink`, and that is the ONLY moment the
  * raw token is readable anywhere. The backend stores a SHA-256 hash, so a later list call cannot
  * reconstruct it — the UI must offer "copy link" right there and "resend" (which rotates the token)
  * afterwards, never "show link again".
+ *
+ * Note on `listRegistrations`: the list rows carry `vehicles: []` ALWAYS — the endpoint deliberately
+ * skips the fleet join to avoid an N+1 across every operator on the page. A fleet only exists on
+ * `getRegistration`. Never count or render vehicles off a list row; you would be reporting an empty
+ * fleet for an operator that submitted twelve.
  */
-export const hotelPartnerService = {
+export const transportPartnerService = {
   listInvites: ({ status, page = 0, size = 25 } = {}) =>
     ConsoleAPI.get(`${BASE}/invites`, { params: { status: status || undefined, page, size } })
       .then((res) => ({ rows: res?.data?.data ?? [], pagination: res?.data?.pagination })),
@@ -24,7 +30,8 @@ export const hotelPartnerService = {
   revokeInvite: (publicId) => ConsoleAPI.delete(`${BASE}/invites/${publicId}`).then(unwrap),
 
   /**
-   * One partner's whole history: `{ contactName, contactEmail, events[], messages[], mailboxError }`.
+   * One operator's whole history: `{ contactName, contactEmail, hintCompanyName, events[],
+   * messages[], mailboxError }`.
    *
    * `messages` is real correspondence read live from the platform mailbox — envelopes only, both
    * folders, oldest first. It is found by ADDRESS, not by threading headers: the platform mailbox is
@@ -42,8 +49,10 @@ export const hotelPartnerService = {
     ConsoleAPI.get(`${BASE}/registrations`, { params: { status: status || undefined, page, size } })
       .then((res) => ({ rows: res?.data?.data ?? [], pagination: res?.data?.pagination })),
 
+  /** The only call that returns the fleet — vehicles, their photos and their rate cards. */
   getRegistration: (publicId) => ConsoleAPI.get(`${BASE}/registrations/${publicId}`).then(unwrap),
 
+  /** Advisory only. A duplicate never blocks a decision; it tells the reviewer where to look. */
   duplicates: (publicId) =>
     ConsoleAPI.get(`${BASE}/registrations/${publicId}/duplicates`).then(unwrap),
 
@@ -70,7 +79,9 @@ export const INVITE_STATUS = {
 export const REG_STATUS = {
   DRAFT:             { label: "In progress",     cls: "bg-surface-hover text-muted" },
   SUBMITTED:         { label: "Awaiting review", cls: "bg-hue-amber-soft text-hue-amber" },
-  CHANGES_REQUESTED: { label: "Sent back",       cls: "bg-hue-orange-soft text-hue-orange" },
+  CHANGES_REQUESTED: { label: "Sent back",       cls: "bg-hue-sky-soft text-hue-sky" },
   APPROVED:          { label: "Approved",        cls: "bg-hue-emerald-soft text-hue-emerald" },
   REJECTED:          { label: "Rejected",        cls: "bg-hue-rose-soft text-hue-rose" },
 };
+
+export default transportPartnerService;

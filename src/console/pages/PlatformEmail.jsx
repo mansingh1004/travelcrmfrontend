@@ -128,7 +128,7 @@ export default function PlatformEmail() {
           <button
             key={id}
             onClick={() => setTab(id)}
-            className={`-mb-px flex items-center gap-2 border-b-2 px-3.5 py-2 text-[13px] font-semibold transition ${
+            className={`focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus -mb-px flex items-center gap-2 border-b-2 px-3.5 py-2 text-[13px] font-semibold transition ${
               tab === id ? "border-accent text-heading" : "border-transparent text-body hover:text-heading"
             }`}
           >
@@ -139,7 +139,7 @@ export default function PlatformEmail() {
         <button
           onClick={() => setTab("settings")}
           title="Mailbox settings"
-          className={`-mb-px ml-auto flex items-center gap-2 border-b-2 px-3.5 py-2 text-[13px] font-semibold transition ${
+          className={`focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus -mb-px ml-auto flex items-center gap-2 border-b-2 px-3.5 py-2 text-[13px] font-semibold transition ${
             tab === "settings" ? "border-accent text-heading" : "border-transparent text-muted hover:text-heading"
           }`}
         >
@@ -158,8 +158,8 @@ export default function PlatformEmail() {
 
       {toast && (
         <div
-          className={`fixed bottom-6 right-6 z-[80] flex max-w-md items-start gap-2 rounded-lg px-4 py-3 text-[13px] text-white ${
-            toast.type === "success" ? "bg-emerald-600" : "bg-rose-600"
+          className={`fixed bottom-6 right-6 z-[80] flex max-w-md items-start gap-2 rounded-lg px-4 py-3 text-[13px] text-surface ${
+            toast.type === "success" ? "bg-hue-emerald" : "bg-hue-rose"
           }`}
         >
           {toast.type === "success" ? <CheckCircle2 size={15} /> : <AlertTriangle size={15} />}
@@ -271,7 +271,7 @@ function SettingsTab({ showToast, onSignatureChange }) {
           </div>
           <span
             className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold ${
-              form.source === "DATABASE" ? "bg-accent/15 text-accent" : "bg-amber-500/15 text-amber-600"
+              form.source === "DATABASE" ? "bg-accent/15 text-accent" : "bg-hue-amber/15 text-hue-amber"
             }`}
           >
             {form.source === "DATABASE" ? "Saved here" : "Server env"}
@@ -283,12 +283,12 @@ function SettingsTab({ showToast, onSignatureChange }) {
             is saved" and SMTP auth fails anyway — sending the operator to check Gmail, DNS and
             firewall rules for something one re-entry fixes. */}
         {form.passwordUnreadable && (
-          <div className="mx-4 mt-4 flex items-start gap-2 rounded-lg bg-rose-500/10 px-3 py-2.5 text-[12.5px] leading-relaxed text-rose-600">
+          <div className="mx-4 mt-4 flex items-start gap-2 rounded-lg bg-hue-rose-soft px-3 py-2.5 text-[12.5px] leading-relaxed text-hue-rose">
             <AlertTriangle size={15} className="mt-0.5 shrink-0" />
             <span>
               <b>The saved app password cannot be read on this server.</b> It is still stored, but
               this instance cannot decrypt it — {" "}
-              <code className="rounded bg-rose-500/10 px-1">app.encryption.key</code> is not the one
+              <code className="rounded bg-hue-rose-soft px-1">app.encryption.key</code> is not the one
               it was saved with. Every platform email will fail SMTP authentication until you type
               the app password in again below and save.
             </span>
@@ -346,7 +346,7 @@ function SettingsTab({ showToast, onSignatureChange }) {
         <footer className="flex justify-end border-t border-border px-4 py-3">
           <button
             onClick={() => { setMfaError(""); setMfaOpen(true); }}
-            className="inline-flex items-center gap-2 rounded-md bg-accent px-3.5 py-1.5 text-[13px] font-bold text-white hover:opacity-90"
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-2 rounded-md bg-accent px-3.5 py-1.5 text-[13px] font-bold text-white hover:opacity-90"
           >
             <Save size={14} /> Save settings
           </button>
@@ -366,7 +366,7 @@ function SettingsTab({ showToast, onSignatureChange }) {
           <button
             onClick={sendTest}
             disabled={testing || !testTo}
-            className="inline-flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-[13px] font-semibold text-heading hover:bg-page disabled:opacity-50"
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-[13px] font-semibold text-heading hover:bg-page disabled:opacity-50"
           >
             {testing ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
             Send test email
@@ -540,7 +540,7 @@ function MailboxTab({ folder, showToast, signature = "" }) {
         <button
           onClick={() => startCompose()}
           title="Compose (c)"
-          className="inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-[13px] font-bold text-white transition hover:opacity-90"
+          className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-[13px] font-bold text-white transition hover:opacity-90"
         >
           <PenSquare size={13} /> Compose
         </button>
@@ -564,13 +564,13 @@ function MailboxTab({ folder, showToast, signature = "" }) {
           />
           {(query || search) && (
             <button onClick={clearSearch} title="Clear search"
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-heading">
+              className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus absolute right-2 top-1/2 -translate-y-1/2 text-muted hover:text-heading">
               <X size={11} />
             </button>
           )}
         </div>
         <button onClick={load} title="Refresh (r)"
-          className="rounded-md border border-border p-1.5 text-body hover:bg-page hover:text-heading">
+          className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded-md border border-border p-1.5 text-body hover:bg-page hover:text-heading">
           <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
         </button>
       </header>
@@ -588,7 +588,7 @@ function MailboxTab({ folder, showToast, signature = "" }) {
             <Centered><Loader2 size={18} className="animate-spin text-muted" /></Centered>
           ) : error ? (
             <Centered>
-              <AlertTriangle size={18} className="text-amber-500" />
+              <AlertTriangle size={18} className="text-hue-amber" />
               <p className="text-[13px] font-medium text-heading">{error}</p>
               <p className="max-w-sm text-[12px] leading-relaxed text-muted">
                 For Gmail, IMAP must be enabled on the account and the password must be a
@@ -610,7 +610,7 @@ function MailboxTab({ folder, showToast, signature = "" }) {
                   <li key={m.uid} data-idx={i}>
                     <button
                       onClick={() => { setCursor(i); openMessage(m); }}
-                      className={`flex w-full items-baseline gap-2.5 border-b border-border px-3.5 py-2.5 text-left transition ${
+                      className={`focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus flex w-full items-baseline gap-2.5 border-b border-border px-3.5 py-2.5 text-left transition ${
                         active ? "bg-accent/10" : highlighted ? "bg-page" : "hover:bg-page"
                       }`}
                     >
@@ -656,13 +656,13 @@ function MailboxTab({ folder, showToast, signature = "" }) {
               <div className="mb-3 flex items-center gap-2">
                 <button
                   onClick={() => { setOpenUid(null); setMessage(null); }}
-                  className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[12px] font-medium text-body hover:bg-page hover:text-heading lg:hidden"
+                  className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[12px] font-medium text-body hover:bg-page hover:text-heading lg:hidden"
                 >
                   <ChevronLeft size={13} /> Back
                 </button>
                 <button
                   onClick={() => replyTo(message)}
-                  className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-[12px] font-semibold text-heading transition hover:bg-page"
+                  className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ml-auto inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-[12px] font-semibold text-heading transition hover:bg-page"
                 >
                   <Reply size={12} /> Reply
                 </button>
@@ -688,7 +688,7 @@ function MailboxTab({ folder, showToast, signature = "" }) {
                       type="button"
                       onClick={() => downloadAttachment(message.uid, i, n, folder, showToast)}
                       title={`Download ${n}`}
-                      className="inline-flex items-center gap-1 rounded border border-border px-2 py-0.5 text-[11px] text-muted transition hover:border-border-strong hover:bg-page hover:text-heading"
+                      className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-1 rounded border border-border px-2 py-0.5 text-[11px] text-muted transition hover:border-border-strong hover:bg-page hover:text-heading"
                     >
                       <Paperclip size={10} /> {n}
                     </button>
@@ -720,10 +720,10 @@ function MailboxTab({ folder, showToast, signature = "" }) {
       {meta && meta.totalPages > 1 && !error && (
         <footer className="flex items-center justify-between border-t border-border px-3 py-2 text-[11px]">
           <button disabled={!meta.hasPrevious} onClick={() => setPage((p) => Math.max(0, p - 1))}
-            className="rounded px-2 py-1 font-medium text-body hover:bg-page disabled:opacity-40">← Newer</button>
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded px-2 py-1 font-medium text-body hover:bg-page disabled:opacity-40">← Newer</button>
           <span className="text-muted">{meta.page + 1} / {meta.totalPages}</span>
           <button disabled={!meta.hasNext} onClick={() => setPage((p) => p + 1)}
-            className="rounded px-2 py-1 font-medium text-body hover:bg-page disabled:opacity-40">Older →</button>
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded px-2 py-1 font-medium text-body hover:bg-page disabled:opacity-40">Older →</button>
         </footer>
       )}
     </div>
@@ -821,7 +821,7 @@ function ComposePane({ draft, setDraft, showToast, signature = "", onSent }) {
         <h2 className="text-[13px] font-bold text-heading">New message</h2>
         <button
           onClick={discard}
-          className="ml-auto rounded-md p-1 text-muted transition hover:bg-page hover:text-heading"
+          className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ml-auto rounded-md p-1 text-muted transition hover:bg-page hover:text-heading"
           title="Discard (esc)"
         >
           <X size={14} />
@@ -842,7 +842,7 @@ function ComposePane({ draft, setDraft, showToast, signature = "", onSent }) {
             <button
               type="button"
               onClick={() => setShowCopies(true)}
-              className="shrink-0 text-[11px] font-semibold text-muted transition hover:text-heading"
+              className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus shrink-0 text-[11px] font-semibold text-muted transition hover:text-heading"
             >
               Cc / Bcc
             </button>
@@ -893,7 +893,7 @@ function ComposePane({ draft, setDraft, showToast, signature = "", onSent }) {
         <button
           onClick={send}
           disabled={!canSend}
-          className="inline-flex items-center gap-2 rounded-md bg-accent px-4 py-1.5 text-[13px] font-bold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+          className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-2 rounded-md bg-accent px-4 py-1.5 text-[13px] font-bold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
         >
           {sending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
           {sending ? "Sending…" : "Send"}
@@ -906,7 +906,7 @@ function ComposePane({ draft, setDraft, showToast, signature = "", onSent }) {
         </span>
         {/* Says WHY Send is dead rather than leaving a greyed button to guess at. */}
         {badAddress && (
-          <span className="ml-auto text-[11px] font-semibold text-rose-500">
+          <span className="ml-auto text-[11px] font-semibold text-hue-rose">
             {badAddress} is not a valid address
           </span>
         )}

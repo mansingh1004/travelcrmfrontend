@@ -129,11 +129,11 @@ export default function MarketplaceCredit() {
           <button type="button" onClick={() => setSettling(row.original)}
             disabled={Number(row.original.outstanding ?? 0) <= 0}
             title={Number(row.original.outstanding ?? 0) <= 0 ? "Nothing outstanding" : undefined}
-            className="rounded-lg bg-accent px-2.5 py-1.5 text-xs font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-40">
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded-lg bg-accent px-2.5 py-1.5 text-xs font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-40">
             Settle
           </button>
           <button type="button" onClick={() => setEditing(row.original)}
-            className="rounded-lg border border-border px-2.5 py-1.5 text-xs font-semibold text-body hover:bg-surface-hover">
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded-lg border border-border px-2.5 py-1.5 text-xs font-semibold text-body hover:bg-surface-hover">
             Set limit
           </button>
         </div>
@@ -153,7 +153,7 @@ export default function MarketplaceCredit() {
         </div>
         <button
           type="button" onClick={load} disabled={loading}
-          className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-semibold text-body hover:bg-surface-hover disabled:opacity-60"
+          className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-semibold text-body hover:bg-surface-hover disabled:opacity-60"
         >
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
           Refresh
@@ -240,7 +240,7 @@ function LimitDialog({ row, onClose, onSaved }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-4" onClick={onClose}>
       <div
         className="w-full max-w-md rounded-xl border border-border bg-surface p-5 shadow-xl"
         onClick={(e) => e.stopPropagation()}
@@ -254,7 +254,7 @@ function LimitDialog({ row, onClose, onSaved }) {
               Currently owes {money(row.outstanding, row.currency)}
             </p>
           </div>
-          <button onClick={onClose} className="rounded p-1 text-muted hover:text-body">
+          <button onClick={onClose} className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded p-1 text-muted hover:text-body">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -293,11 +293,11 @@ function LimitDialog({ row, onClose, onSaved }) {
 
         <div className="mt-5 flex justify-end gap-2">
           <button onClick={onClose}
-                  className="rounded-lg border border-border px-3 py-2 text-sm font-semibold text-body hover:bg-surface-hover">
+                  className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded-lg border border-border px-3 py-2 text-sm font-semibold text-body hover:bg-surface-hover">
             Cancel
           </button>
           <button onClick={() => { setMfaError(""); setMfaOpen(true); }} disabled={invalid || busy}
-                  className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-50">
+                  className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-50">
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
             Save
           </button>
@@ -401,12 +401,12 @@ function SettleDialog({ row, onClose, onSettled }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/40 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-scrim p-4" onClick={onClose}>
       <div className="my-8 w-full max-w-2xl rounded-xl border border-border bg-surface p-5 shadow-xl"
            onClick={(e) => e.stopPropagation()}>
         <div className="mb-1 flex items-start justify-between">
           <h2 className="text-base font-bold text-heading">Settle — {row.tenantName}</h2>
-          <button onClick={onClose} className="rounded p-1 text-muted hover:text-body" aria-label="Close">
+          <button onClick={onClose} className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded p-1 text-muted hover:text-body" aria-label="Close">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -459,7 +459,7 @@ function SettleDialog({ row, onClose, onSettled }) {
                           // payment is then a deliberate edit rather than something to retype.
                           setAmount(String(b.tenantPayable ?? ""));
                         }}
-                        className="rounded-lg border border-border px-2.5 py-1 text-xs font-semibold text-body hover:bg-surface-hover"
+                        className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded-lg border border-border px-2.5 py-1 text-xs font-semibold text-body hover:bg-surface-hover"
                       >
                         Select
                       </button>
@@ -511,11 +511,11 @@ function SettleDialog({ row, onClose, onSettled }) {
             </label>
             <div className="flex justify-end gap-2">
               <button onClick={() => setSelected(null)}
-                      className="rounded-lg border border-border px-3 py-2 text-sm font-semibold text-body hover:bg-surface-hover">
+                      className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded-lg border border-border px-3 py-2 text-sm font-semibold text-body hover:bg-surface-hover">
                 Cancel
               </button>
               <button onClick={() => { setMfaError(""); setMfaOpen(true); }} disabled={invalid || busy}
-                      className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-50">
+                      className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-50">
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
                 Record payment
               </button>

@@ -128,7 +128,7 @@ export default function GlobalConfig() {
         return (
           <button onClick={() => saveConfigRow(row.original.key)}
             disabled={!dirty || savingKey === row.original.key}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-40">
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-40">
             {savingKey === row.original.key ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />} Save
           </button>
         );
@@ -149,13 +149,13 @@ export default function GlobalConfig() {
           {/* ── Maintenance mode ── */}
           <section
             className={`rounded-xl border p-5 ${
-              enabled ? "border-red-500/40 bg-red-500/5" : "border-border bg-surface"
+              enabled ? "border-hue-rose/40 bg-hue-rose/5" : "border-border bg-surface"
             }`}
           >
             <div className="flex items-start justify-between gap-4">
               <div className="flex items-start gap-3">
                 <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
-                  enabled ? "bg-red-500/15 text-red-500" : "bg-accent-soft text-accent-soft-text"}`}>
+                  enabled ? "bg-hue-rose/15 text-hue-rose" : "bg-accent-soft text-accent-soft-text"}`}>
                   <Power size={18} />
                 </div>
                 <div>
@@ -171,7 +171,7 @@ export default function GlobalConfig() {
                 onClick={() => saveMaintenance(!enabled)}
                 disabled={savingMaint}
                 className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:opacity-60 ${
-                  enabled ? "bg-red-500" : "bg-border-strong"
+                  enabled ? "bg-hue-rose" : "bg-border-strong"
                 }`}
               >
                 <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
@@ -180,7 +180,7 @@ export default function GlobalConfig() {
             </div>
 
             {enabled && (
-              <div className="mt-4 flex items-center gap-2 rounded-lg bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-600">
+              <div className="mt-4 flex items-center gap-2 rounded-lg bg-hue-rose-soft px-3 py-2 text-xs font-semibold text-hue-rose">
                 <ShieldAlert size={14} /> The tenant app is currently DOWN for all users.
               </div>
             )}
@@ -198,7 +198,7 @@ export default function GlobalConfig() {
                 <button
                   onClick={() => saveMaintenance(enabled)}
                   disabled={savingMaint}
-                  className="inline-flex items-center gap-2 rounded-lg border border-border-strong bg-surface px-4 py-2 text-sm font-semibold text-body hover:bg-surface-hover disabled:opacity-60"
+                  className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-2 rounded-lg border border-border-strong bg-surface px-4 py-2 text-sm font-semibold text-body hover:bg-surface-hover disabled:opacity-60"
                 >
                   {savingMaint ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />} Save message
                 </button>
@@ -224,8 +224,8 @@ export default function GlobalConfig() {
       )}
 
       {toast && (
-        <div className={`fixed bottom-6 right-6 z-[60] flex items-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold text-white shadow-lg ${
-          toast.type === "success" ? "bg-emerald-600" : "bg-red-600"
+        <div className={`fixed bottom-6 right-6 z-[60] flex items-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold text-surface shadow-lg ${
+          toast.type === "success" ? "bg-hue-emerald" : "bg-hue-rose"
         }`}>
           {toast.type === "success" ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
           {toast.msg}

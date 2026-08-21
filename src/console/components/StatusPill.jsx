@@ -1,13 +1,15 @@
-// Tenant status pill — opacity-tint styling, readable in light & dark. Class strings are literal
-// so the Tailwind v4 scanner emits them.
+// Tenant status pill — console hue tokens, so light/dark flips automatically. No `dark:` partners:
+// the tokens already carry both values, and a dark: class here would override them. Class strings
+// are literal so the Tailwind v4 scanner emits them.
 const STYLES = {
-  ACTIVE: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20",
-  TRIAL: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20",
-  // Dunning grace window — still operational, but overdue. Orange to read distinct from TRIAL amber.
-  PAST_DUE: "bg-orange-500/10 text-orange-600 dark:text-orange-400 border border-orange-500/20",
-  SUSPENDED: "bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20",
-  EXPIRED: "bg-slate-500/10 text-slate-500 dark:text-slate-400 border border-slate-500/20",
-  INACTIVE: "bg-slate-500/10 text-slate-500 dark:text-slate-400 border border-slate-500/20",
+  ACTIVE: "bg-hue-emerald-soft text-hue-emerald border border-hue-emerald/25",
+  TRIAL: "bg-hue-amber-soft text-hue-amber border border-hue-amber/25",
+  // Dunning grace window — still operational, but overdue. The orange hue token exists precisely so
+  // this reads distinct from TRIAL amber.
+  PAST_DUE: "bg-hue-orange-soft text-hue-orange border border-hue-orange/25",
+  SUSPENDED: "bg-hue-rose-soft text-hue-rose border border-hue-rose/25",
+  EXPIRED: "bg-surface-hover text-muted border border-border",
+  INACTIVE: "bg-surface-hover text-muted border border-border",
 };
 
 export default function StatusPill({ status }) {

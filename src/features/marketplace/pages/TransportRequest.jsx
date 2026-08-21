@@ -16,7 +16,7 @@ import { transportMarketplaceService } from "../api/transportMarketplaceService"
 import { humanise } from "./TransportSearch";
 import {
   BackLink, Button, Card, Divider, Input, Notice, NumberInput, Page, PageHeader, Row, RowGroup,
-  SectionLabel, Select, Textarea, errMsg, useIdempotencyKey, useToast,
+  SectionLabel, Select, Textarea, errMsg, fmtMoney, useIdempotencyKey, useToast,
 } from "../components/marketplaceUi";
 
 /**
@@ -55,11 +55,40 @@ function toInstant(localValue) {
   return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
 
+/**
+ * The journey expressed as the three quantities the pricing engine understands: days, hours, km.
+ *
+ * The rate model decides which of them matters — a per-day coach ignores the kilometres, a per-km
+ * sedan ignores the days — and the form does not know the model, so it sends all three honestly
+ * derived and lets the server read the ones it needs. Guessing which to send would mean guessing
+ * the model, which is exactly the thing the engine exists to resolve.
+ *
+ * Days round UP, and the floor is 1: half a day of a vehicle is a day of it, and a journey with no
+ * stated release is still one day's hire. Hours are 0 rather than 1 when there is no release time —
+ * an absent value, not an hour of work — so an hourly rate cannot silently price a blank form.
+ */
+function journeyShape(pickupAt, expectedReleaseAt) {
+  const start = pickupAt ? new Date(pickupAt) : null;
+  const end = expectedReleaseAt ? new Date(expectedReleaseAt) : null;
+  const usable =
+    start && end && !Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime()) && end > start;
+  if (!usable) return { days: 1, hours: 0 };
+  const spanHours = (end - start) / 3_600_000;
+  return { days: Math.max(1, Math.ceil(spanHours / 24)), hours: Math.max(1, Math.ceil(spanHours)) };
+}
+
+/** `AIRPORT_TRANSFER` → `Airport transfer`, using the labels already on this screen. */
+const serviceLabel = (value) =>
+  SERVICE_TYPES.find(([v]) => v === value)?.[1] ?? humanise(value);
+
 export function TransportRequest() {
   const { publicId } = useParams();
   const navigate = useNavigate();
   const { showToast } = useToast();
-  const idempotencyKey = useIdempotencyKey();
+  // `useIdempotencyKey` returns `{ key, reset }` — the KEY is what goes on the wire. Destructuring
+  // it matters: the whole hook result posted as `idempotencyKey` is an object, which is not the
+  // string the server dedupes on, so the double-submit guard was silently not guarding anything.
+  const { key: idempotencyKey } = useIdempotencyKey();
 
   const [vehicle, setVehicle] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -79,6 +108,9 @@ export function TransportRequest() {
     passengers: 1,
     luggagePieces: "",
     vehicleCount: 1,
+    // Quote input only — it is NOT part of the order payload. A per-kilometre vehicle cannot be
+    // priced without it, and the operator confirms the real running on the duty slip.
+    km: "",
     leadPassengerName: "",
     leadPassengerPhone: "",
     leadPassengerEmail: "",
@@ -115,6 +147,68 @@ export function TransportRequest() {
       alive = false;
     };
   }, [publicId]);
+
+  /**
+   * Live indicative price, re-asked as the journey changes.
+   *
+   * <p>This is the number the agent repeats to their own customer while still on the call. Without
+   * it the payable first appears when a SuperAdmin approves — hours later — so the agent either
+   * quotes from a guess or asks the customer to wait, and both lose the booking.</p>
+   *
+   * <p><b>The endpoint always answers 200.</b> A response with no `tenantPayable` is not a failure:
+   * it means the engine has no rate card or rule that describes this journey, which in an
+   * ON_REQUEST marketplace is an ordinary vehicle the platform will price by hand. So nothing here
+   * toasts and nothing here blocks the submit — the request is sendable at every quote state.</p>
+   *
+   * <p>A THROW, by contrast, means the PROBE failed — offline, or the add-on lapsed mid-session —
+   * and that is the one case where the panel shows nothing at all. Rendering "quoted on request"
+   * off a failed request would be asserting an answer the server never gave. This is where it
+   * departs from the hotel form, whose quote endpoint reports unpriceability as `available:false`
+   * inside a successful body rather than by status.</p>
+   *
+   * <p>400ms debounce plus the `alive` latch: the steppers move faster than a round trip and
+   * responses are not guaranteed to arrive in order, so a stale answer must not overwrite a fresher
+   * one. The vehicle gate stops a probe firing at a `publicId` whose detail call 404'd.</p>
+   */
+  const [quote, setQuote] = useState(null);
+  const [quoting, setQuoting] = useState(false);
+
+  const shape = journeyShape(form.pickupAt, form.expectedReleaseAt);
+  const quoteVehicleCount = Number(form.vehicleCount) || 1;
+  const quoteKm = form.km === "" ? 0 : Number(form.km) || 0;
+
+  useEffect(() => {
+    if (!vehicle) return undefined;
+    let alive = true;
+    setQuoting(true);
+    const t = setTimeout(async () => {
+      try {
+        const q = await transportMarketplaceService.quoteVehicle({
+          platformVehiclePublicId: publicId,
+          serviceType: form.serviceType,
+          // The LOCAL date the journey runs on, straight off the datetime-local string so no
+          // timezone conversion can move it a day. Rules carry validFrom/validTo, so the same
+          // journey next quarter can price differently.
+          serviceDate: form.pickupAt ? form.pickupAt.slice(0, 10) : undefined,
+          vehicleCount: quoteVehicleCount,
+          days: shape.days,
+          hours: shape.hours,
+          km: quoteKm,
+        });
+        if (alive) setQuote(q ?? null);
+      } catch {
+        // Silent by design — see the note above.
+        if (alive) setQuote(null);
+      } finally {
+        if (alive) setQuoting(false);
+      }
+    }, 400);
+    return () => {
+      alive = false;
+      clearTimeout(t);
+    };
+  }, [vehicle, publicId, form.serviceType, form.pickupAt, quoteVehicleCount, quoteKm,
+      shape.days, shape.hours]);
 
   /* Debounced, because it is a server query on every keystroke otherwise. 300ms is long enough to
      finish typing a booking code and short enough that the list feels live. */
@@ -321,7 +415,35 @@ export function TransportRequest() {
                 />
               </div>
             </Row>
+
+            {/* Not sent with the request — the operator confirms the real running — but a
+                per-kilometre vehicle cannot be priced without it, so the estimate below stays
+                blank until it is filled. Said plainly in the hint rather than left to be
+                discovered by a figure that never appears. */}
+            <Row
+              label="Approximate distance"
+              hint="Total kilometres. Used only to estimate the price below — it is not sent with the request."
+            >
+              <NumberInput
+                min={0}
+                value={form.km}
+                onValueChange={(v) => set("km", v)}
+                className="w-28"
+                placeholder="km"
+                aria-label="Approximate distance in kilometres"
+              />
+            </Row>
           </RowGroup>
+
+          {/*
+            Directly under the inputs that determine it, NOT in a sticky rail.
+
+            The hotel form moved its quote into an aside because its determinants — dates, rooms,
+            occupancy — are spread down a long form and the figure kept scrolling away from them.
+            Every input this figure depends on is in the block immediately above, so here the two
+            are already adjacent and a rail would only push the number further from its causes.
+          */}
+          <QuotePanel quote={quote} quoting={quoting} />
 
           <Divider className="my-5" />
 
@@ -481,6 +603,90 @@ export function TransportRequest() {
         </Card>
       </form>
     </Page>
+  );
+}
+
+/**
+ * What this journey would cost the tenant, live, while the journey is still being described.
+ *
+ * <h3>One money figure, and that is not a simplification</h3>
+ * `tenantPayable` is the ONLY amount on the response, deliberately: the operator's net and the
+ * platform's earning are absent by design and cannot be recovered from it. So there is no breakdown
+ * to expand, no "you save ₹X", and no per-day derivation — dividing the payable by the days would
+ * publish a unit rate the platform never quoted. The line beside the amount restates the journey
+ * that was priced, using the server's own echoed values so it can never describe a different one
+ * from the figure it sits next to.
+ *
+ * <h3>Three states, none of which blocks the request</h3>
+ * Checking, priced, and quoted-on-request. The last is an ordinary vehicle in an ON_REQUEST
+ * marketplace — the engine has no rule or rate card that describes this journey and the platform
+ * will price it by hand — so it renders as information, not as a fault, and the submit button is
+ * untouched in all three.
+ *
+ * <h3>Why the caveat cannot be dropped</h3>
+ * Nothing is held and no price is binding until a SuperAdmin approves; if they come back with a
+ * different amount, the tenant has to accept it before the journey is confirmed. `note` arrives
+ * from the server with that already written so this screen, the card and the approval cannot drift
+ * into three different promises — its own wording is only the fallback.
+ */
+function QuotePanel({ quote, quoting }) {
+  if (quoting && !quote) {
+    return (
+      <div className="mt-4 flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+        <Loader2 className="h-3.5 w-3.5 animate-spin" /> Checking price…
+      </div>
+    );
+  }
+  // Nothing to say: either the probe has not run yet, or it failed outright and the server never
+  // gave an answer to report.
+  if (!quote) return null;
+
+  // Absent, not zero. `tenantPayable` is omitted entirely when the journey cannot be priced, and a
+  // ₹0 here is a number an agent could quote and then be held to.
+  if (quote.tenantPayable === null || quote.tenantPayable === undefined) {
+    return (
+      <Notice tone="info" className="mt-4">
+        {quote.note
+          || "This journey is quoted on request. Send the request and the platform team will come "
+             + "back with a price."}
+      </Notice>
+    );
+  }
+
+  const shapeParts = [
+    `${quote.vehicleCount ?? 1} vehicle${(quote.vehicleCount ?? 1) === 1 ? "" : "s"}`,
+    quote.days ? `${quote.days} day${quote.days === 1 ? "" : "s"}` : null,
+    quote.hours ? `${quote.hours} hour${quote.hours === 1 ? "" : "s"}` : null,
+    quote.km ? `${Number(quote.km).toLocaleString("en-IN")} km` : null,
+  ].filter(Boolean);
+
+  return (
+    <div className="mt-4 rounded-lg border border-slate-200 bg-white">
+      <div className="flex items-baseline justify-between gap-4 px-4 py-3">
+        <div className="min-w-0">
+          <p className="text-[12px] uppercase tracking-wide text-slate-500">Estimated payable</p>
+          <p className="text-sm text-slate-500">
+            {serviceLabel(quote.serviceType)}
+            {shapeParts.length > 0 && ` · ${shapeParts.join(" · ")}`}
+          </p>
+        </div>
+        <div className="shrink-0 text-right">
+          <span className="text-lg font-semibold text-slate-900">
+            {fmtMoney(quote.tenantPayable, quote.currency || "INR")}
+          </span>
+          {quoting && (
+            <span className="mt-0.5 inline-flex items-center gap-1 text-[12px] text-slate-500">
+              <Loader2 className="h-3 w-3 animate-spin" /> updating
+            </span>
+          )}
+        </div>
+      </div>
+      <p className="border-t border-slate-100 px-4 py-2.5 text-[12px] leading-relaxed text-slate-500">
+        {quote.note
+          || "Indicative only. The platform team confirms availability and the final price; nothing "
+             + "is held until they do."}
+      </p>
+    </div>
   );
 }
 

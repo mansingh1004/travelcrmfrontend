@@ -49,10 +49,10 @@ function Field({ label, error, required, children }) {
     <div>
       <label className="mb-1 block text-xs font-semibold text-body">
         {label}
-        {required && <span className="text-red-500"> *</span>}
+        {required && <span className="text-hue-rose"> *</span>}
       </label>
       {children}
-      {error && <p className="mt-1 text-xs text-red-500">{error}</p>}
+      {error && <p className="mt-1 text-xs text-hue-rose">{error}</p>}
     </div>
   );
 }
@@ -187,7 +187,7 @@ function TenantDrawer({ mode, tenant, onClose, onSaved, showToast }) {
   if (created) {
     return (
       <div className="fixed inset-0 z-40 flex justify-end">
-        <div className="absolute inset-0 bg-slate-950/50" onClick={() => { setCreated(null); onSaved(); }} />
+        <div className="absolute inset-0 bg-scrim" onClick={() => { setCreated(null); onSaved(); }} />
         <div className="relative flex h-full w-full max-w-lg flex-col border-l border-border bg-surface shadow-xl">
           <div className="flex items-center justify-between border-b border-border px-5 py-4">
             <div className="flex items-center gap-2">
@@ -218,7 +218,7 @@ function TenantDrawer({ mode, tenant, onClose, onSaved, showToast }) {
           </div>
           <div className="flex justify-end border-t border-border px-5 py-4">
             <button type="button" onClick={() => { setCreated(null); onSaved(); }}
-              className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover">
+              className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover">
               Done
             </button>
           </div>
@@ -229,7 +229,7 @@ function TenantDrawer({ mode, tenant, onClose, onSaved, showToast }) {
 
   return (
     <div className="fixed inset-0 z-40 flex justify-end">
-      <div className="absolute inset-0 bg-slate-950/50" onClick={saving ? undefined : onClose} />
+      <div className="absolute inset-0 bg-scrim" onClick={saving ? undefined : onClose} />
       <div className="relative flex h-full w-full max-w-lg flex-col border-l border-border bg-surface shadow-xl">
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
           <div className="flex items-center gap-2">
@@ -238,7 +238,7 @@ function TenantDrawer({ mode, tenant, onClose, onSaved, showToast }) {
               {isEdit ? "Edit tenant" : "New tenant"}
             </h2>
           </div>
-          <button onClick={onClose} className="text-muted hover:text-body" disabled={saving}>
+          <button onClick={onClose} className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus text-muted hover:text-body" disabled={saving}>
             <X size={18} />
           </button>
         </div>
@@ -343,11 +343,11 @@ function TenantDrawer({ mode, tenant, onClose, onSaved, showToast }) {
 
           <div className="flex items-center justify-end gap-3 border-t border-border px-5 py-4">
             <button type="button" onClick={onClose} disabled={saving}
-              className="rounded-lg border border-border-strong bg-surface px-4 py-2 text-sm font-semibold text-body hover:bg-surface-hover">
+              className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded-lg border border-border-strong bg-surface px-4 py-2 text-sm font-semibold text-body hover:bg-surface-hover">
               Cancel
             </button>
             <button type="submit" disabled={saving || (!isEdit && (plansLoading || plans.length === 0))}
-              className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-60">
+              className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-60">
               {saving ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
               {isEdit ? "Save changes" : "Create tenant"}
             </button>
@@ -369,10 +369,10 @@ function ConfirmModal({ state, busy, onClose }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-slate-950/50" onClick={busy ? undefined : onClose} />
+      <div className="absolute inset-0 bg-scrim" onClick={busy ? undefined : onClose} />
       <div className="relative w-full max-w-sm rounded-xl border border-border bg-surface p-5 shadow-xl">
         <div className="flex items-start gap-3">
-          <div className={`mt-0.5 ${state.danger ? "text-red-500" : "text-amber-500"}`}>
+          <div className={`mt-0.5 ${state.danger ? "text-hue-rose" : "text-hue-amber"}`}>
             <AlertTriangle size={20} />
           </div>
           <div className="flex-1">
@@ -398,12 +398,12 @@ function ConfirmModal({ state, busy, onClose }) {
         )}
         <div className="mt-5 flex justify-end gap-3">
           <button onClick={onClose} disabled={busy}
-            className="rounded-lg border border-border-strong bg-surface px-4 py-2 text-sm font-semibold text-body hover:bg-surface-hover">
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded-lg border border-border-strong bg-surface px-4 py-2 text-sm font-semibold text-body hover:bg-surface-hover">
             Cancel
           </button>
           <button onClick={() => state.onConfirm(mfaDisabled ? "" : mfaCode)} disabled={busy || !mfaReady}
-            className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 ${
-              state.danger ? "bg-red-600 hover:bg-red-700 dark:hover:bg-red-500" : "bg-accent hover:bg-accent-hover"
+            className={`focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-60 ${
+              state.danger ? "bg-hue-rose text-surface hover:bg-hue-rose/90" : "bg-accent text-accent-text hover:bg-accent-hover"
             }`}>
             {busy && <Loader2 size={15} className="animate-spin" />}
             {state.confirmLabel}
@@ -448,7 +448,7 @@ function ChangePlanModal({ tenant, onClose, onDone, showToast }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-slate-950/50" onClick={saving ? undefined : onClose} />
+      <div className="absolute inset-0 bg-scrim" onClick={saving ? undefined : onClose} />
       <div className="relative w-full max-w-sm rounded-xl border border-border bg-surface p-5 shadow-xl">
         <h3 className="text-sm font-bold text-heading">Change plan · {tenant.organizationName}</h3>
         <p className="mt-1 text-xs text-muted">
@@ -462,7 +462,7 @@ function ChangePlanModal({ tenant, onClose, onDone, showToast }) {
                 selected === p.code ? "border-accent bg-accent-soft" : "border-border hover:bg-surface-hover"
               }`}>
               <input type="radio" name="plan" checked={selected === p.code}
-                onChange={() => setSelected(p.code)} className="accent-violet-600" />
+                onChange={() => setSelected(p.code)} className="accent-accent" />
               <div>
                 <div className="text-sm font-semibold text-heading">
                   {p.displayName} <span className="font-mono text-xs text-muted">({p.code})</span>
@@ -476,11 +476,11 @@ function ChangePlanModal({ tenant, onClose, onDone, showToast }) {
         </div>
         <div className="mt-5 flex justify-end gap-3">
           <button onClick={onClose} disabled={saving}
-            className="rounded-lg border border-border-strong bg-surface px-4 py-2 text-sm font-semibold text-body hover:bg-surface-hover">
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded-lg border border-border-strong bg-surface px-4 py-2 text-sm font-semibold text-body hover:bg-surface-hover">
             Cancel
           </button>
           <button onClick={confirm} disabled={saving || selected === tenant.plan}
-            className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-60">
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-60">
             {saving && <Loader2 size={15} className="animate-spin" />} Change plan
           </button>
         </div>
@@ -713,7 +713,7 @@ export default function Tenants() {
           <p className="text-sm text-body">Onboard organizations and manage their lifecycle.</p>
         </div>
         <button onClick={() => setDrawer({ mode: "create" })}
-          className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover">
+          className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover">
           <Plus size={16} /> New tenant
         </button>
       </div>
@@ -732,7 +732,7 @@ export default function Tenants() {
         <label className="inline-flex items-center gap-2 text-sm text-body">
           <input type="checkbox" checked={showDeleted}
             onChange={(e) => { setShowDeleted(e.target.checked); setPage(0); }}
-            className="h-4 w-4 rounded border-border-strong accent-violet-600" />
+            className="h-4 w-4 rounded border-border-strong accent-accent" />
           Show deleted
         </label>
       </div>
@@ -777,8 +777,8 @@ export default function Tenants() {
       )}
 
       {toast && (
-        <div className={`fixed bottom-6 right-6 z-[60] flex items-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold text-white shadow-lg ${
-          toast.type === "success" ? "bg-emerald-600" : "bg-red-600"
+        <div className={`fixed bottom-6 right-6 z-[60] flex items-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold text-surface shadow-lg ${
+          toast.type === "success" ? "bg-hue-emerald" : "bg-hue-rose"
         }`}>
           {toast.type === "success" ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
           {toast.msg}
@@ -791,7 +791,7 @@ export default function Tenants() {
 function IconBtn({ title, onClick, busy, children }) {
   return (
     <button title={title} aria-label={title} onClick={onClick} disabled={busy}
-      className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-body hover:bg-surface-hover disabled:opacity-40">
+      className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex h-8 w-8 items-center justify-center rounded-lg text-body hover:bg-surface-hover disabled:opacity-40">
       {children}
     </button>
   );
