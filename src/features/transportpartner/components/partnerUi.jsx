@@ -14,6 +14,7 @@
  */
 import { useRef, useState } from "react";
 import { ImagePlus, Loader2, Minus, Plus, Trash2 } from "lucide-react";
+import { usePartnerI18n } from "../i18n/partnerI18n";
 
 export const FONT = "'Plus Jakarta Sans',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif";
 
@@ -30,9 +31,9 @@ export const inputCls =
   "placeholder-slate-400 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 " +
   "disabled:bg-slate-50 disabled:text-slate-500";
 
-export function Page({ children }) {
+export function Page({ children, lang = "en" }) {
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900" style={{ fontFamily: FONT }}>
+    <div lang={lang} className="min-h-screen bg-slate-50 text-slate-900" style={{ fontFamily: FONT }}>
       {children}
     </div>
   );
@@ -201,6 +202,7 @@ export function Chip({ on, disabled, onClick, className = "", children }) {
  * typeable so an operator entering a 49-seat coach is not forced to tap forty-nine times.
  */
 export function Stepper({ id, value, onChange, min = 0, max = 99, disabled, invalid }) {
+  const { t } = usePartnerI18n();
   const n = value === "" || value === null || value === undefined ? null : Number(value);
   const step = (by) => {
     const next = Math.min(max, Math.max(min, (n ?? min) + by));
@@ -212,7 +214,7 @@ export function Stepper({ id, value, onChange, min = 0, max = 99, disabled, inva
   return (
     <div className="flex items-center gap-1.5">
       <button type="button" className={btn} disabled={disabled || (n ?? min) <= min}
-        onClick={() => step(-1)} aria-label="Decrease">
+        onClick={() => step(-1)} aria-label={t("decrease")}>
         <Minus size={16} />
       </button>
       <input
@@ -223,7 +225,7 @@ export function Stepper({ id, value, onChange, min = 0, max = 99, disabled, inva
                     [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
       />
       <button type="button" className={btn} disabled={disabled || (n ?? min) >= max}
-        onClick={() => step(1)} aria-label="Increase">
+        onClick={() => step(1)} aria-label={t("increase")}>
         <Plus size={16} />
       </button>
     </div>
@@ -285,6 +287,7 @@ export function PhotoUploader({
   images, onAdd, onRemove, onMakeMain, onUpload, disabled, showMainBadge,
   mainUrl, hint, remaining = Infinity, accept = "image/jpeg,image/png,image/webp",
 }) {
+  const { t } = usePartnerI18n();
   const [busy, setBusy] = useState(false);
   const [pct, setPct] = useState(0);
   const [at, setAt] = useState([0, 0]);   // [current, total] — "Uploading 2 of 5"
@@ -301,7 +304,7 @@ export function PhotoUploader({
     // so, not fail all eight and make the operator guess which ones would have fitted.
     const files = Number.isFinite(remaining) ? picked.slice(0, Math.max(0, remaining)) : picked;
     if (files.length < picked.length) {
-      setError(`Only ${files.length} of ${picked.length} photos fitted — you have reached the limit for this registration.`);
+      setError(t("photoFitLimit", { fitted: files.length, picked: picked.length }));
     }
     if (!files.length) { if (inputRef.current) inputRef.current.value = ""; return; }
     setBusy(true);
@@ -313,7 +316,7 @@ export function PhotoUploader({
         if (url) onAdd(url);
       }
     } catch (err) {
-      setError(err?.message || "Upload failed.");
+      setError(err?.message || t("genericUploadFailed"));
     } finally {
       setBusy(false);
       setPct(0);
@@ -338,7 +341,7 @@ export function PhotoUploader({
               <>
                 <Loader2 size={18} className="animate-spin" />
                 <span>
-                  Uploading {at[1] > 1 ? `${at[0]} of ${at[1]} · ` : ""}{pct}%
+                  {t("uploading", { progress: `${at[1] > 1 ? `${at[0]} / ${at[1]} · ` : ""}${pct}%` })}
                 </span>
               </>
             ) : (
@@ -346,11 +349,11 @@ export function PhotoUploader({
                 <ImagePlus size={20} />
                 <span>
                   {full
-                    ? "Photo limit reached"
-                    : images.length ? "Add more photos" : "Add photos"}
+                    ? t("photoLimit")
+                    : images.length ? t("addMorePhotos") : t("addPhotos")}
                 </span>
                 <span className="text-[12px] font-normal text-slate-400">
-                  {full ? "Remove a photo from any vehicle to add another." : hint}
+                  {full ? t("removeAnyPhoto") : hint}
                 </span>
               </>
             )}
@@ -374,13 +377,13 @@ export function PhotoUploader({
 
                 {isMain && (
                   <span className="absolute left-1.5 top-1.5 rounded-md bg-blue-600 px-1.5 py-0.5 text-[10px] font-bold text-white">
-                    Cover
+                    {t("cover")}
                   </span>
                 )}
 
                 {!disabled && (
                   <>
-                    <button type="button" onClick={() => onRemove(i)} aria-label="Remove photo"
+                    <button type="button" onClick={() => onRemove(i)} aria-label={t("removePhoto")}
                       className="absolute right-1.5 top-1.5 grid h-8 w-8 place-items-center rounded-lg
                                  bg-white/95 text-slate-500 shadow-sm transition hover:text-rose-600">
                       <Trash2 size={14} />
@@ -390,7 +393,7 @@ export function PhotoUploader({
                       <button type="button" onClick={() => onMakeMain(i)}
                         className="absolute inset-x-1.5 bottom-1.5 rounded-lg bg-white/95 py-1 text-[11px]
                                    font-bold text-slate-600 shadow-sm transition hover:text-blue-600">
-                        Make cover
+                        {t("makeCover")}
                       </button>
                     )}
                   </>

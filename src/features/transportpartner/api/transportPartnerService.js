@@ -42,9 +42,25 @@ export const isLinkExpired = (err) => err?.response?.status === 410;
  * answers with EVERY outstanding problem joined into a single sentence, and that sentence is the
  * whole point of the call. Rewriting it would throw away the only complete answer the operator gets.
  */
-export function partnerErrorMessage(err, fallback = "Something went wrong. Please try again.") {
+export function partnerErrorMessage(
+  err,
+  fallback = "Something went wrong. Please try again.",
+  language = "en",
+) {
   const status = err?.response?.status;
   const serverMsg = err?.response?.data?.message;
+  if (language === "hi") {
+    if (serverMsg?.includes("reached the limit") && serverMsg?.includes("photos")) {
+      return "फोटो की सीमा पूरी हो गई है। नई फोटो जोड़ने से पहले कोई पुरानी फोटो हटाएँ।";
+    }
+    if (status === 404) return "यह रजिस्ट्रेशन लिंक मान्य नहीं है।";
+    if (status === 410) return "यह रजिस्ट्रेशन लिंक समाप्त हो चुका है। कृपया नया लिंक माँगें।";
+    if (status === 409) return "यह रजिस्ट्रेशन लिंक अब सक्रिय नहीं है।";
+    if (status === 429) return "बहुत अधिक अनुरोध किए गए हैं। थोड़ी देर बाद दोबारा कोशिश करें।";
+    if (err?.code === "ECONNABORTED") return "कनेक्शन में बहुत समय लग गया। कृपया दोबारा कोशिश करें।";
+    if (!err?.response) return "आप ऑफलाइन लग रहे हैं। आपके बदलाव अभी सेव नहीं हुए हैं।";
+    return fallback;
+  }
   if (serverMsg) return serverMsg;
   if (status === 404) return "This registration link is not valid.";
   if (status === 410) return "This registration link has expired. Please ask for a new one.";

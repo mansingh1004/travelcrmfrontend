@@ -11,6 +11,10 @@ import {
   Btn, Card, Centered, Chip, Field, FieldBlock, Notice, Page, PhotoUploader, ProgressBar, Row,
   Stepper, TriState, inputCls,
 } from "../components/partnerUi";
+import {
+  LanguageSwitcher, PartnerLanguageProvider, amenityLabel, modelLabel, modelUnit, serviceLabel,
+  usePartnerI18n,
+} from "../i18n/partnerI18n";
 
 /* ── Vocabulary. Mirrors the backend enums exactly; a mismatch here is a silent data loss. ── */
 
@@ -52,10 +56,6 @@ const RATE_MODELS = [
 ];
 
 const CURRENCIES = ["INR", "USD", "EUR", "GBP", "AED", "THB", "SGD"];
-
-const serviceLabel = (v) => SERVICE_TYPES.find(([k]) => k === v)?.[1] ?? v;
-const modelLabel = (v) => RATE_MODELS.find(([k]) => k === v)?.[1] ?? v;
-const modelUnit = (v) => RATE_MODELS.find(([k]) => k === v)?.[2] ?? "";
 
 /**
  * The rate model an operator almost always means for a given journey.
@@ -118,8 +118,8 @@ const COMMON_AMENITIES = [
  * finding a field — they just are not milestones.</p>
  */
 const SECTIONS = [
-  { id: "details", label: "Your details" },
-  { id: "fleet", label: "Vehicles & rates" },
+  { id: "details", labelKey: "details" },
+  { id: "fleet", labelKey: "fleetRates" },
 ];
 const SECTION_IDS = SECTIONS.map((s) => s.id);
 
@@ -310,41 +310,41 @@ function toPayload(f) {
  * with no single input to point at (a photo, a whole vehicle) keep `field: null` and fall back to
  * scrolling the section, which is the honest answer for them.
  */
-function buildChecklist(form) {
+function buildChecklist(form, t) {
   const items = [
-    { id: "company", label: "Company name / Owner name", section: "details", field: "f-company", done: Boolean(form.companyName?.trim()) },
-    { id: "city", label: "City you operate from", section: "details", field: "f-city", done: Boolean(form.cityName?.trim()) },
-    { id: "country", label: "Country code", section: "details", field: "f-country", done: Boolean(form.countryCode?.trim()) },
-    { id: "fleet", label: "At least one vehicle", section: "fleet", field: null, done: form.vehicles.length > 0 },
+    { id: "company", label: t("companyOwner"), section: "details", field: "f-company", done: Boolean(form.companyName?.trim()) },
+    { id: "city", label: t("cityOperate"), section: "details", field: "f-city", done: Boolean(form.cityName?.trim()) },
+    { id: "country", label: t("countryCode"), section: "details", field: "f-country", done: Boolean(form.countryCode?.trim()) },
+    { id: "fleet", label: t("atLeastVehicle"), section: "fleet", field: null, done: form.vehicles.length > 0 },
   ];
 
   form.vehicles.forEach((v, i) => {
-    const label = v.name?.trim() || `Vehicle ${i + 1}`;
+    const label = v.name?.trim() || t("vehicleN", { number: i + 1 });
     /* `vehicleKey` is carried explicitly rather than parsed back out of `id` or `field`: an item may
        point at one of three different inputs or at none at all, and `revealField` has to expand the
        right collapsed card in every one of those cases. */
     const of = (rest) => ({ section: "fleet", vehicleKey: v._key, ...rest });
     items.push(of({
       id: `${v._key}-name`, field: `f-vehicle-${v._key}`,
-      label: `Name for vehicle ${i + 1}`, done: Boolean(v.name?.trim()),
+      label: t("nameForVehicle", { number: i + 1 }), done: Boolean(v.name?.trim()),
     }));
     items.push(of({
       id: `${v._key}-type`, field: `f-vtype-${v._key}`,
-      label: `Vehicle type for ${label}`, done: Boolean(v.vehicleType?.trim()),
+      label: t("typeFor", { name: label }), done: Boolean(v.vehicleType?.trim()),
     }));
     items.push(of({
       id: `${v._key}-seats`, field: `f-seats-${v._key}`,
-      label: `Seats in ${label}`, done: Number(v.passengerCapacity) >= 1,
+      label: t("seatsIn", { name: label }), done: Number(v.passengerCapacity) >= 1,
     }));
     items.push(of({
       id: `${v._key}-photo`, field: null,
-      label: `A photo of ${label}`, done: (v.images?.length ?? 0) > 0,
+      label: t("photoOf", { name: label }), done: (v.images?.length ?? 0) > 0,
     }));
     const priced = v.rates.length > 0
       && v.rates.every((r) => r.netRate !== "" && r.netRate !== null && Number(r.netRate) >= 0);
     items.push(of({
       id: `${v._key}-rates`, field: null,
-      label: `Rates for ${label}`, done: priced,
+      label: t("ratesFor", { name: label }), done: priced,
     }));
   });
 
@@ -406,7 +406,22 @@ const goToField = (item) => {
 const TERMINAL_STATUSES = new Set([404, 409, 410]);
 
 export default function TransportPartnerRegister() {
+  return (
+    <PartnerLanguageProvider>
+      <TransportPartnerRegisterContent />
+    </PartnerLanguageProvider>
+  );
+}
+
+function TransportPartnerRegisterContent() {
   const { token } = useParams();
+  const { language, t } = usePartnerI18n();
+  const languageRef = useRef(language);
+  const tRef = useRef(t);
+  useEffect(() => {
+    languageRef.current = language;
+    tRef.current = t;
+  }, [language, t]);
 
   const [loading, setLoading] = useState(true);
   const [fatal, setFatal] = useState("");
@@ -467,7 +482,7 @@ export default function TransportPartnerRegister() {
         // Expiry is the one failure with an action attached — it earns a screen of its own that
         // tells the operator what to do about it.
         if (isLinkExpired(err)) setExpired(true);
-        else setFatal(partnerErrorMessage(err, "We could not open this registration link."));
+        else setFatal(partnerErrorMessage(err, tRef.current("openFailed"), languageRef.current));
       } finally {
         if (alive) setLoading(false);
       }
@@ -496,7 +511,7 @@ export default function TransportPartnerRegister() {
         // Never clobber what the operator typed. A failed save keeps the local state and says so —
         // re-hydrating from the server here would delete the very edit that failed to reach it.
         setSaveState("error");
-        const message = partnerErrorMessage(err, "Could not save. Check your connection.");
+        const message = partnerErrorMessage(err, tRef.current("saveFailed"), languageRef.current);
         setSaveError(message);
         if (TERMINAL_STATUSES.has(err?.response?.status)) setLinkDead(message);
         return null;
@@ -592,7 +607,7 @@ export default function TransportPartnerRegister() {
       } catch (err) {
         // Rethrown as a plain Error so PhotoUploader can render the message inline, beside the
         // button that failed, rather than at the bottom of a long form.
-        throw new Error(partnerErrorMessage(err, "Could not upload that photo."), { cause: err });
+        throw new Error(partnerErrorMessage(err, tRef.current("uploadFailed"), languageRef.current), { cause: err });
       }
     },
     [token],
@@ -646,9 +661,9 @@ export default function TransportPartnerRegister() {
          least one photo of …" — because an operator listing eight vehicles must not have to submit
          eight times to learn about eight missing seat counts. Splitting or re-wording it here would
          throw away the only complete answer they get. */
-      setSubmitError(partnerErrorMessage(err, "Could not submit. Please try again."));
+      setSubmitError(partnerErrorMessage(err, tRef.current("submitFailed"), languageRef.current));
       if (TERMINAL_STATUSES.has(err?.response?.status)) {
-        setLinkDead(partnerErrorMessage(err, "This registration link is no longer active."));
+        setLinkDead(partnerErrorMessage(err, tRef.current("inactiveLink"), languageRef.current));
       }
       /* Then mark the fields and go to the first one. The server's prose carries no field keys, and
          it does not need to: the checklist already computes the same list locally, item by item,
@@ -663,7 +678,7 @@ export default function TransportPartnerRegister() {
     }
   };
 
-  const checklist = useMemo(() => (form ? buildChecklist(form) : []), [form]);
+  const checklist = useMemo(() => (form ? buildChecklist(form, t) : []), [form, t]);
   const outstanding = checklist.filter((c) => !c.done);
 
   /**
@@ -691,8 +706,8 @@ export default function TransportPartnerRegister() {
   const fieldErrors = useMemo(() => {
     if (!showErrors) return {};
     return Object.fromEntries(
-      outstanding.filter((c) => c.field).map((c) => [c.field, "Still needed"]));
-  }, [showErrors, outstanding]);
+      outstanding.filter((c) => c.field).map((c) => [c.field, t("stillNeeded")]));
+  }, [showErrors, outstanding, t]);
   const doneCount = checklist.length - outstanding.length;
   const activeSection = useSectionSpy(Boolean(form) && !loading);
 
@@ -734,9 +749,9 @@ export default function TransportPartnerRegister() {
     if (Number.isNaN(at.getTime())) return null;
     const hours = (at.getTime() - Date.now()) / 3600000;
     return hours > 0 && hours <= 48
-      ? at.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })
+      ? at.toLocaleString(language === "hi" ? "hi-IN" : "en-IN", { dateStyle: "medium", timeStyle: "short" })
       : null;
-  }, [session, editable]);
+  }, [session, editable, language]);
 
   if (loading) {
     return <Centered><Loader2 className="mx-auto animate-spin text-slate-400" size={28} /></Centered>;
@@ -745,14 +760,14 @@ export default function TransportPartnerRegister() {
     return (
       <Centered>
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="mb-4 flex justify-end"><LanguageSwitcher /></div>
           <Clock className="mx-auto mb-3 rounded-full bg-amber-50 p-1.5 text-amber-500" size={34} />
-          <h1 className="text-lg font-bold text-slate-900">This link has expired</h1>
+          <h1 className="text-lg font-bold text-slate-900">{t("expiredTitle")}</h1>
           <p className="mt-1.5 text-[14px] leading-relaxed text-slate-600">
-            Registration links are only valid for a few days. Please ask the person who invited you
-            to send a new one — replying to their invitation email is the quickest way.
+            {t("expiredBody")}
           </p>
           <p className="mt-3 text-[13px] text-slate-400">
-            Anything you had already saved is kept, and the new link will open it.
+            {t("expiredSaved")}
           </p>
         </div>
       </Centered>
@@ -762,8 +777,9 @@ export default function TransportPartnerRegister() {
     return (
       <Centered>
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="mb-4 flex justify-end"><LanguageSwitcher /></div>
           <X className="mx-auto mb-3 rounded-full bg-rose-50 p-1.5 text-rose-500" size={34} />
-          <h1 className="text-lg font-bold text-slate-900">Link unavailable</h1>
+          <h1 className="text-lg font-bold text-slate-900">{t("unavailable")}</h1>
           <p className="mt-1.5 text-[14px] text-slate-600">{fatal}</p>
         </div>
       </Centered>
@@ -771,17 +787,18 @@ export default function TransportPartnerRegister() {
   }
 
   return (
-    <Page>
+    <Page lang={language}>
       {/* ── Sticky chrome ─────────────────────────────────────────────────── */}
       <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/90 backdrop-blur">
         <div className="mx-auto flex max-w-screen-2xl items-center gap-3 px-4 py-3 sm:px-6">
           <Bus className="shrink-0 text-blue-600" size={20} />
           <div className="min-w-0 flex-1">
-            <h1 className="truncate text-[15px] font-extrabold text-slate-900">Register your fleet</h1>
+            <h1 className="truncate text-[15px] font-extrabold text-slate-900">{t("registerFleet")}</h1>
             {session?.contactName && (
-              <p className="truncate text-[12px] text-slate-500">Welcome, {session.contactName}</p>
+              <p className="truncate text-[12px] text-slate-500">{t("welcome", { name: session.contactName })}</p>
             )}
           </div>
+          <LanguageSwitcher />
           <SaveBadge
             state={saveState}
             editable={editable}
@@ -801,7 +818,7 @@ export default function TransportPartnerRegister() {
                     activeSection === s.id
                       ? "bg-blue-600 text-white"
                       : "bg-slate-100 text-slate-600"}`}>
-                  {s.label}
+                  {t(s.labelKey)}
                   {pendingBySection[s.id] && (
                     <span className={`grid h-4 min-w-4 place-items-center rounded-full px-1 text-[10px] font-bold ${
                       activeSection === s.id ? "bg-white/25 text-white" : "bg-amber-400 text-amber-950"}`}>
@@ -827,7 +844,7 @@ export default function TransportPartnerRegister() {
                       activeSection === s.id
                         ? "bg-blue-50 text-blue-700"
                         : "text-slate-600 hover:bg-slate-100"}`}>
-                    <span className="min-w-0 flex-1 truncate">{s.label}</span>
+                    <span className="min-w-0 flex-1 truncate">{t(s.labelKey)}</span>
                     {pendingBySection[s.id] ? (
                       <span className="grid h-4 min-w-4 place-items-center rounded-full bg-amber-400 px-1 text-[10px] font-bold text-amber-950">
                         {pendingBySection[s.id]}
@@ -841,7 +858,7 @@ export default function TransportPartnerRegister() {
 
               <div className="rounded-xl border border-slate-200 bg-white p-3.5">
                 <div className="mb-2 flex items-center justify-between text-[12px] font-bold text-slate-600">
-                  <span>Ready to submit</span>
+                  <span>{t("readySubmit")}</span>
                   <span className="tabular-nums text-slate-400">{doneCount}/{checklist.length}</span>
                 </div>
                 <ProgressBar done={doneCount} total={checklist.length} />
@@ -870,33 +887,31 @@ export default function TransportPartnerRegister() {
         <main className="min-w-0 flex-1 space-y-4 pb-32 lg:pb-8" onKeyDown={onFormKeyDown}>
           {done && (
             <Notice tone="success">
-              <strong>Thank you — we have your fleet details.</strong> Our team will review them and
-              get in touch. You can keep this link to check back on what you sent.
+              <strong>{t("thankTitle")}</strong> {t("thankBody")}
             </Notice>
           )}
 
           {!done && status === "REJECTED" && (
             <Notice tone="error">
-              <strong>This registration was not accepted.</strong>
+              <strong>{t("rejected")}</strong>
               {reviewerNote && <div className="mt-1 whitespace-pre-wrap">{reviewerNote}</div>}
             </Notice>
           )}
 
           {!done && status !== "REJECTED" && reviewerNote && (
             <Notice tone="warn">
-              <strong>Please update a few things:</strong>
+              <strong>{t("updateThings")}</strong>
               <div className="mt-1 whitespace-pre-wrap">{reviewerNote}</div>
             </Notice>
           )}
 
           {ro && !done && status !== "REJECTED" && (
-            <Notice tone="info">This registration is being reviewed and cannot be edited.</Notice>
+            <Notice tone="info">{t("underReview")}</Notice>
           )}
 
           {expiringSoon && (
             <Notice tone="warn">
-              This link stops working on <strong>{expiringSoon}</strong>. Finish and submit before
-              then, or ask for a new one — your saved answers are kept either way.
+              {t("expiresSoon", { date: expiringSoon })}
             </Notice>
           )}
 
@@ -906,10 +921,7 @@ export default function TransportPartnerRegister() {
           {linkDead && (
             <Notice tone="error">
               <strong>{linkDead}</strong>
-              <div className="mt-1">
-                Saving has stopped. Please ask for a new registration link — anything you had already
-                saved is kept, and the new link will open it.
-              </div>
+              <div className="mt-1">{t("savingStopped")}</div>
             </Notice>
           )}
 
@@ -918,7 +930,7 @@ export default function TransportPartnerRegister() {
               <div className="flex flex-wrap items-center gap-3">
                 <span className="min-w-0 flex-1">{saveError}</span>
                 <Btn variant="ghost" size="sm" onClick={() => save(formRef.current)}>
-                  <RotateCw size={14} /> Retry
+                  <RotateCw size={14} /> {t("retry")}
                 </Btn>
               </div>
             </Notice>
@@ -931,81 +943,79 @@ export default function TransportPartnerRegister() {
               laptop scrolling past a lot of half-empty white before reaching the part that matters.
               Fields use the stacked label, not the wide Row label, because a 44-unit label gutter
               inside a half-width column leaves the input too narrow to read what you typed. */}
-          <Card id="details" title="Your details"
-            hint="A company or owner name, city and country are the only three we need before you can save. Everything else can wait.">
+          <Card id="details" title={t("details")} hint={t("detailsHint")}>
             <div className="grid gap-x-8 gap-y-7 lg:grid-cols-2">
-              <Group title="Company">
+              <Group title={t("company")}>
                 {/* "/ Owner name" is not a second field — it is the same column, labelled for who actually
                     fills it. Most of this trade is sole proprietors with no registered company, and a
                     box that only says "Company name" reads to them as "you cannot use this form".
                     They type their own name and everything downstream — the invite thread, the
                     review queue, the catalog supplier — is correct, because it was always "who we
                     contract with" and never "a registered entity". */}
-                <Field label="Company name / Owner name" hint="required" error={fieldErrors["f-company"]}>
+                <Field label={t("companyOwner")} hint={t("required")} error={fieldErrors["f-company"]}>
                   <input id="f-company" className={inputCls} value={form.companyName} disabled={ro}
                     maxLength={200} autoComplete="organization"
                     aria-invalid={Boolean(fieldErrors["f-company"])}
                     onChange={(e) => patch({ companyName: e.target.value })}
                     placeholder="Sai Travels, or Ramesh Sharma" />
                 </Field>
-                <Field label="About your fleet" hint="optional">
+                <Field label={t("aboutFleet")} hint={t("optional")}>
                   <textarea className={inputCls} rows={4} value={form.about} disabled={ro}
                     onChange={(e) => patch({ about: e.target.value })}
-                    placeholder="How long you have operated, the kind of work you do, anything a travel agent should know." />
+                    placeholder={t("aboutPlaceholder")} />
                 </Field>
-                <Field label="Website" hint="optional">
+                <Field label={t("website")} hint={t("optional")}>
                   <input className={inputCls} type="url" inputMode="url" autoCapitalize="none"
                     maxLength={500} value={form.website} disabled={ro}
                     onChange={(e) => patch({ website: e.target.value })} placeholder="https://…" />
                 </Field>
               </Group>
 
-              <Group title="Where you are"
-                hint="The city you are based in is how travel agents find your vehicles.">
+              <Group title={t("whereYouAre")} hint={t("whereHint")}>
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <Field label="City" hint="required" error={fieldErrors["f-city"]}>
+                  <Field label={t("city")} hint={t("required")} error={fieldErrors["f-city"]}>
                     <input id="f-city" className={inputCls} value={form.cityName} disabled={ro}
                       maxLength={120} autoComplete="address-level2"
                       aria-invalid={Boolean(fieldErrors["f-city"])}
                       onChange={(e) => patch({ cityName: e.target.value })} placeholder="Pune" />
                   </Field>
-                  <Field label="Country code" hint="2–3 letters, e.g. IN" error={fieldErrors["f-country"]}>
+                  <Field label={t("countryCode")} hint={t("countryHint")} error={fieldErrors["f-country"]}>
                     <input id="f-country" className={inputCls} value={form.countryCode} disabled={ro} maxLength={3}
                       autoCapitalize="characters" autoComplete="country"
                       aria-invalid={Boolean(fieldErrors["f-country"])}
                       onChange={(e) => patch({ countryCode: e.target.value.toUpperCase() })} placeholder="IN" />
                   </Field>
-                  <Field label="State / region">
+                  <Field label={t("stateRegion")}>
                     <input className={inputCls} value={form.stateName} disabled={ro} maxLength={120}
                       autoComplete="address-level1"
                       onChange={(e) => patch({ stateName: e.target.value })} placeholder="Maharashtra" />
                   </Field>
-                  <Field label="City / airport code" hint="optional">
+                  <Field label={t("cityAirportCode")} hint={t("optional")}>
                     <input className={inputCls} value={form.cityCode} disabled={ro} maxLength={20}
                       autoCapitalize="characters"
                       onChange={(e) => patch({ cityCode: e.target.value.toUpperCase() })} placeholder="PNQ" />
                   </Field>
                 </div>
-                <Field label="Office address" hint="optional">
+                <Field label={t("officeAddress")} hint={t("optional")}>
                   <textarea className={inputCls} rows={2} value={form.address} disabled={ro}
                     maxLength={500} autoComplete="street-address"
                     onChange={(e) => patch({ address: e.target.value })} />
                 </Field>
               </Group>
 
-              <Group title="Contact" hint="Who we call when a booking needs confirming.">
-                <Field label="Contact person">
+              <Group title={t("contact")} hint={t("contactHint")}>
+                <Field label={t("contactPerson")}>
                   <input className={inputCls} value={form.contactPerson} disabled={ro} maxLength={150}
                     autoComplete="name"
                     onChange={(e) => patch({ contactPerson: e.target.value })} placeholder="Ramesh Patil" />
                 </Field>
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <Field label="Phone">
+                  <Field label={t("phone")}>
                     <input className={inputCls} type="tel" inputMode="tel" autoComplete="tel" maxLength={50}
                       value={form.phone} disabled={ro}
                       onChange={(e) => patch({ phone: e.target.value })} placeholder="+91 98765 43210" />
                   </Field>
-                  <Field label="Email">
+                  <Field label={t("email")}>
                     <input className={inputCls} type="email" inputMode="email" autoComplete="email"
                       autoCapitalize="none" maxLength={100} value={form.email} disabled={ro}
                       onChange={(e) => patch({ email: e.target.value })} placeholder="bookings@saitravels.com" />
@@ -1013,42 +1023,41 @@ export default function TransportPartnerRegister() {
                 </div>
               </Group>
 
-              <Group title="Coverage & terms">
-                <Field label="Where you run" hint="routes and corridors, in your own words">
+              <Group title={t("coverageTerms")}>
+                <Field label={t("whereRun")} hint={t("routesHint")}>
                   <textarea className={inputCls} rows={3} value={form.coverageNote} disabled={ro}
                     onChange={(e) => patch({ coverageNote: e.target.value })}
-                    placeholder="Anywhere in Maharashtra, Goa on request. Up to 300 km one way." />
+                    placeholder={t("coveragePlaceholder")} />
                 </Field>
                 {/* The one number that decides whether a same-day airport transfer can be sent to
                     this fleet at all. Blank stays blank — defaulting it to 0 would manufacture a
                     promise the operator never made. */}
-                <Field label="Notice you need" hint="leave blank to make no promise">
+                <Field label={t("noticeNeed")} hint={t("leaveBlank")}>
                   <div className="flex items-center gap-2">
                     <input className={`${inputCls} max-w-32`} type="number" min="0" step="1"
                       inputMode="numeric" value={form.noticeHours} disabled={ro}
                       onChange={(e) => patch({ noticeHours: e.target.value })} placeholder="12" />
-                    <span className="text-[13px] font-medium text-slate-500">hours</span>
+                    <span className="text-[13px] font-medium text-slate-500">{t("hours")}</span>
                   </div>
                 </Field>
-                <Field label="Cancellation terms" hint="optional">
+                <Field label={t("cancellationTerms")} hint={t("optional")}>
                   <textarea className={inputCls} rows={3} value={form.cancellationPolicy} disabled={ro}
                     onChange={(e) => patch({ cancellationPolicy: e.target.value })}
-                    placeholder="Free cancellation up to 24 hours before pickup. 50% within 12 hours…" />
+                    placeholder={t("cancellationPlaceholder")} />
                 </Field>
               </Group>
             </div>
           </Card>
 
-          <Card id="fleet" title="Vehicles & rates"
-            hint="Each vehicle here becomes its own listing. Give us your net rate — what we pay you. Agents never see it."
+          <Card id="fleet" title={t("fleetRates")} hint={t("fleetHint")}
             right={vehicleCount > 0 && (
               <span className="shrink-0 rounded-lg bg-slate-100 px-2.5 py-1 text-[12px] font-bold text-slate-600">
-                {vehicleCount} vehicle{vehicleCount === 1 ? "" : "s"} · {rateCount} rate{rateCount === 1 ? "" : "s"}
-                {" · "}{photoCount}/{PHOTO_LIMITS.maxPhotos} photos
+                {vehicleCount} {t(vehicleCount === 1 ? "vehicle" : "vehicles")} · {rateCount} {t(rateCount === 1 ? "rate" : "rates")}
+                {" · "}{photoCount}/{PHOTO_LIMITS.maxPhotos} {t(photoCount === 1 ? "photo" : "photos")}
               </span>
             )}>
             {vehicleCount === 0 && (
-              <p className="text-[13px] text-slate-400">No vehicles yet. Add at least one to submit.</p>
+              <p className="text-[13px] text-slate-400">{t("noVehicles")}</p>
             )}
 
             {form.vehicles.map((vehicle, vi) => (
@@ -1073,7 +1082,7 @@ export default function TransportPartnerRegister() {
 
             {!ro && (
               <Btn variant="ghost" onClick={addVehicle} className="w-full sm:w-auto">
-                <Plus size={15} /> Add a vehicle
+                <Plus size={15} /> {t("addVehicle")}
               </Btn>
             )}
           </Card>
@@ -1091,21 +1100,21 @@ export default function TransportPartnerRegister() {
             <div className="min-w-0 flex-1">
               {outstanding.length === 0 ? (
                 <p className="flex items-center gap-1.5 text-[13px] font-bold text-emerald-600">
-                  <Check size={15} /> Everything we need is filled in
+                  <Check size={15} /> {t("everythingFilled")}
                 </p>
               ) : (
                 <button type="button" onClick={openOutstanding}
                   className="flex items-center gap-1.5 text-left text-[13px] font-bold text-slate-600">
                   <ListChecks size={15} className="shrink-0 text-amber-500" />
                   <span className="truncate">
-                    {outstanding.length} thing{outstanding.length === 1 ? "" : "s"} left
-                    <span className="ml-1 font-medium text-slate-400">· see what</span>
+                    {t(outstanding.length === 1 ? "thingLeft" : "thingsLeft", { count: outstanding.length })}
+                    <span className="ml-1 font-medium text-slate-400">· {t("seeWhat")}</span>
                   </span>
                 </button>
               )}
             </div>
             <Btn onClick={onSubmit} busy={submitting} disabled={Boolean(linkDead)} className="shrink-0">
-              <Send size={15} /> Submit for review
+              <Send size={15} /> {t("submitReview")}
             </Btn>
           </div>
         </div>
@@ -1119,8 +1128,8 @@ export default function TransportPartnerRegister() {
             style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}
             onClick={(e) => e.stopPropagation()}>
             <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-[15px] font-bold text-slate-900">Still to fill in</h2>
-              <button type="button" onClick={() => setSheetOpen(false)} aria-label="Close"
+              <h2 className="text-[15px] font-bold text-slate-900">{t("stillFill")}</h2>
+              <button type="button" onClick={() => setSheetOpen(false)} aria-label={t("close")}
                 className="grid h-9 w-9 place-items-center rounded-lg text-slate-400 hover:bg-slate-100">
                 <X size={18} />
               </button>
@@ -1134,7 +1143,7 @@ export default function TransportPartnerRegister() {
                                font-medium text-slate-700 hover:bg-slate-50">
                     <span className="h-2 w-2 shrink-0 rounded-full bg-amber-400" />
                     <span className="min-w-0 flex-1">{c.label}</span>
-                    <span className="shrink-0 text-[12px] font-semibold text-blue-600">Go</span>
+                    <span className="shrink-0 text-[12px] font-semibold text-blue-600">{t("go")}</span>
                   </button>
                 </li>
               ))}
@@ -1157,6 +1166,7 @@ function VehicleCard({
   onAddRate, onChangeRate, onRemoveRate, onUploadPhoto, onRemovePhoto, photosLeft,
   nameError, typeError, seatsError,
 }) {
+  const { language, t } = usePartnerI18n();
   const [amenityDraft, setAmenityDraft] = useState("");
 
   const hasAmenity = (v) => (vehicle.amenities ?? []).some((a) => a.toLowerCase() === v.toLowerCase());
@@ -1215,22 +1225,22 @@ function VehicleCard({
           )}
           <span className="min-w-0">
             <span className="block truncate text-[13.5px] font-bold text-slate-700">
-              {vehicle.name?.trim() || `Vehicle ${index + 1}`}
+              {vehicle.name?.trim() || t("vehicleN", { number: index + 1 })}
             </span>
             {collapsed && (
               <span className="block truncate text-[12px] text-slate-500">
                 {[
                   vehicle.vehicleType?.trim(),
-                  Number(vehicle.passengerCapacity) >= 1 ? `${vehicle.passengerCapacity} seats` : null,
-                  `${vehicle.rates.length} rate${vehicle.rates.length === 1 ? "" : "s"}`,
-                  cheapest !== null ? `from ${cheapest.toLocaleString("en-IN")}` : null,
+                  Number(vehicle.passengerCapacity) >= 1 ? `${vehicle.passengerCapacity} ${t("seats")}` : null,
+                  `${vehicle.rates.length} ${t(vehicle.rates.length === 1 ? "rate" : "rates")}`,
+                  cheapest !== null ? `${t("from")} ${cheapest.toLocaleString(language === "hi" ? "hi-IN" : "en-IN")}` : null,
                 ].filter(Boolean).join(" · ")}
               </span>
             )}
           </span>
         </button>
         {!readOnly && (
-          <button type="button" onClick={onRemove} aria-label={`Remove vehicle ${index + 1}`}
+          <button type="button" onClick={onRemove} aria-label={t("removeVehicle", { number: index + 1 })}
             className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-rose-600">
             <Trash2 size={15} />
           </button>
@@ -1239,8 +1249,7 @@ function VehicleCard({
 
       {!collapsed && (
         <div className="space-y-3 border-t border-slate-200 p-3.5 sm:p-4">
-          <Row label="What you sell it as" required error={nameError}
-            hint="The name an agent sees — not a number plate">
+          <Row label={t("whatSell")} required error={nameError} hint={t("sellHint")}>
             <input id={`f-vehicle-${vehicle._key}`} className={inputCls} value={vehicle.name}
               disabled={readOnly} maxLength={200} aria-invalid={Boolean(nameError)}
               onChange={(e) => onChange({ name: e.target.value })}
@@ -1251,7 +1260,7 @@ function VehicleCard({
             {/* A text input with suggestions, NOT a select — `vehicleType` is a free string on the
                 backend so an operator can name their own segment, and a select whose options lack
                 the stored value rewrites it on the next save. See COMMON_VEHICLE_TYPES. */}
-            <Field label="Vehicle type" hint="required" error={typeError}>
+            <Field label={t("vehicleType")} hint={t("required")} error={typeError}>
               <input id={`f-vtype-${vehicle._key}`} className={inputCls} value={vehicle.vehicleType}
                 disabled={readOnly} maxLength={100} list={`vtypes-${vehicle._key}`}
                 aria-invalid={Boolean(typeError)}
@@ -1261,9 +1270,9 @@ function VehicleCard({
                 {COMMON_VEHICLE_TYPES.map((t) => <option key={t} value={t} />)}
               </datalist>
             </Field>
-            <Field label="Air conditioning">
+            <Field label={t("airConditioning")}>
               <TriState value={vehicle.airConditioned} disabled={readOnly}
-                unset="Not specified" yes="Air-conditioned" no="Non-AC"
+                unset={t("notSpecified")} yes={t("airConditioned")} no={t("nonAc")}
                 onChange={(v) => onChange({ airConditioned: v })} />
             </Field>
           </div>
@@ -1275,13 +1284,13 @@ function VehicleCard({
               nobody made. So no nag paragraph here either, unlike the seat count below: that one is
               required, this one is not. */}
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Owner company" hint="blank if it's your own">
+            <Field label={t("ownerCompany")} hint={t("blankOwn")}>
               <input className={inputCls} value={vehicle.ownerCompanyName} disabled={readOnly}
                 maxLength={200}
                 onChange={(e) => onChange({ ownerCompanyName: e.target.value })}
                 placeholder="Sharma Travels" />
             </Field>
-            <Field label="Owner name" hint="who we call about this vehicle">
+            <Field label={t("ownerName")} hint={t("whoCall")}>
               <input className={inputCls} value={vehicle.ownerName} disabled={readOnly}
                 maxLength={150}
                 onChange={(e) => onChange({ ownerName: e.target.value })}
@@ -1290,12 +1299,12 @@ function VehicleCard({
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Passenger seats" hint="not counting the driver" error={seatsError}>
+            <Field label={t("passengerSeats")} hint={t("notDriver")} error={seatsError}>
               <Stepper id={`f-seats-${vehicle._key}`} value={vehicle.passengerCapacity}
                 min={1} max={80} disabled={readOnly} invalid={Boolean(seatsError)}
                 onChange={(v) => onChange({ passengerCapacity: v })} />
             </Field>
-            <Field label="Suitcases" hint="with the seats full">
+            <Field label={t("suitcases")} hint={t("seatsFull")}>
               <Stepper value={vehicle.luggageCapacity} min={0} max={80} disabled={readOnly}
                 onChange={(v) => onChange({ luggageCapacity: v })} />
             </Field>
@@ -1305,23 +1314,22 @@ function VehicleCard({
               arbitrary and it is the one that blocks publication two steps later. */}
           {!readOnly && !(Number(vehicle.passengerCapacity) >= 1) && (
             <p className="text-[12.5px] leading-relaxed text-slate-500">
-              We cannot list a vehicle without a seat count: agents search and quote on that number,
-              so a vehicle nobody can size never gets chosen for a family of six.
+              {t("seatExplanation")}
             </p>
           )}
 
-          <Field label="Description">
+          <Field label={t("description")}>
             <textarea className={inputCls} rows={2} value={vehicle.description} disabled={readOnly}
               onChange={(e) => onChange({ description: e.target.value })}
               placeholder="2022 Innova Crysta, push-back seats, ample boot space…" />
           </Field>
 
           {/* ── Amenities ───────────────────────────────────────── */}
-          <FieldBlock label="What's on board" hint="optional">
+          <FieldBlock label={t("onBoard")} hint={t("optional")}>
             <div className="flex flex-wrap gap-2">
               {COMMON_AMENITIES.map((a) => (
                 <Chip key={a} on={hasAmenity(a)} disabled={readOnly} onClick={() => toggleAmenity(a)}>
-                  {hasAmenity(a) && <Check size={13} className="mr-1 inline" />}{a}
+                  {hasAmenity(a) && <Check size={13} className="mr-1 inline" />}{amenityLabel(a, language)}
                 </Chip>
               ))}
             </div>
@@ -1333,7 +1341,7 @@ function VehicleCard({
                     className="inline-flex min-h-10 items-center gap-1.5 rounded-xl bg-slate-100 px-3.5 text-[13px] font-semibold text-slate-700">
                     {a}
                     {!readOnly && (
-                      <button type="button" aria-label={`Remove ${a}`}
+                      <button type="button" aria-label={t("removeItem", { name: a })}
                         className="text-slate-400 transition hover:text-rose-500"
                         onClick={() => toggleAmenity(a)}>
                         <X size={14} />
@@ -1346,22 +1354,21 @@ function VehicleCard({
 
             {!readOnly && (
               <div className="mt-2 flex gap-2">
-                <input className={inputCls} value={amenityDraft} placeholder="Something else…"
+                <input className={inputCls} value={amenityDraft} placeholder={t("somethingElse")}
                   onChange={(e) => setAmenityDraft(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addAmenity(); } }} />
                 <Btn variant="ghost" onClick={addAmenity} disabled={!amenityDraft.trim()}>
-                  <Plus size={15} /> Add
+                  <Plus size={15} /> {t("add")}
                 </Btn>
               </div>
             )}
           </FieldBlock>
 
           {/* ── Photos ──────────────────────────────────────────── */}
-          <FieldBlock label="Photos" hint="at least one">
+          <FieldBlock label={t("photos")} hint={t("photoAtLeast")}>
             {!readOnly && vehicle.images.length === 0 && (
               <Notice tone="warn">
-                Every vehicle needs a photo. The catalog shows one cover image per vehicle, so the
-                first photo — or whichever you make the cover — is what a travel agent actually sees.
+                {t("photoNotice")}
               </Notice>
             )}
             <div className="mt-2">
@@ -1372,7 +1379,7 @@ function VehicleCard({
                 mainUrl={vehicle.primaryImageUrl}
                 remaining={photosLeft}
                 accept={PHOTO_LIMITS.accept}
-                hint={`${PHOTO_LIMITS.hint} · ${Math.max(0, photosLeft)} left for this registration`}
+                hint={`${PHOTO_LIMITS.hint} · ${t("photosLeft", { count: Math.max(0, photosLeft) })}`}
                 onUpload={onUploadPhoto}
                 onAdd={(url) => onChange({ images: [...vehicle.images, url] })}
                 onRemove={onRemovePhoto}
@@ -1385,11 +1392,11 @@ function VehicleCard({
           <div className="rounded-xl border border-slate-200 bg-white p-3">
             <div className="mb-2.5 flex items-center justify-between gap-2">
               <span className="text-[12px] font-bold uppercase tracking-wide text-slate-500">
-                Net rates
+                {t("netRates")}
               </span>
               {!readOnly && (
                 <Btn variant="ghost" size="sm" onClick={onAddRate}>
-                  <Plus size={13} /> Add rate
+                  <Plus size={13} /> {t("addRate")}
                 </Btn>
               )}
             </div>
@@ -1398,8 +1405,7 @@ function VehicleCard({
                 One line per journey type and pricing method is the whole model, and an operator who
                 does not know that will try to add two per-km outstation rows and lose one. */}
             <p className="mb-2.5 text-[12px] leading-relaxed text-slate-500">
-              One line per kind of journey and how you price it — an airport run at a flat fee and an
-              outstation run per kilometre are two lines, not one.
+              {t("rateExplanation")}
             </p>
 
             <div className="space-y-2.5">
@@ -1414,7 +1420,7 @@ function VehicleCard({
               ))}
 
               {vehicle.rates.length === 0 && (
-                <p className="text-[13px] text-slate-400">Add at least one rate.</p>
+                <p className="text-[13px] text-slate-400">{t("addOneRate")}</p>
               )}
             </div>
           </div>
@@ -1433,16 +1439,17 @@ function VehicleCard({
  * see the agreed unit instead of re-reading an inclusions paragraph and guessing.
  */
 function RateRow({ rate, index, readOnly, duplicate, onChange, onRemove }) {
-  const unit = modelUnit(rate.rateModel);
+  const { language, t } = usePartnerI18n();
+  const unit = modelUnit(rate.rateModel, language);
   return (
     <div className={`rounded-xl border p-3 ${
       duplicate ? "border-amber-300 bg-amber-50/60" : "border-slate-200 bg-slate-50/70"}`}>
       <div className="mb-2.5 flex items-center justify-between gap-2">
         <span className="min-w-0 truncate text-[12px] font-bold text-slate-500">
-          {serviceLabel(rate.serviceType)} · {modelLabel(rate.rateModel)}
+          {serviceLabel(rate.serviceType, language)} · {modelLabel(rate.rateModel, language)}
         </span>
         {!readOnly && (
-          <button type="button" onClick={onRemove} aria-label={`Remove rate ${index + 1}`}
+          <button type="button" onClick={onRemove} aria-label={t("removeRate", { number: index + 1 })}
             className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-rose-600">
             <Trash2 size={14} />
           </button>
@@ -1450,30 +1457,30 @@ function RateRow({ rate, index, readOnly, duplicate, onChange, onRemove }) {
       </div>
 
       <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-12">
-        <Field label="Kind of journey" className="lg:col-span-4">
+        <Field label={t("kindJourney")} className="lg:col-span-4">
           <select className={inputCls} value={rate.serviceType} disabled={readOnly}
             onChange={(e) => onChange({ serviceType: e.target.value })}>
-            {SERVICE_TYPES.map(([value, label]) => (
-              <option key={value} value={value}>{label}</option>
+            {SERVICE_TYPES.map(([value]) => (
+              <option key={value} value={value}>{serviceLabel(value, language)}</option>
             ))}
           </select>
         </Field>
-        <Field label="How you price it" className="lg:col-span-3">
+        <Field label={t("howPrice")} className="lg:col-span-3">
           <select className={inputCls} value={rate.rateModel} disabled={readOnly}
             onChange={(e) => onChange({ rateModel: e.target.value })}>
-            {RATE_MODELS.map(([value, label]) => (
-              <option key={value} value={value}>{label}</option>
+            {RATE_MODELS.map(([value]) => (
+              <option key={value} value={value}>{modelLabel(value, language)}</option>
             ))}
           </select>
         </Field>
         {/* The label carries the unit. "Net rate: 4000" is four different amounts of money depending
             on the model beside it, and only the operator knows which they meant. */}
-        <Field label={`Net ${unit}`} hint="we pay you" className="lg:col-span-3">
+        <Field label={t("netUnit", { unit })} hint={t("wePay")} className="lg:col-span-3">
           <input className={inputCls} type="number" min="0" step="0.01" inputMode="decimal"
             value={rate.netRate} disabled={readOnly} placeholder="4000"
             onChange={(e) => onChange({ netRate: e.target.value })} />
         </Field>
-        <Field label="Currency" className="lg:col-span-2">
+        <Field label={t("currency")} className="lg:col-span-2">
           <select className={inputCls} value={rate.currency} disabled={readOnly}
             onChange={(e) => onChange({ currency: e.target.value })}>
             {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
@@ -1483,38 +1490,37 @@ function RateRow({ rate, index, readOnly, duplicate, onChange, onRemove }) {
 
       {rate.rateModel === "CUSTOM_QUOTE" && (
         <p className="mt-2 text-[12px] leading-relaxed text-slate-500">
-          Even a quoted-each-time line needs a figure before you can submit — put your usual starting
-          price here and say what changes it in the inclusions box below.
+          {t("customQuoteHelp")}
         </p>
       )}
 
       <div className="mt-2.5 grid gap-2.5 sm:grid-cols-3">
-        <Field label="Included km" hint="optional">
+        <Field label={t("includedKm")} hint={t("optional")}>
           <input className={inputCls} type="number" min="0" step="1" inputMode="numeric"
             value={rate.includedKm} disabled={readOnly} placeholder="80"
             onChange={(e) => onChange({ includedKm: e.target.value })} />
         </Field>
-        <Field label="Beyond that, per km">
+        <Field label={t("beyondKm")}>
           <input className={inputCls} type="number" min="0" step="0.01" inputMode="decimal"
             value={rate.extraKmRate} disabled={readOnly} placeholder="14"
             onChange={(e) => onChange({ extraKmRate: e.target.value })} />
         </Field>
-        <Field label="Driver allowance" hint="per day">
+        <Field label={t("driverAllowance")} hint={t("perDay")}>
           <input className={inputCls} type="number" min="0" step="0.01" inputMode="decimal"
             value={rate.driverAllowance} disabled={readOnly} placeholder="300"
             onChange={(e) => onChange({ driverAllowance: e.target.value })} />
         </Field>
-        <Field label="Included hours" hint="optional">
+        <Field label={t("includedHours")} hint={t("optional")}>
           <input className={inputCls} type="number" min="0" step="1" inputMode="numeric"
             value={rate.includedHours} disabled={readOnly} placeholder="8"
             onChange={(e) => onChange({ includedHours: e.target.value })} />
         </Field>
-        <Field label="Beyond that, per hour">
+        <Field label={t("beyondHour")}>
           <input className={inputCls} type="number" min="0" step="0.01" inputMode="decimal"
             value={rate.extraHourRate} disabled={readOnly} placeholder="150"
             onChange={(e) => onChange({ extraHourRate: e.target.value })} />
         </Field>
-        <Field label="Night halt" hint="driver stays out">
+        <Field label={t("nightHalt")} hint={t("driverOut")}>
           <input className={inputCls} type="number" min="0" step="0.01" inputMode="decimal"
             value={rate.nightHalt} disabled={readOnly} placeholder="400"
             onChange={(e) => onChange({ nightHalt: e.target.value })} />
@@ -1522,12 +1528,12 @@ function RateRow({ rate, index, readOnly, duplicate, onChange, onRemove }) {
       </div>
 
       <div className="mt-2.5 grid gap-2.5 lg:grid-cols-3">
-        <Field label="What this rate covers" hint="optional" className="lg:col-span-2">
+        <Field label={t("rateCovers")} hint={t("optional")} className="lg:col-span-2">
           <textarea className={inputCls} rows={2} value={rate.inclusionsText} disabled={readOnly}
             onChange={(e) => onChange({ inclusionsText: e.target.value })}
             placeholder="Fuel, tolls and parking included. State permits extra at actuals." />
         </Field>
-        <Field label="Your rate code" hint="optional">
+        <Field label={t("rateCode")} hint={t("optional")}>
           <input className={inputCls} value={rate.rateCode ?? ""} disabled={readOnly} maxLength={50}
             placeholder="SUV-AIR-FLAT"
             onChange={(e) => onChange({ rateCode: e.target.value })} />
@@ -1536,8 +1542,10 @@ function RateRow({ rate, index, readOnly, duplicate, onChange, onRemove }) {
 
       {duplicate && (
         <p className="mt-2 text-[12px] font-semibold text-amber-700">
-          Another line already covers {serviceLabel(rate.serviceType)} · {modelLabel(rate.rateModel)}.
-          Only the last one will be kept — change the journey or the pricing method.
+          {t("duplicateRate", {
+            service: serviceLabel(rate.serviceType, language),
+            model: modelLabel(rate.rateModel, language),
+          })}
         </p>
       )}
     </div>
@@ -1546,11 +1554,12 @@ function RateRow({ rate, index, readOnly, duplicate, onChange, onRemove }) {
 
 /** Autosave status. Silent when idle — a permanent "Saved" badge is noise, an error is not. */
 function SaveBadge({ state, editable, complete, onRetry }) {
+  const { t } = usePartnerI18n();
   if (!editable) return null;
   if (state === "saving") {
     return (
       <span className="inline-flex shrink-0 items-center gap-1 text-[12px] text-slate-500">
-        <Loader2 size={12} className="animate-spin" /> Saving
+        <Loader2 size={12} className="animate-spin" /> {t("saving")}
       </span>
     );
   }
@@ -1565,10 +1574,10 @@ function SaveBadge({ state, editable, complete, onRetry }) {
           complete ? "text-emerald-600" : "text-slate-500"
         }`}
         title={complete
-          ? "Saved, and everything we need is filled in"
-          : "Your progress is saved — but the form is not finished yet"}
+          ? t("savedCompleteTitle")
+          : t("savedIncompleteTitle")}
       >
-        <Check size={12} /> Draft saved
+        <Check size={12} /> {t("draftSaved")}
       </span>
     );
   }
@@ -1577,7 +1586,7 @@ function SaveBadge({ state, editable, complete, onRetry }) {
       <button type="button" onClick={onRetry}
         className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-[12px] font-semibold
                    text-rose-600 transition hover:bg-rose-50">
-        <CloudOff size={12} /> Not saved · Retry
+        <CloudOff size={12} /> {t("notSavedRetry")}
       </button>
     );
   }
