@@ -12,7 +12,7 @@ export { default as bookingService } from "./api/bookingService";
 /* The requirement editors, shared with the LEAD form.
    "What the needs, not what is finally assigned" is a question the enquiry asks first and the
    booking merely inherits — a lead that already knows "1 Innova, 3 Deluxe AC" should not have to
-   say it again at conversion. Exported through the index (never deep-imported) so the boundary
+   at conversion. Exported through the index (never deep-imported) so the boundary
    rule in CLAUDE.md holds: leads reaches bookings only through its public API. */
 // export { VehicleRequirementRows, RoomRequirementRows } from "./components/RequirementRows";
 /* Same reason, one card up: the lead form's Rapid mode renders the BOOKING's Travel Details card
