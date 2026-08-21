@@ -109,12 +109,17 @@ const Layout = () => {
           together), so there is no overlay to render from here. */}
       <Sidebar />
 
+   
+   
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
         <Navbar />
 
         {/* pb-20 on phones clears the fixed bottom tab bar — without it the last
             row of every table sits underneath it and cannot be tapped. */}
-        <main className="flex-1 overflow-y-auto bg-[#f4f6f9] p-4 pb-20 md:pb-4">
+        <main
+        id="main-scroll-container"
+        
+        className="flex-1 overflow-y-auto bg-[#f4f6f9] p-4 pb-20 md:pb-4">
 
           {/* Page chunks load inside the chrome — navbar/sidebar stay visible
               while a lazy route downloads (Phase 5b). */}
@@ -125,6 +130,9 @@ const Layout = () => {
         </main>
       </div>
       </div>
+
+
+
 
       {/* Thumb-reach navigation, phones only. */}
       <MobileTabBar />
