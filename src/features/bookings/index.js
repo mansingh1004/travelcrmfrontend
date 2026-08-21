@@ -39,3 +39,10 @@ export { default as DuplicateBookings } from "./pages/DuplicateBookings";
    unreferenced rather than deleted, so flipping this one line turns the develop behaviour back on. */
 export { default as CreateBooking } from "./pages/CreateBookingClean";
 
+// Requirement row editors, shared with the LEAD form so both screens ask for a vehicle the same
+// way. Exported here rather than deep-imported: eslint no-restricted-imports blocks @features/*/*,
+// and a second copy of this editor would drift from the booking one the first time either changed.
+export { VehicleRequirementRows, RoomRequirementRows } from "./components/RequirementRows";
+export { emptyVehicleRow, emptyRoomRow } from "./lib/bookingTripModel";
+
+
