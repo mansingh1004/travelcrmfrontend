@@ -6,6 +6,28 @@ const unwrap = (res) => res?.data?.data ?? res?.data;
 const path = (token, suffix = "") =>
   `/hotel-partner/registrations/${encodeURIComponent(token)}${suffix}`;
 
+// React StrictMode intentionally replays mount effects in development. Share the one in-flight
+// bootstrap so opening the permanent public URL cannot mint two blank drafts before navigation puts
+// the first token into the address bar.
+let publicStartPromise = null;
+
+function startPublicRegistration() {
+  if (publicStartPromise) return publicStartPromise;
+
+  const run = partnerClient
+    .post("/hotel-partner/self-registration/start")
+    .then(unwrap)
+    .then((data) => {
+      if (!data?.token) throw new Error("The server did not return a registration session.");
+      return data;
+    });
+
+  publicStartPromise = run;
+  const clear = () => { if (publicStartPromise === run) publicStartPromise = null; };
+  run.then(clear, clear);
+  return run;
+}
+
 /**
  * Maps a backend error to the message the page shows.
  *
@@ -26,6 +48,9 @@ export function partnerErrorMessage(err, fallback = "Something went wrong. Pleas
 }
 
 export const hotelPartnerService = {
+  /** Permanent public URL -> one private token; all later calls use the existing flow below. */
+  startPublicRegistration,
+
   /** Open the link. The backend creates the draft on first call, so this doubles as "start". */
   resolve: (token) => partnerClient.get(path(token)).then(unwrap),
 

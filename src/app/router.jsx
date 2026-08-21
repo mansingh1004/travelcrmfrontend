@@ -264,6 +264,7 @@ const AppRouter = () => {
             credential and is re-verified server-side on every call. Must stay a
             TOP-LEVEL route: anything nested under "/" renders <Layout/>, which
             redirects an unauthenticated visitor to /login. */}
+            <Route path="/hotel-partner/register" element={<HotelPartnerRegister />} />
             <Route path="/hotel-partner/register/:token" element={<HotelPartnerRegister />} />
 
             {/* ── Transport Partner self-registration — SEPARATE realm, no login ─
