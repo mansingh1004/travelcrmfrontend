@@ -62,13 +62,18 @@ export const transportMarketplaceService = {
   /**
    * GET /transport-marketplace/vehicles — paged `MarketplaceVehicleSummaryDto`.
    *
-   * `onRequest` on every row is the honest state of v1: a listed vehicle is an enquiry, not
-   * inventory. Render it as such — a price shown here would be a promise the platform has not made.
+   * `onRequest` on every row is still the honest state of v1: a listed vehicle is an enquiry, not
+   * held inventory, and only a SuperAdmin decision confirms one.
+   *
+   * Each row now also carries `fromPrice` / `fromPriceCurrency` / `fromPriceRateModel` — an
+   * INDICATIVE payable for ONE unit of that rate model (one transfer, one day, one kilometre…), so
+   * the unit must be rendered from the enum or the number means nothing. `fromPrice` is `null` for a
+   * vehicle the engine cannot price yet, and null means "quoted on request" — **never zero**.
    */
   searchVehicles: async ({ page = 0, size = 25, sortBy = "name", sortDir = "asc", q } = {}) =>
     paged(await API.get(`${BASE}/vehicles`, { params: clean({ page, size, sortBy, sortDir, q }) })),
 
-  /** GET /transport-marketplace/vehicles/{publicId} — `MarketplaceVehicleDetailDto`. */
+  /** GET /transport-marketplace/vehicles/{publicId} — `MarketplaceVehicleDetailDto`, same price fields. */
   getVehicle: async (publicId) => body(await API.get(`${BASE}/vehicles/${publicId}`)),
 
   /**
@@ -81,6 +86,37 @@ export const transportMarketplaceService = {
    * transport deliberately does NOT invent it). Surface that message verbatim.
    */
   importVehicle: async (publicId) => body(await API.post(`${BASE}/vehicles/${publicId}/import`)),
+
+  // ── Pricing ─────────────────────────────────────────────────────────────
+
+  /**
+   * POST /transport-marketplace/quote — `TransportIndicativePriceDto` for one specific journey.
+   *
+   * The answer to "what will this cost me?" while the agent is still on the phone. Until it existed
+   * the payable first appeared at SuperAdmin approval, hours later, so a tenant either quoted their
+   * own customer from a guess or made them wait.
+   *
+   * <b>Always answers 200 — never treat it as a failure.</b> When the engine cannot price the
+   * journey (no rate card for that service type, no rule, a rate model the inputs do not describe)
+   * it still returns 200 with `tenantPayable` ABSENT and `note` explaining it is quoted on request.
+   * That is a legitimate state of an ON_REQUEST marketplace, not an error, so it must not toast and
+   * must never render as ₹0 — a zero is a number a tenant could quote and then be held to.
+   *
+   * <b>There is exactly one money field.</b> `tenantPayable` is what the TENANT pays. The operator's
+   * net and the platform's earning are not on this response and cannot be recovered from it — the
+   * backend has an ArchUnit test keeping it that way. Do not compute a "you save ₹X" line from it.
+   *
+   * Send whichever of `days` / `hours` / `km` the journey actually describes; the server reads the
+   * ones its rate model needs and ignores the rest, so the caller does not have to know the model.
+   * `serviceDate` matters because a commercial rule carries `validFrom`/`validTo` — the same journey
+   * next quarter can price differently.
+   */
+  quoteVehicle: async ({ platformVehiclePublicId, platformRatePublicId, serviceType, serviceDate,
+                         vehicleCount = 1, days = 1, hours = 0, km = 0 } = {}, config = {}) =>
+    body(await API.post(`${BASE}/quote`, clean({
+      platformVehiclePublicId, platformRatePublicId, serviceType, serviceDate,
+      vehicleCount, days, hours, km,
+    }), config)),
 
   // ── Placing and answering an order (gated: these commit) ─────────────────
 

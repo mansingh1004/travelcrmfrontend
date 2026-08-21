@@ -50,6 +50,7 @@ const HUE = {
   indigo: "bg-hue-indigo-soft text-hue-indigo",
   emerald: "bg-hue-emerald-soft text-hue-emerald",
   amber: "bg-hue-amber-soft text-hue-amber",
+  orange: "bg-hue-orange-soft text-hue-orange",
   sky: "bg-hue-sky-soft text-hue-sky",
   violet: "bg-hue-violet-soft text-hue-violet",
   rose: "bg-hue-rose-soft text-hue-rose",
@@ -339,7 +340,7 @@ export default function ConsoleHome() {
     { path: "/console/billing?overdue=true", label: "Overdue invoices", short: "Overdue invoices",
       inboxKey: "OVERDUE_INVOICES",
       hint: `${money(data.overdueAmount, currency)} needs collection follow-up`,
-      count: Number(data.overdueInvoices || 0), Icon: Banknote, tone: "rose" },
+      count: Number(data.overdueInvoices || 0), Icon: Banknote, tone: "orange" },
     // The last two are computed from current state, so nothing was ever "queued" and there is no age
     // to report — the backend deliberately omits them rather than sending a misleading null.
     { path: "/console/tenants", label: "Subscriptions expiring in 14 days", short: "Expiring access",
@@ -443,7 +444,7 @@ export default function ConsoleHome() {
           <MetricCard label="Outstanding invoices" value={money(data.outstanding, currency)} helper={Number(data.outstanding) > 0 ? "Requires collection follow-up" : "No unpaid balance"}
             Icon={AlertTriangle} hue="rose" danger={Number(data.outstanding) > 0} to="/console/billing?status=UNPAID" />
           <MetricCard label="Overdue now" value={money(data.overdueAmount, currency)} helper={`${number(data.overdueInvoices)} invoice(s) past due`}
-            Icon={Banknote} hue="amber" danger={Number(data.overdueInvoices) > 0} to="/console/billing?overdue=true" />
+            Icon={Banknote} hue="orange" danger={Number(data.overdueInvoices) > 0} to="/console/billing?overdue=true" />
           <MetricCard label="Platform users" value={number(data.totalUsers)} helper={`${number(data.pastDueTenants)} tenant(s) currently in grace`}
             Icon={UserRound} hue="indigo" to="/console/users" />
         </div>

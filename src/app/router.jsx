@@ -141,6 +141,9 @@ const ConsoleMarketplaceBookings = lazyPage(consoleFeature, "ConsoleMarketplaceB
 const ConsoleTransportRequests = lazyPage(consoleFeature, "ConsoleTransportRequests");
 const ConsolePlatformVehicles = lazyPage(consoleFeature, "ConsolePlatformVehicles");
 const ConsoleTransportCommissions = lazyPage(consoleFeature, "ConsoleTransportCommissions");
+const ConsoleTransportPartners = lazyPage(consoleFeature, "ConsoleTransportPartners");
+const ConsoleTransportPartnerReview = lazyPage(consoleFeature, "ConsoleTransportPartnerReview");
+const ConsoleTransportPricing = lazyPage(consoleFeature, "ConsoleTransportPricing");
 const ConsoleMarketplaceCommissions = lazyPage(consoleFeature, "ConsoleMarketplaceCommissions");
 const ConsoleMarketplaceOccupancy = lazyPage(consoleFeature, "ConsoleMarketplaceOccupancy");
 const ConsoleCommercialRules = lazyPage(consoleFeature, "ConsoleCommercialRules");
@@ -148,6 +151,11 @@ const ConsoleMarketplaceCredit = lazyPage(consoleFeature, "ConsoleMarketplaceCre
 
 const hotelPartner = () => import("@features/hotelpartner");
 const HotelPartnerRegister = lazyPage(hotelPartner, "HotelPartnerRegister");
+
+// Its own chunk, not the marketplace one: a vehicle operator loading this page has no session, no
+// staff chrome and no reason to download a tenant's Marketplace with it.
+const transportPartner = () => import("@features/transportpartner");
+const TransportPartnerRegister = lazyPage(transportPartner, "TransportPartnerRegister");
 
 const portal = () => import("@features/portal");
 const PortalLogin = lazyPage(portal, "PortalLogin");
@@ -258,6 +266,13 @@ const AppRouter = () => {
             redirects an unauthenticated visitor to /login. */}
             <Route path="/hotel-partner/register/:token" element={<HotelPartnerRegister />} />
 
+            {/* ── Transport Partner self-registration — SEPARATE realm, no login ─
+            The vehicle-operator counterpart of the link above, and TOP-LEVEL for
+            exactly the same reason: nested under "/" it would render <Layout/>,
+            which bounces an unauthenticated operator to /login before they ever
+            see the form. The token in the path IS the credential. */}
+            <Route path="/transport-partner/register/:token" element={<TransportPartnerRegister />} />
+
             {/* ── Customer-facing Traveler Portal — SEPARATE realm ──────────────
             Own token ("travelerToken"), own OTP login, no staff chrome. The
             PortalLayout self-guards (no token → /portal/login). */}
@@ -317,6 +332,19 @@ const AppRouter = () => {
               {/* Where the transport catalog is actually filled. Nothing a tenant browses exists
               until a row here is published. */}
               <Route path="transport-catalog" element={<ConsolePlatformVehicles />} />
+              {/* Where the catalog above comes FROM: invite an operator, read what they submitted,
+              publish their fleet. The invite list and the review are two routes for the same reason
+              the hotel pair are — a submission carries a whole fleet, and each vehicle carries its
+              own photos, amenities and a rate card per service type. */}
+              <Route path="transport-partners" element={<ConsoleTransportPartners />} />
+              <Route path="transport-partners/:publicId" element={<ConsoleTransportPartnerReview />} />
+              {/*
+                ⚠ The platform's margin structure over the vehicle catalog. SuperAdmin realm only,
+                same as hotel-pricing — and a separate screen from it, because a transport rule is
+                keyed by vehicle AND service type and is applied to a rate model (per km, per day,
+                per transfer) that no hotel rule has a field for.
+              */}
+              <Route path="transport-pricing" element={<ConsoleTransportPricing />} />
               <Route path="transport-earnings" element={<ConsoleTransportCommissions />} />
               {/*
                 What the platform has SOLD, night by night — not what is available. There is no

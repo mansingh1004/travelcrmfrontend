@@ -25,10 +25,10 @@ function apiMessage(error, fallback) {
 
 function UserStatusPill({ user }) {
   const cls = user.locked
-    ? "bg-red-500/10 text-red-600 ring-red-500/20"
+    ? "bg-hue-rose-soft text-hue-rose ring-hue-rose/20"
     : !user.active
-      ? "bg-slate-500/10 text-slate-500 ring-slate-500/20"
-      : "bg-emerald-500/10 text-emerald-600 ring-emerald-500/20";
+      ? "bg-surface-hover text-muted ring-border"
+      : "bg-hue-emerald-soft text-hue-emerald ring-hue-emerald/20";
   const label = user.locked ? "Locked" : !user.active ? "Inactive" : "Active";
   return (
     <span className={`inline-block rounded px-2 py-0.5 text-[11px] font-semibold uppercase ring-1 ${cls}`}>
@@ -49,7 +49,7 @@ function MfaActionModal({ title, description, saving, error, onClose, onConfirm 
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-slate-950/50" onClick={saving ? undefined : onClose} />
+      <div className="absolute inset-0 bg-scrim" onClick={saving ? undefined : onClose} />
       <form
         onSubmit={submit}
         className="relative w-full max-w-sm rounded-xl border border-border bg-surface p-5 shadow-xl"
@@ -79,12 +79,12 @@ function MfaActionModal({ title, description, saving, error, onClose, onConfirm 
           />
         </div>}
         {mfaDisabled && (
-          <p className="mt-4 rounded-lg bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-700 ring-1 ring-amber-500/20">
+          <p className="mt-4 rounded-lg bg-hue-amber-soft px-3 py-2 text-xs font-semibold text-hue-amber ring-1 ring-hue-amber/20">
             Local development bypass active
           </p>
         )}
         {error && (
-          <p className="mt-3 flex items-start gap-1.5 rounded-lg bg-red-500/10 px-3 py-2 text-[11px] text-red-700 ring-1 ring-red-500/20">
+          <p className="mt-3 flex items-start gap-1.5 rounded-lg bg-hue-rose-soft px-3 py-2 text-[11px] text-hue-rose ring-1 ring-hue-rose/20">
             <AlertTriangle size={13} className="mt-px shrink-0" />
             {error}
           </p>
@@ -94,14 +94,14 @@ function MfaActionModal({ title, description, saving, error, onClose, onConfirm 
             type="button"
             onClick={onClose}
             disabled={saving}
-            className="rounded-lg border border-border-strong bg-surface px-4 py-2 text-sm font-semibold text-body hover:bg-surface-hover disabled:opacity-60"
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded-lg border border-border-strong bg-surface px-4 py-2 text-sm font-semibold text-body hover:bg-surface-hover disabled:opacity-60"
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={saving || (!mfaDisabled && code.length !== 6)}
-            className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-60"
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-60"
           >
             {saving && <Loader2 size={15} className="animate-spin" />}
             Confirm
@@ -142,7 +142,7 @@ function ResetPasswordModal({ user, onClose, onDone, showToast }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-slate-950/50" onClick={saving ? undefined : onClose} />
+      <div className="absolute inset-0 bg-scrim" onClick={saving ? undefined : onClose} />
       <form
         onSubmit={submit}
         className="relative w-full max-w-sm rounded-xl border border-border bg-surface p-5 shadow-xl"
@@ -184,7 +184,7 @@ function ResetPasswordModal({ user, onClose, onDone, showToast }) {
             </div>
           )}
         </div>
-        <p className="mt-3 rounded-lg bg-emerald-500/10 px-3 py-2 text-[11px] text-emerald-700 ring-1 ring-emerald-500/20">
+        <p className="mt-3 rounded-lg bg-hue-emerald-soft px-3 py-2 text-[11px] text-hue-emerald ring-1 ring-hue-emerald/20">
           The user's active sessions are revoked immediately.
         </p>
         <div className="mt-5 flex justify-end gap-3">
@@ -192,14 +192,14 @@ function ResetPasswordModal({ user, onClose, onDone, showToast }) {
             type="button"
             onClick={onClose}
             disabled={saving}
-            className="rounded-lg border border-border-strong bg-surface px-4 py-2 text-sm font-semibold text-body hover:bg-surface-hover disabled:opacity-60"
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded-lg border border-border-strong bg-surface px-4 py-2 text-sm font-semibold text-body hover:bg-surface-hover disabled:opacity-60"
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={saving}
-            className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-60"
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-60"
           >
             {saving && <Loader2 size={15} className="animate-spin" />}
             Reset password
@@ -216,7 +216,7 @@ function IconBtn({ title, onClick, busy, children }) {
       title={title}
       onClick={onClick}
       disabled={busy}
-      className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-surface-hover hover:text-body disabled:opacity-50"
+      className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-surface-hover hover:text-body disabled:opacity-50"
     >
       {children}
     </button>
@@ -416,7 +416,7 @@ export default function Users() {
         <p className="text-sm text-body">Cross-tenant user control - lock, unlock, impersonate, and reset passwords.</p>
         {tenantId && (
           <button type="button" onClick={() => { setSearchParams({}); setPage(0); }}
-            className="mt-2 rounded-full border border-accent/30 bg-accent-soft px-2.5 py-1 text-xs font-semibold text-accent hover:opacity-80">
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus mt-2 rounded-full border border-accent/30 bg-accent-soft px-2.5 py-1 text-xs font-semibold text-accent hover:opacity-80">
             Tenant filter active · clear
           </button>
         )}
@@ -470,8 +470,8 @@ export default function Users() {
       )}
 
       {toast && (
-        <div className={`fixed bottom-6 right-6 z-[60] flex items-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold text-white shadow-lg ${
-          toast.type === "success" ? "bg-emerald-600" : "bg-red-600"
+        <div className={`fixed bottom-6 right-6 z-[60] flex items-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold text-surface shadow-lg ${
+          toast.type === "success" ? "bg-hue-emerald" : "bg-hue-rose"
         }`}>
           {toast.type === "success" ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
           {toast.msg}

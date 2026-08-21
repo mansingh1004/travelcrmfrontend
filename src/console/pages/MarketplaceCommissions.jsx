@@ -219,13 +219,13 @@ export default function MarketplaceCommissions() {
         <div className="inline-flex gap-1.5 whitespace-nowrap">
           {OPEN_STATUSES.has(row.original.status) && (
             <button onClick={() => setSettling(row.original)}
-              className="rounded-lg border border-border px-2.5 py-1.5 text-xs font-semibold text-body hover:bg-surface-hover hover:text-heading">
+              className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded-lg border border-border px-2.5 py-1.5 text-xs font-semibold text-body hover:bg-surface-hover hover:text-heading">
               Settle
             </button>
           )}
           <button onClick={() => setAdjusting({ publicId: row.original.hotelBookingPublicId, code: row.original.bookingCode })}
             title="Append a signed correction against this booking"
-            className="rounded-lg border border-border px-2.5 py-1.5 text-xs font-semibold text-body hover:bg-surface-hover hover:text-heading">
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded-lg border border-border px-2.5 py-1.5 text-xs font-semibold text-body hover:bg-surface-hover hover:text-heading">
             Adjust
           </button>
         </div>
@@ -245,14 +245,14 @@ export default function MarketplaceCommissions() {
         <div className="flex gap-2">
           <button
             onClick={() => setAdjusting({ publicId: "", code: "" })}
-            className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-semibold text-body hover:bg-surface-hover"
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-semibold text-body hover:bg-surface-hover"
           >
             <PlusCircle size={15} /> Adjustment
           </button>
           <button
             onClick={refresh}
             disabled={loading}
-            className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-semibold text-body hover:bg-surface-hover disabled:opacity-60"
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-semibold text-body hover:bg-surface-hover disabled:opacity-60"
           >
             <RefreshCw size={15} className={loading ? "animate-spin" : ""} /> Refresh
           </button>
@@ -290,7 +290,7 @@ export default function MarketplaceCommissions() {
         {hasFilters && (
           <button
             onClick={clearFilters}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border-strong bg-surface px-3 py-2 text-sm font-semibold text-muted hover:bg-surface-hover hover:text-body"
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-1.5 rounded-lg border border-border-strong bg-surface px-3 py-2 text-sm font-semibold text-muted hover:bg-surface-hover hover:text-body"
           >
             <RotateCcw size={14} /> Clear
           </button>
@@ -435,7 +435,7 @@ function Chip({ config, value }) {
 
 function ModalShell({ title, subtitle, busy, onClose, children }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={busy ? undefined : onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-4" onClick={busy ? undefined : onClose}>
       <div
         className="w-full max-w-md rounded-2xl border border-border bg-surface p-5 shadow-[var(--sa-card-shadow)]"
         onClick={(e) => e.stopPropagation()}
@@ -448,7 +448,7 @@ function ModalShell({ title, subtitle, busy, onClose, children }) {
           <button
             onClick={onClose}
             disabled={busy}
-            className="rounded-lg p-1 text-muted hover:bg-surface-hover hover:text-heading disabled:opacity-40"
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded-lg p-1 text-muted hover:bg-surface-hover hover:text-heading disabled:opacity-40"
             aria-label="Close"
           >
             <X size={18} />
@@ -538,7 +538,7 @@ function SettleModal({ entry, onClose, onDone }) {
       <FormError message={err} />
 
       <div className="mt-5 flex justify-end gap-2">
-        <button onClick={onClose} disabled={busy} className="rounded-lg px-3 py-2 text-xs font-medium text-body hover:bg-surface-hover disabled:opacity-40">
+        <button onClick={onClose} disabled={busy} className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded-lg px-3 py-2 text-xs font-medium text-body hover:bg-surface-hover disabled:opacity-40">
           Cancel
         </button>
         <button
@@ -667,7 +667,7 @@ function AdjustModal({ booking, onClose, onDone }) {
       <FormError message={err} />
 
       <div className="mt-5 flex justify-end gap-2">
-        <button onClick={onClose} disabled={busy} className="rounded-lg px-3 py-2 text-xs font-medium text-body hover:bg-surface-hover disabled:opacity-40">
+        <button onClick={onClose} disabled={busy} className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded-lg px-3 py-2 text-xs font-medium text-body hover:bg-surface-hover disabled:opacity-40">
           Cancel
         </button>
         <button

@@ -22,10 +22,10 @@ const VEHICLE_TYPES = [
 ];
 
 const STATUS_TONE = {
-  ACTIVE: "bg-emerald-50 text-emerald-700",
-  DRAFT: "bg-amber-50 text-amber-800",
-  INACTIVE: "bg-slate-100 text-slate-600",
-  SUSPENDED: "bg-red-50 text-red-700",
+  ACTIVE: "bg-hue-emerald-soft text-hue-emerald",
+  DRAFT: "bg-hue-amber-soft text-hue-amber",
+  INACTIVE: "bg-surface-hover text-muted",
+  SUSPENDED: "bg-hue-rose-soft text-hue-rose",
 };
 
 const EMPTY = {
@@ -239,7 +239,7 @@ export default function PlatformVehicles() {
             <button
               onClick={() => remove(row.original)}
               title="Delete — refused while any agency holds a copy"
-              className="rounded-lg border border-red-200 px-2 py-1 text-xs font-semibold text-red-700 hover:bg-red-50"
+              className="rounded-lg border border-hue-rose/25 px-2 py-1 text-xs font-semibold text-hue-rose hover:bg-hue-rose-soft"
             >
               <Trash2 size={13} />
             </button>
@@ -267,7 +267,7 @@ export default function PlatformVehicles() {
             </button>
             <button
               onClick={startCreate}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-white hover:opacity-90"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-accent-text hover:opacity-90"
             >
               <Plus size={14} /> Add a vehicle
             </button>
@@ -276,7 +276,7 @@ export default function PlatformVehicles() {
       />
 
       {error && (
-        <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</p>
+        <p className="rounded-lg border border-hue-rose/25 bg-hue-rose-soft px-3 py-2 text-sm text-hue-rose">{error}</p>
       )}
 
       <div className="flex flex-wrap items-center gap-2">
@@ -325,7 +325,7 @@ export default function PlatformVehicles() {
 
       {editing && (
         <div className="fixed inset-0 z-40 flex justify-end">
-          <div className="absolute inset-0 bg-slate-950/40" onClick={() => setEditing(null)} />
+          <div className="absolute inset-0 bg-scrim" onClick={() => setEditing(null)} />
           <aside className="relative flex h-full w-full max-w-xl flex-col overflow-y-auto border-l border-border bg-surface shadow-2xl">
             <header className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-surface px-6 py-4">
               <h2 className="text-lg font-bold text-heading">
@@ -338,7 +338,7 @@ export default function PlatformVehicles() {
 
             <div className="space-y-4 px-6 py-5">
               {formError && (
-                <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+                <p className="rounded-lg border border-hue-rose/25 bg-hue-rose-soft px-3 py-2 text-sm text-hue-rose">
                   {formError}
                 </p>
               )}
@@ -423,7 +423,7 @@ export default function PlatformVehicles() {
                 <button
                   onClick={save}
                   disabled={saving || !form.name.trim()}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-accent-text hover:opacity-90 disabled:opacity-50"
                 >
                   <Car size={14} /> {saving ? "Saving…" : editing.publicId ? "Save" : "Create as draft"}
                 </button>

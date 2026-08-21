@@ -17,9 +17,9 @@ const SENSITIVE = new Set([
 
 function ActionChip({ action, success }) {
   const cls = !success
-    ? "bg-red-500/10 text-red-600 dark:text-red-400"
+    ? "bg-hue-rose-soft text-hue-rose"
     : SENSITIVE.has(action)
-      ? "bg-amber-500/10 text-amber-600 dark:text-amber-400"
+      ? "bg-hue-amber-soft text-hue-amber"
       : "bg-surface-hover text-body";
   return <span className={`inline-block rounded px-2 py-0.5 font-mono text-[11px] font-semibold ${cls}`}>{action}</span>;
 }
@@ -137,7 +137,7 @@ export default function AuditLog() {
         <input type="date" value={filters.from} onChange={(e) => setFilter("from", e.target.value)} className={inputCls} title="From" />
         <input type="date" value={filters.to} onChange={(e) => setFilter("to", e.target.value)} className={inputCls} title="To" />
         {hasFilters && (
-          <button onClick={reset} className="inline-flex items-center gap-1.5 rounded-lg border border-border-strong bg-surface px-3 py-2 text-sm font-semibold text-muted hover:bg-surface-hover hover:text-body">
+          <button onClick={reset} className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-1.5 rounded-lg border border-border-strong bg-surface px-3 py-2 text-sm font-semibold text-muted hover:bg-surface-hover hover:text-body">
             <RotateCcw size={14} /> Clear
           </button>
         )}
