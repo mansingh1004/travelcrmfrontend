@@ -1311,7 +1311,7 @@
 
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import {
   BedDouble, Check, ChevronDown, CloudOff, Hotel, ListChecks, Loader2, Plus,
   RotateCw, Send, Trash2, X,
@@ -1322,6 +1322,7 @@ import {
   Stepper, inputCls,
 } from "../components/partnerUi";
 import GoogleListingPicker from "../components/GoogleListingPicker";
+import { COUNTRY_OPTIONS } from "@shared/lib/countries";
 
 /* ── Vocabulary. Mirrors the backend enums exactly; a mismatch here is a silent data loss. ── */
 /* Wording matches MealPlanCode.defaultLabel on the backend CHARACTER FOR CHARACTER, so the partner
@@ -1615,7 +1616,7 @@ function buildChecklist(form) {
   const items = [
     { id: "name", label: "Hotel name", section: "details", field: "f-name", done: Boolean(form.name?.trim()) },
     { id: "city", label: "City", section: "location", field: "f-city", done: Boolean(form.cityName?.trim()) },
-    { id: "country", label: "Country code", section: "location", field: "f-country", done: Boolean(form.countryCode?.trim()) },
+    { id: "country", label: "Country", section: "location", field: "f-country", done: Boolean(form.countryCode?.trim()) },
     { id: "photo", label: "At least one hotel photo", section: "photos", field: null, done: form.images.length > 0 },
     { id: "rooms", label: "At least one room", section: "rooms", field: null, done: form.rooms.length > 0 },
   ];
@@ -1684,6 +1685,7 @@ const goToField = (item) => {
 
 export default function HotelPartnerRegister() {
   const { token } = useParams();
+  const navigate = useNavigate();
 
   const [loading, setLoading] = useState(true);
   const [fatal, setFatal] = useState("");
@@ -1713,8 +1715,22 @@ export default function HotelPartnerRegister() {
 
   useEffect(() => {
     let alive = true;
+    let navigated = false;
+    setLoading(true);
+    setFatal("");
     (async () => {
       try {
+        // The permanent general link has no credential in it. Mint one, replace (not push) the
+        // address so Refresh/Back behave naturally, then let this same effect hydrate through the
+        // existing token route. The form rendered afterwards is byte-for-byte the invite form.
+        if (!token) {
+          const started = await hotelPartnerService.startPublicRegistration();
+          if (!alive) return;
+          navigated = true;
+          navigate(`/hotel-partner/register/${encodeURIComponent(started.token)}`, { replace: true });
+          return;
+        }
+
         const data = await hotelPartnerService.resolve(token);
         if (!alive) return;
         const hydratedForm = toForm(data.registration);
@@ -1730,13 +1746,18 @@ export default function HotelPartnerRegister() {
           setCollapsed(new Set(hydratedForm.rooms.map((r) => r._key)));
         }
       } catch (err) {
-        if (alive) setFatal(partnerErrorMessage(err, "We could not open this registration link."));
+        if (alive) setFatal(partnerErrorMessage(
+          err,
+          token ? "We could not open this registration link." : "We could not start registration.",
+        ));
       } finally {
-        if (alive) setLoading(false);
+        // Navigation starts a fresh token-bound effect. Let that effect own the loading state so
+        // the component never renders with `form === null` between the two requests.
+        if (alive && !navigated) setLoading(false);
       }
     })();
     return () => { alive = false; };
-  }, [token]);
+  }, [navigate, token]);
 
   /**
    * Saves run one at a time, chained.
@@ -2217,14 +2238,15 @@ export default function HotelPartnerRegister() {
                   autoComplete="address-level2" aria-invalid={Boolean(fieldErrors["f-city"])}
                   onChange={(e) => patch({ cityName: e.target.value })} placeholder="Goa" />
               </Field>
-              {/* Label reads "Country" but the field still holds the ISO code the backend and the
-                  console editor both store, so the hint stays — it is the only thing telling the
-                  owner to type IN rather than India, which maxLength would silently cut to "IND". */}
-              <Field label="Country" hint="2–3 letters, e.g. IN" error={fieldErrors["f-country"]}>
-                <input id="f-country" className={inputCls} value={form.countryCode} disabled={ro} maxLength={3}
-                  autoCapitalize="characters" autoComplete="country"
-                  aria-invalid={Boolean(fieldErrors["f-country"])}
-                  onChange={(e) => patch({ countryCode: e.target.value.toUpperCase() })} placeholder="IN" />
+              <Field label="Country" hint="required" error={fieldErrors["f-country"]}>
+                <select id="f-country" className={inputCls} value={form.countryCode} disabled={ro}
+                  autoComplete="country" aria-invalid={Boolean(fieldErrors["f-country"])}
+                  onChange={(e) => patch({ countryCode: e.target.value })}>
+                  <option value="">Select country</option>
+                  {COUNTRY_OPTIONS.map(({ code, name }) => (
+                    <option key={code} value={code}>{name}</option>
+                  ))}
+                </select>
               </Field>
               <Field label="State">
                 <input className={inputCls} value={form.stateName} disabled={ro} autoComplete="address-level1"

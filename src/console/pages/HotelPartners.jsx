@@ -5,6 +5,7 @@ import {
 import { useNavigate } from "react-router-dom";
 import { toast } from "@shared/ui/toast";
 import { getErrorMessage } from "@shared/api/apiError";
+import { COUNTRY_OPTIONS, countryNameFromCode } from "@shared/lib/countries";
 import { hotelPartnerService, INVITE_STATUS, REG_STATUS } from "../api/hotelPartnerService";
 
 /**
@@ -63,6 +64,18 @@ export default function HotelPartners() {
 
   useEffect(() => { load(); }, [load]);
 
+  const copyPublicRegistrationLink = async () => {
+    const link = `${window.location.origin}/hotel-partner/register`;
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("Clipboard unavailable");
+      await navigator.clipboard.writeText(link);
+      toast.success("Public hotel registration link copied.");
+    } catch {
+      // Clipboard access needs HTTPS (or localhost). The prompt keeps the link usable on a LAN.
+      window.prompt("Copy the public hotel registration link:", link);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <header className="flex flex-wrap items-center gap-3">
@@ -72,6 +85,10 @@ export default function HotelPartners() {
             Invite a hotel to register itself, then review and approve what they send.
           </p>
         </div>
+        <button type="button" onClick={copyPublicRegistrationLink}
+          className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 py-2 text-sm font-bold text-white hover:bg-blue-700">
+          <Copy size={15} /> Copy Link
+        </button>
         <button onClick={load}
           className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-semibold text-body hover:bg-surface-hover">
           <RefreshCw size={14} /> Refresh
@@ -113,7 +130,7 @@ export default function HotelPartners() {
                     </div>
                     <div className="mt-0.5 flex items-center gap-3 text-xs text-muted">
                       <span className="inline-flex items-center gap-1">
-                        <MapPin size={11} /> {[r.cityName, r.countryCode].filter(Boolean).join(", ") || "—"}
+                        <MapPin size={11} /> {[r.cityName, countryNameFromCode(r.countryCode)].filter(Boolean).join(", ") || "—"}
                       </span>
                       {r.stars ? <span className="inline-flex items-center gap-1"><Star size={11} />{r.stars}</span> : null}
                       <span>Sent {fmtDate(r.submittedAt)}</span>
@@ -306,9 +323,14 @@ function InviteDialog({ onClose, onDone }) {
                   onChange={(e) => setForm({ ...form, hintCityName: e.target.value })} />
               </label>
               <label className="block">
-                <span className="mb-1 block text-xs font-semibold text-body">Country code</span>
-                <input className={field} maxLength={3} value={form.hintCountryCode}
-                  onChange={(e) => setForm({ ...form, hintCountryCode: e.target.value.toUpperCase() })} />
+                <span className="mb-1 block text-xs font-semibold text-body">Country</span>
+                <select className={field} value={form.hintCountryCode}
+                  onChange={(e) => setForm({ ...form, hintCountryCode: e.target.value })}>
+                  <option value="">Select country</option>
+                  {COUNTRY_OPTIONS.map(({ code, name }) => (
+                    <option key={code} value={code}>{name}</option>
+                  ))}
+                </select>
               </label>
             </div>
             <button disabled={busy || !form.contactName.trim() || !form.contactEmail.trim()}
