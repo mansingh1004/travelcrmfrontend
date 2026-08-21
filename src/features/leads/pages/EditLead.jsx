@@ -1001,6 +1001,7 @@ export default function EditLead() {
   const [leadCode, setLeadCode] = useState("");
   const [services, setServices] = useState([]);
   const [itinerary, setItinerary] = useState([]);
+  const [selectedDestinations, setSelectedDestinations] = useState([]);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -1025,69 +1026,557 @@ export default function EditLead() {
           female: lead.female ?? lead.femaleCount,
         });
 
-        reset({
-          ...blankDefaults(),
-          customerName: lead.customerName ?? lead.customer?.name ?? lead.name ?? "",
-          phone: lead.phone ?? lead.mobile ?? lead.contactNumber ?? lead.customer?.phone ?? "",
-          email: lead.email ?? lead.customer?.email ?? "",
-          budget: lead.budget ?? lead.estimatedValue ?? "",
-          leadSource: lead.leadSource ?? lead.source ?? "",
-          leadType: lead.leadType ?? lead.type ?? "",
-          leadStage: lead.leadStage ?? lead.stage ?? "New Lead",
-          assignedUserId,
-          birthDate: toDateInput(lead.birthDate ?? lead.dateOfBirth ?? lead.dob),
-          anniversaryDate: toDateInput(lead.anniversaryDate ?? lead.marriageAnniversary ?? lead.anniversary),
-          preferredCommunication:
-            lead.preferredCommunication ?? lead.communicationPreference ?? lead.commPref ?? "",
-          followUpDate: toDateInput(lead.followUpDate ?? lead.followupDate ?? lead.nextFollowUpDate),
-          packageType: lead.packageType ?? lead.tripType ?? "",
-          travelDate: toDateInput(lead.travelDate ?? lead.tripDate ?? lead.departureDate),
-          departCountry: lead.departCountry ?? lead.departureCountry ?? "India",
-          departCity: lead.departCity ?? lead.departureCity ?? "",
-          departureMode: lead.departureMode ?? lead.transportMode ?? "",
-          departureAirport: lead.departureAirport ?? lead.airportName ?? "",
-          airportCode: lead.airportCode ?? lead.departureAirportCode ?? "",
-          preferredFlightTime: String(lead.preferredFlightTime ?? lead.flightTime ?? "").slice(0, 5),
-          railwayStation: lead.railwayStation ?? lead.departureStation ?? "",
-          trainClass: lead.trainClass ?? lead.railClass ?? "",
-          preferredTrainTime: String(lead.preferredTrainTime ?? lead.trainTime ?? "").slice(0, 5),
-          pickupAddress: lead.pickupAddress ?? lead.roadPickupAddress ?? "",
-          pickupDateTime: String(lead.pickupDateTime ?? lead.pickupAt ?? "").slice(0, 16),
-          vehiclePreference: lead.vehiclePreference ?? lead.preferredVehicle ?? "",
-          rooms: toInt(lead.rooms ?? lead.roomCount ?? lead.noOfRooms ?? 1, 1),
-          ...adultPrefill,
-          children: toInt(lead.children ?? lead.childCount ?? 0),
-          infants: toInt(lead.infants ?? lead.infantCount ?? 0),
-          extraBeds: toInt(lead.extraBeds ?? lead.extraBedCount ?? 0),
-          specialAssistanceRequired: Boolean(
-            lead.specialAssistanceRequired ?? lead.needsSpecialAssistance ??
-            (Array.isArray(lead.specialAssistanceTypes) && lead.specialAssistanceTypes.length > 0)
+        const savedPhone =
+  lead.phone ??
+  lead.mobile ??
+  lead.contactNumber ??
+  lead.customer?.phone ??
+  "";
+
+
+const savedWhatsapp =
+  lead.whatsappNumber ??
+  lead.whatsapp ??
+  lead.customerWhatsapp ??
+  lead.customer?.whatsappNumber ??
+  "";
+
+
+/* ── Vehicle requirements ─────────────────────────────── */
+
+const rawVehicleRequirements =
+  Array.isArray(lead.vehicleRequirements)
+    ? lead.vehicleRequirements
+    : [];
+
+const restoredVehicleRequirements =
+  rawVehicleRequirements.map((row) => ({
+    id:
+      row.id ??
+      row.publicId ??
+      `vehicle-${nextRowId++}`,
+
+    vehicleType:
+      row.vehicleType ??
+      row.type ??
+      "",
+
+    vehicleId:
+      row.vehicleId ??
+      row.vehiclePublicId ??
+      row.vehicle?.publicId ??
+      row.vehicle?.id ??
+      "",
+
+    model:
+      row.model ??
+      row.vehicleModel ??
+      row.vehicle?.name ??
+      "",
+
+    capacity:
+      row.capacity == null
+        ? ""
+        : String(row.capacity),
+
+    quantity:
+      String(
+        row.quantity ??
+        row.qty ??
+        1
+      ),
+  }));
+
+
+/* ── Room requirements ────────────────────────────────── */
+
+const rawRoomRequirements =
+  Array.isArray(lead.roomRequirements)
+    ? lead.roomRequirements
+    : [];
+
+const restoredRoomRequirements =
+  rawRoomRequirements.length > 0
+    ? rawRoomRequirements.map((row) => ({
+        id:
+          row.id ??
+          row.publicId ??
+          `room-${nextRowId++}`,
+
+        roomType:
+          row.roomType ??
+          row.type ??
+          "Double",
+
+        acType:
+          row.acType ??
+          row.ac ??
+          "Any",
+
+        count:
+          String(
+            row.count ??
+            row.quantity ??
+            1
           ),
-          specialAssistanceTypes: Array.isArray(lead.specialAssistanceTypes)
-            ? lead.specialAssistanceTypes
-            : Array.isArray(lead.assistanceTypes) ? lead.assistanceTypes : [],
-          assistancePassengerCount: toInt(lead.assistancePassengerCount ?? lead.assistancePassengers ?? 0),
-          specialAssistanceNotes: lead.specialAssistanceNotes ?? lead.assistanceNotes ?? "",
-          notes: lead.notes ?? lead.note ?? lead.remarks ?? lead.requirements ?? "",
-        });
+
+        extraBeds:
+          String(
+            row.extraBeds ??
+            0
+          ),
+      }))
+    : [
+        {
+          id: `room-${nextRowId++}`,
+          roomType: "Double",
+          acType: "Any",
+          count: String(
+            toInt(
+              lead.rooms ??
+              lead.roomCount ??
+              lead.noOfRooms ??
+              1,
+              1
+            )
+          ),
+          extraBeds: String(
+            toInt(
+              lead.extraBeds ??
+              lead.extraBedCount ??
+              0
+            )
+          ),
+        },
+      ];
+
+
+const restoredRoomCount =
+  restoredRoomRequirements.reduce(
+    (sum, row) =>
+      sum + (Number(row.count) || 0),
+    0
+  ) || 1;
+
+
+const restoredExtraBeds =
+  restoredRoomRequirements.reduce(
+    (sum, row) =>
+      sum + (Number(row.extraBeds) || 0),
+    0
+  );
+
+        reset({
+  ...blankDefaults(),
+
+  /* ── Customer ─────────────────────────────────────── */
+
+  customerName:
+    lead.customerName ??
+    lead.customer?.name ??
+    lead.name ??
+    "",
+
+  phone: savedPhone,
+
+  email:
+    lead.email ??
+    lead.customer?.email ??
+    "",
+
+
+  /* NEW */
+  whatsappNumber:
+    savedWhatsapp,
+
+  /*
+   * If WhatsApp is empty OR same as phone,
+   * keep the mirror checkbox enabled.
+   */
+  whatsappSame:
+    !savedWhatsapp ||
+    String(savedWhatsapp) === String(savedPhone),
+
+
+  /* NEW customer address fields */
+  customerCity:
+    lead.customerCity ??
+    lead.customer?.city ??
+    "",
+
+  customerState:
+    lead.customerState ??
+    lead.customer?.state ??
+    "",
+
+  customerCountry:
+    lead.customerCountry ??
+    lead.customer?.country ??
+    "",
+
+
+  /* ── Lead ─────────────────────────────────────────── */
+
+  budget:
+    lead.budget ??
+    lead.estimatedValue ??
+    "",
+
+  leadSource:
+    lead.leadSource ??
+    lead.source ??
+    "",
+
+  leadType:
+    lead.leadType ??
+    lead.type ??
+    "Fresh",
+
+  leadStage:
+    lead.leadStage ??
+    lead.stage ??
+    "New Lead",
+
+  assignedUserId,
+
+  birthDate:
+    toDateInput(
+      lead.birthDate ??
+      lead.dateOfBirth ??
+      lead.dob
+    ),
+
+  anniversaryDate:
+    toDateInput(
+      lead.anniversaryDate ??
+      lead.marriageAnniversary ??
+      lead.anniversary
+    ),
+
+  preferredCommunication:
+    lead.preferredCommunication ??
+    lead.communicationPreference ??
+    lead.commPref ??
+    "",
+
+  followUpDate:
+    toDateInput(
+      lead.followUpDate ??
+      lead.followupDate ??
+      lead.nextFollowUpDate
+    ),
+
+  packageType:
+    lead.packageType ??
+    lead.tripType ??
+    "",
+
+
+  /* ── Travel Date ───────────────────────────────────── */
+
+  travelDate:
+    toDateInput(
+      lead.travelDate ??
+      lead.tripDate ??
+      lead.departureDate
+    ),
+
+  /* NEW */
+  returnDate:
+    toDateInput(
+      lead.returnDate ??
+      lead.tripEndDate ??
+      lead.endDate
+    ),
+
+
+  /* ── Pickup ────────────────────────────────────────── */
+
+  departCountry:
+    lead.departCountry ??
+    lead.departureCountry ??
+    "India",
+
+  departCity:
+    lead.departCity ??
+    lead.departureCity ??
+    "",
+
+  departureMode:
+    lead.departureMode ??
+    lead.transportMode ??
+    "",
+
+  departureAirport:
+    lead.departureAirport ??
+    lead.airportName ??
+    "",
+
+  airportCode:
+    lead.airportCode ??
+    lead.departureAirportCode ??
+    "",
+
+  preferredFlightTime:
+    String(
+      lead.preferredFlightTime ??
+      lead.flightTime ??
+      ""
+    ).slice(0, 5),
+
+  railwayStation:
+    lead.railwayStation ??
+    lead.departureStation ??
+    "",
+
+  trainClass:
+    lead.trainClass ??
+    lead.railClass ??
+    "",
+
+  preferredTrainTime:
+    String(
+      lead.preferredTrainTime ??
+      lead.trainTime ??
+      ""
+    ).slice(0, 5),
+
+  pickupAddress:
+    lead.pickupAddress ??
+    lead.roadPickupAddress ??
+    "",
+
+  pickupDateTime:
+    String(
+      lead.pickupDateTime ??
+      lead.pickupAt ??
+      ""
+    ).slice(0, 16),
+
+  vehiclePreference:
+    lead.vehiclePreference ??
+    lead.preferredVehicle ??
+    "",
+
+
+  /* ── DROP — NEW ────────────────────────────────────── */
+
+  dropDateTime:
+    String(
+      lead.dropDateTime ??
+      lead.dropAt ??
+      ""
+    ).slice(0, 16),
+
+  dropMode:
+    lead.dropMode ??
+    lead.returnMode ??
+    "",
+
+  dropCity:
+    lead.dropCity ??
+    lead.returnCity ??
+    "",
+
+  dropCountry:
+    lead.dropCountry ??
+    lead.returnCountry ??
+    "India",
+
+
+  /* ── Vehicles — NEW ────────────────────────────────── */
+
+  vehicleRequirements:
+    restoredVehicleRequirements,
+
+
+  /* ── Rooms — NEW ───────────────────────────────────── */
+
+  roomRequirements:
+    restoredRoomRequirements,
+
+  rooms:
+    restoredRoomCount,
+
+  extraBeds:
+    restoredExtraBeds,
+
+
+  /* ── Travellers ────────────────────────────────────── */
+
+  ...adultPrefill,
+
+  children:
+    toInt(
+      lead.children ??
+      lead.childCount ??
+      0
+    ),
+
+  infants:
+    toInt(
+      lead.infants ??
+      lead.infantCount ??
+      0
+    ),
+
+
+  /* ── Assistance ────────────────────────────────────── */
+
+  specialAssistanceRequired:
+    Boolean(
+      lead.specialAssistanceRequired ??
+      lead.needsSpecialAssistance ??
+      (
+        Array.isArray(
+          lead.specialAssistanceTypes
+        ) &&
+        lead.specialAssistanceTypes.length > 0
+      )
+    ),
+
+  specialAssistanceTypes:
+    Array.isArray(
+      lead.specialAssistanceTypes
+    )
+      ? lead.specialAssistanceTypes
+      : Array.isArray(
+          lead.assistanceTypes
+        )
+        ? lead.assistanceTypes
+        : [],
+
+  assistancePassengerCount:
+    toInt(
+      lead.assistancePassengerCount ??
+      lead.assistancePassengers ??
+      0
+    ),
+
+  specialAssistanceNotes:
+    lead.specialAssistanceNotes ??
+    lead.assistanceNotes ??
+    "",
+
+  notes:
+    lead.notes ??
+    lead.note ??
+    lead.remarks ??
+    lead.requirements ??
+    "",
+});
 
         const rawServices = lead.services ?? lead.selectedServices ?? lead.requiredServices ?? [];
         setServices([
           ...new Set((Array.isArray(rawServices) ? rawServices : []).map(normalizeServiceId).filter(Boolean)),
         ]);
 
-        const rawItinerary = lead.itinerary ?? lead.itineraries ?? lead.travelItinerary ?? [];
-        const rows = (Array.isArray(rawItinerary) ? rawItinerary : []).map((row) => ({
+        const rawItinerary =
+  lead.itinerary ??
+  lead.itineraries ??
+  lead.travelItinerary ??
+  [];
+
+const rows =
+  (
+    Array.isArray(rawItinerary)
+      ? rawItinerary
+      : []
+  ).map((row) => ({
+    id:
+      row.id ??
+      row.publicId ??
+      nextRowId++,
+
+    destinationId:
+      row.destinationId ??
+      row.destinationPublicId ??
+      row.destination?.id ??
+      row.destination?.publicId ??
+      "",
+
+    destination:
+      entityName(
+        row.destination,
+        row.destinationName ??
+        row.destinationLabel ??
+        ""
+      ),
+
+    cityId:
+      row.cityId ??
+      row.cityPublicId ??
+      row.city?.id ??
+      row.city?.publicId ??
+      "",
+
+    city:
+      entityName(
+        row.city,
+        row.cityName ??
+        row.cityLabel ??
+        ""
+      ),
+
+    nights:
+      Math.max(
+        0,
+        toInt(
+          row.nights ??
+          row.noOfNights ??
+          row.stayNights ??
+          1
+        )
+      ),
+  }));
+
+
+/* Restore destinations */
+const restoredDestinations = [];
+const destinationSeen = new Set();
+
+rows.forEach((row) => {
+  const destinationId =
+    String(row.destinationId || "");
+
+  const destinationName =
+    String(row.destination || "").trim();
+
+  const key =
+    destinationId ||
+    destinationName.toLowerCase();
+
+  if (!key) return;
+  if (destinationSeen.has(key)) return;
+
+  destinationSeen.add(key);
+
+  restoredDestinations.push({
+    id: destinationId,
+    name: destinationName,
+  });
+});
+
+
+setSelectedDestinations(
+  restoredDestinations
+);
+
+
+setItinerary(
+  rows.length > 0
+    ? rows
+    : [
+        {
           id: nextRowId++,
-          destinationId: row.destinationId ?? row.destinationPublicId ?? row.destination?.id ?? row.destination?.publicId ?? "",
-          destination: entityName(row.destination, row.destinationName ?? row.destinationLabel ?? ""),
-          cityId: row.cityId ?? row.cityPublicId ?? row.city?.id ?? row.city?.publicId ?? "",
-          city: entityName(row.city, row.cityName ?? row.cityLabel ?? ""),
-          nights: Math.max(0, toInt(row.nights ?? row.noOfNights ?? row.stayNights ?? 1)),
-        }));
-        setItinerary(rows.length > 0
-          ? rows
-          : [{ id: nextRowId++, destinationId: "", destination: "", cityId: "", city: "", nights: 2 }]);
+          destinationId: "",
+          destination: "",
+          cityId: "",
+          city: "",
+          nights: 2,
+        },
+      ]
+);  
       })
       .catch((error) => {
         if (!active || isAlreadyReported(error)) return;
@@ -1241,19 +1730,26 @@ export default function EditLead() {
 
       <main className="mx-auto w-full max-w-[1400px] space-y-5 px-4 py-4">
         <LeadFormPanels
-          register={register}
-          errors={errors}
-          watch={watch}
-          setValue={setValue}
-          getValues={getValues}
-          clearErrors={clearErrors}
-          services={services}
-          onToggleService={toggleService}
-          itinerary={itinerary}
-          onAddRow={addRow}
-          onRemoveRow={removeRow}
-          onUpdateRow={updateRow}
-        />
+  register={register}
+  errors={errors}
+  watch={watch}
+  setValue={setValue}
+  getValues={getValues}
+  clearErrors={clearErrors}
+
+  services={services}
+  onToggleService={toggleService}
+
+  itinerary={itinerary}
+  onAddRow={addRow}
+  onRemoveRow={removeRow}
+  onUpdateRow={updateRow}
+
+  selectedDestinations={selectedDestinations}
+  onSelectedDestinationsChange={
+    setSelectedDestinations
+  }
+/>
 
         <div className="flex flex-col-reverse gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
           <p className="text-xs text-slate-500">
