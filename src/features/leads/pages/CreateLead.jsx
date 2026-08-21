@@ -28,6 +28,8 @@ import {
   ArrowLeft,
   ArrowRight,
   BedDouble,
+  Bus,
+  X,
   BookUser,
   CalendarDays,
   Camera,
@@ -73,6 +75,8 @@ import QuickCityModal from "../../masters/components/QuickCityModal";
 // Cross-feature, through the barrel — customers owns "does this person already exist?" and the
 // lead form only asks the question.
 import { customerService } from "@features/customers";
+import { VehicleRequirementRows, RoomRequirementRows, emptyVehicleRow, emptyRoomRow } from "@features/bookings";
+import { vehicleService } from "@features/masters";
 // Rapid mode prices the enquiry on this same screen. The accordion, its payload builder and its
 // validation all come from the Quick Quote page through the barrel, so there is exactly one
 // implementation of "what a quick quote is" no matter which screen the agent started on.
@@ -111,7 +115,6 @@ const LEAD_STAGES = [
 // straight onto Customer.commPref at conversion, and both sides share one CHECK constraint.
 // "Call" was NOT one of them ("Phone Call" is), so picking it 400'd the save with an opaque
 // deserialization error carrying no field to show it against.
-const COMMUNICATION_PREFERENCES = ["WhatsApp", "Phone Call", "Email", "SMS", "All Channels"];
 const PACKAGE_TYPES = ["Family", "Honeymoon", "Group", "Corporate", "Pilgrimage", "Adventure"];
 const DEPARTURE_MODES = ["Flight / Airport", "Train / Rail", "Car / Road", "Bus", "Other"];
 const ASSISTANCE_TYPES = [
@@ -179,11 +182,14 @@ const toDateInput = (value) => {
 const MODE_FIELDS = {
   "Flight / Airport": ["departureAirport", "airportCode", "preferredFlightTime"],
   "Train / Rail": ["railwayStation", "trainClass", "preferredTrainTime"],
-  "Car / Road": ["pickupAddress", "pickupDateTime", "vehiclePreference"],
+  /* pickupDateTime was in this list and is deliberately no longer. It is now a first-class field in
+     the PICKUP band, asked for every mode — a trip has a pickup time whether it starts at an
+     airport, a station or a doorstep. Left here, changing the mode away from Car / Road would wipe
+     a time the agent had already taken, which is a silent data loss with no message. */
+  "Car / Road": ["pickupAddress", "vehiclePreference"],
 };
 
 const FONT = "'Plus Jakarta Sans',system-ui,sans-serif";
-const today = () => new Date().toISOString().slice(0, 10);
 const isOpenLead = (lead) => {
   if (!lead) return false;
   const stage = String(lead.leadStage ?? lead.stage ?? "").trim().toLowerCase().replaceAll("_", " ");
@@ -269,8 +275,22 @@ export const blankDefaults = () => ({
   departureMode: "", departureAirport: "", airportCode: "", preferredFlightTime: "",
   railwayStation: "", trainClass: "", preferredTrainTime: "",
   pickupAddress: "", pickupDateTime: "", vehiclePreference: "",
+  /* DROP — where the trip finishes. Four new fields, mirroring the four PICKUP ones the form
+     already had, because the booking form asks for both and a lead that only records where a trip
+     STARTS forces whoever converts it to ask the customer again for the half nobody wrote down.
+     Field-for-field parity with the booking form is the point: on conversion these map straight
+     across with nothing to guess. */
+  dropDateTime: "", dropMode: "", dropCity: "", dropCountry: "India",
   showAdultBreakdown: false, male: null, female: null,
   totalAdults: 2, children: 0, infants: 0, rooms: 1, extraBeds: 0,
+  /* What the trip NEEDS — not the vehicle finally assigned. Same shape and same editor as the
+     booking form, so a requirement written on the lead survives the conversion unchanged.
+     save() builds its payload as { ...data }, so declaring it here is all it takes to send it. */
+  vehicleRequirements: [],
+  /* The room MIX, as the booking form models it: "3 Double AC + 1 Triple Non AC" cannot be
+     said with a single Rooms counter. rooms / extraBeds above stay the payload fields and are
+     rolled up from these rows on every edit, so nothing downstream has to learn a new shape. */
+  roomRequirements: [emptyRoomRow()],
   roomPlanEnabled: false,
   specialAssistanceRequired: false, specialAssistanceTypes: [],
   assistancePassengerCount: 0, specialAssistanceNotes: "",
@@ -288,6 +308,14 @@ export const blankDefaults = () => ({
   tripFor: "",
   whatsappSame: true,
   whatsappNumber: "",
+  /* The customer half of the booking form, brought across so both screens capture the same
+     record. NEW on the lead: nothing read these before. save() builds { ...data }, so naming
+     them here is all it takes to send them — but they need matching LeadRequestDTO fields or
+     the server will drop them and they will come back empty.
+     Named customerCity / customerState / customerCountry, not city / country, so they cannot be
+     confused with departCity and departCountry — those are where the JOURNEY starts, these are
+     where the PERSON lives, and the two are routinely different. */
+  customerCity: "", customerState: "", customerCountry: "",
   occasion: "",
   dateFlexibility: "EXACT",
   dateNote: "",
@@ -378,6 +406,9 @@ const control = (invalid, icon) =>
      lets go, so the agent can close it again without the error re-slamming it open. */
 function Panel({
   icon: Icon,
+  /* Tile colour for the header glyph. Defaults to the slate it has always used, so every
+     existing Panel is untouched; the Vehicle card overrides it to match the booking form. */
+  iconTile = "bg-slate-100 text-slate-700",
   title,
   description,
   action,
@@ -405,7 +436,7 @@ function Panel({
 
   const head = (
     <>
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
+      <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${iconTile}`}>
         <Icon className="h-4 w-4" />
       </span>
       <div className="min-w-0">
@@ -595,7 +626,7 @@ function RequirementsAssistancePanel({
   return (
     <Panel
       icon={Accessibility}
-      title="Requirements & Assistance"
+      title="Special Assistance"
       description="Trip preferences and traveller support in one place"
       collapsible
       defaultOpen
@@ -756,9 +787,17 @@ export function LeadFormPanels({
   onAddRow,
   onRemoveRow,
   onUpdateRow,
-  phoneRef,
-  belowPhone = null,
-  compactRail = false,
+
+  selectedDestinations,
+  onSelectedDestinationsChange,
+
+  nameRef,
+phoneRef,
+
+belowPhone = null,
+contactBanner = null,
+
+compactRail = false,
   /* Progressive disclosure, CREATE with QUOTATION_CREATE only: Customer → Trip → Itinerary is
      one step, and it hands over to Services only when the agent says it is done. Off everywhere else
      — edit must never lock a field on a record that already exists (a saved lead may legitimately
@@ -781,11 +820,127 @@ export function LeadFormPanels({
   const [selfUser, setSelfUser] = useState(null);
 
   const [destinations, setDestinations] = useState([]);
-  const [loadingDestinations, setLoadingDestinations] = useState(true);
-  const [rowCities, setRowCities] = useState({});
-  const [loadingRows, setLoadingRows] = useState({});
-  const [destinationModalRow, setDestinationModalRow] = useState(null);
-  const [cityModalRow, setCityModalRow] = useState(null);
+const [loadingDestinations, setLoadingDestinations] = useState(true);
+
+// All cities of ALL destinations selected at the top.
+const [citiesByDestination, setCitiesByDestination] = useState({});
+const [loadingCityPool, setLoadingCityPool] = useState(false);
+
+// Prevent stale API responses from restoring cities of a removed destination.
+const cityPoolRequestRef = useRef(0);
+
+// Quick create modals are no longer tied to an itinerary row.
+const [destinationModalOpen, setDestinationModalOpen] = useState(false);
+const [cityModalDestinationId, setCityModalDestinationId] = useState(null);
+
+  /* Vehicle requirement rows live in the FORM, not in local state — save() builds its payload
+     as { ...data }, so anything held outside react-hook-form would simply not be sent. */
+ 
+
+/* Vehicle requirement rows live in the FORM, not in local state —
+   save() builds its payload as { ...data }, so anything held outside
+   react-hook-form would simply not be sent. */
+const vehicleRows =
+  watch("vehicleRequirements") || [];
+
+
+/*
+ * RequirementRows emits vehicleId, model and capacity
+ * as consecutive updates when one vehicle is selected.
+ *
+ * Always read the latest react-hook-form value before applying
+ * the next field so one update cannot overwrite the previous one.
+ */
+const updateVehicleRequirement = useCallback(
+  (rowId, key, value) => {
+    const currentRows =
+      getValues("vehicleRequirements") || [];
+
+    const nextRows = currentRows.map((row) =>
+      String(row.id) === String(rowId)
+        ? {
+            ...row,
+            [key]: value,
+          }
+        : row
+    );
+
+    setValue(
+      "vehicleRequirements",
+      nextRows,
+      {
+        shouldDirty: true,
+        shouldValidate: true,
+      }
+    );
+  },
+  [getValues, setValue]
+);
+
+
+const vehicleCount = vehicleRows.reduce(
+  (sum, row) =>
+    sum + (Number(row.quantity) || 0),
+  0
+);
+
+
+/* Room requirement rows */
+const roomRows =
+  watch("roomRequirements") || [];
+
+
+/*
+ * Every room edit rolls the room mix back up into
+ * the existing rooms / extraBeds fields.
+ */
+const setRoomRows = (rows) => {
+  setValue(
+    "roomRequirements",
+    rows,
+    { shouldDirty: true }
+  );
+
+  setValue(
+    "rooms",
+    rows.reduce(
+      (sum, row) =>
+        sum + (Number(row.count) || 0),
+      0
+    ) || 1,
+    { shouldDirty: true }
+  );
+
+  setValue(
+    "extraBeds",
+    rows.reduce(
+      (sum, row) =>
+        sum + (Number(row.extraBeds) || 0),
+      0
+    ),
+    { shouldDirty: true }
+  );
+};
+
+
+const [vehicleMaster, setVehicleMaster] =
+  useState([]);
+
+const [
+  loadingVehicleMaster,
+  setLoadingVehicleMaster,
+] = useState(true);
+
+  /* Where a leg starts, DERIVED — never stored.
+     Leg 1 begins at the Departing-from city the form already captured; every later leg begins where
+     the previous one ended. Reading it instead of storing it is what keeps this a presentation
+     change: no new field, no payload change, and the From cell can never disagree with the route
+     above it the way a second editable copy eventually would. */
+  const legFrom = (index) => (
+    index === 0
+      ? String(watch("departCity") || "").trim()
+      : String(itinerary[index - 1]?.city || "").trim()
+  );
   /* Retired with Full details: rapid used to show a picked Lead Source as a read-only chip with a
      "Change" link to buy back rail space, and `rapidSourceEditing` was the latch behind it. The
      merged form renders the searchable select outright — the field is required and never prefilled,
@@ -836,12 +991,49 @@ export function LeadFormPanels({
     `${roomCount} ${roomCount === 1 ? "room" : "rooms"}`,
     watch("budget") ? `₹${Number(watch("budget")).toLocaleString("en-IN")}` : "",
   ].filter(Boolean).join(" · ");
-  const summaryNights = itinerary.reduce((sum, row) => sum + toInt(row.nights), 0);
-  const tripSummary = [
-    itinerary.map((row) => row.city || row.destination).filter(Boolean).join(" → "),
-    summaryNights > 0 ? `${summaryNights}N / ${summaryNights + 1}D` : "",
-    watch("travelDate"),
-  ].filter(Boolean).join(" · ") || "No stops added";
+  const summaryNights =
+  itinerary.reduce(
+    (sum, row) => sum + toInt(row.nights),
+    0
+  );
+
+const summaryPickup =
+  String(watch("departCity") || "").trim();
+
+const summaryDrop =
+  String(watch("dropCity") || "").trim();
+
+const summaryCities = [
+  summaryPickup,
+
+  ...itinerary
+    .map((row) =>
+      String(row.city || "").trim()
+    )
+    .filter(Boolean),
+
+  summaryDrop,
+].filter(Boolean);
+
+const dedupedSummaryCities =
+  summaryCities.filter(
+    (city, index) =>
+      index === 0 ||
+      city.toLowerCase() !==
+        summaryCities[index - 1].toLowerCase()
+  );
+
+const tripSummary = [
+  dedupedSummaryCities.join(" → "),
+
+  summaryNights > 0
+    ? `${summaryNights}N / ${summaryNights + 1}D`
+    : "",
+
+  watch("travelDate"),
+]
+  .filter(Boolean)
+  .join(" · ") || "No stops added";
   const leadSourceValue = watch("leadSource") || "";
   const leadSourceLabel = sourceOptionsFor(leadSourceValue)
     .find((option) => String(option.value) === String(leadSourceValue))?.label || leadSourceValue;
@@ -945,6 +1137,15 @@ export function LeadFormPanels({
 
   useEffect(() => {
     let active = true;
+    /* getAllVehicles, not getAll — and wrapped in Promise.resolve, the same call the booking form
+       makes. Optional-chaining the METHOD without the wrapper is a trap: if the name is ever wrong
+       the expression yields undefined, the .finally never runs, and the model picker sits on
+       "Loading…" forever with no error anywhere. */
+    Promise.resolve(vehicleService.getAllVehicles?.())
+      .then((response) => { if (active) setVehicleMaster(extractArray(response)); })
+      .catch(() => { if (active) setVehicleMaster([]); })
+      .finally(() => { if (active) setLoadingVehicleMaster(false); });
+
     geographyService.getAllDestinations()
       .then((response) => { if (active) setDestinations(extractArray(response)); })
       .catch(() => { if (active) setDestinations([]); })
@@ -970,84 +1171,563 @@ export function LeadFormPanels({
     clearErrors?.(["specialAssistanceTypes", "assistancePassengerCount"]);
   }, [assistanceRequired, clearErrors, setValue]);
 
-  // ── Itinerary row helpers ─────────────────────────────────────────────────────────────────────
-  const loadCities = useCallback(async (rowId, destinationId) => {
-    if (!destinationId) { setRowCities((c) => ({ ...c, [rowId]: [] })); return []; }
-    setLoadingRows((c) => ({ ...c, [rowId]: true }));
-    try {
-      const cities = extractArray(await geographyService.getCitiesByDestination(destinationId));
-      setRowCities((c) => ({ ...c, [rowId]: cities }));
-      return cities;
-    } catch {
-      setRowCities((c) => ({ ...c, [rowId]: [] }));
-      return [];
-    } finally {
-      setLoadingRows((c) => ({ ...c, [rowId]: false }));
-    }
-  }, []);
+  // ── Itinerary / multi-destination route helpers ──────────────────────────────
 
-  /* Edit opens with rows that carry names but often no ids, because that is what the API returns.
-     Resolve them once against the destination master so the selects show the saved values instead
-     of rendering blank and inviting the user to re-pick a destination that was already right. */
-  const hydratedRef = useRef(false);
-  useEffect(() => {
-    if (hydratedRef.current || loadingDestinations || destinations.length === 0) return;
-    const needy = itinerary.filter((row) => !row.destinationId && row.destination);
-    if (needy.length === 0) { hydratedRef.current = true; return; }
+// Destination dropdown at the top must not offer the same destination twice.
+const destinationOptions = useMemo(() => {
+  const selectedIds = new Set(
+    (selectedDestinations || [])
+      .map((item) => String(item?.id || ""))
+      .filter(Boolean)
+  );
 
-    hydratedRef.current = true;
-    needy.forEach(async (row) => {
-      const match = destinations.find(
-        (d) => String(d?.name || "").trim().toLowerCase() === String(row.destination).trim().toLowerCase()
-      );
-      if (!match) return;
-      const destinationId = String(idOf(match));
-      onUpdateRow(row.id, { destinationId });
-      const cities = await loadCities(row.id, destinationId);
-      if (!row.city) return;
-      const city = cities.find(
-        (c) => String(c?.name || "").trim().toLowerCase() === String(row.city).trim().toLowerCase()
-      );
-      if (city) onUpdateRow(row.id, { cityId: String(idOf(city)) });
+  return destinations.filter(
+    (destination) =>
+      !selectedIds.has(String(idOf(destination)))
+  );
+}, [destinations, selectedDestinations]);
+
+
+// ── Load cities for ALL selected destinations ────────────────────────────────
+useEffect(() => {
+  const requestId = ++cityPoolRequestRef.current;
+
+  const selected = (selectedDestinations || []).filter(
+    (destination) => destination?.id
+  );
+
+  if (selected.length === 0) {
+    setCitiesByDestination({});
+    setLoadingCityPool(false);
+    return undefined;
+  }
+
+  let active = true;
+  setLoadingCityPool(true);
+
+  Promise.allSettled(
+    selected.map(async (destination) => {
+      const response =
+        await geographyService.getCitiesByDestination(destination.id);
+
+      return {
+        destination,
+        cities: extractArray(response),
+      };
+    })
+  )
+    .then((results) => {
+      if (!active) return;
+      if (requestId !== cityPoolRequestRef.current) return;
+
+      const next = {};
+
+      results.forEach((result) => {
+        if (result.status !== "fulfilled") return;
+
+        const { destination, cities } = result.value;
+
+        next[String(destination.id)] =
+          Array.isArray(cities) ? cities : [];
+      });
+
+      setCitiesByDestination(next);
+    })
+    .finally(() => {
+      if (!active) return;
+      if (requestId !== cityPoolRequestRef.current) return;
+
+      setLoadingCityPool(false);
     });
-  }, [destinations, itinerary, loadCities, loadingDestinations, onUpdateRow]);
 
-  const chooseDestination = async (rowId, destinationId) => {
-    const destination = destinations.find((d) => String(idOf(d)) === String(destinationId));
+  return () => {
+    active = false;
+  };
+}, [selectedDestinations]);
+
+
+// ── Resolve old saved destination names that do not have ids ─────────────────
+useEffect(() => {
+  if (loadingDestinations || destinations.length === 0) return;
+  if (!selectedDestinations?.length) return;
+
+  let changed = false;
+
+  const resolved = selectedDestinations.map((selected) => {
+    if (selected.id) return selected;
+
+    const selectedName =
+      String(selected.name || "").trim().toLowerCase();
+
+    if (!selectedName) return selected;
+
+    const match = destinations.find(
+      (destination) =>
+        String(destination?.name || destination?.label || "")
+          .trim()
+          .toLowerCase() === selectedName
+    );
+
+    if (!match) return selected;
+
+    const resolvedId = String(idOf(match));
+
+    if (!resolvedId) return selected;
+
+    changed = true;
+
+    // Also repair the old itinerary rows carrying only destination name.
+    itinerary.forEach((row) => {
+      if (row.destinationId) return;
+
+      if (
+        String(row.destination || "")
+          .trim()
+          .toLowerCase() === selectedName
+      ) {
+        onUpdateRow(row.id, {
+          destinationId: resolvedId,
+        });
+      }
+    });
+
+    return {
+      id: resolvedId,
+      name:
+        match.name ||
+        match.label ||
+        selected.name,
+    };
+  });
+
+  if (changed) {
+    onSelectedDestinationsChange(resolved);
+  }
+}, [
+  destinations,
+  loadingDestinations,
+  selectedDestinations,
+  itinerary,
+  onSelectedDestinationsChange,
+  onUpdateRow,
+]);
+
+
+// ── Build ONE city pool from every selected destination ──────────────────────
+const destinationCityOptions = useMemo(() => {
+  const options = [];
+  const seen = new Set();
+
+  (selectedDestinations || []).forEach((destination) => {
+    const destinationId = String(destination?.id || "");
+
+    if (!destinationId) return;
+
+    const destinationName =
+      String(destination?.name || "Destination").trim();
+
+    const cities =
+      citiesByDestination[destinationId] || [];
+
+    cities.forEach((city) => {
+      const cityId = String(idOf(city) || "");
+      const cityName = entityName(city);
+
+      if (!cityId || !cityName) return;
+
+      // Same city name can legitimately exist under different destinations.
+      const key = `${destinationId}:${cityId}`;
+
+      if (seen.has(key)) return;
+
+      seen.add(key);
+
+      options.push({
+        value: key,
+
+        // Explicit destination in the label avoids ambiguity when two
+        // selected destinations contain similarly named cities.
+        label: `${cityName} — ${destinationName}`,
+
+        cityId,
+        cityName,
+        destinationId,
+        destinationName,
+      });
+    });
+  });
+
+  return options;
+}, [selectedDestinations, citiesByDestination]);
+
+
+// ── Resolve city ids on old saved leads ──────────────────────────────────────
+useEffect(() => {
+  itinerary.forEach((row) => {
+    if (!row.city) return;
+    if (row.cityId) return;
+    if (!row.destinationId) return;
+
+    const cities =
+      citiesByDestination[String(row.destinationId)] || [];
+
+    const cityName =
+      String(row.city).trim().toLowerCase();
+
+    const match = cities.find(
+      (city) =>
+        entityName(city).trim().toLowerCase() === cityName
+    );
+
+    if (!match) return;
+
+    const cityId = String(idOf(match) || "");
+
+    if (!cityId) return;
+
+    onUpdateRow(row.id, {
+      cityId,
+    });
+  });
+}, [citiesByDestination, itinerary, onUpdateRow]);
+
+
+// ── Top Destination picker ───────────────────────────────────────────────────
+const addDestination = (destinationId) => {
+  if (!destinationId) return;
+
+  const destination = destinations.find(
+    (item) =>
+      String(idOf(item)) === String(destinationId)
+  );
+
+  if (!destination) return;
+
+  const normalizedId = String(idOf(destination));
+
+  if (
+    selectedDestinations.some(
+      (item) =>
+        String(item.id) === normalizedId
+    )
+  ) {
+    return;
+  }
+
+  onSelectedDestinationsChange([
+    ...selectedDestinations,
+    {
+      id: normalizedId,
+      name:
+        destination.name ||
+        destination.label ||
+        "Destination",
+    },
+  ]);
+
+  clearErrors?.("itinerary");
+};
+
+
+// Removing a destination also removes stays belonging to that destination.
+// Destination itself is separate state; itinerary stores only actual stays.
+const removeDestination = (destinationToRemove) => {
+  const normalizedId =
+    String(destinationToRemove?.id || "");
+
+  const normalizedName =
+    String(destinationToRemove?.name || "")
+      .trim()
+      .toLowerCase();
+
+  onSelectedDestinationsChange(
+    selectedDestinations.filter((item) => {
+      if (normalizedId) {
+        return String(item.id || "") !== normalizedId;
+      }
+
+      return String(item.name || "")
+        .trim()
+        .toLowerCase() !== normalizedName;
+    })
+  );
+
+  const rowBelongsToDestination = (row) => {
+    if (normalizedId) {
+      return String(row.destinationId || "") === normalizedId;
+    }
+
+    return (
+      String(row.destination || "")
+        .trim()
+        .toLowerCase() === normalizedName
+    );
+  };
+
+  const relatedRows =
+    itinerary.filter(rowBelongsToDestination);
+
+  if (relatedRows.length === 0) return;
+
+  const remainingRows =
+    itinerary.filter(
+      (row) => !rowBelongsToDestination(row)
+    );
+
+  // The page always keeps one physical blank row.
+  if (remainingRows.length === 0) {
+    onUpdateRow(itinerary[0].id, {
+      destinationId: "",
+      destination: "",
+      cityId: "",
+      city: "",
+      nights: 2,
+    });
+
+    itinerary.slice(1).forEach((row) => {
+      onRemoveRow(row.id);
+    });
+
+    return;
+  }
+
+  relatedRows.forEach((row) => {
+    onRemoveRow(row.id);
+  });
+};
+
+
+// ── Select a city in the route ───────────────────────────────────────────────
+const chooseCity = (rowId, optionValue) => {
+  if (!optionValue) {
     onUpdateRow(rowId, {
-      destinationId: destinationId ? String(destinationId) : "",
-      destination: destination?.name || "",
+      destinationId: "",
+      destination: "",
       cityId: "",
       city: "",
     });
-    await loadCities(rowId, destinationId);
+
+    return;
+  }
+
+  // An old city which no longer exists in the master is intentionally
+  // displayed but selecting the same saved placeholder must not erase it.
+  if (String(optionValue).startsWith("saved:")) {
+    return;
+  }
+
+  const selected =
+    destinationCityOptions.find(
+      (option) =>
+        String(option.value) === String(optionValue)
+    );
+
+  if (!selected) return;
+
+  onUpdateRow(rowId, {
+    destinationId: selected.destinationId,
+    destination: selected.destinationName,
+    cityId: selected.cityId,
+    city: selected.cityName,
+  });
+
+  clearErrors?.("itinerary");
+};
+
+
+// Keep a deleted/disabled old city visible while editing a saved lead.
+const cityOptionsForRow = (row) => {
+  if (!row.city) {
+    return destinationCityOptions;
+  }
+
+  const currentValue =
+    row.destinationId && row.cityId
+      ? `${row.destinationId}:${row.cityId}`
+      : "";
+
+  const exists =
+    destinationCityOptions.some(
+      (option) =>
+        String(option.value) ===
+        String(currentValue)
+    );
+
+  if (exists) {
+    return destinationCityOptions;
+  }
+
+  return [
+    {
+      value: `saved:${row.id}`,
+      label: `${row.city} — ${row.destination || "saved"}`,
+      cityId: row.cityId || "",
+      cityName: row.city,
+      destinationId: row.destinationId || "",
+      destinationName: row.destination || "",
+      saved: true,
+    },
+
+    ...destinationCityOptions,
+  ];
+};
+
+
+const cityValueForRow = (row) => {
+  const value =
+    row.destinationId && row.cityId
+      ? `${row.destinationId}:${row.cityId}`
+      : "";
+
+  const exists =
+    destinationCityOptions.some(
+      (option) =>
+        String(option.value) === String(value)
+    );
+
+  if (exists) {
+    return value;
+  }
+
+  return row.city
+    ? `saved:${row.id}`
+    : "";
+};
+
+
+// ── Quick create Destination ─────────────────────────────────────────────────
+const onDestinationCreated = (saved) => {
+  const newId = String(idOf(saved) || "");
+
+  if (!newId) {
+    setDestinationModalOpen(false);
+    return;
+  }
+
+  const newDestination = {
+    id: newId,
+    name:
+      saved?.name ||
+      saved?.label ||
+      "Destination",
   };
 
-  const chooseCity = (rowId, cityId) => {
-    const city = (rowCities[rowId] || []).find((c) => String(idOf(c)) === String(cityId));
-    onUpdateRow(rowId, { cityId: cityId ? String(cityId) : "", city: city?.name || "" });
-  };
+  setDestinations((current) => {
+    const exists = current.some(
+      (item) =>
+        String(idOf(item)) === newId
+    );
 
-  const onDestinationCreated = async (saved) => {
-    const rowId = destinationModalRow;
-    setDestinations((list) => [...list, saved]);
-    setDestinationModalRow(null);
-    if (rowId != null) await chooseDestination(rowId, idOf(saved));
-  };
+    return exists
+      ? current
+      : [...current, saved];
+  });
 
-  const onCityCreated = (saved) => {
-    const rowId = cityModalRow;
-    setCityModalRow(null);
-    if (rowId == null) return;
-    setRowCities((c) => ({ ...c, [rowId]: [...(c[rowId] || []), saved] }));
-    onUpdateRow(rowId, { cityId: String(idOf(saved)), city: saved.name || "" });
-  };
+  const alreadySelected =
+    selectedDestinations.some(
+      (item) =>
+        String(item.id || "") === newId
+    );
 
-  const cityModalDestination = useMemo(() => {
-    if (cityModalRow == null) return null;
-    const row = itinerary.find((r) => r.id === cityModalRow);
-    return destinations.find((d) => String(idOf(d)) === String(row?.destinationId)) || null;
-  }, [cityModalRow, destinations, itinerary]);
+  if (!alreadySelected) {
+    onSelectedDestinationsChange([
+      ...selectedDestinations,
+      newDestination,
+    ]);
+  }
+
+  setDestinationModalOpen(false);
+};
+
+
+// ── Quick create City ────────────────────────────────────────────────────────
+const cityModalDestination = useMemo(() => {
+  if (!cityModalDestinationId) return null;
+
+  return (
+    destinations.find(
+      (destination) =>
+        String(idOf(destination)) ===
+        String(cityModalDestinationId)
+    ) || null
+  );
+}, [
+  destinations,
+  cityModalDestinationId,
+]);
+
+
+const onCityCreated = (saved) => {
+  if (!cityModalDestinationId) return;
+
+  const destinationId =
+    String(cityModalDestinationId);
+
+  setCitiesByDestination((current) => ({
+    ...current,
+
+    [destinationId]: [
+      ...(current[destinationId] || []),
+      saved,
+    ],
+  }));
+
+  setCityModalDestinationId(null);
+};
+
+
+// ── Route presentation helpers ───────────────────────────────────────────────
+const pickupCityValue =
+  String(watch("departCity") || "").trim();
+
+const dropCityValue =
+  String(watch("dropCity") || "").trim();
+
+const lastItineraryRow =
+  itinerary[itinerary.length - 1];
+
+const lastCity =
+  String(lastItineraryRow?.city || "").trim();
+
+const lastRowComplete =
+  Boolean(lastCity);
+
+const showDropLeg =
+  Boolean(dropCityValue) &&
+  Boolean(lastCity) &&
+  dropCityValue.toLowerCase() !==
+    lastCity.toLowerCase();
+
+
+// One-line route shown below the rows.
+const itinerarySummary = [
+  pickupCityValue,
+
+  ...itinerary
+    .filter((row) =>
+      String(row.city || "").trim()
+    )
+    .map((row) => {
+      const nights = toInt(row.nights);
+
+      return `${row.city}${
+        nights > 0 ? ` ${nights}N` : ""
+      }`;
+    }),
+
+  ...(
+    dropCityValue &&
+    (
+      !lastCity ||
+      dropCityValue.toLowerCase() !==
+        lastCity.toLowerCase()
+    )
+      ? [dropCityValue]
+      : []
+  ),
+]
+  .filter(Boolean)
+  .join(" → ");
 
   const toggleAssistance = (type) => {
     const next = assistanceTypes.includes(type)
@@ -1116,8 +1796,8 @@ export function LeadFormPanels({
           are; never both, so no id or `name` is ever duplicated in the document. */}
       {foldEnquiry && (
         <div className="min-w-0 space-y-3 lg:col-start-1">
-          <SummaryRow icon={CircleUserRound} title="Customer" detail={customerSummary} onEdit={onExpandEnquiry} />
-          <SummaryRow icon={Route} title="Trip" detail={tripSummary} onEdit={onExpandEnquiry} />
+          <SummaryRow icon={CircleUserRound} title="Customer Details" detail={customerSummary} onEdit={onExpandEnquiry} />
+          <SummaryRow icon={Route} title="Travel Details" detail={tripSummary} onEdit={onExpandEnquiry} />
         </div>
       )}
 
@@ -1131,41 +1811,203 @@ export function LeadFormPanels({
       <div className={`min-w-0 ${compactRail ? "lg:col-start-1" : "lg:col-span-2"}`}>
       <Panel
         icon={CircleUserRound}
-        title="Customer"
-        description="Phone first — an existing lead on this number is flagged as you type"
+        title="Customer Details"
+        description="Existing leads and customers are checked from the phone number as you type"
       >
-        <div className="grid grid-cols-1 gap-x-3 gap-y-2 sm:grid-cols-2 xl:grid-cols-4">
-          <Field id="phone" label="Customer Phone" required error={errors.phone?.message}>
-            <div className="relative">
-              <Phone className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <input
-                {...phoneReg}
-                onChange={(e) => { e.target.value = e.target.value.replace(/[^+\d\s\-()]/g, ""); phoneReg.onChange(e); }}
-                ref={(node) => { phoneReg.ref(node); if (phoneRef) phoneRef.current = node; }}
-                id="phone"
-                type="tel"
-                autoComplete="tel"
-                placeholder="+91 98765 43210"
-                aria-invalid={Boolean(errors.phone)}
-                aria-describedby={errors.phone ? "phone-error" : undefined}
-                className={control(errors.phone, true)}
-              />
-            </div>
-          </Field>
+        {/* TWO rows, matching the booking form, not one four-across grid.
+            Row 1 is how you REACH them — phone, name, WhatsApp. Row 2 is where they ARE — email and
+            the address. Run as a single grid the two interleave: Email landed beside the phone and
+            the address fields wrapped underneath in whatever order the column count left them, so
+            two different questions shared a line and neither read as a group.
+            Three across on row 1 also leaves the WhatsApp mirror room for its "Same as phone"
+            checkbox underneath without pushing the row taller than its neighbours. */}
+        <div className="grid grid-cols-1 gap-x-3 gap-y-2 sm:grid-cols-2 lg:grid-cols-3">
 
-          <Field id="customerName" label="Customer Name" required error={errors.customerName?.message}>
-            <input
-              {...nameReg}
-              onChange={(e) => { e.target.value = e.target.value.replace(/[0-9]/g, ""); nameReg.onChange(e); }}
-              id="customerName"
-              autoComplete="name"
-              placeholder="Full name"
-              aria-invalid={Boolean(errors.customerName)}
-              aria-describedby={errors.customerName ? "customerName-error" : undefined}
-              className={control(errors.customerName)}
-            />
-          </Field>
+  {/* ── 1. Customer Name ───────────────────────────────────── */}
+  <Field
+    id="customerName"
+    label="Customer Name"
+    required
+    error={errors.customerName?.message}
+  >
+    <input
+      {...nameReg}
+      ref={(node) => {
+        nameReg.ref(node);
 
+        if (nameRef) {
+          nameRef.current = node;
+        }
+      }}
+      onChange={(e) => {
+        e.target.value =
+          e.target.value.replace(/[0-9]/g, "");
+
+        nameReg.onChange(e);
+      }}
+      id="customerName"
+      autoComplete="name"
+      placeholder="Full name"
+      aria-invalid={Boolean(errors.customerName)}
+      aria-describedby={
+        errors.customerName
+          ? "customerName-error"
+          : undefined
+      }
+      className={control(errors.customerName)}
+    />
+  </Field>
+
+
+  {/* ── 2. Customer Phone ──────────────────────────────────── */}
+  <div className="min-w-0">
+
+    <Field
+      id="phone"
+      label="Customer Phone"
+      required
+      error={errors.phone?.message}
+    >
+      <div className="relative">
+        <Phone
+          className="
+            pointer-events-none
+            absolute
+            left-3
+            top-1/2
+            h-4
+            w-4
+            -translate-y-1/2
+            text-slate-400
+          "
+        />
+
+        <input
+          {...phoneReg}
+          onChange={(e) => {
+            e.target.value =
+              e.target.value.replace(
+                /[^+\d\s\-()]/g,
+                ""
+              );
+
+            phoneReg.onChange(e);
+          }}
+          ref={(node) => {
+            phoneReg.ref(node);
+
+            if (phoneRef) {
+              phoneRef.current = node;
+            }
+          }}
+          id="phone"
+          type="tel"
+          autoComplete="tel"
+          placeholder="+91 98765 43210"
+          aria-invalid={Boolean(errors.phone)}
+          aria-describedby={
+            errors.phone
+              ? "phone-error"
+              : undefined
+          }
+          className={control(errors.phone, true)}
+        />
+      </div>
+    </Field>
+
+
+    {/* IMPORTANT:
+        Checking / New customer message exactly below Phone */}
+    {belowPhone}
+
+  </div>
+
+
+  {/* ── 3. WhatsApp Number ─────────────────────────────────── */}
+  <Field
+    id="whatsappNumber"
+    label="WhatsApp Number"
+    optional
+  >
+    <div className="relative">
+
+      <Phone
+        className="
+          pointer-events-none
+          absolute
+          left-3
+          top-1/2
+          h-4
+          w-4
+          -translate-y-1/2
+          text-slate-400
+        "
+      />
+
+      <input
+        {...register("whatsappNumber")}
+        id="whatsappNumber"
+        type="tel"
+        inputMode="tel"
+        value={
+          watch("whatsappSame")
+            ? watch("phone") || ""
+            : watch("whatsappNumber") || ""
+        }
+        onChange={(e) =>
+          setValue(
+            "whatsappNumber",
+            e.target.value.replace(
+              /[^+\d\s\-()]/g,
+              ""
+            ),
+            { shouldDirty: true }
+          )
+        }
+        disabled={watch("whatsappSame")}
+        placeholder="Same as phone"
+        className={`
+          ${control(false, true)}
+          disabled:bg-slate-50
+          disabled:text-slate-500
+        `}
+      />
+
+    </div>
+
+    <label className="mt-1.5 flex w-fit cursor-pointer items-center gap-2 text-xs font-semibold text-slate-600">
+
+      <input
+        type="checkbox"
+        data-skip-enter="true"
+        checked={Boolean(
+          watch("whatsappSame")
+        )}
+        onChange={(e) =>
+          setValue(
+            "whatsappSame",
+            e.target.checked,
+            { shouldDirty: true }
+          )
+        }
+        className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+      />
+
+      Same as phone
+
+    </label>
+
+  </Field>
+
+</div>
+
+{contactBanner}
+
+        {/* Row 2 — where they ARE. Four across from lg, two on a tablet, one on a phone, and
+            separated by a hairline because this is a real seam: everything above is asked on the
+            call, everything here is filled in as it comes. Email leads it, which is why it drops
+            off row 1. */}
+        <div className="mt-3 grid grid-cols-1 gap-x-3 gap-y-2 border-t border-slate-100 pt-3 sm:grid-cols-2 lg:grid-cols-4">
           <Field id="email" label="Email" optional error={errors.email?.message}>
             <div className="relative">
               <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -1183,38 +2025,28 @@ export function LeadFormPanels({
             </div>
           </Field>
 
-          {/* ── Destination, where the call actually starts ─────────────────────────────────
-              Nobody rings a travel agent and opens with a date — every call opens "Manali ka
-              package chahiye". The only place to record that was the itinerary block at the foot
-              of the Trip panel, so the first word the agent heard was the last thing they could
-              type.
+          {/* City / State / Country — the rest of the booking form's customer block.
+              NEW fields on the lead: see the note beside their defaults. */}
+          <Field id="customerCity" label="City" optional>
+            <input {...register("customerCity")} id="customerCity" placeholder="Customer city" className={control(false)} />
+          </Field>
 
-              NOT A SECOND FIELD. It reads and writes `itinerary[0].destination` directly, through
-              the same chooseDestination() the itinerary row uses — so it sets destinationId and
-              loads that destination's cities exactly as picking it below would, and editing either
-              place moves the same value. There is no copy to fall out of step.
+          <Field id="customerState" label="State / Province" optional>
+            <input {...register("customerState")} id="customerState" placeholder="Maharashtra" className={control(false)} />
+          </Field>
 
-              That distinction is the whole point: a "From" field added earlier this session DID
-              keep its own state, went nowhere on save, and sat eight fields above the real one.
-              One source of truth, two places to reach it. */}
-          {itinerary.length > 0 && (
-            <Field id="lead-destination" label="Destination" hint="Syncs with the first itinerary stop">
-              <SearchableSelect
-                name="lead-destination"
-                options={destinations}
-                value={itinerary[0].destinationId ? Number(itinerary[0].destinationId) || itinerary[0].destinationId : ""}
-                onChange={(value) => chooseDestination(itinerary[0].id, value)}
-                placeholder={itinerary[0].destination || "Where do they want to go?"}
-                loading={loadingDestinations}
-                searchable
-                advanceOnSelect
-              />
-            </Field>
-          )}
+          <Field id="customerCountry" label="Country" optional>
+            <input {...register("customerCountry")} id="customerCountry" placeholder="India" className={control(false)} />
+          </Field>
+
+          {/* Destination MOVED to the Travel Itinerary section, at the top of the route it belongs
+              to — the booking form draws the same line: Customer Details holds the customer, the
+              trip holds where the trip goes. Nothing was lost in the move; it was never a field of
+              its own, only a mirror of itinerary[0].destination. See the note at its new home. */}
 
             </div>
 
-            {belowPhone}
+            
 
             {/* No rule between the contact fields and the counters. Who is calling and how many of
                 them are travelling are ONE answer taken in one breath — "Sharma ji, four adults, two
@@ -1243,6 +2075,10 @@ export function LeadFormPanels({
                   rooms: watch("rooms"),
                   extraBeds: watch("extraBeds"),
                 }}
+                /* Rooms moved to the Vehicle panel above, matching the booking form. Two
+                   editors for one number is how they drift apart, so this side stops drawing
+                   them rather than duplicating them. */
+                showRooms={false}
                 onCountChange={setAdultCount}
                 onToggleBreakdown={toggleAdultBreakdown}
                 /* HEADCOUNT FIRST, breakdown underneath and optional — which is the order the
@@ -1408,40 +2244,113 @@ export function LeadFormPanels({
                   the first decides where the quotation goes, the second writes a reminder. A
                   birthday is relationship data picked up in passing, months later, and had no
                   business being the first two boxes an agent's eye landed on down here. */}
-              <Field id="preferredCommunication" label="How to contact them" optional>
-                <div className="relative">
-                  <select {...register("preferredCommunication")} id="preferredCommunication" data-skip-enter="true" className={`${control(false)} appearance-none pr-9`}>
-                    <option value="">Select channel</option>
-                    {COMMUNICATION_PREFERENCES.map((option) => <option key={option} value={option}>{option}</option>)}
-                  </select>
-                  <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                </div>
-              </Field>
+              {/* REMOVED from this section, to match the booking form's Customer Details:
+                    How to contact them (preferredCommunication) · Call them back on (followUpDate)
+                    Birth Date (birthDate)      · Anniversary (anniversaryDate)
 
-              <Field id="followUpDate" label="Call them back on" optional hint="Creates a reminder when the lead is saved">
-                <input {...register("followUpDate")} id="followUpDate" data-skip-enter="true" type="date" min={today()} className={control(false)} />
-              </Field>
+                  The FIELDS are gone, the DATA is not. All four are still in the form defaults, so
+                  they are still loaded on edit and still sent on save — an existing lead keeps its
+                  callback date and its birthday instead of having them blanked by the first person
+                  to open and save it. A matched customer still prefills birthday and anniversary
+                  (see applyCustomer); the form simply stops asking for them here.
 
-              <Field id="birthDate" label="Birth Date" optional>
-                <input {...register("birthDate")} id="birthDate" data-skip-enter="true" type="date" max={today()} className={control(false)} />
-              </Field>
-
-              <Field id="anniversaryDate" label="Anniversary" optional>
-                <input {...register("anniversaryDate")} id="anniversaryDate" data-skip-enter="true" type="date" max={today()} className={control(false)} />
-              </Field>
-
+                  Consequence worth knowing: a NEW lead can no longer schedule a callback from this
+                  screen, because followUpDate has no input. The reminder that save() creates from it
+                  therefore only fires for leads that already carried one. */}
               {/* Budget moved up beside the traveller counts — see the note there. */}
             </div>
           </Panel>
         </div>
         )}
 
-        {/* ── 2 · Trip ──────────────────────────────────────────────────────────────────────────── */}
+        {/* ── 2 · Vehicle ───────────────────────────────────────────────────────────────────────
+            Ported from the booking form, in the same position and with the same two bands, so an
+            agent who works both screens asks for a vehicle the same way on each. The editor itself
+            is the booking one, imported through the bookings barrel rather than copied — a second
+            copy would drift from it the first time either changed.
+
+            ROOMS lives here rather than under Travellers for the same reason it does on the booking
+            form: how many people are travelling and how they are housed are two different answers,
+            and putting Rooms among the traveller counters makes it read as a fourth kind of person. */}
+        {!foldEnquiry && (
+        <div className={`min-w-0 ${compactRail ? "lg:col-start-1" : "lg:col-span-2"}`}>
+          <Panel
+            icon={Bus}
+            // Same yellow tile as the booking form's Vehicle card — the two screens should be
+            // recognisable as the same section at a glance, and colour is most of that.
+            iconTile="bg-yellow-200 text-yellow-900"
+            title="Vehicle"
+            description="What the trip needs — not what is finally assigned"
+          >
+            <div className="space-y-5">
+              <section className="min-w-0">
+                {/* The count sits with the band it counts — ml-auto pushes it right on a wide row,
+                    and flex-wrap drops it to its own line on a narrow one. The glyph takes
+                    self-center because this row aligns on the text baseline, and an icon left on
+                    that baseline hangs below the heading it belongs to. */}
+                <div className="mb-3 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                  <CarFront className="h-4 w-4 shrink-0 self-center text-amber-700" aria-hidden="true" />
+                  <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500">Vehicle</h3>
+                  <p className="text-[11px] text-slate-400">Not the vehicle finally assigned</p>
+                  {vehicleCount > 0 && (
+                    <span className="ml-auto inline-flex w-fit items-center rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">
+                      {vehicleCount} vehicle{vehicleCount === 1 ? "" : "s"}
+                    </span>
+                  )}
+                </div>
+                <VehicleRequirementRows
+                  rows={vehicleRows}
+                  vehicles={vehicleMaster}
+                  loading={loadingVehicleMaster}
+                  onAdd={() => setValue("vehicleRequirements", [...vehicleRows, emptyVehicleRow()], { shouldDirty: true })}
+                  onRemove={(rowId) => setValue(
+                    "vehicleRequirements",
+                    vehicleRows.filter((row) => row.id !== rowId),
+                    { shouldDirty: true },
+                  )}
+                  onUpdate={updateVehicleRequirement}
+                />
+              </section>
+
+              {/* A rule between the two bands, at every width, matching the booking card. */}
+              <section className="min-w-0 border-t border-slate-100 pt-5">
+                <div className="mb-3 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                  <BedDouble className="h-4 w-4 shrink-0 self-center text-emerald-600" aria-hidden="true" />
+                  <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500">Rooms</h3>
+                  <p className="text-[11px] text-slate-400">Room mix for the party</p>
+                  {roomCount > 0 && (
+                    <span className="ml-auto inline-flex w-fit items-center rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">
+                      {roomCount} room{roomCount === 1 ? "" : "s"}
+                    </span>
+                  )}
+                </div>
+                {/* The booking form's own editor — collapsed it is two counters and a "Room type
+                    breakdown" checkbox; ticked, it opens the full Room Type / AC / Rooms / Extra
+                    Beds table. Using it rather than a pair of plain counters is what makes this
+                    section same-to-same.
+
+                    rooms and extraBeds remain the PAYLOAD fields and are rolled up from these rows
+                    by setRoomRows below, so nothing downstream has to learn the new shape. */}
+                <RoomRequirementRows
+                  rows={roomRows}
+                  onAdd={() => setRoomRows([...roomRows, emptyRoomRow()])}
+                  onRemove={(rowId) => setRoomRows(roomRows.filter((row) => row.id !== rowId))}
+                  onUpdate={(rowId, key, value) => setRoomRows(
+                    roomRows.map((row) => (row.id === rowId ? { ...row, [key]: value } : row)),
+                  )}
+                />
+              </section>
+            </div>
+          </Panel>
+        </div>
+        )}
+
+        {/* ── 3 · Trip ──────────────────────────────────────────────────────────────────────────── */}
         {!foldEnquiry && (
         <div className={`min-w-0 ${compactRail ? "lg:col-start-1" : "lg:col-span-2"}`}>
           <Panel
             icon={Route}
-            title="Trip"
+            title="Travel Details"
             description="Dates, travellers, departure and route in one place"
             action={tripDurationLabel ? (
               <span className="inline-flex w-fit flex-wrap items-center gap-x-1 rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">
@@ -1484,45 +2393,7 @@ export function LeadFormPanels({
                   The city is the answer agents ask for first, so it gets the widest control; India
                   remains prefilled and needs no action for the common case. */}
               <div className="min-w-0 sm:col-span-2">
-                <Field id="departCity" label="Pickup City" hint="Where the journey starts">
-                  <div className="relative">
-                    <MapPin className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                    <input
-                      {...register("departCity")}
-                      id="departCity"
-                      placeholder="e.g. Pune"
-                      className={control(false, true)}
-                    />
-                  </div>
-                </Field>
-              </div>
-
-              <Field id="departCountry" label="Pickup Country" optional>
-                <SearchableSelect
-                  name="departCountry"
-                  options={countries}
-                  value={watch("departCountry") || ""}
-                  onChange={(value) => setValue("departCountry", value, { shouldDirty: true })}
-                  placeholder="Select country"
-                  loading={loadingCountries}
-                  icon={Globe2}
-                  searchable
-                  advanceOnSelect
-                />
-              </Field>
-
-              <Field id="departureMode" label="Pickup Mode" optional>
-                <div className="relative">
-                  <select {...register("departureMode")} id="departureMode" className={`${control(false)} appearance-none pr-9`}>
-                    <option value="">Select mode</option>
-                    {DEPARTURE_MODES.map((mode) => <option key={mode} value={mode}>{mode}</option>)}
-                  </select>
-                  <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                </div>
-              </Field>
-
-              <div className="min-w-0 sm:col-span-2">
-                <Field id="travelDateRange" label="Travel Period" required error={errors.travelDate?.message}>
+                <Field id="travelDateRange" label="Travel Date" required error={errors.travelDate?.message}>
                   <input type="hidden" {...register("travelDate", { required: "Travel date is required" })} />
                   <input type="hidden" {...register("returnDate")} />
                   <DateRangeField
@@ -1540,29 +2411,168 @@ export function LeadFormPanels({
                 </Field>
               </div>
 
-              <Field id="occasion" label="Trip Type" hint="Helps choose the hotel, pace and vehicle">
-                <select {...register("occasion")} id="occasion" className={control(false)}>
-                  <option value="">Select trip type</option>
-                  <option value="HONEYMOON">Honeymoon</option>
-                  <option value="FAMILY">Family</option>
-                  <option value="SENIOR_CITIZENS">Seniors</option>
-                  <option value="FRIENDS">Friends</option>
-                  <option value="CORPORATE">Corporate</option>
-                  <option value="PILGRIMAGE">Pilgrimage</option>
-                  <option value="SOLO">Solo</option>
-                </select>
-              </Field>
+              {/* ── Destination — MULTIPLE ───────────────────────────────────────────────────
+                  Trip Type and Likely to book stood here; both are gone from the UI. Their fields
+                  stay in the form defaults, so an existing lead keeps whatever it was saved with
+                  and sends it back untouched — the form simply stops asking.
 
-              <Field id="decideBy" label="Likely to book" hint="Used to plan the follow-up — not the travel date">
-                <select {...register("decideBy")} id="decideBy" className={control(false)}>
-                  <option value="">Select timeframe</option>
-                  <option value="IMMEDIATE">Now</option>
-                  <option value="WITHIN_WEEK">This week</option>
-                  <option value="WITHIN_MONTH">This month</option>
-                  <option value="JUST_EXPLORING">Just exploring</option>
-                </select>
+                  This picker is NOT a new field. It reads and writes the ITINERARY, which is where
+                  a lead's destinations have always lived — one per leg — and that is exactly why
+                  this form can express "Nepal and Bhutan" when the booking form, with its single
+                  destination string, cannot.
+
+                  Adding one appends a leg for it. Removing one drops that leg. Everything below
+                  updates in step because there is only ever one copy of this data. */}
+              <div className="min-w-0">
+  <Field
+    id="lead-destinations"
+    label="Destination"
+    required
+    error={errors.itinerary?.message}
+    hint="Select one or more destinations."
+  >
+    {selectedDestinations.length > 0 && (
+      <div className="mb-1.5 flex flex-wrap gap-1.5">
+        {selectedDestinations.map((dest) => (
+          <span
+            key={dest.id || dest.name}
+            className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700"
+          >
+            <span>{dest.name}</span>
+
+            {/* Add a city specifically under THIS destination. */}
+            <button
+              type="button"
+              data-skip-enter="true"
+              disabled={!dest.id}
+              onClick={() =>
+                setCityModalDestinationId(dest.id)
+              }
+              title={`Add city to ${dest.name}`}
+              className="ml-1 inline-flex items-center gap-0.5 rounded-full px-1 py-0.5 text-[10px] font-bold text-emerald-700 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <Plus className="h-2.5 w-2.5" />
+              City
+            </button>
+
+            <button
+              type="button"
+              data-skip-enter="true"
+              onClick={() =>
+                removeDestination(dest)
+              }
+              aria-label={`Remove ${dest.name}`}
+              className="rounded-full p-0.5 text-blue-400 transition hover:bg-blue-100 hover:text-blue-700"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </span>
+        ))}
+      </div>
+    )}
+
+    <div className="flex items-center gap-2">
+      <div className="min-w-0 flex-1">
+        <SearchableSelect
+          name="lead-destinations"
+          options={destinationOptions}
+          value=""
+          onChange={addDestination}
+          placeholder={
+            selectedDestinations.length
+              ? "Add another destination"
+              : "Select destination"
+          }
+          loading={loadingDestinations}
+          searchable
+          advanceOnSelect
+        />
+      </div>
+
+      <button
+        type="button"
+        data-skip-enter="true"
+        onClick={() =>
+          setDestinationModalOpen(true)
+        }
+        title="Add new destination"
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-600"
+      >
+        <Plus className="h-4 w-4" />
+      </button>
+    </div>
+  </Field>
+</div>
+
+              <Field id="packageType" label="Package Type" optional>
+                <div className="relative">
+                  <select {...register("packageType")} id="packageType" className={`${control(false)} appearance-none pr-9`}>
+                    <option value="">Select package</option>
+                    {PACKAGE_TYPES.map((option) => <option key={option} value={option}>{option}</option>)}
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                </div>
               </Field>
             </div>
+
+            {/* ── PICKUP / DROP ───────────────────────────────────────────────────────────────
+                Two bands, four fields each, in the booking form's exact order and vocabulary —
+                Date & Time, Mode, City, Country.
+
+                This is field-for-field parity on purpose. A lead that records only where a trip
+                STARTS forces whoever converts it to ring the customer back for the half nobody
+                wrote down; with both halves here, conversion maps straight across and there is
+                nothing left to guess.
+
+                departCity / departCountry / departureMode keep their names — they are the fields
+                already wired to STICKY_FIELDS, the quotation seeder and the customer lookup, and
+                renaming them to pickup* would break all three for a label the UI can just print. */}
+            <div className="mt-5 border-t border-slate-100 pt-4">
+              <div className="mb-3 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500">Pickup</h3>
+                <p className="text-[11px] text-slate-400">Where the trip starts — need not match the destination</p>
+              </div>
+              <div className="grid grid-cols-1 gap-x-3 gap-y-2 sm:grid-cols-2 xl:grid-cols-4">
+                {/* Promoted out of the Car / Road branch — a trip has a pickup time whether it
+                    starts at an airport, a station or a doorstep. See the note on MODE_FIELDS. */}
+                <Field id="pickupDateTime" label="Pickup Date & Time" optional>
+                  <input {...register("pickupDateTime")} id="pickupDateTime" type="datetime-local" className={control(false)} />
+                </Field>
+
+                <Field id="departureMode" label="Pickup Mode" optional>
+                  <div className="relative">
+                    <select {...register("departureMode")} id="departureMode" className={`${control(false)} appearance-none pr-9`}>
+                      <option value="">Select mode</option>
+                      {DEPARTURE_MODES.map((mode) => <option key={mode} value={mode}>{mode}</option>)}
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  </div>
+                </Field>
+
+                <Field id="departCity" label="Pickup City" hint="Where the journey starts">
+                  <div className="relative">
+                    <MapPin className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <input {...register("departCity")} id="departCity" placeholder="e.g. Gorakhpur" className={control(false, true)} />
+                  </div>
+                </Field>
+
+                <Field id="departCountry" label="Pickup Country" optional>
+                  <SearchableSelect
+                    name="departCountry"
+                    options={countries}
+                    value={watch("departCountry") || ""}
+                    onChange={(value) => setValue("departCountry", value, { shouldDirty: true })}
+                    placeholder="Select country"
+                    loading={loadingCountries}
+                    icon={Globe2}
+                    searchable
+                    advanceOnSelect
+                  />
+                </Field>
+              </div>
+            </div>
+
+            
 
             {departureMode === "Flight / Airport" && (
               <div className="mt-4 grid grid-cols-1 gap-4 rounded-lg border border-sky-100 bg-sky-50/50 p-3 sm:grid-cols-3">
@@ -1605,19 +2615,81 @@ export function LeadFormPanels({
             )}
 
             {departureMode === "Car / Road" && (
-              <div className="mt-4 grid grid-cols-1 gap-4 rounded-lg border border-amber-100 bg-amber-50/50 p-3 sm:grid-cols-3">
-                <Field id="pickupAddress" label="Pickup Address" optional>
-                  <input {...register("pickupAddress")} id="pickupAddress" placeholder="Pickup address" className={control(false)} />
+  <div className="mt-4 grid grid-cols-1 gap-4 rounded-lg border border-amber-100 bg-amber-50/50 p-3 sm:grid-cols-2">
+
+    <Field
+      id="pickupAddress"
+      label="Pickup Address"
+      optional
+    >
+      <input
+        {...register("pickupAddress")}
+        id="pickupAddress"
+        placeholder="Pickup address"
+        className={control(false)}
+      />
+    </Field>
+
+    <Field
+      id="vehiclePreference"
+      label="Vehicle Preference"
+      optional
+    >
+      <input
+        {...register("vehiclePreference")}
+        id="vehiclePreference"
+        placeholder="Sedan, SUV, Traveller"
+        className={control(false)}
+      />
+    </Field>
+
+  </div>
+)}
+
+<div className="mt-4 border-t border-slate-100 pt-4">
+              <div className="mb-3 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500">Drop</h3>
+                <p className="text-[11px] text-slate-400">Where the trip finishes — need not match the destination or the pickup</p>
+              </div>
+              <div className="grid grid-cols-1 gap-x-3 gap-y-2 sm:grid-cols-2 xl:grid-cols-4">
+                <Field id="dropDateTime" label="Drop Date & Time" optional>
+                  <input {...register("dropDateTime")} id="dropDateTime" type="datetime-local" className={control(false)} />
                 </Field>
-                <Field id="pickupDateTime" label="Pickup Date & Time" optional>
-                  <input {...register("pickupDateTime")} id="pickupDateTime" type="datetime-local" className={control(false)} />
+
+                <Field id="dropMode" label="Drop Mode" optional>
+                  <div className="relative">
+                    <select {...register("dropMode")} id="dropMode" className={`${control(false)} appearance-none pr-9`}>
+                      <option value="">Select mode</option>
+                      {DEPARTURE_MODES.map((mode) => <option key={mode} value={mode}>{mode}</option>)}
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  </div>
                 </Field>
-                <Field id="vehiclePreference" label="Vehicle Preference" optional>
-                  <input {...register("vehiclePreference")} id="vehiclePreference" placeholder="Sedan, SUV, Traveller" className={control(false)} />
+
+                {/* Free text, like the booking form's, and NOT restricted to the destination's
+                    cities: a Nepal trip routinely drops back at Gorakhpur, which is in India. */}
+                <Field id="dropCity" label="Drop City" optional>
+                  <div className="relative">
+                    <MapPin className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <input {...register("dropCity")} id="dropCity" placeholder="e.g. Gorakhpur" className={control(false, true)} />
+                  </div>
+                </Field>
+
+                <Field id="dropCountry" label="Drop Country" optional>
+                  <SearchableSelect
+                    name="dropCountry"
+                    options={countries}
+                    value={watch("dropCountry") || ""}
+                    onChange={(value) => setValue("dropCountry", value, { shouldDirty: true })}
+                    placeholder="Select country"
+                    loading={loadingCountries}
+                    icon={Globe2}
+                    searchable
+                    advanceOnSelect
+                  />
                 </Field>
               </div>
-            )}
-
+            </div>
 
             {/* ── The route ────────────────────────────────────────────────────────────────────
                 Stays at the foot of the panel. It was briefly moved to the top on the reasoning
@@ -1632,7 +2704,7 @@ export function LeadFormPanels({
                     <MapPinned className="h-4 w-4" />
                   </span>
                   <div className="min-w-0">
-                    <h3 className="text-sm font-bold text-slate-800">Itinerary</h3>
+                    <h3 className="text-sm font-bold text-slate-800">Travel Itinerary</h3>
                     {/* Optional on the RECORD, required by the rapid flow: the picker and the quote
                         below both hang off a real stop, so rapid says so instead of inviting the
                         agent to skip the one thing that unlocks the rest of the page. */}
@@ -1644,130 +2716,248 @@ export function LeadFormPanels({
                   </div>
                 </div>
               <button
-                type="button"
-                data-skip-enter="true"
-                onClick={onAddRow}
-                className="inline-flex w-fit items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100"
-              >
-                <Plus className="h-3.5 w-3.5" /> Add Stop
-              </button>
+  type="button"
+  data-skip-enter="true"
+  disabled={!lastRowComplete}
+  onClick={() => onAddRow()}
+  className="inline-flex w-fit items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-400"
+>
+  <Plus className="h-3.5 w-3.5" />
+  Add Stop
+</button>
               </div>
-            <div className="mb-2 hidden grid-cols-[34px_minmax(0,1fr)_minmax(0,1fr)_96px_34px] gap-3 px-1 text-[11px] font-bold uppercase tracking-wide text-slate-400 md:grid">
-              <span>#</span><span>Destination</span><span>City</span><span>Nights</span><span />
-            </div>
+            {/* The single Destination mirror that stood here is gone: the Travel Date line above
+                now carries a MULTI destination picker, and it is backed by these same itinerary
+                rows. One control, one source of truth — and it can express a Nepal + Bhutan trip,
+                which one mirror of itinerary[0] never could. */}
 
-            {/* id is the scroll target for the half-filled-row check in save(). */}
-            <div id="itinerary-group" className="space-y-2.5">
-              {itinerary.map((row, index) => (
-                <div
-                  key={row.id}
-                  className="grid grid-cols-1 gap-3 rounded-lg border border-slate-100 bg-slate-50/60 p-3 md:grid-cols-[34px_minmax(0,1fr)_minmax(0,1fr)_96px_34px] md:items-center md:border-0 md:bg-transparent md:p-0"
-                >
-                  <span className="hidden h-8 w-8 items-center justify-center rounded-md bg-slate-100 text-xs font-bold text-slate-500 md:flex">
-                    {index + 1}
-                  </span>
+            {/* FROM → TO → NIGHTS, the shape the booking form uses, so an agent who works both
+                screens reads the same route the same way.
 
-                  <div className="min-w-0">
-                    <span className="mb-1 block text-xs font-semibold text-slate-500 md:hidden">Destination</span>
-                    <div className="flex items-center gap-1.5">
-                      <div className="min-w-0 flex-1">
-                        <SearchableSelect
-                          name={`itinerary.${index}.destination`}
-                          options={destinations}
-                          value={row.destinationId ? Number(row.destinationId) || row.destinationId : ""}
-                          onChange={(value) => chooseDestination(row.id, value)}
-                          placeholder={row.destination || "Select destination"}
-                          loading={loadingDestinations}
-                          searchable
-                          advanceOnSelect
-                        />
-                      </div>
-                      <button
-                        type="button"
-                        data-skip-enter="true"
-                        onClick={() => setDestinationModalRow(row.id)}
-                        title="Add a new destination"
-                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-600"
-                      >
-                        <Plus className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  </div>
+                FROM is DERIVED, not a new field. The stored row is unchanged — still
+                { destinationId, destination, cityId, city, nights } — so hasCompleteStop, the
+                services gate, the quotation seeder and the payload all behave exactly as before,
+                and a lead can still route across MULTIPLE destinations because the To half keeps
+                its own destination picker. */}
+            
 
-                  <div className="min-w-0">
-                    <span className="mb-1 block text-xs font-semibold text-slate-500 md:hidden">City</span>
-                    <div className="flex items-center gap-1.5">
-                      <div className="min-w-0 flex-1">
-                        <SearchableSelect
-                          name={`itinerary.${index}.city`}
-                          options={rowCities[row.id] || []}
-                          value={row.cityId ? Number(row.cityId) || row.cityId : ""}
-                          onChange={(value) => chooseCity(row.id, value)}
-                          placeholder={
-                            !row.destinationId ? "Select destination first"
-                              : loadingRows[row.id] ? "Loading..."
-                                : row.city || "Select city"
-                          }
-                          loading={Boolean(loadingRows[row.id])}
-                          searchable
-                          advanceOnSelect
-                        />
-                      </div>
-                      <button
-                        type="button"
-                        data-skip-enter="true"
-                        disabled={!row.destinationId}
-                        onClick={() => setCityModalRow(row.id)}
-                        title={row.destinationId ? "Add a new city" : "Select destination first"}
-                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-600 disabled:cursor-not-allowed disabled:opacity-40"
-                      >
-                        <Plus className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  </div>
+            {/* FROM → TO CITY → NIGHTS */}
+<div className="mb-2 hidden grid-cols-[34px_minmax(0,1fr)_minmax(0,1.35fr)_92px_34px] gap-3 px-1 text-[11px] font-bold uppercase tracking-wide text-slate-400 md:grid">
+  <span>#</span>
+  <span>From</span>
+  <span>To</span>
+  <span>Nights</span>
+  <span />
+</div>
 
-                  <div>
-                    <span className="mb-1 block text-xs font-semibold text-slate-500 md:hidden">Nights</span>
-                    <input
-                      type="number"
-                      min={0}
-                      max={60}
-                      step="1"
-                      inputMode="numeric"
-                      value={row.nights}
-                      onFocus={(event) => event.target.select()}
-                      onWheel={(event) => event.currentTarget.blur()}
-                      onChange={(event) => onUpdateRow(row.id, { nights: event.target.value })}
-                      onBlur={(event) => onUpdateRow(row.id, { nights: toInt(event.target.value) })}
-                      onKeyDown={(event) => {
-                        if (event.key !== "Enter" || !event.shiftKey) return;
-                        event.preventDefault();
-                        event.stopPropagation();
-                        if (index === itinerary.length - 1) {
-                          onAddRow();
-                          window.setTimeout(() => {
-                            const controls = document.querySelectorAll('button[name^="itinerary."][name$=".destination"]');
-                            controls[controls.length - 1]?.focus();
-                          }, 0);
-                        }
-                      }}
-                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                    />
-                  </div>
+<div
+  id="itinerary-group"
+  className="space-y-2.5"
+>
+  {itinerary.map((row, index) => (
+    <div
+      key={row.id}
+      className="grid grid-cols-1 gap-3 rounded-lg border border-slate-100 bg-slate-50/60 p-3 md:grid-cols-[34px_minmax(0,1fr)_minmax(0,1.35fr)_92px_34px] md:items-center md:border-0 md:bg-transparent md:p-0"
+    >
+      {/* Row number */}
+      <span className="hidden h-8 w-8 items-center justify-center rounded-md bg-slate-100 text-xs font-bold text-slate-500 md:flex">
+        {index + 1}
+      </span>
 
-                  <button
-                    type="button"
-                    data-skip-enter="true"
-                    onClick={() => onRemoveRow(row.id)}
-                    disabled={itinerary.length === 1}
-                    aria-label={`Remove stop ${index + 1}`}
-                    className="flex h-9 w-full items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-30 md:w-9"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </div>
-              ))}
-            </div>
+      {/* FROM — derived, never manually editable */}
+      <div className="min-w-0">
+        <span className="mb-1 block text-xs font-semibold text-slate-500 md:hidden">
+          From
+        </span>
+
+        <div className="flex h-9 min-w-0 items-center rounded-lg border border-slate-200 bg-slate-50 px-3">
+          <span
+            className={`truncate text-sm font-semibold ${
+              legFrom(index)
+                ? "text-slate-700"
+                : "text-slate-400"
+            }`}
+          >
+            {legFrom(index)
+              ? `${legFrom(index)}${
+                  index === 0
+                    ? " — pickup"
+                    : ""
+                }`
+              : index === 0
+                ? "Pickup city"
+                : "Previous stop"}
+          </span>
+        </div>
+      </div>
+
+      {/* TO — one city picker only.
+          Selecting the city automatically stores its destination too. */}
+      <div className="min-w-0 md:flex md:items-center md:gap-2">
+        <span className="mb-1 block text-xs font-semibold text-slate-500 md:hidden">
+          To
+        </span>
+
+        <ArrowRight className="hidden h-4 w-4 shrink-0 text-slate-300 md:block" />
+
+        <div className="min-w-0 flex-1">
+          <SearchableSelect
+            name={`itinerary.${index}.city`}
+            options={cityOptionsForRow(row)}
+            value={cityValueForRow(row)}
+            onChange={(value) =>
+              chooseCity(row.id, value)
+            }
+            placeholder={
+              selectedDestinations.length === 0
+                ? "Select destination first"
+                : loadingCityPool
+                  ? "Loading destination cities..."
+                  : row.city || "Select city"
+            }
+            loading={loadingCityPool}
+            searchable
+            advanceOnSelect
+          />
+        </div>
+      </div>
+
+      {/* Nights spent at TO city */}
+      <div>
+        <span className="mb-1 block text-xs font-semibold text-slate-500 md:hidden">
+          Nights
+        </span>
+
+        <input
+          type="number"
+          min={0}
+          max={60}
+          step="1"
+          inputMode="numeric"
+          value={row.nights}
+          onFocus={(event) =>
+            event.target.select()
+          }
+          onWheel={(event) =>
+            event.currentTarget.blur()
+          }
+          onChange={(event) =>
+            onUpdateRow(row.id, {
+              nights: event.target.value,
+            })
+          }
+          onBlur={(event) =>
+            onUpdateRow(row.id, {
+              nights: toInt(event.target.value),
+            })
+          }
+          onKeyDown={(event) => {
+            if (
+              event.key !== "Enter" ||
+              !event.shiftKey
+            ) {
+              return;
+            }
+
+            event.preventDefault();
+            event.stopPropagation();
+
+            // Only create next leg from a completed last row.
+            if (
+              index === itinerary.length - 1 &&
+              row.city
+            ) {
+              onAddRow();
+
+              window.setTimeout(() => {
+                const controls =
+                  document.querySelectorAll(
+                    'button[name^="itinerary."][name$=".city"]'
+                  );
+
+                controls[
+                  controls.length - 1
+                ]?.focus();
+              }, 0);
+            }
+          }}
+          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+        />
+      </div>
+
+      {/* Delete real stay */}
+      <button
+        type="button"
+        data-skip-enter="true"
+        onClick={() =>
+          onRemoveRow(row.id)
+        }
+        disabled={itinerary.length === 1}
+        aria-label={`Remove stop ${index + 1}`}
+        className="flex h-9 w-full items-center justify-center rounded-lg border border-slate-200 text-slate-400 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-30 md:w-9"
+      >
+        <Trash2 className="h-4 w-4" />
+      </button>
+    </div>
+  ))}
+
+  {/* DROP IS A VIRTUAL ROUTE LEG.
+      It is displayed as part of the journey,
+      but is NOT sent as a Lead itinerary stay. */}
+  {showDropLeg && (
+    <div className="grid grid-cols-1 gap-3 rounded-lg border border-blue-100 bg-blue-50/40 p-3 md:grid-cols-[34px_minmax(0,1fr)_minmax(0,1.35fr)_92px_34px] md:items-center">
+
+      <span className="hidden h-8 w-8 items-center justify-center rounded-md bg-blue-100 text-xs font-bold text-blue-600 md:flex">
+        {itinerary.length + 1}
+      </span>
+
+      <div className="min-w-0">
+        <span className="mb-1 block text-xs font-semibold text-slate-500 md:hidden">
+          From
+        </span>
+
+        <div className="flex h-9 items-center rounded-lg border border-slate-200 bg-white px-3">
+          <span className="truncate text-sm font-semibold text-slate-700">
+            {lastCity}
+          </span>
+        </div>
+      </div>
+
+      <div className="min-w-0 md:flex md:items-center md:gap-2">
+        <span className="mb-1 block text-xs font-semibold text-slate-500 md:hidden">
+          To
+        </span>
+
+        <ArrowRight className="hidden h-4 w-4 shrink-0 text-slate-300 md:block" />
+
+        <div className="flex h-9 min-w-0 flex-1 items-center rounded-lg border border-blue-200 bg-white px-3">
+          <span className="truncate text-sm font-semibold text-blue-700">
+            {dropCityValue} — drop
+          </span>
+        </div>
+      </div>
+
+      <div>
+        <span className="mb-1 block text-xs font-semibold text-slate-500 md:hidden">
+          Nights
+        </span>
+
+        <div className="flex h-9 items-center rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-500">
+          0
+        </div>
+      </div>
+
+      <span />
+    </div>
+  )}
+</div>
+
+{/* Whole route in one readable line */}
+{itinerarySummary && (
+  <p className="mt-3 truncate text-[11px] font-semibold text-slate-500">
+    {itinerarySummary}
+  </p>
+)}
 
             <div className="mt-3 flex flex-col gap-1 text-[11px] text-slate-400 sm:flex-row sm:items-center sm:justify-between">
               <span>
@@ -1785,8 +2975,8 @@ export function LeadFormPanels({
               <div className="mt-4 flex flex-col gap-2.5 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-xs text-slate-500">
                   {itineraryConfirmable
-                    ? "Add every stop first — continuing opens the services picker and folds this section away."
-                    : "Each stop needs a destination and a city."}
+  ? "Add every stop first — continuing opens the services picker and folds this section away."
+  : "Select destination above, then choose a city for each itinerary stop."}
                 </p>
                 <button
                   type="button"
@@ -1828,7 +3018,7 @@ export function LeadFormPanels({
           <div className="min-w-0 lg:col-start-1">
             <Panel
               icon={LayoutGrid}
-              title="Services"
+              title="Services & Notes"
               description="Tick what to price — each pick opens its section in the quote below"
               action={(
                 <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-bold text-blue-700">
@@ -1883,7 +3073,7 @@ export function LeadFormPanels({
               {/* Same order as the panels below — a folded row and the panel it restores must sit
                   in the same place, or continuing puts the agent somewhere they did not expect. */}
               <SummaryRow icon={UserCheck} title="Lead Setup" detail={leadSetupSummary} onEdit={onExpandEnquiry} />
-              <SummaryRow icon={Accessibility} title="Requirements" detail={requirementsSummary} onEdit={onExpandEnquiry} />
+              <SummaryRow icon={Accessibility} title="Special Assistance" detail={requirementsSummary} onEdit={onExpandEnquiry} />
             </>
           )}
 
@@ -1991,15 +3181,9 @@ export function LeadFormPanels({
                 )}
               </Field>
 
-              <Field id="packageType" label="Package Type" optional>
-                <div className="relative">
-                  <select {...register("packageType")} id="packageType" className={`${control(false)} appearance-none pr-9`}>
-                    <option value="">Select package</option>
-                    {PACKAGE_TYPES.map((option) => <option key={option} value={option}>{option}</option>)}
-                  </select>
-                  <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                </div>
-              </Field>
+              {/* Package Type moved to the Travel Date line, beside Travel Date and Destination —
+                  the three the booking form groups there. One field, one place; two `register`
+                  calls on the same name would have been two controls for one value. */}
             </div>
           </Panel>}
 
@@ -2025,17 +3209,22 @@ export function LeadFormPanels({
       </div>
 
       <QuickDestinationModal
-        open={destinationModalRow != null}
-        onClose={() => setDestinationModalRow(null)}
-        onCreated={onDestinationCreated}
-        defaultCountryName="India"
-      />
-      <QuickCityModal
-        open={cityModalRow != null}
-        onClose={() => setCityModalRow(null)}
-        onCreated={onCityCreated}
-        destination={cityModalDestination}
-      />
+  open={destinationModalOpen}
+  onClose={() =>
+    setDestinationModalOpen(false)
+  }
+  onCreated={onDestinationCreated}
+  defaultCountryName="India"
+/>
+
+<QuickCityModal
+  open={cityModalDestinationId != null}
+  onClose={() =>
+    setCityModalDestinationId(null)
+  }
+  onCreated={onCityCreated}
+  destination={cityModalDestination}
+/>
     </>
   );
 }
@@ -2049,7 +3238,8 @@ export default function LeadFormPage() {
   const navigate = useNavigate();
   const { showToast } = useToast();
   const formRef = useRef(null);
-  const phoneRef = useRef(null);
+const nameRef = useRef(null);
+const phoneRef = useRef(null);
 
   const {
     register, handleSubmit, watch, setValue, setError, getValues, clearErrors, reset,
@@ -2064,6 +3254,8 @@ export default function LeadFormPage() {
 
   const [services, setServices] = useState(() => (editing ? [] : readStickyServices()));
   const [itinerary, setItinerary] = useState(() => [blankRow()]);
+
+  const [selectedDestinations, setSelectedDestinations] = useState([]);
   /* The rapid chain's first latch, read by the Services gate below, by the quotation gate under it
      and by save(). One derivation for all three, so the page can never lock a step it is about to
      demand — the classic dead end where "Select at least one service" points at a locked picker. */
@@ -2407,8 +3599,10 @@ export default function LeadFormPage() {
   const quoteTotals = useMemo(() => quickQuoteTotals(quoteModel), [quoteModel]);
 
   useEffect(() => {
-    if (!editing) phoneRef.current?.focus();
-  }, [editing]);
+  if (!editing) {
+    nameRef.current?.focus();
+  }
+}, [editing]);
 
   useEffect(() => {
     if (!editing) return undefined;
@@ -2461,6 +3655,26 @@ export default function LeadFormPage() {
           pickupAddress: lead.pickupAddress ?? lead.roadPickupAddress ?? "",
           pickupDateTime: String(lead.pickupDateTime ?? lead.pickupAt ?? "").slice(0, 16),
           vehiclePreference: lead.vehiclePreference ?? lead.preferredVehicle ?? "",
+          dropDateTime: String(
+  lead.dropDateTime ??
+  lead.dropAt ??
+  ""
+).slice(0, 16),
+
+dropMode:
+  lead.dropMode ??
+  lead.returnMode ??
+  "",
+
+dropCity:
+  lead.dropCity ??
+  lead.returnCity ??
+  "",
+
+dropCountry:
+  lead.dropCountry ??
+  lead.returnCountry ??
+  "India",
           rooms: toInt(lead.rooms ?? lead.roomCount ?? lead.noOfRooms ?? 1, 1),
           ...adultPrefill,
           children: toInt(lead.children ?? lead.childCount ?? 0),
@@ -2492,6 +3706,36 @@ export default function LeadFormPage() {
           city: entityName(row.city, row.cityName ?? row.cityLabel ?? ""),
           nights: Math.max(0, toInt(row.nights ?? row.noOfNights ?? row.stayNights ?? 1)),
         }));
+
+        const restoredDestinations = [];
+const destinationSeen = new Set();
+
+rows.forEach((row) => {
+  const destinationId =
+    String(row.destinationId || "");
+
+  const destinationName =
+    String(row.destination || "").trim();
+
+  const key =
+    destinationId ||
+    destinationName.toLowerCase();
+
+  if (!key) return;
+  if (destinationSeen.has(key)) return;
+
+  destinationSeen.add(key);
+
+  restoredDestinations.push({
+    id: destinationId,
+    name: destinationName,
+  });
+});
+
+setSelectedDestinations(
+  restoredDestinations
+);
+
         setItinerary(rows.length > 0 ? rows : [blankRow()]);
 
         const savedAllocations = Array.isArray(lead.roomAllocations) ? lead.roomAllocations : [];
@@ -2607,6 +3851,8 @@ export default function LeadFormPage() {
     apply("customerName", "name", customer.name);
     apply("email", "email", customer.email);
     apply("departCity", "departure city", customer.city);
+    apply("customerCity", "city", customer.city);
+    apply("customerState", "state", customer.state);
     apply("birthDate", "birth date", toDateInput(customer.birthday));
     apply("anniversaryDate", "anniversary", toDateInput(customer.anniversary));
     return written;
@@ -2826,9 +4072,9 @@ export default function LeadFormPage() {
       Boolean(String(row.destination || "").trim()) !== Boolean(String(row.city || "").trim()));
     if (incompleteRow >= 0) {
       showToast(
-        `Itinerary stop ${incompleteRow + 1}: choose both a destination and a city, or clear the row.`,
-        "error",
-      );
+  `Itinerary stop ${incompleteRow + 1}: choose a city from the selected destinations, or clear the row.`,
+  "error",
+);
       // Through revealEnquiry, not a bare scroll: #itinerary-group lives inside the Trip panel, which
       // is folded away by this point in the flow.
       revealEnquiry("#itinerary-group");
@@ -2839,16 +4085,31 @@ export default function LeadFormPage() {
        path, not just the one that also writes a quotation — otherwise Save & New would demand
        services the agent was never allowed to tick. `createQuotation` keeps its own clause for the
        cases the gate does not cover (full details, and edit-in-rapid where nothing is locked). */
-    if ((stepFlow || createQuotation) && !itineraryReady) {
-      showToast(
-        stepFlow
-          ? "Add an itinerary stop — destination and city — to unlock services and pricing."
-          : "Choose a destination and city so the quotation can be prefilled.",
-        "error",
-      );
-      revealEnquiry("#itinerary-group");
-      return;
-    }
+    if (
+  (stepFlow || createQuotation) &&
+  (
+    selectedDestinations.length === 0 ||
+    !itineraryReady
+  )
+) {
+  setError("itinerary", {
+    type: "manual",
+    message:
+      selectedDestinations.length === 0
+        ? "Select at least one destination."
+        : "Add at least one itinerary city from the selected destinations.",
+  });
+
+  showToast(
+    selectedDestinations.length === 0
+      ? "Select at least one destination."
+      : "Add at least one itinerary city from the selected destinations.",
+    "error"
+  );
+
+  revealEnquiry("#itinerary-group");
+  return;
+}
 
     /* Pressing the header's Create Quote before continuing. Without this the run would reach
        validateQuickQuote below, fail on an unpriced section and then ask the accordion — which is
@@ -2884,6 +4145,30 @@ export default function LeadFormPage() {
       }
     }
 
+
+    const persistableItinerary = itinerary
+  .filter(
+    (row) =>
+      String(row.destination || "").trim() &&
+      String(row.city || "").trim()
+  )
+  .map((row) => ({
+    destinationId:
+      row.destinationId || null,
+
+    destination:
+      String(row.destination || "").trim(),
+
+    cityId:
+      row.cityId || null,
+
+    city:
+      String(row.city || "").trim(),
+
+    nights:
+      toInt(row.nights),
+  }));
+
     /* The "every room holds at least one traveller" check went with the editor. It guarded input
        this form no longer takes, and a validation that can fail on a field nobody can see is a
        dead end: the toast pointed at #room-allocation-group, which is not in the document. */
@@ -2915,13 +4200,23 @@ export default function LeadFormPage() {
       };
 
       if (editing) {
-        await leadService.updateLead(id, payload, services, itinerary);
+        await leadService.updateLead(
+  id,
+  payload,
+  services,
+  persistableItinerary
+);
         showToast(`Lead "${data.customerName}" updated.`, "success");
         navigate("/allleads");
         return;
       }
 
-      const response = await leadService.createLead(payload, services, itinerary);
+      const response =
+  await leadService.createLead(
+    payload,
+    services,
+    persistableItinerary
+  );
       const created = response?.data?.data ?? response?.data;
       const leadPublicId = created?.publicId || created?.id;
 
@@ -3011,13 +4306,18 @@ export default function LeadFormPage() {
         reset({ ...blankDefaults(), ...readSticky() });
         setServices(readStickyServices());
         setItinerary([blankRow()]);
+
+        setSelectedDestinations([]);
         loadedRoomAllocationsRef.current = [];
         resetContactMatch();
         // The quote belongs to the lead that was just written, not to the blank one now on screen.
         resetInlineQuote();
         showToast(`${created?.leadCode || "Lead"} saved — next record ready.`, "success");
         window.scrollTo({ top: 0, behavior: "smooth" });
-        window.setTimeout(() => phoneRef.current?.focus(), 0);
+        window.setTimeout(
+  () => nameRef.current?.focus(),
+  0
+);
       } else {
         showToast(`Lead for "${data.customerName}" created successfully.`, "success");
         navigate("/allleads");
@@ -3083,6 +4383,7 @@ export default function LeadFormPage() {
     reset({ ...blankDefaults(), ...readSticky() });
     setServices(readStickyServices());
     setItinerary([blankRow()]);
+    setSelectedDestinations([]);
     loadedRoomAllocationsRef.current = [];
     resetContactMatch();
     resetInlineQuote();
@@ -3090,7 +4391,10 @@ export default function LeadFormPage() {
        document yet — resetInlineQuote only just asked for the unfold, and phoneRef is null until
        React commits it. A synchronous focus() here was a silent no-op and the batch loop lost its
        cursor. The Save & New path has always done it this way. */
-    window.setTimeout(() => phoneRef.current?.focus(), 0);
+    window.setTimeout(
+  () => nameRef.current?.focus(),
+  0
+);
   };
 
   /* ── Actions on the quotation this page just created ─────────────────────────────────────────
@@ -3285,24 +4589,34 @@ export default function LeadFormPage() {
   /* Same digit test the probe effect uses to decide the number is worth looking up. Repeated
      rather than shared because the effect's copy is scoped to the raw value it debounced; both
      answer "is this a phone number yet", and if that rule ever changes it must change in both. */
-  const phoneProbed = String(phone || "").replace(/\D/g, "").length >= 7;
+  const phoneProbed =
+  String(phone || "").replace(/\D/g, "").length >= 7;
 
-  const duplicateStrip = (customerCard || leadCard) ? (
-    <>{customerCard}{leadCard}</>
-  ) : checkingContact ? (
-    <p className="mt-2 flex items-center gap-1.5 text-[11px] text-slate-400">
-      <LoaderCircle className="h-3 w-3 animate-spin" /> Checking existing leads and customers…
-    </p>
-  ) : phoneProbed ? (
-    /* The other half of the answer, which this form never gave. A match showed a card; NO match
-       showed nothing at all, so "we looked and this is someone new" was indistinguishable from
-       "we have not looked yet" — and the agent had no way to know whether saving would attach to
-       an existing customer or create one. The booking form has always said which of the two it is;
-       this now does too. */
-    <p className="mt-2 flex items-center gap-1.5 text-[11px] font-bold text-emerald-700">
-      <CircleUserRound className="h-3 w-3" /> New customer — saving will create a new profile.
-    </p>
-  ) : null;
+/*
+ * Large cards are kept separate from the small phone-status message.
+ * Otherwise putting the whole duplicate strip below the Phone field
+ * would squeeze the existing-customer / existing-lead cards into one column.
+ */
+const hasContactMatch = Boolean(customerCard || leadCard);
+
+const duplicateStrip = hasContactMatch ? (
+  <>
+    {customerCard}
+    {leadCard}
+  </>
+) : null;
+
+const phoneStatus = hasContactMatch ? null : checkingContact ? (
+  <p className="mt-2 flex items-center gap-1.5 text-[11px] text-slate-400">
+    <LoaderCircle className="h-3 w-3 animate-spin" />
+    Checking existing leads and customers…
+  </p>
+) : phoneProbed ? (
+  <p className="mt-2 flex items-center gap-1.5 text-[11px] font-bold text-emerald-700">
+    <CircleUserRound className="h-3 w-3" />
+    New customer — saving will create a new profile.
+  </p>
+) : null;
 
   // Filled slate-100 chips read as the old kit; a white chip with a 1px border is the flat rule.
   const kbdCls = "rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-bold text-slate-500";
@@ -3431,8 +4745,15 @@ export default function LeadFormPage() {
           onAddRow={addRow}
           onRemoveRow={removeRow}
           onUpdateRow={updateRow}
-          phoneRef={phoneRef}
-          belowPhone={editing ? null : duplicateStrip}
+
+         selectedDestinations={selectedDestinations}
+         onSelectedDestinationsChange={setSelectedDestinations}
+
+          nameRef={nameRef}
+phoneRef={phoneRef}
+
+belowPhone={editing ? null : phoneStatus}
+contactBanner={editing ? null : duplicateStrip}
           compactRail
           stepFlow={stepFlow}
           itineraryConfirmed={itineraryConfirmed}

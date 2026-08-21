@@ -53,6 +53,11 @@ export default function TravellerCountFields({
      untouched; the booking form turns them off because its Room Requirement rows own that number
      there, and two editors for one value is how they drift apart. */
   showRooms = true,
+  /* Mirror of showRooms, for the other half. The booking form splits these two groups across two
+     cards — travellers in Customer Details, rooms in the Vehicle panel — so each side has to be
+     able to render on its own. Defaults to true, so every existing caller is untouched. Turning
+     BOTH off renders nothing; that is a caller mistake, not a state worth handling here. */
+  showTravellers = true,
   /* Narrow the single "Total Travellers" box. It is one number and the default max-w-sm gives it
      384px, most of which is empty rule. Opt-in so the booking form, which shares this component,
      keeps the width it was laid out against. */
@@ -108,6 +113,7 @@ export default function TravellerCountFields({
           ? "lg:grid-cols-[3fr_2fr]"
           : ""
     }`}>
+      {showTravellers && (
       <fieldset className="min-w-0 border-0 p-0">
         <legend className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-slate-400">
           Travellers
@@ -207,6 +213,7 @@ export default function TravellerCountFields({
           </div>
         )}
       </fieldset>
+      )}
 
       {additionalGroup}
 
