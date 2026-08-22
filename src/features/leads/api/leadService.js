@@ -233,7 +233,7 @@ function transformFormData(formData, services = [], itinerary = []) {
     customerCountry: formData.customerCountry?.trim() || null,
     /* WhatsApp. `whatsappSame` is a UI latch, not data — while it is ticked the number IS the
        phone, so that is what gets sent rather than a flag the server would have to interpret. */
-    whatsappNumber: (formData.whatsappSame ? formData.phone : formData.whatsappNumber)?.trim() || null,
+    customerWhatsapp: (formData.whatsappSame ? formData.phone : formData.whatsappNumber)?.trim() || null,
     /* What the trip NEEDS — the same shapes the booking form already sends, so a requirement
        written on the lead survives conversion unchanged. Half-filled rows are dropped: a row
        somebody opened and abandoned is not a requirement. */
@@ -316,6 +316,10 @@ function transformFormData(formData, services = [], itinerary = []) {
     budget:         formData.budget != null && formData.budget !== ""
                       ? Number(formData.budget)
                       : null,
+    budgetBasis:    formData.budgetBasis || "TOTAL",
+    childAges:      (Array.isArray(formData.childAges) ? formData.childAges : [])
+                      .map((age) => age === "" || age == null ? null : Number(age))
+                      .filter(Number.isFinite),
     notes:          formData.notes?.trim()          || "",
     roomAllocations: Array.isArray(formData.roomAllocations) ? formData.roomAllocations.map((room, index) => ({
       roomNumber: index + 1,

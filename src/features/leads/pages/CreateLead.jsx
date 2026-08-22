@@ -300,11 +300,9 @@ export const blankDefaults = () => ({
      elderly parents are different hotels at the same budget, and "when will you decide" sorts the
      callback list that "when do you travel" cannot.
 
-     ⚠ NONE OF THESE HAVE COLUMNS YET. They live in form state and are deliberately NOT in
-     transformFormData's payload, so a lead saved today drops them rather than 400ing on an unknown
-     property. That is the agreed order — UI first, migration after — and it is safe only because
-     the transform whitelists fields instead of spreading the form object. Do not "fix" it by
-     spreading; wire each field when its column lands. */
+     Most of these still have no columns and deliberately stay outside the payload. Budget basis
+     and child ages are the exceptions: both are persisted by the lead contract. The transform is a
+     whitelist, so any future qualification field still needs an explicit backend field and mapping. */
   tripFor: "",
   whatsappSame: true,
   whatsappNumber: "",
@@ -320,8 +318,7 @@ export const blankDefaults = () => ({
   dateFlexibility: "EXACT",
   dateNote: "",
   decideBy: "",
-  /* "Total" or "PER_PERSON" — what the budget number MEANS. No column yet, like the rest of the
-     qualification set; it is here so the control has somewhere to live. */
+  /* "Total" or "PER_PERSON" — persisted alongside the budget amount. */
   budgetBasis: "TOTAL",
   /* Source of truth; the child COUNT follows this array, not the other way round. */
   childAges: [],
@@ -3624,13 +3621,45 @@ const phoneRef = useRef(null);
           male: lead.male ?? lead.maleCount,
           female: lead.female ?? lead.femaleCount,
         });
+        const leadPhone = lead.phone ?? lead.mobile ?? lead.contactNumber ?? lead.customer?.phone ?? "";
+        const storedWhatsapp = lead.customerWhatsapp ?? lead.whatsappNumber ?? lead.whatsapp ?? "";
+        const contactDigits = (value) => String(value || "").replace(/\D/g, "");
+        const roomRequirementRows = Array.isArray(lead.roomRequirements) && lead.roomRequirements.length > 0
+          ? lead.roomRequirements.map((row) => ({
+              ...emptyRoomRow(),
+              roomType: row.roomType || "Double",
+              acType: row.acType || "Any",
+              count: String(row.count ?? 1),
+              extraBeds: String(row.extraBeds ?? 0),
+            }))
+          : [{
+              ...emptyRoomRow(),
+              count: String(lead.rooms ?? lead.roomCount ?? lead.noOfRooms ?? 1),
+              extraBeds: String(lead.extraBeds ?? lead.extraBedCount ?? 0),
+            }];
 
         reset({
           ...blankDefaults(),
           customerName: lead.customerName ?? lead.customer?.name ?? lead.name ?? "",
-          phone: lead.phone ?? lead.mobile ?? lead.contactNumber ?? lead.customer?.phone ?? "",
+          phone: leadPhone,
           email: lead.email ?? lead.customer?.email ?? "",
+          whatsappSame: !storedWhatsapp || contactDigits(storedWhatsapp) === contactDigits(leadPhone),
+          whatsappNumber: storedWhatsapp,
+          customerCity: lead.customerCity ?? lead.customer?.city ?? "",
+          customerState: lead.customerState ?? lead.customer?.state ?? "",
+          customerCountry: lead.customerCountry ?? lead.customer?.country ?? "",
+          vehicleRequirements: Array.isArray(lead.vehicleRequirements)
+            ? lead.vehicleRequirements.map((row) => ({
+                ...emptyVehicleRow(),
+                vehicleType: row.vehicleType ?? "",
+                vehicleId: row.vehicleId ?? null,
+                model: row.model ?? "",
+                capacity: row.capacity ?? "",
+                quantity: String(row.quantity ?? 1),
+              }))
+            : [],
           budget: lead.budget ?? lead.estimatedValue ?? "",
+          budgetBasis: lead.budgetBasis ?? "TOTAL",
           leadSource: lead.leadSource ?? lead.source ?? "",
           leadType: lead.leadType ?? lead.type ?? "Fresh",
           leadStage: lead.leadStage ?? lead.stage ?? "New Lead",
@@ -3643,6 +3672,8 @@ const phoneRef = useRef(null);
           packageType: lead.packageType ?? lead.tripType ?? "",
           travelDate: toDateInput(lead.travelDate ?? lead.tripDate ?? lead.departureDate),
           returnDate: toDateInput(lead.returnDate),
+          hotelCategory: lead.hotelCategory ?? "",
+          mealPlanPreference: lead.mealPlanPreference ?? "",
           departCountry: lead.departCountry ?? lead.departureCountry ?? "India",
           departCity: lead.departCity ?? lead.departureCity ?? "",
           departureMode: lead.departureMode ?? lead.transportMode ?? "",
@@ -3655,6 +3686,7 @@ const phoneRef = useRef(null);
           pickupAddress: lead.pickupAddress ?? lead.roadPickupAddress ?? "",
           pickupDateTime: String(lead.pickupDateTime ?? lead.pickupAt ?? "").slice(0, 16),
           vehiclePreference: lead.vehiclePreference ?? lead.preferredVehicle ?? "",
+          dropAddress: lead.dropAddress ?? "",
           dropDateTime: String(
   lead.dropDateTime ??
   lead.dropAt ??
@@ -3678,8 +3710,10 @@ dropCountry:
           rooms: toInt(lead.rooms ?? lead.roomCount ?? lead.noOfRooms ?? 1, 1),
           ...adultPrefill,
           children: toInt(lead.children ?? lead.childCount ?? 0),
+          childAges: Array.isArray(lead.childAges) ? lead.childAges : [],
           infants: toInt(lead.infants ?? lead.infantCount ?? 0),
           extraBeds: toInt(lead.extraBeds ?? lead.extraBedCount ?? 0),
+          roomRequirements: roomRequirementRows,
           specialAssistanceRequired: Boolean(
             lead.specialAssistanceRequired ?? lead.needsSpecialAssistance ??
             (Array.isArray(lead.specialAssistanceTypes) && lead.specialAssistanceTypes.length > 0)
