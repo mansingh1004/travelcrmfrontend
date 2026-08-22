@@ -429,6 +429,12 @@ export const NAV_SECTIONS = [
             path: "/marketplace/bookings",
             keywords: "approval queue status",
           },
+          {
+            id: "marketplace.operations",
+            label: "Hotel Operations",
+            path: "/hotel-operations",
+            keywords: "hotel operations check in check out voucher confirmation platform property",
+          },
         ],
       },
     ],
