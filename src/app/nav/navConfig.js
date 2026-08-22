@@ -429,6 +429,36 @@ export const NAV_SECTIONS = [
             path: "/marketplace/bookings",
             keywords: "approval queue status",
           },
+          {
+            id: "marketplace.operations",
+            label: "Hotel Operations",
+            path: "/hotel-operations",
+            keywords: "hotel operations check in check out voucher confirmation platform property",
+          },
+        ],
+      },
+      {
+        id: "transportMarketplace",
+        label: "Platform Transport",
+        Icon: Car,
+        tone: "violet",
+        keywords: "transport marketplace vehicles cars coaches transfers",
+        // The buying side of transport is a separate add-on from both Vehicle
+        // Diary (FLEET) and the operator-facing TRANSPORT_SUPPLIER module.
+        can: () => hasPermission(P.TRANSPORT_MARKETPLACE_VIEW) && hasModule("TRANSPORT_MARKETPLACE"),
+        children: [
+          {
+            id: "transportMarketplace.browse",
+            label: "Browse vehicles",
+            path: "/marketplace/transport",
+            keywords: "search vehicles cars import request",
+          },
+          {
+            id: "transportMarketplace.requests",
+            label: "Transport requests",
+            path: "/marketplace/transport/orders",
+            keywords: "orders approval status duty slip",
+          },
         ],
       },
     ],

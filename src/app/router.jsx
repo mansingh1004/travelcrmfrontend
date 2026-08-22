@@ -216,6 +216,13 @@ const MarketplaceHotel = lazyPage(marketplace, "MarketplaceHotel");
 const MarketplaceBookingRequest = lazyPage(marketplace, "MarketplaceBookingRequest");
 const MarketplaceBookings = lazyPage(marketplace, "MarketplaceBookings");
 const MarketplaceBookingDetail = lazyPage(marketplace, "MarketplaceBookingDetail");
+const TransportSearch = lazyPage(marketplace, "TransportSearch");
+const TransportRequest = lazyPage(marketplace, "TransportRequest");
+const TransportOrders = lazyPage(marketplace, "TransportOrders");
+
+// Tenant-side work queue for this tenant's PLATFORM HOTEL requests. Kept separate from the
+// cross-service Operations board and from the SuperAdmin console realm.
+const HotelOperations = lazyPage(() => import("@features/hotelOperations"), "HotelOperations");
 
 
 // Route-level guard (defense-in-depth; backend is the real gate, menus already hide these).
@@ -589,11 +596,17 @@ const AppRouter = () => {
               "bookings" segment over the dynamic one regardless of order. */}
               <Route path="marketplace/bookings" element={<Guard allow={hasPermission(P.HOTEL_MARKETPLACE_VIEW)}><MarketplaceBookings /></Guard>} />
               <Route path="marketplace/bookings/:publicId" element={<Guard allow={hasPermission(P.HOTEL_MARKETPLACE_VIEW)}><MarketplaceBookingDetail /></Guard>} />
+              <Route path="hotel-operations" element={<Guard allow={hasPermission(P.HOTEL_MARKETPLACE_VIEW) && hasModule("HOTEL_MARKETPLACE")}><HotelOperations /></Guard>} />
               <Route path="marketplace/:publicId" element={<Guard allow={hasPermission(P.HOTEL_MARKETPLACE_VIEW)}><MarketplaceHotel /></Guard>} />
               {/* Requesting is a stronger act than browsing — it puts a payable on the tenant's books —
               so it gates on BOOK, not VIEW. More specific path, so route ranking picks it over
               ":publicId" regardless of declaration order. */}
               <Route path="marketplace/:publicId/request" element={<Guard allow={hasPermission(P.HOTEL_MARKETPLACE_BOOK)}><MarketplaceBookingRequest /></Guard>} />
+
+              {/* Transport Marketplace (tenant buying side). */}
+              <Route path="marketplace/transport" element={<Guard allow={hasPermission(P.TRANSPORT_MARKETPLACE_VIEW)}><TransportSearch /></Guard>} />
+              <Route path="marketplace/transport/orders" element={<Guard allow={hasPermission(P.TRANSPORT_MARKETPLACE_VIEW)}><TransportOrders /></Guard>} />
+              <Route path="marketplace/transport/:publicId/request" element={<Guard allow={hasPermission(P.TRANSPORT_MARKETPLACE_BOOK)}><TransportRequest /></Guard>} />
 
               {/* ── Sub-Agents (B2B franchise) — TENANT_ADMIN only ── */}
               <Route path="subagents" element={<Guard allow={isTenantAdmin()}><SubAgents /></Guard>} />
