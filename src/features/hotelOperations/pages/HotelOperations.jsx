@@ -18,6 +18,7 @@ import HotelBookingOperationsTable from "../components/HotelBookingOperationsTab
 import HotelOperationDrawer from "../components/HotelOperationDrawer";
 import HotelOperationFilters from "../components/HotelOperationFilters";
 import HotelOperationMetrics from "../components/HotelOperationMetrics";
+import MockHotelPropertyOverview from "../components/MockHotelPropertyOverview";
 import { Notice, Page, PageHeader } from "../components/hotelOperationUi";
 import { BOOKING_STATUS, STATUS_TABS } from "../lib/hotelOperationModel";
 
@@ -33,12 +34,16 @@ export default function HotelOperations() {
   // Opening the sidebar destination in local development should immediately provide a populated
   // screen for UI review. Production remains live-by-default; `?mock=1` is still an explicit demo.
   const mockMode = mockParam === "1" || (import.meta.env.DEV && mockParam === null);
+  const selectedBrandId = mockMode ? searchParams.get("brand") : null;
+  const selectedHotelId = mockMode ? searchParams.get("hotel") : null;
 
   const [rows, setRows] = useState([]);
   const [pagination, setPagination] = useState(null);
   const [summary, setSummary] = useState(null);
+  const [hotelRollups, setHotelRollups] = useState([]);
   const [loading, setLoading] = useState(true);
   const [summaryLoading, setSummaryLoading] = useState(true);
+  const [rollupsLoading, setRollupsLoading] = useState(mockMode);
   const [listError, setListError] = useState(null);
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(DEFAULT_SIZE);
@@ -68,12 +73,27 @@ export default function HotelOperations() {
     setQuery({ booking: null });
   }, [setQuery]);
 
+  const selectBrand = useCallback((brandId) => {
+    setPage(0);
+    setQuery({ brand: brandId, hotel: null, booking: null });
+  }, [setQuery]);
+
+  const selectHotel = useCallback((brandId, hotelPublicId) => {
+    setPage(0);
+    setQuery({ brand: brandId, hotel: hotelPublicId, booking: null });
+  }, [setQuery]);
+
+  const clearHotelScope = useCallback(() => {
+    setPage(0);
+    setQuery({ brand: null, hotel: null, booking: null });
+  }, [setQuery]);
+
   const refresh = useCallback(() => setRefreshKey((value) => value + 1), []);
 
   const toggleMockMode = useCallback(() => {
     setPage(0);
     // `mock=0` is intentional: removing the key in development would select its default mock mode.
-    setQuery({ mock: mockMode ? "0" : "1", booking: null });
+    setQuery({ mock: mockMode ? "0" : "1", brand: null, hotel: null, booking: null });
   }, [mockMode, setQuery]);
 
   const changePageSize = useCallback((nextSize) => {
@@ -96,6 +116,8 @@ export default function HotelOperations() {
             size: pageSize,
             status: status === "ALL" ? undefined : status,
             mock: mockMode,
+            brandId: selectedBrandId || undefined,
+            hotelPublicId: selectedHotelId || undefined,
           },
           { signal: controller.signal },
         )
@@ -123,7 +145,7 @@ export default function HotelOperations() {
       window.cancelAnimationFrame(frame);
       controller.abort();
     };
-  }, [page, pageSize, status, mockMode, refreshKey]);
+  }, [page, pageSize, status, mockMode, selectedBrandId, selectedHotelId, refreshKey]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -133,7 +155,12 @@ export default function HotelOperations() {
       setSummaryLoading(true);
 
       hotelOperationService
-      .getSummary({ signal: controller.signal, mock: mockMode })
+        .getSummary({
+          signal: controller.signal,
+          mock: mockMode,
+          brandId: selectedBrandId || undefined,
+          hotelPublicId: selectedHotelId || undefined,
+        })
         .then((data) => {
           if (alive) setSummary(data);
         })
@@ -154,12 +181,67 @@ export default function HotelOperations() {
       window.cancelAnimationFrame(frame);
       controller.abort();
     };
+  }, [mockMode, selectedBrandId, selectedHotelId, refreshKey]);
+
+  useEffect(() => {
+    let alive = true;
+    const frame = window.requestAnimationFrame(() => {
+      if (!alive) return;
+
+      if (!mockMode) {
+        setHotelRollups([]);
+        setRollupsLoading(false);
+        return;
+      }
+
+      setRollupsLoading(true);
+      hotelOperationService
+        .getHotelRollups({ mock: true })
+        .then((data) => {
+          if (alive) setHotelRollups(data);
+        })
+        .catch((error) => {
+          if (!alive || isCanceled(error)) return;
+          setHotelRollups([]);
+          if (!isAlreadyReported(error)) {
+            toast.error(getErrorMessage(error, "Could not load the demo hotel hierarchy."));
+          }
+        })
+        .finally(() => {
+          if (alive) setRollupsLoading(false);
+        });
+    });
+
+    return () => {
+      alive = false;
+      window.cancelAnimationFrame(frame);
+    };
   }, [mockMode, refreshKey]);
 
   const activeLabel = useMemo(() => {
     if (status === "ALL") return "All";
     return BOOKING_STATUS[status]?.label || STATUS_TABS.find((tab) => tab.key === status)?.label || status;
   }, [status]);
+
+  const selectedScope = useMemo(() => {
+    const brand = hotelRollups.find((item) => item.brandId === selectedBrandId);
+    const property = brand?.properties.find((item) => item.hotelPublicId === selectedHotelId);
+    if (property) {
+      return {
+        title: `${property.hotelName}, ${property.locationName}`,
+        description: `${property.totalBookings} mock bookings for this physical property`,
+      };
+    }
+    if (brand) {
+      return {
+        title: `${brand.brandName} - all locations`,
+        description: `${brand.totalBookings} mock bookings across ${brand.properties.length} properties`,
+      };
+    }
+    return null;
+  }, [hotelRollups, selectedBrandId, selectedHotelId]);
+
+  const bookingListLabel = selectedScope ? `${selectedScope.title} - ${activeLabel}` : activeLabel;
 
   const total = pagination?.totalElements ?? rows.length;
   const totalPages = pagination?.totalPages ?? (total ? 1 : 0);
@@ -232,6 +314,34 @@ export default function HotelOperations() {
           </Notice>
         )}
 
+        {mockMode && (
+          <MockHotelPropertyOverview
+            groups={hotelRollups}
+            loading={rollupsLoading}
+            selectedBrandId={selectedBrandId}
+            selectedHotelId={selectedHotelId}
+            onSelectBrand={selectBrand}
+            onSelectHotel={selectHotel}
+            onClear={clearHotelScope}
+          />
+        )}
+
+        {selectedScope && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3">
+            <div>
+              <p className="text-xs font-extrabold text-blue-900">Showing: {selectedScope.title}</p>
+              <p className="mt-0.5 text-[11px] font-medium text-blue-700">{selectedScope.description}</p>
+            </div>
+            <button
+              type="button"
+              onClick={clearHotelScope}
+              className="rounded-lg bg-white px-3 py-1.5 text-xs font-bold text-blue-700 ring-1 ring-blue-200 hover:bg-blue-100"
+            >
+              Clear hotel filter
+            </button>
+          </div>
+        )}
+
         <HotelOperationFilters
           status={status}
           onStatus={changeStatus}
@@ -249,7 +359,7 @@ export default function HotelOperations() {
         <HotelBookingOperationsTable
           rows={rows}
           loading={loading}
-          activeLabel={activeLabel}
+          activeLabel={bookingListLabel}
           onOpen={openBooking}
           onClear={status === "ALL" ? null : () => changeStatus("ALL")}
         />

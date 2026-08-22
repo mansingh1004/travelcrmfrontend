@@ -17,11 +17,111 @@ function timestampOffset(days, hour = 10) {
   return date.toISOString();
 }
 
+const DESTINATION_STAYS = {
+  Kathmandu: {
+    hotelPublicId: "hotel-yak-yeti",
+    hotelName: "Hotel Yak & Yeti",
+    propertyName: "Hotel Yak & Yeti · Durbar Marg",
+    address: "Durbar Marg, Kathmandu",
+    contactPhone: "+977 1 4248999",
+    roomType: "Deluxe Heritage Room",
+  },
+  Pokhara: {
+    hotelPublicId: "hotel-barahi",
+    hotelName: "Hotel Barahi",
+    propertyName: "Hotel Barahi · Lakeside",
+    address: "Lakeside Road, Pokhara",
+    contactPhone: "+977 61 460617",
+    roomType: "Deluxe Lake View",
+  },
+  Chitwan: {
+    hotelPublicId: "hotel-jungle-safari",
+    hotelName: "Jungle Safari Lodge",
+    propertyName: "Jungle Safari Lodge · Sauraha",
+    address: "Sauraha, Chitwan",
+    contactPhone: "+977 56 580069",
+    roomType: "Garden Cottage",
+  },
+  Nagarkot: {
+    hotelPublicId: "hotel-country-villa",
+    hotelName: "Hotel Country Villa",
+    propertyName: "Hotel Country Villa · Nagarkot",
+    address: "Naldum, Nagarkot",
+    contactPhone: "+977 1 6680127",
+    roomType: "Mountain View Room",
+  },
+  Lumbini: {
+    hotelPublicId: "hotel-buddha-maya",
+    hotelName: "Buddha Maya Garden Hotel",
+    propertyName: "Buddha Maya Garden Hotel · Lumbini",
+    address: "Lumbini Sanskritik, Rupandehi",
+    contactPhone: "+977 71 580220",
+    roomType: "Deluxe Garden Room",
+  },
+  Bhaktapur: {
+    hotelPublicId: "hotel-heritage-bhaktapur",
+    hotelName: "Hotel Heritage Bhaktapur",
+    propertyName: "Hotel Heritage · Suryabinayak",
+    address: "Barahisthan, Bhaktapur",
+    contactPhone: "+977 1 6611628",
+    roomType: "Heritage Room",
+  },
+};
+
+const locationId = (value, suffix) =>
+  `${String(value || "unknown").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}-${suffix}`;
+
+function externalStop({ locationName, type, sequence, checkInOffset, rooms, adults, children }) {
+  const hotel = DESTINATION_STAYS[locationName];
+  const isArrival = type === "ARRIVAL";
+  const checkIn = localDateOffset(isArrival ? checkInOffset - 2 : checkInOffset);
+  const checkOut = localDateOffset(isArrival ? checkInOffset : checkInOffset + 2);
+
+  return {
+    locationId: locationId(locationName, type.toLowerCase()),
+    locationName,
+    type,
+    sequence,
+    arrivalDate: checkIn,
+    departureDate: checkOut,
+    stays: hotel ? [{
+      ...hotel,
+      checkIn,
+      checkOut,
+      nights: 2,
+      totalRooms: Math.max(1, Math.min(rooms, 2)),
+      totalPax: adults + children,
+      extraAdultBeds: adults > 4 ? 1 : 0,
+      extraChildBeds: children > 0 ? 1 : 0,
+      childrenWithoutBed: 0,
+      mealPlan: type === "NEXT" ? "Half Board" : "Breakfast",
+      bedType: "King / Twin on request",
+      confirmationStatus: "CONFIRMED",
+      confirmationNumber: `DEMO-${sequence}${String(locationName).slice(0, 3).toUpperCase()}`,
+      voucherStatus: "ISSUED",
+      specialRequests: "Please keep the group rooms on the same floor.",
+      rooms: [{
+        roomType: hotel.roomType,
+        quantity: Math.max(1, Math.min(rooms, 2)),
+        adults,
+        children,
+        extraAdultBeds: adults > 4 ? 1 : 0,
+        extraChildBeds: children > 0 ? 1 : 0,
+        childrenWithoutBed: 0,
+        mealPlan: type === "NEXT" ? "Half Board" : "Breakfast",
+        bedType: "King / Twin on request",
+      }],
+    }] : [],
+  };
+}
+
 function makeBooking({
   id,
   code,
   hotelId,
   hotelName,
+  hotelBrandId,
+  hotelBrandName,
   cityName,
   address,
   guest,
@@ -34,6 +134,10 @@ function makeBooking({
   rooms,
   roomName,
   mealPlan,
+  roomAllocations,
+  extraAdultBeds = 0,
+  extraChildBeds = 0,
+  childrenWithoutBed = 0,
   checkInOffset,
   nights,
   status,
@@ -45,8 +149,9 @@ function makeBooking({
 }) {
   const confirmed = status === "CONFIRMED" || status === "CANCEL_REQUESTED";
   const issued = voucherStatus === "ISSUED";
+  const yakYetiProperty = String(hotelId).startsWith("hotel-yak-yeti");
 
-  return {
+  const booking = {
     publicId: id,
     bookingCode: code,
     createdAt: timestampOffset(Math.min(-1, checkInOffset - 8), 11),
@@ -55,6 +160,8 @@ function makeBooking({
     hotelPublicId: hotelId,
     hotelName,
     hotelPropertyName: hotelName,
+    hotelBrandId: hotelBrandId || (yakYetiProperty ? "brand-yak-yeti" : `brand-${hotelId}`),
+    hotelBrandName: hotelBrandName || (yakYetiProperty ? "Yak & Yeti" : hotelName),
     cityName,
     address,
     stateName: cityName === "Pokhara" ? "Gandaki" : "Bagmati",
@@ -89,6 +196,71 @@ function makeBooking({
     arrivalFrom: arrivalFrom || null,
     nextDestination: nextDestination || null,
   };
+
+  const currentRoomAllocations = roomAllocations || [{
+    roomType: roomName,
+    quantity: rooms,
+    adults,
+    children,
+    extraAdultBeds,
+    extraChildBeds,
+    childrenWithoutBed,
+    mealPlan,
+    bedType: "King / Twin on request",
+  }];
+
+  booking.travelStops = [
+    externalStop({
+      locationName: arrivalFrom,
+      type: "ARRIVAL",
+      sequence: 1,
+      checkInOffset,
+      rooms,
+      adults,
+      children,
+    }),
+    {
+      locationId: locationId(cityName, "current"),
+      locationName: cityName,
+      type: "CURRENT",
+      sequence: 2,
+      arrivalDate: booking.checkIn,
+      departureDate: booking.checkOut,
+      stays: [{
+        hotelPublicId: hotelId,
+        hotelName,
+        propertyName: hotelName,
+        address,
+        contactPhone: cityName === "Pokhara" ? "+977 61 460000" : "+977 1 4200000",
+        checkIn: booking.checkIn,
+        checkOut: booking.checkOut,
+        nights,
+        totalRooms: rooms,
+        totalPax: adults + children + infants,
+        extraAdultBeds,
+        extraChildBeds,
+        childrenWithoutBed,
+        mealPlan,
+        bedType: "King / Twin on request",
+        confirmationStatus: confirmed ? "CONFIRMED" : "PENDING",
+        confirmationNumber: booking.supplierConfirmationNumber,
+        voucherStatus,
+        specialRequests: booking.specialRequests,
+        rooms: currentRoomAllocations,
+      }],
+    },
+    externalStop({
+      locationName: nextDestination,
+      type: "NEXT",
+      sequence: 3,
+      checkInOffset: checkInOffset + nights,
+      rooms,
+      adults,
+      children,
+    }),
+  ].filter((stop) => stop.locationName);
+
+  return booking;
 }
 
 const ADDRESS = {
@@ -100,12 +272,116 @@ const ADDRESS = {
   temple: "Gaurighat, Lakeside, Pokhara",
 };
 
+const YAK_YETI_CUSTOMERS = [
+  "Arjun Khanna", "Maya Thompson", "Neha Bansal", "Liam Chen",
+  "Sanjay Rao", "Isabella Rossi", "Ritika Sen", "Ethan Walker",
+  "Aditi Nair", "Lucas Muller", "Karan Bedi", "Charlotte Evans",
+  "Sameer Qureshi", "Hana Suzuki", "Devika Shah", "Benjamin Clark",
+];
+
+function buildYakYetiBranchBookings() {
+  const properties = [
+    {
+      count: 4,
+      hotelId: "hotel-yak-yeti",
+      hotelName: "Hotel Yak & Yeti · Kathmandu",
+      cityName: "Kathmandu",
+      address: ADDRESS.yak,
+      roomName: "Deluxe Heritage Room",
+      arrivalFrom: "Pokhara",
+      nextDestination: "Chitwan",
+    },
+    {
+      count: 7,
+      hotelId: "hotel-yak-yeti-pokhara",
+      hotelName: "Yak & Yeti Lakeside · Pokhara",
+      cityName: "Pokhara",
+      address: "Lakeside Road, Pokhara",
+      roomName: "Lake View Room",
+      arrivalFrom: "Kathmandu",
+      nextDestination: "Chitwan",
+    },
+    {
+      count: 5,
+      hotelId: "hotel-yak-yeti-chitwan",
+      hotelName: "Yak & Yeti Jungle Retreat · Chitwan",
+      cityName: "Chitwan",
+      address: "Sauraha Road, Chitwan",
+      roomName: "Garden Cottage",
+      arrivalFrom: "Pokhara",
+      nextDestination: "Kathmandu",
+    },
+  ];
+  const statuses = [
+    "CONFIRMED", "CONFIRMED", "UNDER_REVIEW", "REQUESTED",
+    "CONFIRMED", "TENANT_APPROVAL_REQUIRED", "CONFIRMED", "TENANT_ACCEPTED",
+  ];
+  const offsets = [-3, -1, 0, 1, 2, 4, 6, 8];
+  let customerIndex = 0;
+
+  return properties.flatMap((property) =>
+    Array.from({ length: property.count }, (_, propertyIndex) => {
+      const index = customerIndex++;
+      const status = statuses[index % statuses.length];
+      const confirmed = status === "CONFIRMED";
+      const rooms = 1 + (index % 3);
+      const children = index % 3 === 0 ? 2 : index % 3 === 1 ? 1 : 0;
+      const guest = YAK_YETI_CUSTOMERS[index];
+
+      return makeBooking({
+        id: `mock-yak-branch-${2001 + index}`,
+        code: `BK-${2001 + index}`,
+        hotelId: property.hotelId,
+        hotelName: property.hotelName,
+        hotelBrandId: "brand-yak-yeti",
+        hotelBrandName: "Yak & Yeti",
+        cityName: property.cityName,
+        address: property.address,
+        guest,
+        phone: `+91 98${pad(index)} 45${pad(propertyIndex)} 10`,
+        email: `${guest.toLowerCase().replace(/\s+/g, ".")}@example.com`,
+        guestOrigin: index % 2 === 0 ? "India" : "International",
+        adults: 2 + (index % 5),
+        children,
+        infants: index % 7 === 0 ? 1 : 0,
+        rooms,
+        roomName: property.roomName,
+        mealPlan: index % 2 === 0 ? "Breakfast" : "Half Board",
+        extraAdultBeds: index % 4 === 0 ? 1 : 0,
+        extraChildBeds: children > 0 && index % 2 === 0 ? 1 : 0,
+        childrenWithoutBed: children > 1 ? 1 : 0,
+        checkInOffset: offsets[index % offsets.length],
+        nights: 2 + (index % 4),
+        status,
+        voucherStatus: confirmed && index % 2 === 0 ? "ISSUED" : "NOT_ISSUED",
+        paymentStatus: confirmed && index % 3 === 0 ? "PAID" : "PARTIALLY_PAID",
+        arrivalFrom: property.arrivalFrom,
+        nextDestination: property.nextDestination,
+        specialRequests: index % 3 === 0 ? "Early check-in requested, subject to availability." : null,
+      });
+    }),
+  );
+}
+
 export const HOTEL_OPERATION_MOCK_BOOKINGS = [
   makeBooking({
     id: "mock-yak-1025", code: "BK-1025", hotelId: "hotel-yak-yeti", hotelName: "Hotel Yak & Yeti",
     cityName: "Kathmandu", address: ADDRESS.yak, guest: "Rahul Sharma", phone: "+91 98765 43210",
     email: "rahul.sharma@example.com", guestOrigin: "Delhi, India", adults: 6, children: 2,
     rooms: 3, roomName: "Deluxe Heritage Room", mealPlan: "Breakfast", checkInOffset: 0, nights: 3,
+    extraAdultBeds: 1, extraChildBeds: 1,
+    roomAllocations: [
+      {
+        roomType: "Deluxe Heritage Room", quantity: 2, adults: 4, children: 1,
+        extraAdultBeds: 1, extraChildBeds: 0, childrenWithoutBed: 0,
+        mealPlan: "Breakfast", bedType: "King Bed",
+      },
+      {
+        roomType: "Club Room", quantity: 1, adults: 2, children: 1,
+        extraAdultBeds: 0, extraChildBeds: 1, childrenWithoutBed: 0,
+        mealPlan: "Breakfast", bedType: "Twin Beds",
+      },
+    ],
     status: "CONFIRMED", voucherStatus: "ISSUED", paymentStatus: "PAID", arrivalFrom: "Pokhara",
     nextDestination: "Chitwan", specialRequests: "Airport pickup and one vegetarian breakfast.",
   }),
@@ -218,14 +494,54 @@ export const HOTEL_OPERATION_MOCK_BOOKINGS = [
     infants: 1, rooms: 2, roomName: "Junior Suite", mealPlan: "Full Board", checkInOffset: 7, nights: 5,
     status: "TENANT_APPROVAL_REQUIRED", arrivalFrom: "Kathmandu", nextDestination: "Lumbini",
   }),
+  ...buildYakYetiBranchBookings(),
 ];
 
 const wait = (value) => new Promise((resolve) => setTimeout(() => resolve(value), 180));
 
-export async function getMockBookings({ page = 0, size = 25, status } = {}) {
-  const filtered = status
-    ? HOTEL_OPERATION_MOCK_BOOKINGS.filter((booking) => booking.status === status)
-    : HOTEL_OPERATION_MOCK_BOOKINGS;
+function scopedBookings({ status, brandId, hotelPublicId } = {}) {
+  return HOTEL_OPERATION_MOCK_BOOKINGS.filter((booking) => {
+    if (status && booking.status !== status) return false;
+    if (brandId && booking.hotelBrandId !== brandId) return false;
+    if (hotelPublicId && booking.hotelPublicId !== hotelPublicId) return false;
+    return true;
+  });
+}
+
+function summarize(bookings) {
+  const today = localDateOffset(0);
+  const confirmed = bookings.filter((booking) => booking.status === "CONFIRMED");
+  const countStatus = (status) => bookings.filter((booking) => booking.status === status).length;
+  const pendingStatuses = new Set(["REQUESTED", "UNDER_REVIEW", "TENANT_APPROVAL_REQUIRED", "TENANT_ACCEPTED"]);
+
+  return {
+    totalBookings: bookings.length,
+    totalGuests: bookings.reduce(
+      (total, booking) => total + booking.adults + booking.children + booking.infants,
+      0,
+    ),
+    totalRooms: bookings.reduce((total, booking) => total + booking.rooms, 0),
+    todayCheckIns: confirmed.filter((booking) => booking.checkIn === today).length,
+    todayCheckOuts: confirmed.filter((booking) => booking.checkOut === today).length,
+    pendingConfirmations: bookings.filter((booking) => pendingStatuses.has(booking.status)).length,
+    voucherPending: confirmed.filter((booking) => booking.voucherStatus === "NOT_ISSUED").length,
+    inHouseGuests: confirmed
+      .filter((booking) => booking.checkIn < today && booking.checkOut > today)
+      .reduce((total, booking) => total + booking.adults + booking.children + booking.infants, 0),
+    paymentPending: bookings.filter(
+      (booking) => booking.paymentStatus === "UNPAID" || booking.paymentStatus === "PARTIALLY_PAID",
+    ).length,
+    actionRequired: {
+      requested: countStatus("REQUESTED"),
+      underReview: countStatus("UNDER_REVIEW"),
+      tenantApprovalRequired: countStatus("TENANT_APPROVAL_REQUIRED"),
+      cancelRequested: countStatus("CANCEL_REQUESTED"),
+    },
+  };
+}
+
+export async function getMockBookings({ page = 0, size = 25, status, brandId, hotelPublicId } = {}) {
+  const filtered = scopedBookings({ status, brandId, hotelPublicId });
   const totalElements = filtered.length;
   const totalPages = totalElements === 0 ? 0 : Math.ceil(totalElements / size);
   const items = filtered.slice(page * size, page * size + size).map((booking) => ({ ...booking }));
@@ -248,34 +564,58 @@ export async function getMockOperationById(publicId) {
   return wait(booking ? { ...booking } : null);
 }
 
-export async function getMockSummary() {
-  const today = localDateOffset(0);
-  const confirmed = HOTEL_OPERATION_MOCK_BOOKINGS.filter((booking) => booking.status === "CONFIRMED");
-  const countStatus = (status) => HOTEL_OPERATION_MOCK_BOOKINGS.filter((booking) => booking.status === status).length;
-  const pendingStatuses = new Set(["REQUESTED", "UNDER_REVIEW", "TENANT_APPROVAL_REQUIRED", "TENANT_ACCEPTED"]);
+export async function getMockSummary({ brandId, hotelPublicId } = {}) {
+  return wait(summarize(scopedBookings({ brandId, hotelPublicId })));
+}
 
-  return wait({
-    totalBookings: HOTEL_OPERATION_MOCK_BOOKINGS.length,
-    totalGuests: HOTEL_OPERATION_MOCK_BOOKINGS.reduce(
-      (total, booking) => total + booking.adults + booking.children + booking.infants,
-      0,
-    ),
-    totalRooms: HOTEL_OPERATION_MOCK_BOOKINGS.reduce((total, booking) => total + booking.rooms, 0),
-    todayCheckIns: confirmed.filter((booking) => booking.checkIn === today).length,
-    todayCheckOuts: confirmed.filter((booking) => booking.checkOut === today).length,
-    pendingConfirmations: HOTEL_OPERATION_MOCK_BOOKINGS.filter((booking) => pendingStatuses.has(booking.status)).length,
-    voucherPending: confirmed.filter((booking) => booking.voucherStatus === "NOT_ISSUED").length,
-    inHouseGuests: confirmed
-      .filter((booking) => booking.checkIn < today && booking.checkOut > today)
-      .reduce((total, booking) => total + booking.adults + booking.children + booking.infants, 0),
-    paymentPending: HOTEL_OPERATION_MOCK_BOOKINGS.filter(
-      (booking) => booking.paymentStatus === "UNPAID" || booking.paymentStatus === "PARTIALLY_PAID",
-    ).length,
-    actionRequired: {
-      requested: countStatus("REQUESTED"),
-      underReview: countStatus("UNDER_REVIEW"),
-      tenantApprovalRequired: countStatus("TENANT_APPROVAL_REQUIRED"),
-      cancelRequested: countStatus("CANCEL_REQUESTED"),
-    },
-  });
+export async function getMockHotelRollups() {
+  const brands = new Map();
+
+  for (const booking of HOTEL_OPERATION_MOCK_BOOKINGS) {
+    const brandId = booking.hotelBrandId;
+    if (!brands.has(brandId)) {
+      brands.set(brandId, {
+        brandId,
+        brandName: booking.hotelBrandName,
+        bookings: [],
+        properties: new Map(),
+      });
+    }
+
+    const brand = brands.get(brandId);
+    brand.bookings.push(booking);
+    if (!brand.properties.has(booking.hotelPublicId)) {
+      brand.properties.set(booking.hotelPublicId, {
+        hotelPublicId: booking.hotelPublicId,
+        hotelName: booking.hotelPropertyName,
+        locationName: booking.cityName,
+        address: booking.address,
+        bookings: [],
+      });
+    }
+    brand.properties.get(booking.hotelPublicId).bookings.push(booking);
+  }
+
+  const result = Array.from(brands.values())
+    .map((brand) => ({
+      brandId: brand.brandId,
+      brandName: brand.brandName,
+      ...summarize(brand.bookings),
+      properties: Array.from(brand.properties.values())
+        .map((property) => ({
+          hotelPublicId: property.hotelPublicId,
+          hotelName: property.hotelName,
+          locationName: property.locationName,
+          address: property.address,
+          ...summarize(property.bookings),
+        }))
+        .sort((a, b) => a.locationName.localeCompare(b.locationName)),
+    }))
+    .sort((a, b) => {
+      if (a.brandId === "brand-yak-yeti") return -1;
+      if (b.brandId === "brand-yak-yeti") return 1;
+      return a.brandName.localeCompare(b.brandName);
+    });
+
+  return wait(result);
 }

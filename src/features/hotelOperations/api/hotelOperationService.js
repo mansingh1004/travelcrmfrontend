@@ -1,6 +1,7 @@
 import API from "@shared/api/http";
 import {
   getMockBookings,
+  getMockHotelRollups,
   getMockOperationById,
   getMockSummary,
 } from "../mocks/hotelOperationMockData";
@@ -44,8 +45,15 @@ async function count(status, config) {
   return Number(result.pagination?.totalElements ?? result.items.length ?? 0);
 }
 
-async function listBookings({ page = 0, size = 25, status, mock = false } = {}, config = {}) {
-  if (mock) return getMockBookings({ page, size, status });
+async function listBookings({
+  page = 0,
+  size = 25,
+  status,
+  mock = false,
+  brandId,
+  hotelPublicId,
+} = {}, config = {}) {
+  if (mock) return getMockBookings({ page, size, status, brandId, hotelPublicId });
   const response = await API.get(BOOKING_BASE, {
     params: clean({ page, size, status }),
     ...config,
@@ -82,8 +90,8 @@ const hotelOperationService = {
    * Unsupported values stay null; they are never computed from the visible page.
    */
   getSummary: async (config = {}) => {
-    const { mock = false, ...requestConfig } = config;
-    if (mock) return getMockSummary();
+    const { mock = false, brandId, hotelPublicId, ...requestConfig } = config;
+    if (mock) return getMockSummary({ brandId, hotelPublicId });
 
     const [
       totalBookings,
@@ -123,6 +131,9 @@ const hotelOperationService = {
       },
     };
   },
+
+  /** Mock-only property hierarchy; live mode deliberately has no guessed aggregate endpoint. */
+  getHotelRollups: ({ mock = false } = {}) => (mock ? getMockHotelRollups() : Promise.resolve([])),
 };
 
 export default hotelOperationService;

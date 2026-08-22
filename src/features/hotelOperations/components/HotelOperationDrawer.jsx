@@ -132,7 +132,7 @@ export default function HotelOperationDrawer({ publicId, mock = false, onClose }
           {loading ? <DrawerSkeleton /> : error ? (
             <ErrorState message={getErrorMessage(error, "Could not load this hotel booking.")} onRetry={() => load()} />
           ) : booking ? (
-            <DrawerContent booking={booking} raw={raw} />
+            <DrawerContent key={booking.publicId} booking={booking} raw={raw} />
           ) : (
             <ErrorState message="This hotel booking could not be found." onRetry={() => load()} />
           )}
@@ -198,15 +198,7 @@ function DrawerContent({ booking, raw }) {
         <Field label="Meal plan" value={booking.mealPlan || "Not recorded"} />
       </DetailSection>
 
-      <DetailSection icon={Route} title="Travel context">
-        <div className="col-span-full grid gap-3 rounded-xl bg-slate-50 p-4 sm:grid-cols-[1fr_auto_1fr_auto_1fr] sm:items-center">
-          <JourneyPoint label="Arrival from" value={booking.arrivalFrom || "Not recorded"} />
-          <span className="hidden text-slate-300 sm:block">→</span>
-          <JourneyPoint label="Current stay" value={`${booking.location} · ${booking.hotelName}`} active />
-          <span className="hidden text-slate-300 sm:block">→</span>
-          <JourneyPoint label="Next destination" value={booking.nextDestination || "Not recorded"} />
-        </div>
-      </DetailSection>
+      <TravelContextPanel booking={booking} raw={raw} />
 
       <DetailSection icon={Hotel} title="Operations data">
         <Field label="Confirmation status" value={<Chip value={booking.confirmation} />} />
@@ -239,6 +231,188 @@ function DrawerContent({ booking, raw }) {
           ))}
         </ol>
       </section>
+    </div>
+  );
+}
+
+function TravelContextPanel({ booking, raw }) {
+  const stops = Array.isArray(raw?.travelStops) ? raw.travelStops : [];
+  const initialStop = stops.find((stop) => stop.type === "CURRENT") || stops[0] || null;
+  const [selectedId, setSelectedId] = useState(initialStop?.locationId || null);
+  const selectedStop = stops.find((stop) => stop.locationId === selectedId) || initialStop;
+
+  // Live MarketplaceBookingTenantDto currently carries only three text values, not linked stays.
+  // Preserve the previous read-only presentation until a real travelStops API field exists.
+  if (stops.length === 0) {
+    return (
+      <DetailSection icon={Route} title="Travel context">
+        <div className="col-span-full grid gap-3 rounded-xl bg-slate-50 p-4 sm:grid-cols-[1fr_auto_1fr_auto_1fr] sm:items-center">
+          <JourneyPoint label="Arrival from" value={booking.arrivalFrom || "Not recorded"} />
+          <span className="hidden text-slate-300 sm:block">→</span>
+          <JourneyPoint label="Current stay" value={`${booking.location} · ${booking.hotelName}`} active />
+          <span className="hidden text-slate-300 sm:block">→</span>
+          <JourneyPoint label="Next destination" value={booking.nextDestination || "Not recorded"} />
+        </div>
+      </DetailSection>
+    );
+  }
+
+  return (
+    <DetailSection icon={Route} title="Travel context">
+      <div className="col-span-full">
+        <p className="mb-2 text-[11px] font-medium text-slate-500">Select a location to inspect its booked hotel and room allocation.</p>
+        <div className="flex gap-2 overflow-x-auto rounded-xl bg-slate-50 p-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {stops.map((stop, index) => {
+            const active = stop.locationId === selectedStop?.locationId;
+            const stayCount = Array.isArray(stop.stays) ? stop.stays.length : 0;
+            return (
+              <div key={stop.locationId} className="flex shrink-0 items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedId(stop.locationId)}
+                  aria-pressed={active}
+                  className={`min-w-40 rounded-xl border px-3 py-2.5 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                    active
+                      ? "border-blue-300 bg-blue-50 shadow-sm"
+                      : "border-slate-200 bg-white hover:border-blue-200 hover:bg-blue-50/40"
+                  }`}
+                >
+                  <span className="block text-[9px] font-extrabold uppercase tracking-[0.1em] text-slate-400">
+                    {stop.type === "ARRIVAL" ? "Arrival from" : stop.type === "NEXT" ? "Next destination" : "Current stay"}
+                  </span>
+                  <span className={`mt-1 block truncate text-xs font-extrabold ${active ? "text-blue-800" : "text-slate-800"}`}>
+                    {stop.locationName}
+                  </span>
+                  <span className="mt-0.5 block truncate text-[10px] text-slate-500">
+                    {stayCount > 0
+                      ? `${stayCount} hotel${stayCount === 1 ? "" : "s"} booked`
+                      : "Transit only · no hotel"}
+                  </span>
+                </button>
+                {index < stops.length - 1 && <span className="text-sm font-bold text-slate-300">→</span>}
+              </div>
+            );
+          })}
+        </div>
+
+        <LocationStayDetails stop={selectedStop} />
+      </div>
+    </DetailSection>
+  );
+}
+
+function LocationStayDetails({ stop }) {
+  const stays = Array.isArray(stop?.stays) ? stop.stays : [];
+
+  if (!stop || stays.length === 0) {
+    return (
+      <div className="mt-3 rounded-xl border border-dashed border-slate-300 bg-white px-4 py-6 text-center">
+        <MapPin className="mx-auto h-5 w-5 text-slate-300" />
+        <p className="mt-2 text-sm font-extrabold text-slate-700">No hotel booked in {stop?.locationName || "this location"}</p>
+        <p className="mt-1 text-xs text-slate-500">This stop is recorded as transit/travel context only.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-3 space-y-3">
+      {stays.map((stay) => <StayCard key={stay.hotelPublicId || stay.hotelName} stay={stay} />)}
+    </div>
+  );
+}
+
+function StayCard({ stay }) {
+  const rooms = Array.isArray(stay.rooms) ? stay.rooms : [];
+  const extraBeds = Number(stay.extraAdultBeds || 0) + Number(stay.extraChildBeds || 0);
+  const confirmation = stay.confirmationStatus === "CONFIRMED"
+    ? { label: "Confirmed", tone: "green" }
+    : { label: "Pending", tone: "amber" };
+  const voucher = stay.voucherStatus === "ISSUED"
+    ? { label: "Voucher issued", tone: "green" }
+    : { label: "Voucher pending", tone: "amber" };
+
+  return (
+    <article className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className="border-b border-slate-100 px-4 py-3.5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-extrabold text-slate-900">{stay.hotelName}</p>
+            <p className="mt-0.5 truncate text-[11px] text-slate-500">{stay.propertyName || stay.hotelName}</p>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            <Chip value={confirmation} />
+            <Chip value={voucher} />
+          </div>
+        </div>
+        <p className="mt-2 flex items-start gap-1.5 text-[11px] text-slate-500">
+          <MapPin className="mt-0.5 h-3 w-3 shrink-0" />
+          <span>{stay.address || "Address not recorded"}{stay.contactPhone ? ` · ${stay.contactPhone}` : ""}</span>
+        </p>
+      </div>
+
+      <div className="grid grid-cols-2 gap-px bg-slate-100 sm:grid-cols-4">
+        <StayMetric label="Stay" value={`${fmtDate(stay.checkIn)} → ${fmtDate(stay.checkOut)}`} />
+        <StayMetric label="Rooms / Nights" value={`${stay.totalRooms ?? "—"} rooms · ${stay.nights ?? "—"} nights`} />
+        <StayMetric label="Pax / Extra beds" value={`${stay.totalPax ?? "—"} pax · ${extraBeds} extra beds`} />
+        <StayMetric label="Meal / Bed" value={`${stay.mealPlan || "Not recorded"} · ${stay.bedType || "Not recorded"}`} />
+      </div>
+
+      <div className="p-4">
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <p className="text-[10px] font-extrabold uppercase tracking-[0.08em] text-slate-400">Room allocation</p>
+          {stay.confirmationNumber && <span className="font-mono text-[10px] font-bold text-slate-500">Ref {stay.confirmationNumber}</span>}
+        </div>
+
+        <div className="space-y-2">
+          <div className="hidden grid-cols-[1.4fr_.6fr_1fr_1fr] gap-2 px-3 text-[9px] font-extrabold uppercase tracking-wide text-slate-400 sm:grid">
+            <span>Room category</span>
+            <span>Quantity</span>
+            <span>Guests</span>
+            <span>Extra beds</span>
+          </div>
+          {rooms.map((room, index) => (
+            <div key={`${room.roomType}-${index}`} className="grid gap-2 rounded-lg border border-slate-200 bg-slate-50/70 p-3 text-xs sm:grid-cols-[1.4fr_.6fr_1fr_1fr] sm:items-center">
+              <div className="min-w-0">
+                <p className="truncate font-extrabold text-slate-800">{room.roomType || "Room category not recorded"}</p>
+                <p className="mt-0.5 truncate text-[10px] text-slate-500">{room.bedType || "Bed type not recorded"}</p>
+              </div>
+              <RoomFact label="Quantity" value={room.quantity ?? "—"} />
+              <RoomFact label="Guests" value={`${room.adults ?? 0}A · ${room.children ?? 0}C`} />
+              <RoomFact
+                label="Extra beds"
+                value={`${room.extraAdultBeds ?? 0} adult · ${room.extraChildBeds ?? 0} child`}
+              />
+            </div>
+          ))}
+        </div>
+
+        {stay.childrenWithoutBed > 0 && (
+          <p className="mt-2 text-[11px] font-semibold text-amber-700">Children without bed: {stay.childrenWithoutBed}</p>
+        )}
+        {stay.specialRequests && (
+          <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-900">
+            <span className="font-extrabold">Special request:</span> {stay.specialRequests}
+          </p>
+        )}
+      </div>
+    </article>
+  );
+}
+
+function StayMetric({ label, value }) {
+  return (
+    <div className="min-w-0 bg-white px-3 py-2.5">
+      <p className="text-[9px] font-extrabold uppercase tracking-wide text-slate-400">{label}</p>
+      <p className="mt-1 truncate text-[11px] font-bold text-slate-700" title={value}>{value}</p>
+    </div>
+  );
+}
+
+function RoomFact({ label, value }) {
+  return (
+    <div>
+      <p className="text-[9px] font-extrabold uppercase tracking-wide text-slate-400 sm:hidden">{label}</p>
+      <p className="font-bold text-slate-700">{value}</p>
     </div>
   );
 }
