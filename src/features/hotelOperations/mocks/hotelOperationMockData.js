@@ -142,14 +142,40 @@ function makeBooking({
   nights,
   status,
   voucherStatus = "NOT_ISSUED",
-  paymentStatus = "UNPAID",
+  // MarketplacePaymentStatus, not invented names. These fixtures used to carry UNPAID /
+  // PARTIALLY_PAID / REFUNDED, which are not in the server enum — and because the model's
+  // paymentState() had been written against these fixtures rather than the API, live PART_PAID and
+  // PENDING rows both fell through to a red "unknown" tone. Demo data drifting from the enum is how
+  // that happened, so it stays on the enum.
+  paymentStatus = "PENDING",
+  rejectionReason,
   arrivalFrom,
   nextDestination,
   specialRequests,
 }) {
-  const confirmed = status === "CONFIRMED" || status === "CANCEL_REQUESTED";
+  const confirmed = status === "CONFIRMED" || status === "CANCEL_REQUESTED" || status === "CANCELLATION_QUOTED";
   const issued = voucherStatus === "ISSUED";
   const yakYetiProperty = String(hotelId).startsWith("hotel-yak-yeti");
+
+  // ── Money ────────────────────────────────────────────────────────────────
+  // A REQUESTED row has NO agreed price: the platform quotes at approval. Leaving it null is the
+  // whole point — a demo that showed ₹0 there would train the reader to read "free".
+  const currency = "INR";
+  const payable = status === "REQUESTED" ? null : rooms * nights * 4500 + (adults + children) * 500;
+  const selling = payable === null ? null : Math.round(payable * 1.18);
+  const paid = payable === null || paymentStatus === "PENDING"
+    ? 0
+    : paymentStatus === "PAID"
+      ? payable
+      : paymentStatus === "PART_PAID"
+        ? Math.round(payable * 0.4)
+        : 0;
+
+  const revising = status === "TENANT_APPROVAL_REQUIRED";
+  const cancelStarted = status === "CANCEL_REQUESTED" || status === "CANCELLATION_QUOTED" || status === "CANCELLED";
+  const quoted = status === "CANCELLATION_QUOTED";
+  const cancelled = status === "CANCELLED";
+  const retained = cancelled && payable !== null ? Math.round(payable * 0.25) : null;
 
   const booking = {
     publicId: id,
@@ -195,6 +221,56 @@ function makeBooking({
         : null,
     arrivalFrom: arrivalFrom || null,
     nextDestination: nextDestination || null,
+
+    // ── Money ──────────────────────────────────────────────────────────────
+    currency,
+    tenantPayable: payable,
+    // Re-priced between submit and approval on some rows, so the "quoted when submitted" hint has
+    // something to show.
+    quotedTenantPayable: payable === null ? null : (revising || nights > 3 ? payable - 1500 : payable),
+    tenantCustomerSellingAmount: selling,
+    amountPaid: paid,
+    /*
+      SERVER-DERIVED in production, and modelled that way here on purpose: after a settled
+      cancellation the debt is the RETAINED charge, not the original payable. A fixture that returned
+      `payable - paid` would make the drawer look correct while hiding the bug it is guarding against.
+    */
+    amountOutstanding: payable === null
+      ? null
+      : cancelled
+        ? Math.max(0, (retained ?? 0) - paid)
+        : Math.max(0, payable - paid),
+
+    // ── An open price revision ─────────────────────────────────────────────
+    // `tenantPayable` above stays the OLD number while this is open — that is the contract.
+    revisedTenantPayable: revising && payable !== null ? payable + 3200 : null,
+    revisionPreviousPayable: revising ? payable : null,
+    revisedCancellationTerms: revising
+      ? "Non-refundable within 72 hours of check-in if the revised rate is accepted."
+      : null,
+    revisionRequestedAt: revising ? timestampOffset(-1, 9) : null,
+    revisionExpiresAt: revising ? timestampOffset(1, 18) : null,
+    revisionCount: revising ? 1 : null,
+    priceRevisionReason: revising
+      ? "Supplier revised the rate for these dates — peak-season surcharge on the room category."
+      : null,
+
+    rejectionReason: rejectionReason || null,
+    cancellationTerms: "Free cancellation up to 7 days before check-in. 25% of the stay retained inside 7 days, 100% inside 48 hours.",
+
+    // ── Cancellation, across its three stages ──────────────────────────────
+    cancelRequestedAt: cancelStarted ? timestampOffset(-2, 12) : null,
+    cancelRequestReason: cancelStarted ? "Customer moved the trip to next month." : null,
+    quotedCancellationCharge: quoted && payable !== null ? Math.round(payable * 0.3) : null,
+    cancellationQuoteNote: quoted
+      ? "The hotel will retain 30% for this date range. Accepting settles the balance against your credit."
+      : null,
+    cancellationQuotedAt: quoted ? timestampOffset(-1, 10) : null,
+    cancellationQuoteExpiresAt: quoted ? timestampOffset(2, 18) : null,
+    cancelledAt: cancelled ? timestampOffset(-1, 16) : null,
+    cancellationCharge: retained,
+    tenantRefundAmount: cancelled && payable !== null ? Math.max(0, paid - (retained ?? 0)) : null,
+    cancellationReason: cancelled ? "Cancelled at the customer's request; supplier retained 25%." : null,
   };
 
   const currentRoomAllocations = roomAllocations || [{
@@ -354,7 +430,7 @@ function buildYakYetiBranchBookings() {
         nights: 2 + (index % 4),
         status,
         voucherStatus: confirmed && index % 2 === 0 ? "ISSUED" : "NOT_ISSUED",
-        paymentStatus: confirmed && index % 3 === 0 ? "PAID" : "PARTIALLY_PAID",
+        paymentStatus: confirmed && index % 3 === 0 ? "PAID" : "PART_PAID",
         arrivalFrom: property.arrivalFrom,
         nextDestination: property.nextDestination,
         specialRequests: index % 3 === 0 ? "Early check-in requested, subject to availability." : null,
@@ -390,7 +466,7 @@ export const HOTEL_OPERATION_MOCK_BOOKINGS = [
     cityName: "Kathmandu", address: ADDRESS.yak, guest: "Aarav Mehta", phone: "+91 98111 22334",
     email: "aarav.mehta@example.com", guestOrigin: "Mumbai, India", adults: 4, children: 1,
     rooms: 2, roomName: "Club Room", mealPlan: "Half Board", checkInOffset: -2, nights: 4,
-    status: "CONFIRMED", paymentStatus: "PARTIALLY_PAID", arrivalFrom: "Delhi", nextDestination: "Nagarkot",
+    status: "CONFIRMED", paymentStatus: "PART_PAID", arrivalFrom: "Delhi", nextDestination: "Nagarkot",
   }),
   makeBooking({
     id: "mock-yak-1027", code: "BK-1027", hotelId: "hotel-yak-yeti", hotelName: "Hotel Yak & Yeti",
@@ -426,7 +502,7 @@ export const HOTEL_OPERATION_MOCK_BOOKINGS = [
     cityName: "Kathmandu", address: ADDRESS.shanker, guest: "Daniel Kim", phone: "+82 10 1234 5678",
     email: "daniel.kim@example.com", guestOrigin: "Seoul, South Korea", adults: 2, rooms: 1,
     roomName: "Deluxe Room", mealPlan: "Breakfast", checkInOffset: 0, nights: 2,
-    status: "CONFIRMED", paymentStatus: "UNPAID", arrivalFrom: "Bangkok", nextDestination: "Chitwan",
+    status: "CONFIRMED", paymentStatus: "PENDING", arrivalFrom: "Bangkok", nextDestination: "Chitwan",
   }),
   makeBooking({
     id: "mock-himalaya-1035", code: "BK-1035", hotelId: "hotel-himalaya", hotelName: "Hotel Himalaya",
@@ -440,14 +516,16 @@ export const HOTEL_OPERATION_MOCK_BOOKINGS = [
     cityName: "Kathmandu", address: ADDRESS.himalaya, guest: "Oliver Brown", phone: "+61 412 345 678",
     email: "oliver.brown@example.com", guestOrigin: "Sydney, Australia", adults: 2, rooms: 1,
     roomName: "Deluxe Room", mealPlan: "Room Only", checkInOffset: 10, nights: 2, status: "CANCELLED",
-    paymentStatus: "REFUNDED", arrivalFrom: "Singapore", nextDestination: "Thimphu",
+    // Paid in full, then cancelled: the retained charge and the refund are what the drawer shows,
+    // and `amountOutstanding` drops to the retained amount rather than staying the original payable.
+    paymentStatus: "PAID", arrivalFrom: "Singapore", nextDestination: "Thimphu",
   }),
   makeBooking({
     id: "mock-barahi-1040", code: "BK-1040", hotelId: "hotel-barahi", hotelName: "Hotel Barahi",
     cityName: "Pokhara", address: ADDRESS.barahi, guest: "Ananya Singh", phone: "+91 96543 21098",
     email: "ananya.singh@example.com", guestOrigin: "Lucknow, India", adults: 4, children: 1,
     rooms: 2, roomName: "Deluxe Lake View", mealPlan: "Half Board", checkInOffset: -1, nights: 3,
-    status: "CONFIRMED", voucherStatus: "ISSUED", paymentStatus: "PARTIALLY_PAID", arrivalFrom: "Kathmandu",
+    status: "CONFIRMED", voucherStatus: "ISSUED", paymentStatus: "PART_PAID", arrivalFrom: "Kathmandu",
     nextDestination: "Jomsom",
   }),
   makeBooking({
@@ -477,7 +555,7 @@ export const HOTEL_OPERATION_MOCK_BOOKINGS = [
     cityName: "Pokhara", address: ADDRESS.landmark, guest: "Vikram Joshi", phone: "+91 94321 09876",
     email: "vikram.joshi@example.com", guestOrigin: "Indore, India", adults: 6, children: 2,
     rooms: 3, roomName: "Family Suite", mealPlan: "Half Board", checkInOffset: 2, nights: 4,
-    status: "CANCEL_REQUESTED", paymentStatus: "PARTIALLY_PAID", arrivalFrom: "Kathmandu",
+    status: "CANCEL_REQUESTED", paymentStatus: "PART_PAID", arrivalFrom: "Kathmandu",
     nextDestination: "Lumbini",
   }),
   makeBooking({
@@ -493,6 +571,24 @@ export const HOTEL_OPERATION_MOCK_BOOKINGS = [
     email: "kabir.malhotra@example.com", guestOrigin: "Bengaluru, India", adults: 4, children: 1,
     infants: 1, rooms: 2, roomName: "Junior Suite", mealPlan: "Full Board", checkInOffset: 7, nights: 5,
     status: "TENANT_APPROVAL_REQUIRED", arrivalFrom: "Kathmandu", nextDestination: "Lumbini",
+  }),
+  // Two states the fixtures never covered, so the drawer panels that read them had nothing to show
+  // in the mode that is ON by default in development.
+  makeBooking({
+    id: "mock-himalaya-1037", code: "BK-1037", hotelId: "hotel-himalaya", hotelName: "Hotel Himalaya",
+    cityName: "Kathmandu", address: ADDRESS.himalaya, guest: "Grace Okafor", phone: "+234 802 123 4567",
+    email: "grace.okafor@example.com", guestOrigin: "Lagos, Nigeria", adults: 2, rooms: 1,
+    roomName: "Deluxe Room", mealPlan: "Breakfast", checkInOffset: 9, nights: 3, status: "REJECTED",
+    rejectionReason: "The hotel has no availability in this room category for these dates.",
+    arrivalFrom: "Doha", nextDestination: "Pokhara",
+  }),
+  makeBooking({
+    id: "mock-temple-1050", code: "BK-1050", hotelId: "hotel-temple-tree", hotelName: "Temple Tree Resort & Spa",
+    cityName: "Pokhara", address: ADDRESS.temple, guest: "Yusuf Ahmed", phone: "+92 300 1234567",
+    email: "yusuf.ahmed@example.com", guestOrigin: "Karachi, Pakistan", adults: 4, children: 2,
+    rooms: 2, roomName: "Junior Suite", mealPlan: "Half Board", checkInOffset: 5, nights: 3,
+    status: "CANCELLATION_QUOTED", voucherStatus: "ISSUED", paymentStatus: "PART_PAID",
+    arrivalFrom: "Kathmandu", nextDestination: "Lumbini",
   }),
   ...buildYakYetiBranchBookings(),
 ];
@@ -528,8 +624,9 @@ function summarize(bookings) {
     inHouseGuests: confirmed
       .filter((booking) => booking.checkIn < today && booking.checkOut > today)
       .reduce((total, booking) => total + booking.adults + booking.children + booking.infants, 0),
+    // Mirrors MarketplacePaymentStatus.isOutstanding() — PENDING and PART_PAID, nothing else.
     paymentPending: bookings.filter(
-      (booking) => booking.paymentStatus === "UNPAID" || booking.paymentStatus === "PARTIALLY_PAID",
+      (booking) => booking.paymentStatus === "PENDING" || booking.paymentStatus === "PART_PAID",
     ).length,
     actionRequired: {
       requested: countStatus("REQUESTED"),

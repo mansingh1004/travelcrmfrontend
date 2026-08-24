@@ -1,4 +1,5 @@
 import API from "@shared/api/http";
+import { hydrateBlobError } from "@shared/lib/download";
 import {
   getMockBookings,
   getMockHotelRollups,
@@ -9,6 +10,16 @@ import {
 const BOOKING_BASE = "/hotel-marketplace/bookings";
 const HOTEL_BASE = "/hotel-marketplace/hotels";
 const CREDIT_BASE = "/me/marketplace-credit";
+
+/**
+ * The un-gated history prefix, and the reason it is a separate constant.
+ *
+ * `ModuleAccessFilter` hard-gates `/api/hotel-marketplace/**` on the HOTEL_MARKETPLACE add-on;
+ * `/api/me/**` is in its always-allowed set. A tenant whose subscription lapses still has a guest
+ * checking in next week, so the voucher for that stay has to stay downloadable. Moving this call
+ * onto BOOKING_BASE would take the document away at the worst possible moment.
+ */
+const HISTORY_BASE = "/me/hotel-bookings";
 
 const body = (response) => response?.data?.data ?? response?.data ?? null;
 
@@ -130,6 +141,23 @@ const hotelOperationService = {
         cancelRequested,
       },
     };
+  },
+
+  /**
+   * GET /me/hotel-bookings/{publicId}/voucher.pdf — the issued voucher as a Blob.
+   *
+   * Pair with `downloadBlob` from `@shared/lib/download`. A failure on a blob request arrives as a
+   * Blob too, so the JSON ApiError is hydrated back into the error here — otherwise the 404 the
+   * server answers until the platform issues the voucher reads at the call site as a nameless
+   * failure. 404 is the honest answer for an un-issued document, NOT a 403.
+   */
+  downloadVoucher: async (publicId) => {
+    try {
+      const res = await API.get(`${HISTORY_BASE}/${publicId}/voucher.pdf`, { responseType: "blob" });
+      return res?.data ?? null;
+    } catch (error) {
+      throw await hydrateBlobError(error);
+    }
   },
 
   /** Mock-only property hierarchy; live mode deliberately has no guessed aggregate endpoint. */
