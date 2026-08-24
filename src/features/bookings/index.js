@@ -43,7 +43,7 @@ export { default as CreateBooking } from "./pages/CreateBookingClean";
 // way. Exported here rather than deep-imported: eslint no-restricted-imports blocks @features/*/*,
 // and a second copy of this editor would drift from the booking one the first time either changed.
 // Already exported at line 17; a second active export here causes an ESM duplicate-export error.
-// export { VehicleRequirementRows, RoomRequirementRows } from "./components/RequirementRows";
+export { VehicleRequirementRows, RoomRequirementRows } from "./components/RequirementRows";
 export { emptyVehicleRow, emptyRoomRow } from "./lib/bookingTripModel";
 
 
