@@ -161,7 +161,7 @@ export default function Announcements() {
           </div>
           <div className="flex justify-end">
             <button onClick={() => setConfirming(true)} disabled={!canSend}
-              className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-50">
+              className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-50">
               <Send size={15} /> Send announcement
             </button>
           </div>
@@ -184,11 +184,11 @@ export default function Announcements() {
       {/* Confirm modal */}
       {confirming && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-950/50" onClick={sending ? undefined : () => setConfirming(false)} />
+          <div className="absolute inset-0 bg-scrim" onClick={sending ? undefined : () => setConfirming(false)} />
           <div className="relative w-full max-w-sm rounded-xl border border-border bg-surface p-5 shadow-xl">
             <div className="flex items-start justify-between">
               <h3 className="text-sm font-bold text-heading">Send announcement?</h3>
-              <button onClick={() => setConfirming(false)} disabled={sending} className="text-muted hover:text-body"><X size={18} /></button>
+              <button onClick={() => setConfirming(false)} disabled={sending} className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus text-muted hover:text-body"><X size={18} /></button>
             </div>
             <p className="mt-2 text-sm text-body">
               <b>{labelOf(AUDIENCE, form.audience)}</b> · <b>{labelOf(RECIPIENTS, form.recipientScope)}</b>.
@@ -196,11 +196,11 @@ export default function Announcements() {
             </p>
             <div className="mt-5 flex justify-end gap-3">
               <button onClick={() => setConfirming(false)} disabled={sending}
-                className="rounded-lg border border-border-strong bg-surface px-4 py-2 text-sm font-semibold text-body hover:bg-surface-hover">
+                className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded-lg border border-border-strong bg-surface px-4 py-2 text-sm font-semibold text-body hover:bg-surface-hover">
                 Cancel
               </button>
               <button onClick={requestSend} disabled={sending}
-                className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-60">
+                className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-60">
                 {sending ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />} Send
               </button>
             </div>
@@ -209,8 +209,8 @@ export default function Announcements() {
       )}
 
       {toast && (
-        <div className={`fixed bottom-6 right-6 z-[60] flex items-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold text-white shadow-lg ${
-          toast.type === "success" ? "bg-emerald-600" : "bg-red-600"
+        <div className={`fixed bottom-6 right-6 z-[60] flex items-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold text-surface shadow-lg ${
+          toast.type === "success" ? "bg-hue-emerald" : "bg-hue-rose"
         }`}>
           {toast.type === "success" ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
           {toast.msg}

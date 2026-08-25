@@ -17,6 +17,9 @@ import { Loader2, Mail, Paperclip, Send, X } from "lucide-react";
 
 import { getErrorMessage, isAlreadyReported } from "@shared/api/apiError";
 import { toast } from "@shared/ui/toast";
+// Through the barrel, never into the feature internals — the same thread component the WhatsApp
+// composer and the standalone inbox render, so an email bubble looks identical everywhere.
+import { ChatThread, whatsappService } from "@features/whatsapp";
 import operationsService from "../api/operationsService";
 
 const labelCls = "text-[10px] font-extrabold uppercase tracking-wide text-slate-400";
@@ -24,7 +27,7 @@ const fieldCls =
   "w-full px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-[12px] text-slate-700 " +
   "font-medium placeholder-slate-400 focus:border-blue-400 outline-none";
 
-export default function VendorEmailModal({ bookingPublicId, line, onSent, onClose }) {
+export default function VendorEmailModal({ bookingPublicId, line, onSent, onClose, embedded = false }) {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [draft, setDraft] = useState(null);
@@ -36,6 +39,10 @@ export default function VendorEmailModal({ bookingPublicId, line, onSent, onClos
   const [body, setBody] = useState("");
   const [attachVoucher, setAttachVoucher] = useState(false);
   const [releaseDate, setReleaseDate] = useState(line?.releaseDate || "");
+
+  // The exchange so far. Loaded separately from the draft and allowed to fail on its own.
+  const [history, setHistory] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
 
   const subjectRef = useRef(null);
 
@@ -52,10 +59,25 @@ export default function VendorEmailModal({ bookingPublicId, line, onSent, onClos
         setTo(d?.to || "");
         setSubject(d?.subject || "");
         setBody(d?.body || "");
+
+        /* The exchange so far — its own request and its own failure, exactly as the WhatsApp
+           composer does it. A thread that will not load must never stop the operator sending the
+           message they opened this to send. This composer had no history at all until now, which
+           is why it read as a form while the WhatsApp one read as a conversation. */
+        if (d?.conversationPublicId) {
+          try {
+            const { items } = await whatsappService.messages(d.conversationPublicId, { size: 40 });
+            if (!cancelled) setHistory(items);
+          } catch {
+            if (!cancelled) setHistory([]);
+          }
+        }
+        if (!cancelled) setHistoryLoading(false);
       } catch (err) {
         if (cancelled) return;
         if (!isAlreadyReported(err)) toast.error(getErrorMessage(err, "Could not build the draft"));
         setDraft({ recipientResolved: false });
+        setHistoryLoading(false);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -66,11 +88,13 @@ export default function VendorEmailModal({ bookingPublicId, line, onSent, onClos
   // Escape closes. This modal is rendered from inside the board's expanded row, which
   // has its own Escape handler on window — but the row stands down while an editor is
   // open, so there is no contest here.
+  // Not bound when embedded — the drawer owns Escape there. See VendorWhatsAppModal.
   useEffect(() => {
+    if (embedded) return undefined;
     const onKey = (e) => { if (e.key === "Escape" && !sending) onClose(); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, sending]);
+  }, [onClose, sending, embedded]);
 
   const send = async () => {
     if (sending) return;
@@ -102,37 +126,14 @@ export default function VendorEmailModal({ bookingPublicId, line, onSent, onClos
 
   const noRecipient = !loading && draft && draft.recipientResolved === false && !to.trim();
 
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
-      onMouseDown={(e) => { if (e.target === e.currentTarget && !sending) onClose(); }}
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label="Email the supplier"
-        className="w-full max-w-xl max-h-[88vh] flex flex-col rounded-xl border border-slate-200 bg-white shadow-xl"
-        style={{ fontFamily: "'Plus Jakarta Sans',system-ui,sans-serif" }}
-      >
-        {/* Header — says which line this is about, because the board has many */}
-        <div className="flex items-start gap-2 px-4 py-3 border-b border-slate-100">
-          <Mail className="w-4 h-4 text-blue-600 mt-0.5 shrink-0" />
-          <div className="min-w-0 flex-1">
-            <p className="text-[13px] font-extrabold text-slate-700 truncate">
-              {draft?.vendorName || line.vendorName || "Supplier"}
-            </p>
-            <p className="text-[11px] text-slate-400 truncate">{line.title}</p>
-          </div>
-          <button
-            onClick={onClose}
-            disabled={sending}
-            aria-label="Close"
-            className="shrink-0 p-1 rounded text-slate-400 hover:text-slate-600 hover:bg-slate-50 disabled:opacity-40"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
+  /*
+   * The composer with no chrome of its own — see VendorWhatsAppModal for the same split and why.
+   * Everything that makes a supplier email more than a mail form lives in here: the server-built
+   * draft, the voucher attachment, the release date, and the PENDING → REQUESTED move that a
+   * generic composer cannot produce.
+   */
+  const composer = (
+    <>
         {loading ? (
           <div className="px-4 py-10 flex items-center justify-center gap-2 text-[12px] text-slate-400">
             <Loader2 className="w-4 h-4 animate-spin" /> Building the draft…
@@ -140,6 +141,15 @@ export default function VendorEmailModal({ bookingPublicId, line, onSent, onClos
         ) : (
           <>
             <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+              {/* What has already been said, above the box that adds to it. Absent entirely on a
+                  first message rather than showing an empty frame — a thread that does not exist
+                  yet should not look like one that does and is empty. */}
+              {(historyLoading || history.length > 0) && (
+                <div className="-mx-1 px-1 py-2 rounded-lg bg-slate-50 ring-1 ring-slate-100 max-h-56 overflow-y-auto">
+                  <ChatThread messages={history} loading={historyLoading} />
+                </div>
+              )}
+
               {noRecipient && (
                 <p className="text-[11px] font-semibold text-amber-700 bg-amber-50 ring-1 ring-amber-200 rounded-lg px-2.5 py-2">
                   This line has no supplier email on file. Assign a vendor with an email address,
@@ -258,6 +268,44 @@ export default function VendorEmailModal({ bookingPublicId, line, onSent, onClos
             </div>
           </>
         )}
+    </>
+  );
+
+  if (embedded) {
+    return <div className="flex-1 flex flex-col min-h-0">{composer}</div>;
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+      onMouseDown={(e) => { if (e.target === e.currentTarget && !sending) onClose(); }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Email the supplier"
+        className="w-full max-w-xl max-h-[88vh] flex flex-col rounded-xl border border-slate-200 bg-white shadow-xl"
+        style={{ fontFamily: "'Plus Jakarta Sans',system-ui,sans-serif" }}
+      >
+        {/* Header — says which line this is about, because the board has many */}
+        <div className="flex items-start gap-2 px-4 py-3 border-b border-slate-100">
+          <Mail className="w-4 h-4 text-blue-600 mt-0.5 shrink-0" />
+          <div className="min-w-0 flex-1">
+            <p className="text-[13px] font-extrabold text-slate-700 truncate">
+              {draft?.vendorName || line.vendorName || "Supplier"}
+            </p>
+            <p className="text-[11px] text-slate-400 truncate">{line.title}</p>
+          </div>
+          <button
+            onClick={onClose}
+            disabled={sending}
+            aria-label="Close"
+            className="shrink-0 p-1 rounded text-slate-400 hover:text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        {composer}
       </div>
     </div>
   );

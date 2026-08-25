@@ -16,6 +16,7 @@ import {
   BedDouble,
   Building2,
   CalendarRange,
+  Car,
   ClipboardCheck,
   Coins,
   CreditCard,
@@ -195,6 +196,80 @@ export const CONSOLE_NAV_SECTIONS = [
         // No badge: the earning ledger is a report, not a queue.
         keywords: "commission ledger revenue",
       },
+        ],
+      },
+      // ─────────────────────────────────────────────────────────────────────
+      // The second supply line, and a SIBLING of the hotel group rather than a
+      // member of it. The three transport screens used to sit inside the group
+      // labelled "Hotel Marketplace", which made a coach operator's catalog read
+      // as a kind of hotel — an operator hunting for a vehicle had to already
+      // know it was filed under hotels to find it, and the group's own label
+      // said otherwise.
+      //
+      // They are two businesses that happen to share a booking model: different
+      // suppliers, different rate vocabulary (service type and rate model, not
+      // meal plan and occupancy), different tables, different commercial rules.
+      // The only thing they share is the section header above them, which is
+      // exactly the amount of shared-ness the truth supports.
+      // ─────────────────────────────────────────────────────────────────────
+      {
+        id: "console.transportMarketplace",
+        label: "Transport Marketplace",
+        Icon: Car,
+        keywords: "transport vehicles cabs fleet marketplace supply orders partners pricing commissions",
+        children: [
+          {
+            id: "console.transportCatalog",
+            label: "Transport Catalog",
+            path: "/console/transport-catalog",
+            Icon: Car,
+            // The supply side. Listed above the request queue because it is the thing that has to
+            // exist first — an empty catalog produces an empty queue and no obvious reason why.
+            keywords: "vehicles cabs fleet catalog publish supply rates",
+          },
+          {
+            id: "console.transportPartners",
+            label: "Transport Partners",
+            path: "/console/transport-partners",
+            Icon: Handshake,
+            // Directly under the catalog because it is where the catalog comes FROM: an invite
+            // becomes a registration becomes published supply. Filed after it rather than before
+            // for the same reason the hotel group leads with its catalog — the row an operator
+            // opens daily sits above the one they touch when onboarding somebody new.
+            keywords: "invite onboarding registration operator supplier vehicle owner fleet",
+          },
+          {
+            id: "console.transportRequests",
+            primary: 4,
+            label: "Transport Requests",
+            path: "/console/transport-requests",
+            Icon: ClipboardCheck,
+            // Deliberately NOT folded into the hotel queue. The two are answered with different
+            // knowledge — a room rate versus a duty roster — often by different people, and merging
+            // them would hide a car nobody has assigned behind a pile of hotel enquiries.
+            badge: "transportRequests",
+            keywords: "approval queue transport vehicle cab duty slip assignment driver",
+          },
+          {
+            id: "console.transportPricing",
+            label: "Pricing Rules",
+            path: "/console/transport-pricing",
+            Icon: Percent,
+            // ⚠ The platform's own margin structure, over vehicles this time. No tenant counterpart
+            // exists or may exist — a tenant who could read a rule could compute the platform's cut
+            // on every journey it prices. Sits immediately before the earnings ledger because the
+            // rule is what PRODUCES the row in it, which is the same order the hotel group uses.
+            keywords: "markup commission margin commercial rule rate service type vehicle",
+          },
+          {
+            id: "console.transportEarnings",
+            label: "Transport Earnings",
+            path: "/console/transport-earnings",
+            Icon: Coins,
+            // The ledger, not a report: it is where a settlement is actually recorded, so it sits
+            // with the other transport screens rather than under billing.
+            keywords: "commission earnings margin ledger settle adjust payout",
+          },
         ],
       },
     ],

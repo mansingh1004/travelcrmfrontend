@@ -4,6 +4,7 @@
 import { useRef } from "react";
 import { MessageCircle, Mail, Eye } from "lucide-react";
 import { Field, inputCls } from "./marketingUi";
+import { safeHtml } from "@shared/lib/safeHtml";
 
 /** Replace {{token}} occurrences with example values for the preview. */
 function renderPreview(body, mergeTags) {
@@ -99,9 +100,22 @@ export default function MessageComposer({
             <span className="text-[11px] font-extrabold uppercase tracking-wide">Preview (sample data)</span>
           </div>
           {isEmail && subject && <p className="text-sm font-extrabold text-slate-700 mb-1">{renderPreview(subject, mergeTags)}</p>}
-          <div className="text-sm text-slate-600 whitespace-pre-wrap leading-relaxed" dangerouslySetInnerHTML={isEmail ? { __html: renderPreview(body, mergeTags) } : undefined}>
-            {isEmail ? undefined : renderPreview(body, mergeTags)}
-          </div>
+          {/* Sanitized. This body is authored by one staff user, persisted, and re-rendered for
+              another — a colleague opening the campaign to approve it — so an unsanitized preview
+              runs their payload in the reviewer's session, where the token lives. Split into two
+              elements rather than one with a conditional `dangerouslySetInnerHTML`: React forbids
+              passing both that prop and children, and the old form only escaped it because one of
+              the two was always undefined. */}
+          {isEmail ? (
+            <div
+              className="text-sm text-slate-600 whitespace-pre-wrap leading-relaxed"
+              dangerouslySetInnerHTML={safeHtml(renderPreview(body, mergeTags))}
+            />
+          ) : (
+            <div className="text-sm text-slate-600 whitespace-pre-wrap leading-relaxed">
+              {renderPreview(body, mergeTags)}
+            </div>
+          )}
         </div>
       )}
     </div>

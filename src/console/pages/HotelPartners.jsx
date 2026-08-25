@@ -5,6 +5,7 @@ import {
 import { useNavigate } from "react-router-dom";
 import { toast } from "@shared/ui/toast";
 import { getErrorMessage } from "@shared/api/apiError";
+import { COUNTRY_OPTIONS, countryNameFromCode } from "@shared/lib/countries";
 import { hotelPartnerService, INVITE_STATUS, REG_STATUS } from "../api/hotelPartnerService";
 
 /**
@@ -63,6 +64,18 @@ export default function HotelPartners() {
 
   useEffect(() => { load(); }, [load]);
 
+  const copyPublicRegistrationLink = async () => {
+    const link = `${window.location.origin}/hotel-partner/register`;
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("Clipboard unavailable");
+      await navigator.clipboard.writeText(link);
+      toast.success("Public hotel registration link copied.");
+    } catch {
+      // Clipboard access needs HTTPS (or localhost). The prompt keeps the link usable on a LAN.
+      window.prompt("Copy the public hotel registration link:", link);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <header className="flex flex-wrap items-center gap-3">
@@ -72,12 +85,16 @@ export default function HotelPartners() {
             Invite a hotel to register itself, then review and approve what they send.
           </p>
         </div>
+        <button type="button" onClick={copyPublicRegistrationLink}
+          className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 py-2 text-sm font-bold text-white hover:bg-blue-700">
+          <Copy size={15} /> Copy Public Registration Link
+        </button>
         <button onClick={load}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-semibold text-body hover:bg-surface-hover">
+          className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-semibold text-body hover:bg-surface-hover">
           <RefreshCw size={14} /> Refresh
         </button>
         <button onClick={() => setInviting(true)}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3.5 py-2 text-sm font-bold text-accent-text hover:bg-accent-hover">
+          className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-1.5 rounded-lg bg-accent px-3.5 py-2 text-sm font-bold text-accent-text hover:bg-accent-hover">
           <Plus size={15} /> Invite a hotel
         </button>
       </header>
@@ -87,7 +104,7 @@ export default function HotelPartners() {
         <div className="flex flex-wrap gap-1 border-b border-border px-3 pt-3">
           {TABS.map((t) => (
             <button key={t.key} onClick={() => setTab(t.key)}
-              className={`rounded-t-lg px-3 py-2 text-sm font-semibold transition ${
+              className={`focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded-t-lg px-3 py-2 text-sm font-semibold transition ${
                 tab === t.key ? "bg-accent-soft text-accent-soft-text" : "text-muted hover:text-heading"}`}>
               {t.label}
             </button>
@@ -105,7 +122,7 @@ export default function HotelPartners() {
                 {/* A route, not a drawer — the review needs the whole page, and the URL makes it
                     shareable and openable in a second tab for comparing duplicates. */}
                 <button onClick={() => navigate(`/console/hotel-partners/${r.publicId}`)}
-                  className="flex w-full items-center gap-3 px-5 py-3.5 text-left hover:bg-surface-hover">
+                  className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus flex w-full items-center gap-3 px-5 py-3.5 text-left hover:bg-surface-hover">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span className="truncate font-bold text-heading">{r.name || "Untitled hotel"}</span>
@@ -113,7 +130,7 @@ export default function HotelPartners() {
                     </div>
                     <div className="mt-0.5 flex items-center gap-3 text-xs text-muted">
                       <span className="inline-flex items-center gap-1">
-                        <MapPin size={11} /> {[r.cityName, r.countryCode].filter(Boolean).join(", ") || "—"}
+                        <MapPin size={11} /> {[r.cityName, countryNameFromCode(r.countryCode)].filter(Boolean).join(", ") || "—"}
                       </span>
                       {r.stars ? <span className="inline-flex items-center gap-1"><Star size={11} />{r.stars}</span> : null}
                       <span>Sent {fmtDate(r.submittedAt)}</span>
@@ -143,7 +160,7 @@ export default function HotelPartners() {
                 <button
                   onClick={() => setTimelineFor(inv)}
                   title="Show everything that has happened with this partner"
-                  className="min-w-0 flex-1 rounded-lg px-1 py-0.5 text-left hover:bg-surface-hover"
+                  className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus min-w-0 flex-1 rounded-lg px-1 py-0.5 text-left hover:bg-surface-hover"
                 >
                   <div className="flex items-center gap-2">
                     <span className="truncate font-semibold text-heading">{inv.contactName}</span>
@@ -196,11 +213,11 @@ function InviteActions({ invite, onDone }) {
   return (
     <div className="flex items-center gap-1.5">
       <button disabled={!!busy} onClick={() => run("resend", () => hotelPartnerService.resendInvite(invite.publicId))}
-        className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-xs font-semibold text-body hover:bg-surface-hover disabled:opacity-50">
+        className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-xs font-semibold text-body hover:bg-surface-hover disabled:opacity-50">
         {busy === "resend" ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />} Resend
       </button>
       <button disabled={!!busy} onClick={() => run("revoke", () => hotelPartnerService.revokeInvite(invite.publicId))}
-        className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-xs font-semibold text-hue-rose hover:bg-hue-rose-soft disabled:opacity-50">
+        className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-xs font-semibold text-hue-rose hover:bg-hue-rose-soft disabled:opacity-50">
         <Trash2 size={12} /> Revoke
       </button>
     </div>
@@ -235,7 +252,7 @@ function InviteDialog({ onClose, onDone }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-4" onClick={onClose}>
       <div className="w-full max-w-lg rounded-2xl border border-border bg-surface p-5 shadow-[var(--sa-card-shadow)]"
         onClick={(e) => e.stopPropagation()}>
         <div className="mb-4 flex items-start justify-between">
@@ -245,7 +262,7 @@ function InviteDialog({ onClose, onDone }) {
               They get a link to fill in their own details, rooms and rates. No login needed.
             </p>
           </div>
-          <button onClick={onClose} className="rounded-lg p-1 text-muted hover:bg-surface-hover hover:text-heading">
+          <button onClick={onClose} className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded-lg p-1 text-muted hover:bg-surface-hover hover:text-heading">
             <X size={16} />
           </button>
         </div>
@@ -264,7 +281,7 @@ function InviteDialog({ onClose, onDone }) {
             <div className="flex gap-2">
               <input readOnly value={link} className={`${field} font-mono text-xs`} />
               <button onClick={() => { navigator.clipboard?.writeText(link); toast.success("Copied."); }}
-                className="inline-flex items-center gap-1 rounded-lg bg-accent px-3 py-2 text-sm font-bold text-accent-text hover:bg-accent-hover">
+                className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-1 rounded-lg bg-accent px-3 py-2 text-sm font-bold text-accent-text hover:bg-accent-hover">
                 <Copy size={14} /> Copy
               </button>
             </div>
@@ -273,7 +290,7 @@ function InviteDialog({ onClose, onDone }) {
               issue a fresh one.
             </p>
             <button onClick={onClose}
-              className="w-full rounded-lg border border-border px-3 py-2 text-sm font-semibold text-body hover:bg-surface-hover">
+              className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus w-full rounded-lg border border-border px-3 py-2 text-sm font-semibold text-body hover:bg-surface-hover">
               Done
             </button>
           </div>
@@ -306,14 +323,19 @@ function InviteDialog({ onClose, onDone }) {
                   onChange={(e) => setForm({ ...form, hintCityName: e.target.value })} />
               </label>
               <label className="block">
-                <span className="mb-1 block text-xs font-semibold text-body">Country code</span>
-                <input className={field} maxLength={3} value={form.hintCountryCode}
-                  onChange={(e) => setForm({ ...form, hintCountryCode: e.target.value.toUpperCase() })} />
+                <span className="mb-1 block text-xs font-semibold text-body">Country</span>
+                <select className={field} value={form.hintCountryCode}
+                  onChange={(e) => setForm({ ...form, hintCountryCode: e.target.value })}>
+                  <option value="">Select country</option>
+                  {COUNTRY_OPTIONS.map(({ code, name }) => (
+                    <option key={code} value={code}>{name}</option>
+                  ))}
+                </select>
               </label>
             </div>
             <button disabled={busy || !form.contactName.trim() || !form.contactEmail.trim()}
               onClick={submit}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-3 py-2.5 text-sm font-bold text-accent-text hover:bg-accent-hover disabled:opacity-50">
+              className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-3 py-2.5 text-sm font-bold text-accent-text hover:bg-accent-hover disabled:opacity-50">
               {busy ? <Loader2 size={15} className="animate-spin" /> : <Mail size={15} />}
               Send invite
             </button>
@@ -363,7 +385,7 @@ function TimelinePanel({ invite, onClose }) {
   ].sort((a, b) => new Date(a.when) - new Date(b.when));
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/40" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex justify-end bg-scrim" onClick={onClose}>
       <aside
         className="h-full w-full max-w-xl overflow-y-auto bg-surface shadow-xl"
         onClick={(e) => e.stopPropagation()}
@@ -378,7 +400,7 @@ function TimelinePanel({ invite, onClose }) {
               {invite.hintHotelName ? ` · ${invite.hintHotelName}` : ""}
             </p>
           </div>
-          <button onClick={onClose} className="rounded-lg p-1 text-muted hover:bg-surface-hover hover:text-heading">
+          <button onClick={onClose} className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded-lg p-1 text-muted hover:bg-surface-hover hover:text-heading">
             <X size={17} />
           </button>
         </header>

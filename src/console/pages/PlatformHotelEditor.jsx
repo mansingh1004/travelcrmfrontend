@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Loader2, Plus, Save, Trash2, Upload } from "lucide-react";
+import { ArrowLeft, Loader2, Plus, Save, Trash2, Upload, X } from "lucide-react";
 import {
   PageShell, HotelStyles, Input, Textarea, Label, Button, Select,
   GlassCard, useToast, errMsg,
 } from "../components/hotelUi";
 import { platformHotelService } from "../api/platformHotelService";
 import SuperAdminMfaActionModal from "../components/SuperAdminMfaActionModal";
+import GooglePlacePicker from "../components/GooglePlacePicker";
 
 /**
  * Enter a catalog hotel by hand, from the console, without touching a mouse.
@@ -32,6 +33,20 @@ import SuperAdminMfaActionModal from "../components/SuperAdminMfaActionModal";
  * per keystroke would fan one edit into several calls and put half-typed data straight into a live
  * catalog. So the page batches: one Save works out what actually changed and issues only those
  * calls.
+ *
+ * <h3>Send the WHOLE room, always</h3>
+ *
+ * This page used to hold and send four room fields — name, bed type, max occupancy, active — while
+ * the room actually carried nine. The server replaced rather than patched, so a partial payload read
+ * as "clear everything you were not told about": fixing a typo in a room name wiped that room's
+ * photos, adult and child capacity, size and description, and the resulting catalog-version bump
+ * replayed the now-empty gallery into every tenant's Hotel Master. There was no undo — the images
+ * table has no soft delete.
+ *
+ * The server now patches (absent means "leave it alone", an explicit `[]` still clears), and this
+ * page holds and sends every field so the two halves cannot disagree about what an omission meant.
+ * Add a field to the room DTO and you must add it to `toRoomState` AND `roomPayload` in the same
+ * commit; a field present in only one of them is the bug above, waiting.
  */
 export default function PlatformHotelEditor() {
   const { publicId } = useParams();
@@ -210,6 +225,21 @@ export default function PlatformHotelEditor() {
       // simply vanish, because the server never heard of it.
       : r.publicId ? [{ ...r, _deleted: true }] : [])));
 
+  /* Functional updates, not a patch built from a captured `room`: an upload resolves after an await,
+     and a stale `images` array closed over at render time would silently drop whatever the operator
+     added in the meantime. Duplicates are refused here rather than deduped on save, so the operator
+     sees immediately that nothing happened. */
+  const addRoomImage = (key, url) =>
+    setRooms((rs) => rs.map((r) => {
+      if (r._key !== key) return r;
+      const clean = (url || "").trim();
+      if (!clean || r.images.includes(clean)) return r;
+      return { ...r, images: [...r.images, clean], _dirty: true };
+    }));
+  const dropRoomImage = (key, index) =>
+    setRooms((rs) => rs.map((r) => (r._key !== key ? r
+      : { ...r, images: r.images.filter((_, i) => i !== index), _dirty: true })));
+
   const addRate = (key) =>
     setRooms((rs) => rs.map((r) => (r._key === key ? { ...r, rates: [...r.rates, blankRate()] } : r)));
   const patchRate = (key, rateKey, patch) =>
@@ -245,7 +275,7 @@ export default function PlatformHotelEditor() {
       <div ref={rootRef} onKeyDown={onKeyDown} className="pb-28">
         <button
           onClick={() => navigate(isNew ? "/console/hotel-catalog" : `/console/hotel-catalog/${publicId}`)}
-          className="mb-3 inline-flex items-center gap-1.5 text-sm font-semibold text-muted transition hover:text-heading"
+          className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus mb-3 inline-flex items-center gap-1.5 text-sm font-semibold text-muted transition hover:text-heading"
         >
           <ArrowLeft size={15} /> {isNew ? "Catalog" : "Back to hotel"}
         </button>
@@ -330,6 +360,15 @@ export default function PlatformHotelEditor() {
               <F id="h-lng" label="Longitude" type="number" step="any" value={form.longitude} onChange={(v) => set({ longitude: v })} />
             </div>
             <F id="h-map" label="Map URL" value={form.mapUrl} onChange={(v) => set({ mapUrl: v })} />
+            {/* Sits under the address on purpose: the picker's default query is built from the name
+                and address above it, so the fields it reads are the ones just typed. On an EXISTING
+                hotel the 360 screen's GoogleListingPanel does the same job against its own endpoint;
+                this is the half that works before there is a hotel to bind to. */}
+            <GooglePlacePicker
+              value={form.googlePlaceId}
+              onChange={(placeId) => set({ googlePlaceId: placeId })}
+              form={form}
+            />
           </Section>
 
           <Section title="Contact & timings">
@@ -424,7 +463,7 @@ export default function PlatformHotelEditor() {
               >
                 <div className="grid gap-3 sm:grid-cols-[2fr_1fr_1fr_auto]">
                   <div>
-                    <Label>Room name <span className="text-rose-500">*</span></Label>
+                    <Label>Room name <span className="text-hue-rose">*</span></Label>
                     <Input value={room.name} onChange={(e) => patchRoom(room._key, { name: e.target.value })} placeholder="Deluxe Sea View" />
                   </div>
                   <div>
@@ -440,6 +479,43 @@ export default function PlatformHotelEditor() {
                   </div>
                 </div>
 
+                {/* Adults / children / size were on the room all along and had no input here, so the
+                    console could neither show nor preserve them. Occupancy is validated at booking
+                    time against maxAdults and maxChildren, not against maxOccupancy alone — a room
+                    that lost its child capacity silently stops accepting families. */}
+                <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_1fr_2fr]">
+                  <div>
+                    <Label>Max adults</Label>
+                    <Input type="number" min="0" value={room.maxAdults}
+                      onChange={(e) => patchRoom(room._key, { maxAdults: e.target.value })}
+                      onWheel={(e) => e.currentTarget.blur()} />
+                  </div>
+                  <div>
+                    <Label>Max children</Label>
+                    <Input type="number" min="0" value={room.maxChildren}
+                      onChange={(e) => patchRoom(room._key, { maxChildren: e.target.value })}
+                      onWheel={(e) => e.currentTarget.blur()} />
+                  </div>
+                  <div>
+                    <Label>Size</Label>
+                    <Input value={room.size} placeholder="e.g. 32 sqm"
+                      onChange={(e) => patchRoom(room._key, { size: e.target.value })} />
+                  </div>
+                </div>
+
+                <div className="mt-3">
+                  <Label>Description</Label>
+                  <Textarea rows={2} value={room.description}
+                    onChange={(e) => patchRoom(room._key, { description: e.target.value })} />
+                </div>
+
+                <RoomPhotos
+                  images={room.images}
+                  onAdd={(url) => addRoomImage(room._key, url)}
+                  onRemove={(index) => dropRoomImage(room._key, index)}
+                  onError={(message) => showToast(message, "error")}
+                />
+
                 <div className="mt-3 flex items-center justify-between">
                   <span className="text-[11px] font-bold uppercase tracking-wide text-muted">
                     Rates ({room.rates.filter((t) => !t._deleted).length})
@@ -450,7 +526,7 @@ export default function PlatformHotelEditor() {
                 </div>
 
                 {room.rates.filter((t) => !t._deleted).length === 0 ? (
-                  <p className="mt-2 text-xs font-semibold text-amber-600">
+                  <p className="mt-2 text-xs font-semibold text-hue-amber">
                     No rate on this room — it cannot be sold.
                   </p>
                 ) : (
@@ -544,13 +620,111 @@ const Empty = ({ children }) => (
   <GlassCard className="p-4 text-sm text-muted">{children}</GlassCard>
 );
 
+/**
+ * A room's photo strip: thumbnails, upload, paste-a-URL, remove.
+ *
+ * Until this existed the console had no way to see a room's photos at all — which is precisely why
+ * nobody noticed that saving a room was deleting them. A partner-promoted hotel arrives with a full
+ * room gallery that was invisible and unmanageable from here.
+ *
+ * Upload goes through the same console endpoint as the hotel's primary image, so the returned URL is
+ * a public CDN URL and nothing is held in component state that a failed save could strand.
+ *
+ * <b>No reordering, and no "cover" here.</b> The backing store is a Hibernate bag with no order
+ * column, so the sequence it returns is not a promise — offering drag-to-reorder would be a control
+ * that appears to work and silently does not survive a reload. The tenant page treats the first entry
+ * as the room's cover on a best-effort basis and nothing else depends on the order.
+ */
+function RoomPhotos({ images = [], onAdd, onRemove, onError }) {
+  const [busy, setBusy] = useState(false);
+  const [pct, setPct] = useState(0);
+  const [pasted, setPasted] = useState("");
+
+  const upload = async (file) => {
+    setBusy(true);
+    setPct(0);
+    try {
+      onAdd(await platformHotelService.uploadImage(file, setPct));
+    } catch (e) {
+      onError(errMsg(e, "Could not upload that photo."));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mt-3">
+      <Label>Photos <span className="font-normal text-muted">· {images.length}</span></Label>
+
+      {images.length > 0 && (
+        <div className="mb-2 flex flex-wrap gap-2">
+          {images.map((url, i) => (
+            <div key={`${url}-${i}`} className="relative">
+              <img
+                src={url}
+                alt=""
+                className="h-14 w-20 rounded border border-border object-cover"
+                onError={(ev) => { ev.currentTarget.style.opacity = "0.25"; }}
+              />
+              <button
+                type="button"
+                onClick={() => onRemove(i)}
+                title="Remove this photo"
+                className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus absolute -right-1.5 -top-1.5 rounded-full border border-border bg-surface p-0.5 text-muted shadow-sm transition hover:text-heading"
+              >
+                <X size={11} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2">
+        {/* onKeyDown stops the page-wide Enter-walks-to-the-next-field handler: here Enter means
+            "add this one", and letting it bubble would move focus away from a box the operator is
+            still pasting into. Ctrl/Cmd+Enter is deliberately let through — that is Save from
+            anywhere, and a shortcut that stops working in one input is worse than no shortcut. */}
+        <Input
+          value={pasted}
+          placeholder="Paste an image URL, then Enter…"
+          className="max-w-xs"
+          onChange={(e) => setPasted(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key !== "Enter" || e.metaKey || e.ctrlKey) return;
+            e.preventDefault();
+            e.stopPropagation();
+            onAdd(pasted);
+            setPasted("");
+          }}
+        />
+        <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs font-semibold text-body transition hover:bg-surface-hover">
+          <Upload size={12} />
+          {busy ? `Uploading ${pct}%` : "or upload"}
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            className="hidden"
+            disabled={busy}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              // Reset so choosing the SAME file twice after a failure still fires onChange.
+              e.target.value = "";
+              if (file) upload(file);
+            }}
+          />
+        </label>
+      </div>
+    </div>
+  );
+}
+
 /** One labelled input. `id` matters — the save path focuses fields by it when validation refuses. */
 function F({ id, label, hint, required, ...rest }) {
   return (
     <div>
       <Label htmlFor={id}>
         {label}
-        {required && <span className="ml-0.5 text-rose-500">*</span>}
+        {required && <span className="ml-0.5 text-hue-rose">*</span>}
         {hint && <span className="ml-1 font-normal text-muted">· {hint}</span>}
       </Label>
       <Input id={id} {...rest} onChange={(e) => rest.onChange(e.target.value)} />
@@ -595,11 +769,26 @@ const blankHotel = () => ({
   latitude: "", longitude: "", stars: "", rating: "", website: "", mapUrl: "", overview: "",
   primaryImageUrl: "", phone: "", email: "", checkInTime: "", checkOutTime: "",
   childPolicy: "", cancellationPolicy: "", amenitiesText: "",
+  // Chosen from Google, never typed and never guessed. `toForm` derives its keys from this object,
+  // so adding it here is what makes it round-trip on edit as well as create.
+  googlePlaceId: "",
 });
 
+/**
+ * A room's FULL shape, not the four fields the form happens to show.
+ *
+ * The editor used to carry `{name, bedType, maxOccupancy}` and send exactly that, which meant the
+ * console was structurally incapable of round-tripping a room: everything else the room held —
+ * photos, adult/child capacity, size, description — was absent from state, so it was absent from the
+ * payload, so the server (which replaced rather than patched) wiped it. Renaming a room deleted its
+ * gallery, and the catalog-version bump then replayed the empty list into every tenant's Hotel Master.
+ * The server now patches; this sends a complete room so the two can never disagree about what was
+ * meant by an omitted field.
+ */
 const blankRoom = () => ({
   _key: key(), publicId: null, _dirty: true,
-  name: "", bedType: "", maxOccupancy: "", rates: [blankRate()],
+  name: "", bedType: "", maxOccupancy: "", maxAdults: "", maxChildren: "",
+  size: "", description: "", images: [], rates: [blankRate()],
 });
 const blankRate = () => ({
   _key: key(), publicId: null, _dirty: true,
@@ -613,9 +802,15 @@ const toForm = (d) => ({
   amenitiesText: (d?.amenities || []).join(", "),
 });
 
+/* Reads every field the room DTO carries — including the ones with no input on this page, which is
+   the half of the round trip that was missing. A field that is not in state cannot be sent back, and
+   a field that is not sent back used to be a field the server cleared. */
 const toRoomState = (r) => ({
   _key: key(), publicId: r.publicId, _dirty: false,
   name: r.name ?? "", bedType: r.bedType ?? "", maxOccupancy: r.maxOccupancy ?? "",
+  maxAdults: r.maxAdults ?? "", maxChildren: r.maxChildren ?? "",
+  size: r.size ?? "", description: r.description ?? "",
+  images: Array.isArray(r.images) ? [...r.images] : [],
   rates: (r.rates || []).map((t) => ({
     _key: key(), publicId: t.publicId, _dirty: false,
     mealPlanCode: t.mealPlanCode ?? "EP", occupancyBasis: t.occupancyBasis ?? "DOUBLE",
@@ -641,8 +836,17 @@ const toPayload = (f) => ({
   stars: num(f.stars), rating: num(f.rating),
   website: f.website.trim() || null,
   mapUrl: f.mapUrl.trim() || null,
+  /* "" rather than null when empty, for the same reason as primaryImageUrl below: the server guards
+     this field, so absent/null means "leave the binding alone" and "" is the only way to say
+     "unlink it". Sending null would make Clear on the picker a no-op that silently reverted. */
+  googlePlaceId: f.googlePlaceId.trim(),
   overview: f.overview || null,
-  primaryImageUrl: f.primaryImageUrl.trim() || null,
+  /* "" rather than null when empty, and that matters. The server guards this field — absent means
+     "leave the cover alone", because primaryImageUrl is now a derived mirror of the gallery's elected
+     cover and a request that never mentioned photos must not wipe it. Sending null would therefore
+     make the cover un-clearable from here; sending "" says "clear it" and still says nothing when the
+     operator did not touch the box. */
+  primaryImageUrl: f.primaryImageUrl.trim(),
   phone: f.phone.trim() || null,
   email: f.email.trim() || null,
   checkInTime: f.checkInTime.trim() || null,
@@ -653,9 +857,28 @@ const toPayload = (f) => ({
   amenities: f.amenitiesText.split(/[,\n]/).map((s) => s.trim()).filter(Boolean),
 });
 
+/**
+ * The complete room. Every key is present on every save, deliberately.
+ *
+ * The server treats an ABSENT field as "leave it alone" and an explicitly-supplied empty list as
+ * "clear it" — so sending `images` always, even when it is `[]`, is what makes "the operator removed
+ * the last photo" expressible at all. Omitting the key would silently mean the opposite.
+ */
 const roomPayload = (r) => ({
-  name: r.name.trim(), bedType: r.bedType.trim() || null,
-  maxOccupancy: num(r.maxOccupancy), active: true,
+  name: r.name.trim(),
+  bedType: r.bedType.trim() || null,
+  maxOccupancy: num(r.maxOccupancy),
+  /* Blank sends null, and the server reads null as "leave it alone" — so emptying one of these boxes
+     does NOT clear the stored number, it reverts on the next load. That asymmetry is the price of
+     the guard: JSON cannot distinguish an omitted scalar from an explicit null, and silently keeping
+     a capacity is far better than silently wiping one. Strings below have no such problem — "" is a
+     value, so they clear normally. */
+  maxAdults: num(r.maxAdults),
+  maxChildren: num(r.maxChildren),
+  size: r.size.trim(),
+  description: r.description,
+  images: r.images,
+  active: true,
 });
 
 const ratePayload = (t) => ({

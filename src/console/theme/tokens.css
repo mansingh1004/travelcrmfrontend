@@ -13,7 +13,23 @@
    structural colour.
    ============================================================================ */
 
-/* Enable `dark:` variants driven by a `.dark` class (self or ancestor). */
+/* Enable `dark:` variants driven by a `.dark` class (self or ancestor).
+
+   WARNING — THIS LINE IS GLOBAL, NOT SCOPED. Everything else in this file is fenced
+   behind `.sa-console`, but `@custom-variant` is not a CSS rule — Tailwind v4
+   merges every `@custom-variant` it finds across all imported files into ONE
+   build-wide config. This file is imported unconditionally from src/index.css,
+   so this single line redefines what `dark:` means for the WHOLE app, tenant
+   pages included. It is harmless today only because no tenant file uses a
+   `dark:` class at all.
+
+   Consequence for whoever adds tenant dark mode later: it MUST use the same
+   `.dark` class strategy (toggle a class on <html> or a wrapper). A
+   `prefers-color-scheme` / media-query approach will silently do NOTHING —
+   `dark:` no longer compiles to a media query anywhere in this build, and the
+   failure is invisible at build time.
+
+   Do not change or remove the directive: console dark mode depends on it. */
 @custom-variant dark (&:where(.dark, .dark *));
 
 /* ── Raw semantic values — LIGHT (default) ───────────────────────────────── */
@@ -30,26 +46,40 @@
   --sa-border-strong:   #d3cfe6; /* violet-tinted slate-300  */
   --sa-text-heading:    #17143a; /* deep indigo              */
   --sa-text-body:       #514c70; /* indigo-slate             */
-  --sa-text-muted:      #948eb0; /* muted indigo             */
+  --sa-text-muted:      #6f6890; /* muted indigo — 4.5:1+    */
   --sa-accent:          #7c3aed; /* violet-600               */
   --sa-accent-hover:    #6d28d9; /* violet-700               */
   --sa-accent-text:     #ffffff;
   --sa-accent-soft-bg:  #f1ebfe; /* violet-100-ish           */
   --sa-accent-soft-txt: #6d28d9; /* violet-700               */
   --sa-focus-ring:      #8b5cf6; /* violet-500               */
+  --sa-scrim:           rgb(23 20 58 / 0.55); /* modal/drawer backdrop */
 
   /* Brand flourishes (logo, wordmark, hero CTAs) + card depth */
   --sa-gradient:      linear-gradient(135deg, #7c3aed 0%, #9333ea 50%, #db2777 100%);
   --sa-gradient-soft: linear-gradient(135deg, #f1ebfe 0%, #fbe8f3 100%);
   --sa-card-shadow:   0 1px 2px rgb(23 20 58 / 0.05), 0 10px 26px -14px rgb(76 29 149 / 0.16);
 
-  /* Hue chips — KPI tiles / iconography (soft bg + strong fg) */
+  /* Hue chips — KPI tiles / iconography (soft bg + strong fg).
+     Soft backgrounds are the visual identity and are FROZEN; the foregrounds are
+     tuned so every pair clears WCAG 4.5:1 against its own soft bg. That threshold
+     (not the 3:1 large-text one) is the right bar because status chips render at
+     text-xs / text-[11px] — normal text by WCAG's definition. */
   --sa-hue-violet:  #7c3aed; --sa-hue-violet-soft:  #efe8fe;
   --sa-hue-indigo:  #4f46e5; --sa-hue-indigo-soft:  #e6e8fd;
-  --sa-hue-sky:     #0284c7; --sa-hue-sky-soft:     #dcf0fd;
-  --sa-hue-emerald: #059669; --sa-hue-emerald-soft: #d4f5e7;
-  --sa-hue-amber:   #d97706; --sa-hue-amber-soft:   #fdefc8;
-  --sa-hue-rose:    #e11d48; --sa-hue-rose-soft:    #ffe0e9;
+  --sa-hue-sky:     #0369a1; --sa-hue-sky-soft:     #dcf0fd;
+  --sa-hue-emerald: #047857; --sa-hue-emerald-soft: #d4f5e7;
+  --sa-hue-amber:   #a1520a; --sa-hue-amber-soft:   #fdefc8;
+  --sa-hue-rose:    #be123c; --sa-hue-rose-soft:    #ffe0e9;
+  /* orange is NOT a redundant amber. Amber carries TRIAL / pending / draft;
+     orange carries PAST_DUE / overdue / escalated / awaiting-other-party. The
+     raw-palette code this layer replaces kept those two apart deliberately — a
+     trialling tenant is not a delinquent one — and folding both into amber would
+     have destroyed a distinction the console actually relies on. */
+  --sa-hue-orange:  #b03a09; --sa-hue-orange-soft:  #ffe8d8;
+  /* teal = inspected / verified / secondary-positive: readable beside emerald
+     without being mistaken for it. */
+  --sa-hue-teal:    #0f766e; --sa-hue-teal-soft:    #d1f5f0;
 }
 
 /* ── Raw semantic values — DARK (class on the console root or an ancestor) ── */
@@ -65,13 +95,14 @@
   --sa-border-strong:   #3a3560;                /* indigo-slate 700  */
   --sa-text-heading:    #f3f1ff;
   --sa-text-body:       #b4aed6;
-  --sa-text-muted:      #7b749f;
+  --sa-text-muted:      #8b83ad;                /* 4.5:1+ on surface */
   --sa-accent:          #8b5cf6;                /* violet-500        */
   --sa-accent-hover:    #a78bfa;                /* violet-400        */
   --sa-accent-text:     #ffffff;
   --sa-accent-soft-bg:  rgb(139 92 246 / 0.16); /* violet-500/16     */
   --sa-accent-soft-txt: #c4b5fd;                /* violet-300        */
   --sa-focus-ring:      #a78bfa;                /* violet-400        */
+  --sa-scrim:           rgb(0 0 0 / 0.65);      /* backdrop, still dark */
 
   --sa-gradient:      linear-gradient(135deg, #8b5cf6 0%, #a855f7 50%, #ec4899 100%);
   --sa-gradient-soft: linear-gradient(135deg, rgb(139 92 246 / 0.18) 0%, rgb(236 72 153 / 0.14) 100%);
@@ -83,6 +114,8 @@
   --sa-hue-emerald: #6ee7b7; --sa-hue-emerald-soft: rgb(16 185 129 / 0.16);
   --sa-hue-amber:   #fcd34d; --sa-hue-amber-soft:   rgb(245 158 11 / 0.16);
   --sa-hue-rose:    #fda4af; --sa-hue-rose-soft:    rgb(244 63 94 / 0.16);
+  --sa-hue-orange:  #fdba74; --sa-hue-orange-soft:  rgb(249 115 22 / 0.16);
+  --sa-hue-teal:    #5eead4; --sa-hue-teal-soft:    rgb(20 184 166 / 0.16);
 }
 
 /* ── Map raw values → Tailwind color utilities ───────────────────────────────
@@ -106,6 +139,15 @@
   --color-accent-soft-text: var(--sa-accent-soft-txt);
   --color-focus:            var(--sa-focus-ring);
 
+  /* Modal / drawer backdrops MUST use `bg-scrim`. Nothing else.
+     This exists because backdrops were being derived from a TEXT token —
+     components/hotelUi.jsx used `bg-heading/60`, and --sa-text-heading is
+     near-black (#17143a) in light mode but near-WHITE (#f3f1ff) in dark mode.
+     The overlay therefore inverted: instead of darkening the page behind the
+     modal, dark mode painted a pale wash over it. A scrim is a surface concept,
+     never a text one, so it gets its own token that is dark in BOTH themes. */
+  --color-scrim:            var(--sa-scrim);
+
   --color-hue-violet:       var(--sa-hue-violet);
   --color-hue-violet-soft:  var(--sa-hue-violet-soft);
   --color-hue-indigo:       var(--sa-hue-indigo);
@@ -118,6 +160,10 @@
   --color-hue-amber-soft:   var(--sa-hue-amber-soft);
   --color-hue-rose:         var(--sa-hue-rose);
   --color-hue-rose-soft:    var(--sa-hue-rose-soft);
+  --color-hue-orange:       var(--sa-hue-orange);
+  --color-hue-orange-soft:  var(--sa-hue-orange-soft);
+  --color-hue-teal:         var(--sa-hue-teal);
+  --color-hue-teal-soft:    var(--sa-hue-teal-soft);
 }
 
 /* Console-only mono face → `font-console`. Deliberately NOT Tailwind's `font-mono`, so a

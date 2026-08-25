@@ -33,6 +33,7 @@ import { upgradeRequestService } from "./api/upgradeRequestService";
 import { subAgentLicenseService } from "./api/subAgentLicenseService";
 import { marketplaceBookingService } from "./api/marketplaceBookingService";
 import { hotelNominationService } from "./api/marketplaceAdminService";
+import { transportAdminService } from "./api/transportAdminService";
 
 const ROW =
   "group relative flex w-full items-center rounded-xl text-sm transition-colors duration-150";
@@ -47,6 +48,7 @@ export default function ConsoleSidebar({ sections, collapsed, mobileOpen, onClos
   const [pendingUpgrades, setPendingUpgrades] = useState(0);
   const [pendingHotelRequests, setPendingHotelRequests] = useState(0);
   const [openNominations, setOpenNominations] = useState(0);
+  const [pendingTransportRequests, setPendingTransportRequests] = useState(0);
   const [openPinnedGroupId, setOpenPinnedGroupId] = useState(null);
   const [flyout, setFlyout] = useState(null);
 
@@ -178,11 +180,15 @@ export default function ConsoleSidebar({ sections, collapsed, mobileOpen, onClos
         marketplaceBookingService.pendingCount().catch(() => 0),
         // Also a bare NUMBER, like its neighbour above.
         hotelNominationService.openCount().catch(() => 0),
-      ]).then(([u, s, h, n]) => {
+        // Transport has its own queue and therefore its own pill: a car nobody has answered must
+        // not be hidden inside a hotel count.
+        transportAdminService.pendingCount().catch(() => 0),
+      ]).then(([u, s, h, n, t]) => {
         if (!alive) return;
         setPendingUpgrades(Number(u?.count ?? 0) + Number(s?.count ?? 0));
         setPendingHotelRequests(Number(h ?? 0));
         setOpenNominations(Number(n ?? 0));
+        setPendingTransportRequests(Number(t?.count ?? t ?? 0));
       });
     refresh();
     window.addEventListener("focus", refresh);
@@ -196,6 +202,7 @@ export default function ConsoleSidebar({ sections, collapsed, mobileOpen, onClos
     if (item.badge === "upgrades") return pendingUpgrades;
     if (item.badge === "hotelRequests") return pendingHotelRequests;
     if (item.badge === "hotelNominations") return openNominations;
+    if (item.badge === "transportRequests") return pendingTransportRequests;
     return 0;
   };
 
@@ -374,7 +381,7 @@ export default function ConsoleSidebar({ sections, collapsed, mobileOpen, onClos
     <>
       {mobileOpen && (
         <div
-          className="fixed inset-0 z-40 bg-black/50 sm:hidden"
+          className="fixed inset-0 z-40 bg-scrim sm:hidden"
           onClick={onCloseMobile}
           aria-hidden="true"
         />
@@ -426,7 +433,7 @@ export default function ConsoleSidebar({ sections, collapsed, mobileOpen, onClos
             type="button"
             onClick={onCloseMobile}
             aria-label="Close navigation"
-            className="rounded-lg p-1.5 text-muted transition-colors hover:bg-surface-hover hover:text-body sm:hidden"
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded-lg p-1.5 text-muted transition-colors hover:bg-surface-hover hover:text-body sm:hidden"
           >
             <X size={18} />
           </button>
@@ -474,7 +481,7 @@ export default function ConsoleSidebar({ sections, collapsed, mobileOpen, onClos
               onOpenLauncher(e.currentTarget);
             }}
             title="All console areas"
-            className={`flex w-full items-center justify-center gap-2.5 rounded-xl border border-border bg-surface-hover/40 py-2.5 text-[13px] font-semibold text-body transition-colors hover:bg-surface-hover hover:text-heading ${
+            className={`focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus flex w-full items-center justify-center gap-2.5 rounded-xl border border-border bg-surface-hover/40 py-2.5 text-[13px] font-semibold text-body transition-colors hover:bg-surface-hover hover:text-heading ${
               compact ? "px-0" : "px-3"
             }`}
           >

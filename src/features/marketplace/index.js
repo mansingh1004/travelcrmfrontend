@@ -17,3 +17,14 @@ export { MarketplaceBookingDetail } from "./pages/MarketplaceBookingDetail";
 // Exported because a later phase (booking a marketplace hotel from a quotation) will need it from
 // outside this feature; keeping it on the barrel is what stops that code deep-importing api/.
 export { marketplaceService } from "./api/marketplaceService";
+
+/* ── Transport ────────────────────────────────────────────────────────────────────────────────
+   The same feature, a second platform catalog. Deliberately NOT its own feature folder: a tenant
+   sees ONE Marketplace with stays and cars in it, and splitting them would fork `marketplaceUi`
+   into two kits that drift. The backend keeps them apart (`hotelmarketplace` / `transportmarketplace`)
+   because they are separately subscribable add-ons; that boundary is an entitlement one, not a
+   visual one, and it is enforced by permissions and ModuleAccessFilter rather than by folders. */
+export { TransportSearch } from "./pages/TransportSearch";
+export { TransportRequest } from "./pages/TransportRequest";
+export { TransportOrders } from "./pages/TransportOrders";
+export { transportMarketplaceService } from "./api/transportMarketplaceService";

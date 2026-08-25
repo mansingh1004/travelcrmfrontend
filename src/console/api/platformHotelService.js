@@ -86,6 +86,63 @@ export const platformHotelService = {
     ConsoleAPI.delete(`${BASE}/hotels/${hotelPublicId}/rooms/${roomPublicId}`,
       stepUpHeaders(mfaCode)).then(unwrap),
 
+  // ── Property photos ─────────────────────────────────────────────────────
+  //
+  // Two steps, always: `uploadImage` puts the file on the CDN and returns a URL, then `addImage`
+  // attaches that URL to the hotel. The upload endpoint deliberately stores nothing — an operator
+  // picks photos while the form is open, and on a new hotel there is no id to attach them to yet.
+  //
+  // Step-up on all three, like rooms and rates: a gallery change bumps catalogVersion, so it
+  // re-syncs into every tenant's copy of the hotel. It is not a local edit however much it looks
+  // like one.
+
+  addImage: (hotelPublicId, payload, mfaCode) =>
+    ConsoleAPI.post(`${BASE}/hotels/${hotelPublicId}/images`, payload,
+      stepUpHeaders(mfaCode)).then(unwrap),
+
+  /**
+   * Caption, category, order, or promote to cover.
+   *
+   * Every field is optional and absent means "leave it alone" — the server guards each one. Send
+   * `primary: true` to promote; never send `primary: false` to demote, because the cover is released
+   * by promoting a different photo, not by clearing the flag on this one.
+   */
+  updateImage: (hotelPublicId, imagePublicId, payload, mfaCode) =>
+    ConsoleAPI.put(`${BASE}/hotels/${hotelPublicId}/images/${imagePublicId}`, payload,
+      stepUpHeaders(mfaCode)).then(unwrap),
+
+  deleteImage: (hotelPublicId, imagePublicId, mfaCode) =>
+    ConsoleAPI.delete(`${BASE}/hotels/${hotelPublicId}/images/${imagePublicId}`,
+      stepUpHeaders(mfaCode)).then(unwrap),
+
+  // ── Google listing ──────────────────────────────────────────────────────
+  //
+  // Two calls on purpose. SEARCH offers candidates; BIND stores the one a human picked. A single
+  // "match automatically" call would be right most of the time and silently wrong the rest — and a
+  // wrong place id does not fail, it puts another property's reviews on this hotel's page.
+
+  /** Candidate Google listings. A read: no step-up, nothing stored. Empty list is a normal answer. */
+  searchGoogle: async (hotelPublicId, q) =>
+    (await ConsoleAPI.get(`${BASE}/hotels/${hotelPublicId}/google/search`, {
+      params: clean({ q }),
+    }).then(unwrap)) ?? [],
+
+  /**
+   * The same search for a hotel that does not exist yet.
+   *
+   * The per-hotel variant defaults its query from the stored name and address; a hotel being CREATED
+   * has neither, only a half-filled form. Without this the operator could link a listing only after
+   * saving, on another screen — the second trip that gets skipped and leaves the column null.
+   */
+  searchGoogleFreeform: async ({ q, lat, lng }) =>
+    (await ConsoleAPI.get(`${BASE}/google/search`, { params: clean({ q, lat, lng }) })
+      .then(unwrap)) ?? [],
+
+  /** Bind the chosen listing, or pass a blank placeId to unbind. Step-up: it changes what tenants see. */
+  bindGoogle: (hotelPublicId, placeId, mfaCode) =>
+    ConsoleAPI.put(`${BASE}/hotels/${hotelPublicId}/google`, { placeId: placeId ?? "" },
+      stepUpHeaders(mfaCode)).then(unwrap),
+
   // ── Meal plans (likewise no price — a meal plan is an inclusion, not a rate) ──
 
   /**
@@ -148,10 +205,10 @@ export const platformHotelService = {
 
 /** Catalog lifecycle. Only ACTIVE is sellable and visible to tenants. */
 export const CATALOG_STATUS = {
-  DRAFT:     { label: "Draft",     className: "bg-slate-100 text-slate-600" },
-  ACTIVE:    { label: "Published", className: "bg-green-50 text-green-700" },
-  INACTIVE:  { label: "Withdrawn", className: "bg-amber-50 text-amber-700" },
-  SUSPENDED: { label: "Suspended", className: "bg-red-50 text-red-600" },
+  DRAFT:     { label: "Draft",     className: "bg-surface-hover text-muted" },
+  ACTIVE:    { label: "Published", className: "bg-hue-emerald-soft text-hue-emerald" },
+  INACTIVE:  { label: "Withdrawn", className: "bg-hue-amber-soft text-hue-amber" },
+  SUSPENDED: { label: "Suspended", className: "bg-hue-rose-soft text-hue-rose" },
 };
 
 export const MEAL_PLAN_CODES = [

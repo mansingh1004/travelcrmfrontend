@@ -18,9 +18,10 @@
 // STYLING: console realm. Semantic utilities only (bg-surface / text-heading / border-border /
 // bg-accent) — raw slate-*/blue-* resolve to the tenant palette and would break the violet theme.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { Building2, CalendarRange, ChevronLeft, ChevronRight, Loader2, RefreshCw } from "lucide-react";
 import { marketplaceOccupancyService as svc, MAX_WINDOW_DAYS } from "../api/marketplaceOccupancyService";
+import OccupancyCell from "../components/OccupancyCell";
 import { getErrorMessage, isAlreadyReported } from "@shared/api/apiError";
 import { useToast } from "@shared/ui/toast";
 
@@ -64,6 +65,17 @@ export default function MarketplaceOccupancy() {
   const [rows, setRows] = useState(null);
   const [loading, setLoading] = useState(false);
 
+  /*
+    The room-type drill-down. One hotel open at a time — two open at once would push the property
+    being compared off the bottom of a table whose whole value is horizontal comparison.
+
+    Fetched on demand rather than with the roll-up: the server only computes the breakdown for a
+    single-hotel request, because ten hotels × their room types × 92 nights is a payload nobody reads.
+  */
+  const [expanded, setExpanded] = useState(null);
+  const [roomRows, setRoomRows] = useState(null);
+  const [roomsLoading, setRoomsLoading] = useState(false);
+
   const span = daysBetween(from, to);
   const spanInvalid = span < 1 || span > MAX_WINDOW_DAYS;
 
@@ -84,6 +96,39 @@ export default function MarketplaceOccupancy() {
   }, [from, to, showToast]);
 
   useEffect(() => { load(); }, [load]);
+
+  /**
+   * Open or close one property's room-type breakdown.
+   *
+   * <p>Collapsing clears the rows rather than keeping them: the window can change while a property is
+   * open, and stale sub-rows under a re-fetched parent would line up against the wrong nights — the
+   * most convincing kind of wrong, because the grid still looks right.</p>
+   */
+  const toggleHotel = useCallback(async (hotelPublicId) => {
+    if (!hotelPublicId || expanded === hotelPublicId) {
+      setExpanded(null);
+      setRoomRows(null);
+      return;
+    }
+    setExpanded(hotelPublicId);
+    setRoomRows(null);
+    setRoomsLoading(true);
+    try {
+      const one = await svc.list({ from, to, hotelPublicId });
+      setRoomRows(one?.[0]?.roomTypes ?? []);
+    } catch (e) {
+      if (!isAlreadyReported(e)) {
+        showToast(getErrorMessage(e, "Could not load room types."), "error");
+      }
+      setRoomRows([]);
+    } finally {
+      setRoomsLoading(false);
+    }
+  }, [expanded, from, to, showToast]);
+
+  // The window moved, so anything open is now measured against a different axis. Close it rather
+  // than silently re-rendering old nights under new column headers.
+  useEffect(() => { setExpanded(null); setRoomRows(null); }, [from, to]);
 
   /** Shift the window by whole spans, keeping its length — the natural "next month" gesture. */
   const shift = (direction) => {
@@ -126,7 +171,7 @@ export default function MarketplaceOccupancy() {
           type="button"
           onClick={load}
           disabled={loading}
-          className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-semibold text-body hover:bg-surface-hover disabled:opacity-60"
+          className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-semibold text-body hover:bg-surface-hover disabled:opacity-60"
         >
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
           Refresh
@@ -138,7 +183,7 @@ export default function MarketplaceOccupancy() {
         <button
           type="button"
           onClick={() => shift(-1)}
-          className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border-strong text-body hover:bg-surface-hover"
+          className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border-strong text-body hover:bg-surface-hover"
           aria-label="Previous period"
         >
           <ChevronLeft className="h-4 w-4" />
@@ -167,7 +212,7 @@ export default function MarketplaceOccupancy() {
         <button
           type="button"
           onClick={() => shift(1)}
-          className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border-strong text-body hover:bg-surface-hover"
+          className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border-strong text-body hover:bg-surface-hover"
           aria-label="Next period"
         >
           <ChevronRight className="h-4 w-4" />
@@ -176,7 +221,7 @@ export default function MarketplaceOccupancy() {
         <button
           type="button"
           onClick={() => { setFrom(today); setTo(addDays(today, DEFAULT_DAYS - 1)); }}
-          className="ml-1 rounded-lg px-2 py-2 text-sm font-semibold text-accent hover:underline"
+          className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ml-1 rounded-lg px-2 py-2 text-sm font-semibold text-accent hover:underline"
         >
           Next 4 weeks
         </button>
@@ -249,14 +294,39 @@ export default function MarketplaceOccupancy() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((h) => (
-                  <tr key={h.hotelPublicId ?? h.hotelName} className="hover:bg-surface-hover">
-                    <td className="sticky left-0 z-10 max-w-[15rem] border-b border-border bg-surface px-4 py-2">
-                      <p className="truncate text-sm font-semibold text-heading">{h.hotelName}</p>
-                      <p className="truncate text-xs text-muted">
-                        {[h.cityName, `${h.distinctBookings} booking${h.distinctBookings === 1 ? "" : "s"}`]
-                          .filter(Boolean).join(" · ")}
-                      </p>
+                {rows.map((h) => {
+                  const open = expanded === h.hotelPublicId;
+                  return (
+                  <Fragment key={h.hotelPublicId ?? h.hotelName}>
+                  <tr className="hover:bg-surface-hover">
+                    <td className="sticky left-0 z-10 max-w-[15rem] border-b border-border bg-surface p-0">
+                      {/*
+                        The property name opens its room-type breakdown IN PLACE. A separate screen
+                        would have to rebuild this axis, this peak scale and this sticky column, and
+                        the operator would lose the comparison they came here for — the point of
+                        drilling in is to see one property against the others still on screen.
+                      */}
+                      <button
+                        type="button"
+                        onClick={() => toggleHotel(h.hotelPublicId)}
+                        disabled={!h.hotelPublicId}
+                        aria-expanded={open}
+                        className="flex w-full items-center gap-2 px-4 py-2 text-left disabled:cursor-default focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                      >
+                        {h.hotelPublicId && (
+                          <ChevronRight
+                            className={`h-3.5 w-3.5 shrink-0 text-muted transition-transform motion-reduce:transition-none ${open ? "rotate-90" : ""}`}
+                            aria-hidden="true"
+                          />
+                        )}
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-semibold text-heading">{h.hotelName}</span>
+                          <span className="block truncate text-xs text-muted">
+                            {[h.cityName, `${h.distinctBookings} booking${h.distinctBookings === 1 ? "" : "s"}`]
+                              .filter(Boolean).join(" · ")}
+                          </span>
+                        </span>
+                      </button>
                     </td>
                     {h.days.map((d) => (
                       <td
@@ -267,14 +337,66 @@ export default function MarketplaceOccupancy() {
                           dayMeta(d.date).monthStart ? "border-l border-border-strong" : "",
                         ].join(" ")}
                       >
-                        <NightCell day={d} peak={peak} hotel={h.hotelName} />
+                        <OccupancyCell day={d} peak={peak} label={`${h.hotelName} — ${d.date}`} />
                       </td>
                     ))}
                     <td className="border-b border-l border-border px-3 py-2 text-right text-sm font-semibold tabular-nums text-heading">
                       {h.peakRoomsCommitted}
                     </td>
                   </tr>
-                ))}
+
+                  {open && roomsLoading && (
+                    <tr>
+                      <td colSpan={h.days.length + 2} className="border-b border-border px-4 py-3 text-xs text-muted">
+                        Loading room types…
+                      </td>
+                    </tr>
+                  )}
+
+                  {/*
+                    Rows are what has been SOLD, so a room type nobody has booked has no row. That is
+                    not a gap to fill: the platform holds no allotment anywhere, so "0 booked" is a
+                    fact and "5 free" is a number nobody has.
+                  */}
+                  {open && !roomsLoading && (roomRows ?? []).length === 0 && (
+                    <tr>
+                      <td colSpan={h.days.length + 2} className="border-b border-border px-4 py-3 text-xs text-muted">
+                        No room type is named on any booking in this window.
+                      </td>
+                    </tr>
+                  )}
+
+                  {open && !roomsLoading && (roomRows ?? []).map((rt) => (
+                    <tr key={rt.roomPublicId ?? "unspecified"} className="bg-surface-hover/30">
+                      <td className="sticky left-0 z-10 max-w-[15rem] border-b border-border bg-surface-hover/60 py-1.5 pl-10 pr-4">
+                        <p className="truncate text-xs font-medium text-body">{rt.roomName}</p>
+                        <p className="truncate text-[11px] text-muted">
+                          {rt.totalRoomNightsCommitted} room-night{rt.totalRoomNightsCommitted === 1 ? "" : "s"}
+                        </p>
+                      </td>
+                      {rt.days.map((d) => (
+                        <td
+                          key={d.date}
+                          className={[
+                            "border-b border-border px-0 py-1 align-bottom",
+                            dayMeta(d.date).weekend ? "bg-surface-hover/50" : "",
+                            dayMeta(d.date).monthStart ? "border-l border-border-strong" : "",
+                          ].join(" ")}
+                        >
+                          {/* Same peak scale as the parent row, deliberately: bars that renormalised
+                              per room type would make a room with one booking look as busy as the
+                              property's worst night. */}
+                          <OccupancyCell day={d} peak={peak} label={`${h.hotelName} — ${rt.roomName} — ${d.date}`} />
+                        </td>
+                      ))}
+                      <td className="border-b border-l border-border px-3 py-2 text-right text-xs tabular-nums text-body">
+                        {rt.totalRoomNightsCommitted}
+                      </td>
+                    </tr>
+                  ))}
+                  </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -282,54 +404,6 @@ export default function MarketplaceOccupancy() {
       </div>
 
       <Legend />
-    </div>
-  );
-}
-
-/**
- * One night for one property.
- *
- * Committed and pending are stacked, never summed: the solid bar is what the platform owes the
- * hotel, the hatched one above it is what it might. An operator reading a single combined height
- * would over-promise.
- *
- * The `title` carries the exact figures, because a bar chart 30px wide is a shape, not a number —
- * and the number is what goes into the phone call.
- */
-function NightCell({ day, peak, hotel }) {
-  const { roomsCommitted: c, roomsPending: p } = day;
-  if (c === 0 && p === 0) {
-    return <div className="mx-auto h-8 w-full" aria-hidden="true" />;
-  }
-
-  const MAX_H = 32;
-  const hC = Math.round((c / peak) * MAX_H);
-  const hP = Math.round((p / peak) * MAX_H);
-
-  const title = [
-    `${hotel} — ${day.date}`,
-    `${c} room${c === 1 ? "" : "s"} committed`,
-    p > 0 ? `${p} pending` : null,
-    day.guestsCommitted > 0 ? `${day.guestsCommitted} guests` : null,
-  ].filter(Boolean).join("\n");
-
-  return (
-    <div className="mx-auto flex h-8 w-full flex-col justify-end px-[3px]" title={title}>
-      {p > 0 && (
-        <div
-          className="w-full rounded-t-sm bg-accent/25"
-          style={{ height: Math.max(2, hP) }}
-          aria-hidden="true"
-        />
-      )}
-      {c > 0 && (
-        <div
-          className="w-full rounded-b-sm bg-accent"
-          style={{ height: Math.max(2, hC) }}
-          aria-hidden="true"
-        />
-      )}
-      <span className="sr-only">{title}</span>
     </div>
   );
 }

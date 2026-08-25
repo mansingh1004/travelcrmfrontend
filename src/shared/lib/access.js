@@ -43,6 +43,11 @@ export const P = {
   // it immediately, but rewriting what the ledger already says is admin territory. TENANT_ADMIN-only
   // until explicitly granted (same treatment as BOOKING_REFUND — in no non-admin role default).
   PAYMENT_MANAGE: "PAYMENT_MANAGE",
+  // Work a booking's operations checkpoints — source, confirm, reassign. Its own key rather than
+  // BOOKING_UPDATE on purpose: an operations executive marks a hotel confirmed, and must not be
+  // able to edit the booking's amount, travel date or status while doing it. READS stay on
+  // BOOKING_READ. Unlike PAYMENT_MANAGE this IS in the role defaults below — mirrors the backend.
+  OPS_MANAGE: "OPS_MANAGE",
   CUSTOMER_READ: "CUSTOMER_READ", CUSTOMER_CREATE: "CUSTOMER_CREATE", CUSTOMER_UPDATE: "CUSTOMER_UPDATE", CUSTOMER_DELETE: "CUSTOMER_DELETE",
   QUOTATION_READ: "QUOTATION_READ", QUOTATION_CREATE: "QUOTATION_CREATE", QUOTATION_UPDATE: "QUOTATION_UPDATE", QUOTATION_DELETE: "QUOTATION_DELETE",
   VENDOR_READ: "VENDOR_READ", VENDOR_CREATE: "VENDOR_CREATE", VENDOR_UPDATE: "VENDOR_UPDATE", VENDOR_DELETE: "VENDOR_DELETE",
@@ -63,6 +68,21 @@ export const P = {
   // Sight of what the tenant owes the PLATFORM. Separate from BOOKING_PROFIT_READ because a payable
   // is a price, not a margin — gating it behind profit would hide it from TRAVEL_AGENT, the role that
   // actually places the orders and needs the number to quote a customer.
+  // Transport marketplace — the same four verbs as hotel, over the platform vehicle catalog. A
+  // separate family because the two are separately subscribable add-ons: an agency may buy stays
+  // without cars, or cars without stays, and one key covering both would sell them together.
+  TRANSPORT_MARKETPLACE_VIEW: "TRANSPORT_MARKETPLACE_VIEW",
+  TRANSPORT_MARKETPLACE_SYNC_MASTER: "TRANSPORT_MARKETPLACE_SYNC_MASTER",
+  TRANSPORT_MARKETPLACE_BOOK: "TRANSPORT_MARKETPLACE_BOOK",
+  TRANSPORT_MARKETPLACE_CANCEL: "TRANSPORT_MARKETPLACE_CANCEL",
+  // The SUPPLY side, held by a transport operator on the FLEET plan rather than by a buying agency.
+  // Same tenant world, opposite end of the trade.
+  TRANSPORT_SUPPLIER_LISTING_MANAGE: "TRANSPORT_SUPPLIER_LISTING_MANAGE",
+  TRANSPORT_SUPPLIER_ORDER_MANAGE: "TRANSPORT_SUPPLIER_ORDER_MANAGE",
+  // Sight of what the tenant owes the PLATFORM. Separate from BOOKING_PROFIT_READ because a payable
+  // is a price, not a margin — gating it behind profit would hide it from TRAVEL_AGENT, the role that
+  // actually places the orders and needs the number to quote a customer. Covers BOTH marketplaces:
+  // hotel and transport payables share the CRM expense column its filter keys on.
   MARKETPLACE_PAYABLE_READ: "MARKETPLACE_PAYABLE_READ",
   USER_READ: "USER_READ", USER_CREATE: "USER_CREATE", USER_UPDATE: "USER_UPDATE", USER_DELETE: "USER_DELETE",
   REPORT_VIEW: "REPORT_VIEW",
@@ -71,6 +91,24 @@ export const P = {
   // agency's own inbox is the same authority as reading its conversations, so it deliberately
   // does NOT get a permission of its own.
   COMM_READ: "COMM_READ",
+  // The RAW agency mailbox (/api/mailbox), deliberately NOT COMM_READ. COMM_READ carries the
+  // own/team/all data scope the Communication Center enforces per conversation; the shared IMAP
+  // mailbox has no assignee to scope by, so one key across both let an OWN-scoped agent read the
+  // whole tenant's mail through a second URL. Backend default: MANAGER and TENANT_ADMIN only.
+  COMM_MAILBOX_READ: "COMM_MAILBOX_READ",
+  // Replying is a separate authority from reading, and the split is load-bearing: the backend's
+  // viewer role deliberately holds READ without SEND, so reusing COMM_READ on a composer would hand
+  // every viewer a send button the server then 403s.
+  COMM_SEND: "COMM_SEND",
+  // Triage: assign, snooze, close. A supervisor act — the backend gives it to MANAGER and
+  // withholds it from TRAVEL_AGENT, whose job is answering conversations rather than deciding
+  // whose they are.
+  COMM_ASSIGN: "COMM_ASSIGN",
+  // NOT in any role's defaults, on purpose — the backend grants templates, private notes, recordings
+  // and workflow config PER USER, TENANT_ADMIN included (Permission.java). A tenant admin still sees
+  // this screen because hasPermission() short-circuits for that role, but the save will 403 until the
+  // key is granted under Users → permissions. That is the backend's rule, not a bug here.
+  COMM_TEMPLATE_MANAGE: "COMM_TEMPLATE_MANAGE",
   TRASH_VIEW: "TRASH_VIEW", TRASH_RESTORE: "TRASH_RESTORE", TRASH_DELETE: "TRASH_DELETE",
   FLEET_READ: "FLEET_READ", FLEET_CREATE: "FLEET_CREATE", FLEET_UPDATE: "FLEET_UPDATE", FLEET_DELETE: "FLEET_DELETE",
   // Fleet MONEY is a separate authority from fleet operations: a dispatcher records forty cost rows
@@ -105,6 +143,8 @@ const ROLE_PERMISSIONS = {
     // V2 PART 18 backfill's MANAGER branch.
     P.LEAD_CLAIM, P.LEAD_REASSIGN_LOCKED,
     P.BOOKING_READ, P.BOOKING_CREATE, P.BOOKING_UPDATE, P.BOOKING_CANCEL, P.BOOKING_DELETE, P.BOOKING_PROFIT_READ,
+    // Runs the operations board. Mirrors defaultsFor(MANAGER) and the V29 backfill.
+    P.OPS_MANAGE,
     P.CUSTOMER_READ, P.CUSTOMER_CREATE, P.CUSTOMER_UPDATE, P.CUSTOMER_DELETE,
     P.QUOTATION_READ, P.QUOTATION_CREATE, P.QUOTATION_UPDATE, P.QUOTATION_DELETE,
     P.VENDOR_READ, P.VENDOR_CREATE, P.VENDOR_UPDATE,
@@ -115,6 +155,9 @@ const ROLE_PERMISSIONS = {
     // Mirrors Permission.defaultsFor(MANAGER) — Permission.java:217-218.
     P.HOTEL_MARKETPLACE_VIEW, P.HOTEL_MARKETPLACE_SYNC_MASTER,
     P.HOTEL_MARKETPLACE_BOOK, P.HOTEL_MARKETPLACE_CANCEL, P.MARKETPLACE_PAYABLE_READ,
+    // Transport mirrors hotel exactly — same four verbs, same audience. Permission.java:379-380.
+    P.TRANSPORT_MARKETPLACE_VIEW, P.TRANSPORT_MARKETPLACE_SYNC_MASTER,
+    P.TRANSPORT_MARKETPLACE_BOOK, P.TRANSPORT_MARKETPLACE_CANCEL,
     // Mirrors Permission.defaultsFor(MANAGER) exactly — sees fleet money, does NOT settle it.
     P.FLEET_READ, P.FLEET_CREATE, P.FLEET_UPDATE, P.FLEET_DELETE, P.FLEET_MONEY_READ,
     P.ACCOUNTING_INVOICE_READ, P.ACCOUNTING_TDS_READ,
@@ -128,6 +171,8 @@ const ROLE_PERMISSIONS = {
     // the customer, taking the lead is a manager's call. Mirrors defaultsFor(TRAVEL_AGENT).
     P.LEAD_CLAIM,
     P.BOOKING_READ, P.BOOKING_CREATE, P.BOOKING_UPDATE,
+    // Agents deliver the trips they sell — chasing a hotel is the job, not a privilege.
+    P.OPS_MANAGE,
     P.CUSTOMER_READ, P.CUSTOMER_CREATE, P.CUSTOMER_UPDATE,
     P.QUOTATION_READ, P.QUOTATION_CREATE, P.QUOTATION_UPDATE,
     P.VENDOR_READ,
@@ -142,6 +187,9 @@ const ROLE_PERMISSIONS = {
     // CANCEL is granted too (Permission.java:252): the role that places the order is the one that
     // has to unwind it when the customer drops out, and withdrawing an unconfirmed request is free.
     P.HOTEL_MARKETPLACE_VIEW, P.HOTEL_MARKETPLACE_BOOK, P.HOTEL_MARKETPLACE_CANCEL,
+    // No SYNC_MASTER, exactly as with hotels: a sales role books, it does not curate masters.
+    // Permission.java:423.
+    P.TRANSPORT_MARKETPLACE_VIEW, P.TRANSPORT_MARKETPLACE_BOOK, P.TRANSPORT_MARKETPLACE_CANCEL,
     P.MARKETPLACE_PAYABLE_READ,
     // Deliberately NO FLEET_MONEY_*: a sales role plans and runs trips, but tenant-wide driver cash
     // positions, vendor rates and cost structure are not its business. Mirrors the backend.
@@ -171,6 +219,9 @@ const ROLE_PERMISSIONS = {
     P.LEAD_READ, P.LEAD_CREATE, P.LEAD_UPDATE, P.LEAD_DELETE,
     P.QUOTATION_READ, P.QUOTATION_CREATE, P.QUOTATION_UPDATE, P.QUOTATION_DELETE,
     P.BOOKING_READ, P.BOOKING_CREATE, P.BOOKING_UPDATE,
+    // Its OWN bookings only — the board already row-scopes a sub-agent's rows, so this
+    // grants the work, not the reach. Mirrors backend Permission.defaultsFor(SUB_AGENT).
+    P.OPS_MANAGE,
     P.CUSTOMER_READ, P.CUSTOMER_CREATE, P.CUSTOMER_UPDATE,
     P.REMINDER_READ, P.REMINDER_CREATE, P.REMINDER_UPDATE,
     P.TASK_READ, P.TASK_CREATE, P.TASK_UPDATE,
@@ -350,6 +401,31 @@ export function hasModule(moduleKey) {
   } catch { /* malformed cache → fail-open */ }
   return true;
 }
+
+/**
+ * Same question as {@link hasModule}, but FAILS CLOSED: an unloaded, missing or malformed
+ * entitlements cache answers false.
+ *
+ * Use this when the module selects BETWEEN two working implementations rather than hiding a menu.
+ * `hasModule` is fail-open so a failed fetch never blocks a customer out of something they bought —
+ * right for a sidebar item, wrong here: fail-open would hand a plan-exclusive screen to every tenant
+ * for the whole window before entitlements land, and again to anyone whose fetch failed. There is no
+ * loss in failing closed, because the other branch is a complete, working form.
+ *
+ * Deliberately no TENANT_ADMIN bypass, matching `hasModule` — a module is a tenant/plan property,
+ * not a role one, so an admin on a plan without the key is in the same position as their staff.
+ */
+export function hasModuleStrict(moduleKey) {
+  try {
+    const stored = JSON.parse(localStorage.getItem(MODULES_KEY) || "null");
+    return Array.isArray(stored) && stored.includes(moduleKey);
+  } catch {
+    return false;
+  }
+}
+
+/** Module key for the high-volume Create Lead / Create Booking screens. Carried by GROWTH alone. */
+export const FAST_ENTRY_FORMS = "FAST_ENTRY_FORMS";
 
 // True if the current user is allowed `permissionKey`.
 // Prefers the user's REAL effective permissions (from /permissions/me); falls back

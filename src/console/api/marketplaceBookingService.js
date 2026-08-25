@@ -40,8 +40,15 @@ export const marketplaceBookingService = {
    * CONFIRMED booking can be unpaid and a CANCELLED one can still owe. The credit screen filters on
    * the second to ask "which of this tenant's bookings still owe" without pulling their whole history.
    */
-  list: async ({ page = 0, size = 25, status, paymentStatus, tenantId } = {}) => {
-    const res = await ConsoleAPI.get(BASE, { params: clean({ page, size, status, paymentStatus, tenantId }) });
+  /**
+   * @param hotelPublicId narrow to one catalog hotel. The endpoint has always accepted it; this
+   *        client simply never sent it, so the Hotel 360 bookings tab had no way to ask the question
+   *        the server was already able to answer.
+   */
+  list: async ({ page = 0, size = 25, status, paymentStatus, tenantId, hotelPublicId } = {}) => {
+    const res = await ConsoleAPI.get(BASE, {
+      params: clean({ page, size, status, paymentStatus, tenantId, hotelPublicId }),
+    });
     const rows = res?.data?.data;
     return {
       items: Array.isArray(rows) ? rows : [],

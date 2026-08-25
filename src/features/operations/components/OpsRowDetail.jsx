@@ -30,9 +30,9 @@ import { toast } from "@shared/ui/toast";
 import { hasPermission, P } from "@shared/lib/access";
 
 import { COLUMN_DIMENSIONS, Badge } from "./opsUi";
+import OpsCheckpointPanel from "./OpsCheckpointPanel";
 import operationsService from "../api/operationsService";
-import VendorEmailModal from "./VendorEmailModal";
-import VendorWhatsAppModal from "./VendorWhatsAppModal";
+import VendorConversationDrawer from "./VendorConversationDrawer";
 import LogCallModal from "./LogCallModal";
 
 const money = (n) =>
@@ -131,8 +131,30 @@ const CARD_ORDER = [
   { key: "OTHER", label: "Other", always: false },
 ];
 
+/**
+ * @param standalone Hosted by a page rather than by an expanded table row.
+ *
+ * ONE FLAG, THREE THINGS, and they are one decision: on a page the HOST owns the frame.
+ *   1. No table-row chrome. `border-t + bg-slate-50/60 + sticky left-0` exist because this is a
+ *      <td> inside a 1180px scroller; on a page they draw an orphaned grey slab and pin it to a
+ *      scrollport it is not in. (Keyed off an explicit flag, NOT off `width` — the board passes
+ *      width 0 on its first render, so a falsy-width test would strip the chrome on mount and
+ *      put it back a frame later.)
+ *   2. No identity strip. The page header already says the code, customer, pax, window and
+ *      balance, and saying them twice, 400px apart, is how two views of one booking start
+ *      disagreeing.
+ *   3. No checkpoint panel. The page gives the nine checkpoints a section of their own; rendering
+ *      OpsCheckpointPanel here as well would put the same nine rows on screen twice.
+ *
+ * One knock-on worth knowing: `position: sticky` creates a stacking context, so on the board the
+ * supplier drawer and the call modal (z-50) resolve INSIDE it and paint under the navbar. Without
+ * it they land in the root stacking context and cover the navbar — which is what a modal should
+ * do, and is the one visible difference between the two hosts.
+ *
+ * Defaults to false, so the board's expanded row is byte-for-byte what it was.
+ */
 export default function OpsRowDetail({
-  entry, width, onChanged, onOpenLedger, onOpenBooking, onClose, onEditingChange,
+  entry, width, standalone = false, onChanged, onOpenLedger, onOpenBooking, onClose, onEditingChange,
 }) {
   const canWrite = hasPermission(P.BOOKING_UPDATE);
 
@@ -355,39 +377,56 @@ export default function OpsRowDetail({
     // sticky left-0 + the scroller's own width: the detail stays where it can be read
     // instead of stretching to the 1180px table and needing a sideways scroll of its own.
     <div
-      className="border-t border-slate-100 bg-slate-50/60 px-5 py-4 sticky left-0"
-      style={width ? { width } : undefined}
+      className={standalone ? "" : "border-t border-slate-100 bg-slate-50/60 px-5 py-4 sticky left-0"}
+      style={!standalone && width ? { width } : undefined}
     >
-      {/* Header strip — the facts a decision needs, and the ways out of this screen. */}
+      {/* Header strip — the facts a decision needs, and the ways out of this screen.
+          On a page the identity half is dropped (the page header carries it) and only the
+          two acts survive, so this reads as the section's toolbar. */}
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2 pb-3 mb-3 border-b border-slate-200/70">
-        {/* The way out. Everything this screen does not carry — travellers, documents, the
-            full trip, amendments — lives on the booking, and there was no route to it. */}
-        <span className="text-xs font-bold text-slate-500">
-          Booking{" "}
-          <button
-            onClick={() => onOpenBooking?.(entry)}
-            title="Open the full booking"
-            className="inline-flex items-center gap-1 text-blue-600 hover:underline"
-          >
-            {entry.bookingCode}
-            <ExternalLink className="w-3 h-3" />
-          </button>
-        </span>
-        <span className="text-xs font-bold text-slate-500">
-          Customer <span className="text-slate-700">{entry.customerName || "—"}</span>
-        </span>
-        <span className="text-xs font-bold text-slate-500">
-          Pax <span className="text-slate-700 tabular-nums">{entry.pax ?? "—"}</span>
-        </span>
-        <span className="text-xs font-bold text-slate-500">
-          Travel <span className="text-slate-700">{fmtDate(entry.travelDate)} – {fmtDate(entry.tripEndDate)}</span>
-        </span>
-        <span className="text-xs font-bold text-slate-500">
-          Balance due{" "}
-          <span className={Number(entry.balanceDue) > 0 ? "text-rose-600" : "text-emerald-600"}>
-            {money(entry.balanceDue)}
-          </span>
-        </span>
+        {/* On a page the identity half is gone and the two acts are the host's to offer, so
+            without this the strip collapses to a bare rule floating above the cards — and the
+            section itself would be the only unlabelled panel on the screen. */}
+        {standalone && (
+          <div>
+            <p className="text-xs font-extrabold text-slate-700">Service lines</p>
+            <p className="text-[10px] font-bold text-slate-400">
+              What was arranged with which supplier, and what is still unconfirmed
+            </p>
+          </div>
+        )}
+        {!standalone && (
+          <>
+            {/* The way out. Everything this screen does not carry — travellers, documents, the
+                full trip, amendments — lives on the booking, and there was no route to it. */}
+            <span className="text-xs font-bold text-slate-500">
+              Booking{" "}
+              <button
+                onClick={() => onOpenBooking?.(entry)}
+                title="Open the full booking"
+                className="inline-flex items-center gap-1 text-blue-600 hover:underline"
+              >
+                {entry.bookingCode}
+                <ExternalLink className="w-3 h-3" />
+              </button>
+            </span>
+            <span className="text-xs font-bold text-slate-500">
+              Customer <span className="text-slate-700">{entry.customerName || "—"}</span>
+            </span>
+            <span className="text-xs font-bold text-slate-500">
+              Pax <span className="text-slate-700 tabular-nums">{entry.pax ?? "—"}</span>
+            </span>
+            <span className="text-xs font-bold text-slate-500">
+              Travel <span className="text-slate-700">{fmtDate(entry.travelDate)} – {fmtDate(entry.tripEndDate)}</span>
+            </span>
+            <span className="text-xs font-bold text-slate-500">
+              Balance due{" "}
+              <span className={Number(entry.balanceDue) > 0 ? "text-rose-600" : "text-emerald-600"}>
+                {money(entry.balanceDue)}
+              </span>
+            </span>
+          </>
+        )}
 
         <div className="ml-auto flex items-center gap-2">
           {canWrite && active.length > 0 && (
@@ -401,21 +440,37 @@ export default function OpsRowDetail({
               From itinerary
             </button>
           )}
-          <button
-            onClick={() => onOpenLedger?.(entry)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border border-slate-200 bg-white text-slate-600 hover:text-blue-600 hover:border-blue-300"
-          >
-            <BookOpen className="w-3.5 h-3.5" /> View ledger
-          </button>
-          <button
-            onClick={onClose}
-            aria-label="Collapse this booking"
-            className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-400 hover:text-slate-600"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
+          {/* Both are the host's to offer: a page that already links to the ledger from its
+              money rail, and has a back link instead of a collapse, passes neither. */}
+          {onOpenLedger && (
+            <button
+              onClick={() => onOpenLedger(entry)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border border-slate-200 bg-white text-slate-600 hover:text-blue-600 hover:border-blue-300"
+            >
+              <BookOpen className="w-3.5 h-3.5" /> View ledger
+            </button>
+          )}
+          {onClose && (
+            <button
+              onClick={onClose}
+              aria-label="Collapse this booking"
+              className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-400 hover:text-slate-600"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       </div>
+
+      {/* Above the service-line cards, and above the loading state for them, because it
+          answers a different question: the cards say what was arranged, this says whether
+          the trip can leave. It renders nothing at all on a booking with no ops record,
+          so it costs an older booking neither space nor an explanation.
+
+          Suppressed on a page: the detail page gives the checkpoints a section of their own,
+          above this one, and mounting the panel twice would fetch the record twice and put
+          the same nine rows on screen twice. */}
+      {!standalone && <OpsCheckpointPanel bookingPublicId={bookingId} onChanged={onChanged} />}
 
       {loading && <p className="text-xs font-bold text-slate-400 py-4">Loading service lines…</p>}
 
@@ -507,23 +562,19 @@ export default function OpsRowDetail({
         </div>
       )}
 
-      {/* Sending returns the persisted line — status and release date both move as part of
-          that request — so the row is replaced from the response rather than re-fetched. */}
-      {mailFor && (
-        <VendorEmailModal
-          bookingPublicId={bookingId}
-          line={mailFor}
-          onSent={(updated) => { if (updated) replaceLine(updated); onChanged?.(); }}
-          onClose={() => setMailFor(null)}
-        />
-      )}
+      {/* One drawer, two channels — the same shape the lead and customer drawers use, so an
+          operator meets one pattern across the product. Which tab opens is decided by the button
+          that was pressed; landing on the other one would mean switching back every time.
 
-      {waFor && (
-        <VendorWhatsAppModal
+          Sending returns the persisted line — status and release date both move as part of that
+          request — so the row is replaced from the response rather than re-fetched. */}
+      {(mailFor || waFor) && (
+        <VendorConversationDrawer
           bookingPublicId={bookingId}
-          line={waFor}
+          line={waFor || mailFor}
+          initialChannel={waFor ? "WHATSAPP" : "EMAIL"}
           onSent={(updated) => { if (updated) replaceLine(updated); onChanged?.(); }}
-          onClose={() => setWaFor(null)}
+          onClose={() => { setMailFor(null); setWaFor(null); }}
         />
       )}
 

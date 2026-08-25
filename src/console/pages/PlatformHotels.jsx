@@ -173,7 +173,7 @@ export default function PlatformHotels() {
                     </span>
                   </TableCell>
                   <TableCell><StarRating value={h.rating ?? h.stars ?? 0} size={13} showValue /></TableCell>
-                  <TableCell>{h.rooms?.length ?? "—"}</TableCell>
+                  <TableCell>{h.roomCount ?? h.rooms?.length ?? "—"}</TableCell>
                   <TableCell>{h.linkedTenantCount ?? "—"}</TableCell>
                   <TableCell className="text-muted">v{h.catalogVersion}</TableCell>
                   <TableCell><CatalogStatusBadge value={h.status} /></TableCell>
@@ -226,7 +226,7 @@ function HotelCard({ hotel: h, onOpen }) {
             {[h.cityName, h.countryCode].filter(Boolean).join(", ")} · v{h.catalogVersion}
           </p>
           <div className="grid grid-cols-2 gap-2 text-center">
-            <Metric icon={BedDouble} label="Rooms" value={h.rooms?.length ?? "—"} />
+            <Metric icon={BedDouble} label="Rooms" value={h.roomCount ?? h.rooms?.length ?? "—"} />
             <Metric icon={Users} label="Imported by" value={h.linkedTenantCount ?? "—"} />
           </div>
         </div>

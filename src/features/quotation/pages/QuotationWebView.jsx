@@ -697,7 +697,7 @@
 //   );
 // }
 
-// /* ━━━ HELPERS ━━━ */
+// /* ━━━ HEPERS ━━━ */
 // function MiniDetail({ icon, label, val }) {
 //   return (
 //     <div>
@@ -1141,7 +1141,9 @@ if (style === "LUXURY")  return  <LuxuryWebView data={q} pdfUrl={`${API}/public/
                                   {a.attraction}
                                   {a.startTime && <span style={{ fontSize:11, fontWeight:700, color:"#6366f1", background:"#eef2ff", padding:"3px 10px", borderRadius:100 }}>{a.startTime}</span>}
                                 </p>
-                                {descPoints.length > 0 && (
+
+
+                                {/* {descPoints.length > 0 && (
                                   <div style={{ margin:"0 0 12px" }}>
                                     {descPoints.map((line, li) => (
                                       <div key={li} style={{ display:"flex", gap:8, marginBottom:7, alignItems:"flex-start" }}>
@@ -1150,7 +1152,45 @@ if (style === "LUXURY")  return  <LuxuryWebView data={q} pdfUrl={`${API}/public/
                                       </div>
                                     ))}
                                   </div>
-                                )}
+                                )} */}
+
+
+
+
+{descPoints.length > 0 && (
+  <div className="mb-3">
+    {descPoints.map((line, li) => {
+      const isBoldLine =
+        /^day\s*\d+\s*:/i.test(line) ||
+        /^overnight\s*stay\s*:/i.test(line);
+
+      return (
+        <div
+          key={li}
+          className="mb-[7px] flex items-start gap-2"
+        >
+          <span
+            className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-gradient-to-br from-indigo-500 to-violet-500"
+          />
+
+          <span
+            className={`text-[13.5px] leading-[1.65] ${
+              isBoldLine
+                ? "font-bold text-slate-900"
+                : "font-normal text-slate-600"
+            }`}
+          >
+            {line}
+          </span>
+        </div>
+      );
+    })}
+  </div>
+)}
+
+
+
+
                                 <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
                                   {a.transfer && (
                                     <span style={{ fontSize:11, fontWeight:700, color:"#6366f1", background:"#eef2ff", border:"1px solid #c7d2fe", borderRadius:100, padding:"5px 13px" }}>🚐 {a.transfer}</span>

@@ -222,18 +222,18 @@ export default function TenantDetail() {
                 was the one page that could not act on it. */}
             {!tenant.deletedAt && (tenant.status === "SUSPENDED" ? (
               <button type="button" onClick={() => askReactivate()}
-                className="inline-flex h-9 items-center gap-2 rounded-lg bg-accent px-3 text-xs font-semibold text-accent-text hover:bg-accent-hover">
+                className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex h-9 items-center gap-2 rounded-lg bg-accent px-3 text-xs font-semibold text-accent-text hover:bg-accent-hover">
                 <Play size={14} /> Reactivate
               </button>
             ) : (
               <button type="button" onClick={() => askSuspend()}
-                className="inline-flex h-9 items-center gap-2 rounded-lg border border-hue-rose/40 bg-hue-rose-soft px-3 text-xs font-semibold text-hue-rose hover:bg-hue-rose-soft/70">
+                className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex h-9 items-center gap-2 rounded-lg border border-hue-rose/40 bg-hue-rose-soft px-3 text-xs font-semibold text-hue-rose hover:bg-hue-rose-soft/70">
                 <Ban size={14} /> Suspend
               </button>
             ))}
             {!tenant.deletedAt && (
               <button type="button" onClick={() => setPlanOpen(true)}
-                className="inline-flex h-9 items-center gap-2 rounded-lg border border-border-strong bg-surface px-3 text-xs font-semibold text-heading hover:bg-surface-hover">
+                className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex h-9 items-center gap-2 rounded-lg border border-border-strong bg-surface px-3 text-xs font-semibold text-heading hover:bg-surface-hover">
                 <CreditCard size={14} /> Change plan
               </button>
             )}
@@ -285,7 +285,7 @@ export default function TenantDetail() {
         <ConsolePanel title="Quota health" description={usage?.quotaOverride ? "Custom limits are pinned for this tenant" : "Limits inherited from the current plan"}
           action={(
             <button type="button" onClick={() => setQuotaOpen(true)}
-              className="text-xs font-semibold text-accent hover:underline">
+              className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus text-xs font-semibold text-accent hover:underline">
               {usage?.quotaOverride ? "Edit limits" : "Override limits"}
             </button>
           )} className="xl:col-span-3">
@@ -324,7 +324,7 @@ export default function TenantDetail() {
               {/* Invoice creation lived only inside a drawer opened from a row action on the tenant
                   LIST — so the page showing what a tenant owes could not raise what they owe next. */}
               <button type="button" onClick={() => setInvoiceOpen(true)}
-                className="text-xs font-semibold text-accent hover:underline">
+                className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus text-xs font-semibold text-accent hover:underline">
                 Issue invoice
               </button>
               <PanelLink to={`/console/billing?q=${encodeURIComponent(tenant.organizationCode)}`}>All invoices</PanelLink>
@@ -335,7 +335,7 @@ export default function TenantDetail() {
               {billing.slice(0, 6).map((record) => (
                 <div key={record.publicId} className="flex items-center gap-3 px-5 py-3">
                   <div className="min-w-0 flex-1"><div className="font-mono text-xs font-bold text-heading">{record.invoiceNumber}</div><div className="text-xs text-muted">Issued {date(record.issueDate)} · due {date(record.dueDate)}</div></div>
-                  <div className="text-right"><div className="font-mono text-sm font-semibold text-heading">{money(record.amount, record.currency)}</div><div className={`text-[10px] font-semibold ${record.status === "PAID" ? "text-hue-emerald" : record.status === "UNPAID" ? "text-hue-rose" : "text-muted"}`}>{record.status}</div></div>
+                  <div className="text-right"><div className="font-mono text-sm font-semibold text-heading">{money(record.amount, record.currency)}</div><div className={`text-[10px] font-semibold ${record.status === "PAID" ? "text-hue-emerald" : record.status === "UNPAID" ? "text-hue-amber" : "text-muted"}`}>{record.status}</div></div>
                 </div>
               ))}
             </div>
@@ -364,7 +364,7 @@ export default function TenantDetail() {
                     title={on
                       ? (fromPlan ? "Included in the plan — turning it off is a per-tenant override" : "Per-tenant override — click to remove")
                       : "Click to grant this module to this tenant"}
-                    className={`rounded-full border px-2.5 py-1 text-xs font-semibold transition-colors disabled:opacity-50 ${
+                    className={`focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded-full border px-2.5 py-1 text-xs font-semibold transition-colors disabled:opacity-50 ${
                       !on
                         ? "border-dashed border-border text-muted hover:border-accent hover:text-accent"
                         : fromPlan
@@ -458,7 +458,7 @@ function ChangePlanDialog({ tenant, onClose, onChanged }) {
     },
   });
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-4" onClick={onClose}>
       <div className="w-full max-w-sm rounded-xl border border-border bg-surface p-5 shadow-xl"
            onClick={(e) => e.stopPropagation()}>
         <h2 className="text-base font-bold text-heading">Change plan</h2>
@@ -483,11 +483,11 @@ function ChangePlanDialog({ tenant, onClose, onChanged }) {
         )}
         <div className="mt-5 flex justify-end gap-2">
           <button onClick={onClose}
-                  className="rounded-lg border border-border px-3 py-2 text-sm font-semibold text-body hover:bg-surface-hover">
+                  className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded-lg border border-border px-3 py-2 text-sm font-semibold text-body hover:bg-surface-hover">
             Cancel
           </button>
           <button onClick={save} disabled={!changed || stepUp.busy}
-                  className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-50">
+                  className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-50">
             Change plan
           </button>
         </div>
@@ -533,7 +533,7 @@ function IssueInvoiceDialog({ tenant, onClose, onIssued }) {
     },
   });
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-4" onClick={onClose}>
       <div className="w-full max-w-md rounded-xl border border-border bg-surface p-5 shadow-xl"
            onClick={(e) => e.stopPropagation()}>
         <h2 className="text-base font-bold text-heading">Issue invoice — {tenant.organizationName}</h2>
@@ -575,11 +575,11 @@ function IssueInvoiceDialog({ tenant, onClose, onIssued }) {
         )}
         <div className="mt-5 flex justify-end gap-2">
           <button onClick={onClose}
-                  className="rounded-lg border border-border px-3 py-2 text-sm font-semibold text-body hover:bg-surface-hover">
+                  className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded-lg border border-border px-3 py-2 text-sm font-semibold text-body hover:bg-surface-hover">
             Cancel
           </button>
           <button onClick={save} disabled={invalid || datesInvalid || stepUp.busy}
-                  className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-50">
+                  className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover disabled:opacity-50">
             Issue invoice
           </button>
         </div>

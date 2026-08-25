@@ -27,10 +27,12 @@ import SuperAdminMfaActionModal from "../components/SuperAdminMfaActionModal";
 const fmtDate = (s) => (s ? new Date(s).toLocaleString() : "—");
 
 const STATUS = {
-  PENDING:      { label: "Pending review", cls: "bg-amber-500/15 text-amber-600" },
-  UNDER_REVIEW: { label: "Under review",   cls: "bg-accent-soft text-accent-soft-text" },
-  INVITED:      { label: "Invited",        cls: "bg-emerald-500/15 text-emerald-600" },
-  REJECTED:     { label: "Rejected",       cls: "bg-rose-500/15 text-rose-600" },
+  PENDING:      { label: "Pending review", cls: "bg-hue-amber-soft text-hue-amber" },
+  /* Sky = "informational / in progress". Deliberately NOT the violet accent: the accent is the
+     console's identity and its primary action, never a plain row status. */
+  UNDER_REVIEW: { label: "Under review",   cls: "bg-hue-sky-soft text-hue-sky" },
+  INVITED:      { label: "Invited",        cls: "bg-hue-emerald-soft text-hue-emerald" },
+  REJECTED:     { label: "Rejected",       cls: "bg-hue-rose-soft text-hue-rose" },
   WITHDRAWN:    { label: "Withdrawn",      cls: "bg-surface-hover text-muted" },
 };
 

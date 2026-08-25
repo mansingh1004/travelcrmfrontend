@@ -183,7 +183,7 @@ export default function PlatformHealth() {
         meta={`Generated ${fmtDateTime(summary?.generatedAt)} · uptime ${fmtDuration(Number(summary?.uptimeSeconds || 0) * 1000)}`}
         actions={(
           <button type="button" onClick={() => load(true)} disabled={refreshing}
-            className="inline-flex h-9 items-center gap-2 rounded-lg border border-border-strong bg-surface px-3 text-xs font-semibold text-heading hover:bg-surface-hover disabled:opacity-60">
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex h-9 items-center gap-2 rounded-lg border border-border-strong bg-surface px-3 text-xs font-semibold text-heading hover:bg-surface-hover disabled:opacity-60">
             <RefreshCw size={14} className={refreshing ? "animate-spin" : ""} /> Refresh
           </button>
         )} />

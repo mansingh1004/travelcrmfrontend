@@ -57,9 +57,13 @@ const VendorDetails = lazyPage(vendors, "VendorDetails");
 const reminders = () => import("@features/reminders");
 const mailbox = () => import("@features/mailbox");
 const whatsapp = () => import("@features/whatsapp");
+const communication = () => import("@features/communication");
 const Reminders = lazyPage(reminders, "Reminders");
 const Mailbox = lazyPage(mailbox, "Mailbox");
-const WhatsAppInbox = lazyPage(whatsapp, "WhatsAppInbox");
+const WhatsAppConversations = lazyPage(communication, "WhatsAppConversations");
+const EmailConversations = lazyPage(communication, "EmailConversations");
+const MessageTemplates = lazyPage(communication, "MessageTemplates");
+const CommunicationInbox = lazyPage(communication, "CommunicationInbox");
 const CreateReminder = lazyPage(reminders, "CreateReminder");
 const BookingReminders = lazyPage(reminders, "BookingReminders");
 const Notifications = lazyPage(reminders, "Notifications");
@@ -102,6 +106,7 @@ const TrashPage = lazyPage(() => import("@features/trash"), "TrashPage");
 const Calendar = lazyPage(() => import("@features/calendar"), "Calendar");
 const AllTasks = lazyPage(() => import("@features/calendar"), "AllTasks");
 const Operations = lazyPage(() => import("@features/operations"), "Operations");
+const OperationsDetail = lazyPage(() => import("@features/operations"), "OperationsDetail");
 
 // ── Platform SuperAdmin Console — SEPARATE realm (own token "sa_token", violet/dark theme) ──
 const consoleFeature = () => import("@/console");
@@ -130,9 +135,15 @@ const ConsolePlatformHotels = lazyPage(consoleFeature, "ConsolePlatformHotels");
 const ConsoleHotelPartners = lazyPage(consoleFeature, "ConsoleHotelPartners");
 const ConsoleHotelPartnerReview = lazyPage(consoleFeature, "ConsoleHotelPartnerReview");
 const ConsoleHotelNominations = lazyPage(consoleFeature, "ConsoleHotelNominations");
-const ConsolePlatformHotelDetail = lazyPage(consoleFeature, "ConsolePlatformHotelDetail");
+const ConsoleHotelMarketplace360 = lazyPage(consoleFeature, "ConsoleHotelMarketplace360");
 const ConsolePlatformHotelEditor = lazyPage(consoleFeature, "ConsolePlatformHotelEditor");
 const ConsoleMarketplaceBookings = lazyPage(consoleFeature, "ConsoleMarketplaceBookings");
+const ConsoleTransportRequests = lazyPage(consoleFeature, "ConsoleTransportRequests");
+const ConsolePlatformVehicles = lazyPage(consoleFeature, "ConsolePlatformVehicles");
+const ConsoleTransportCommissions = lazyPage(consoleFeature, "ConsoleTransportCommissions");
+const ConsoleTransportPartners = lazyPage(consoleFeature, "ConsoleTransportPartners");
+const ConsoleTransportPartnerReview = lazyPage(consoleFeature, "ConsoleTransportPartnerReview");
+const ConsoleTransportPricing = lazyPage(consoleFeature, "ConsoleTransportPricing");
 const ConsoleMarketplaceCommissions = lazyPage(consoleFeature, "ConsoleMarketplaceCommissions");
 const ConsoleMarketplaceOccupancy = lazyPage(consoleFeature, "ConsoleMarketplaceOccupancy");
 const ConsoleCommercialRules = lazyPage(consoleFeature, "ConsoleCommercialRules");
@@ -140,6 +151,11 @@ const ConsoleMarketplaceCredit = lazyPage(consoleFeature, "ConsoleMarketplaceCre
 
 const hotelPartner = () => import("@features/hotelpartner");
 const HotelPartnerRegister = lazyPage(hotelPartner, "HotelPartnerRegister");
+
+// Its own chunk, not the marketplace one: a vehicle operator loading this page has no session, no
+// staff chrome and no reason to download a tenant's Marketplace with it.
+const transportPartner = () => import("@features/transportpartner");
+const TransportPartnerRegister = lazyPage(transportPartner, "TransportPartnerRegister");
 
 const portal = () => import("@features/portal");
 const PortalLogin = lazyPage(portal, "PortalLogin");
@@ -170,6 +186,8 @@ const FleetTripDetail = lazyPage(fleet, "FleetTripDetail");
 const FleetExpenses = lazyPage(fleet, "FleetExpenses");
 const FleetSettlements = lazyPage(fleet, "FleetSettlements");
 const FleetCompliance = lazyPage(fleet, "FleetCompliance");
+const SupplierOrders = lazyPage(fleet, "SupplierOrders");
+const SupplierListings = lazyPage(fleet, "SupplierListings");
 const FleetPeriods = lazyPage(fleet, "FleetPeriods");
 
 const accounting = () => import("@features/accounting");
@@ -198,6 +216,13 @@ const MarketplaceHotel = lazyPage(marketplace, "MarketplaceHotel");
 const MarketplaceBookingRequest = lazyPage(marketplace, "MarketplaceBookingRequest");
 const MarketplaceBookings = lazyPage(marketplace, "MarketplaceBookings");
 const MarketplaceBookingDetail = lazyPage(marketplace, "MarketplaceBookingDetail");
+const TransportSearch = lazyPage(marketplace, "TransportSearch");
+const TransportRequest = lazyPage(marketplace, "TransportRequest");
+const TransportOrders = lazyPage(marketplace, "TransportOrders");
+
+// Tenant-side work queue for this tenant's PLATFORM HOTEL requests. Kept separate from the
+// cross-service Operations board and from the SuperAdmin console realm.
+const HotelOperations = lazyPage(() => import("@features/hotelOperations"), "HotelOperations");
 
 
 // Route-level guard (defense-in-depth; backend is the real gate, menus already hide these).
@@ -246,7 +271,15 @@ const AppRouter = () => {
             credential and is re-verified server-side on every call. Must stay a
             TOP-LEVEL route: anything nested under "/" renders <Layout/>, which
             redirects an unauthenticated visitor to /login. */}
+            <Route path="/hotel-partner/register" element={<HotelPartnerRegister />} />
             <Route path="/hotel-partner/register/:token" element={<HotelPartnerRegister />} />
+
+            {/* ── Transport Partner self-registration — SEPARATE realm, no login ─
+            The vehicle-operator counterpart of the link above, and TOP-LEVEL for
+            exactly the same reason: nested under "/" it would render <Layout/>,
+            which bounces an unauthenticated operator to /login before they ever
+            see the form. The token in the path IS the credential. */}
+            <Route path="/transport-partner/register/:token" element={<TransportPartnerRegister />} />
 
             {/* ── Customer-facing Traveler Portal — SEPARATE realm ──────────────
             Own token ("travelerToken"), own OTP login, no staff chrome. The
@@ -299,9 +332,28 @@ const AppRouter = () => {
               {/* new BEFORE :publicId, or "new" is read as an id and the editor never renders. */}
               <Route path="hotel-catalog/new" element={<ConsolePlatformHotelEditor />} />
               <Route path="hotel-catalog/:publicId/edit" element={<ConsolePlatformHotelEditor />} />
-              <Route path="hotel-catalog/:publicId" element={<ConsolePlatformHotelDetail />} />
+              <Route path="hotel-catalog/:publicId" element={<ConsoleHotelMarketplace360 />} />
               {/* The approval queue. Only a decision taken here can confirm a tenant's hotel. */}
               <Route path="hotel-requests" element={<ConsoleMarketplaceBookings />} />
+              {/* The transport queue. A separate screen from the hotel one on purpose — see consoleNav. */}
+              <Route path="transport-requests" element={<ConsoleTransportRequests />} />
+              {/* Where the transport catalog is actually filled. Nothing a tenant browses exists
+              until a row here is published. */}
+              <Route path="transport-catalog" element={<ConsolePlatformVehicles />} />
+              {/* Where the catalog above comes FROM: invite an operator, read what they submitted,
+              publish their fleet. The invite list and the review are two routes for the same reason
+              the hotel pair are — a submission carries a whole fleet, and each vehicle carries its
+              own photos, amenities and a rate card per service type. */}
+              <Route path="transport-partners" element={<ConsoleTransportPartners />} />
+              <Route path="transport-partners/:publicId" element={<ConsoleTransportPartnerReview />} />
+              {/*
+                ⚠ The platform's margin structure over the vehicle catalog. SuperAdmin realm only,
+                same as hotel-pricing — and a separate screen from it, because a transport rule is
+                keyed by vehicle AND service type and is applied to a rate model (per km, per day,
+                per transfer) that no hotel rule has a field for.
+              */}
+              <Route path="transport-pricing" element={<ConsoleTransportPricing />} />
+              <Route path="transport-earnings" element={<ConsoleTransportCommissions />} />
               {/*
                 What the platform has SOLD, night by night — not what is available. There is no
                 allotment to report on; this is the exposure the operator already carries.
@@ -389,10 +441,31 @@ const AppRouter = () => {
               <Route path="AllVendors" element={<AllVendors />} />
               <Route path="CreateVendor" element={<CreateVendor />} />
               <Route path="Reminders" element={<Reminders />} />
-              <Route path="Mailbox" element={<Guard allow={hasPermission(P.COMM_READ) && hasModule("COMMUNICATION")}><Mailbox /></Guard>} />
+              {/* COMM_MAILBOX_READ, not COMM_READ. This screen serves the agency's whole IMAP
+                  mailbox with no row filter, while COMM_READ carries the own/team/all scope the
+                  Communication Center enforces — sharing one key let an OWN-scoped agent read every
+                  thread in the tenant through a second URL. */}
+              <Route path="Mailbox" element={<Guard allow={hasPermission(P.COMM_MAILBOX_READ) && hasModule("COMMUNICATION")}><Mailbox /></Guard>} />
               {/* Same gate as Mailbox: it reads the same conversations table behind the same
                   COMM_READ authority and the same plan module. */}
-              <Route path="WhatsApp" element={<Guard allow={hasPermission(P.COMM_READ) && hasModule("COMMUNICATION")}><WhatsAppInbox /></Guard>} />
+              {/* /WhatsApp is now a kept redirect, the same treatment /console/login gets. The
+                  screen it used to render was read-only and is superseded by the Communication
+                  Center's WhatsApp preset, which shows the same rows AND can reply. Kept rather
+                  than deleted because it has been a real URL in people's bookmarks and in the
+                  sidebar; the component it pointed at is no longer bundled. */}
+              <Route path="WhatsApp" element={<Navigate to="/communication/whatsapp" replace />} />
+              {/* Communication Center. ONE screen; the two paths below are presets of it with a
+                  channel pinned, because channel is a filter over one comm_conversations table and
+                  never a separate page. Same gate throughout: the same rows behind the same
+                  authority and plan module. Replying additionally needs COMM_SEND and triage
+                  COMM_ASSIGN, both enforced server-side. */}
+              <Route path="communication" element={<Guard allow={hasPermission(P.COMM_READ) && hasModule("COMMUNICATION")}><CommunicationInbox /></Guard>} />
+              <Route path="communication/whatsapp" element={<Guard allow={hasPermission(P.COMM_READ) && hasModule("COMMUNICATION")}><WhatsAppConversations /></Guard>} />
+              <Route path="communication/email" element={<Guard allow={hasPermission(P.COMM_READ) && hasModule("COMMUNICATION")}><EmailConversations /></Guard>} />
+              {/* COMM_TEMPLATE_MANAGE, not COMM_READ: this screen edits what the agency is allowed
+                  to send, and the backend grants that key per user — TENANT_ADMIN included. The
+                  Guard is defence in depth; @PreAuthorize on the controller is the real gate. */}
+              <Route path="communication/templates" element={<Guard allow={hasPermission(P.COMM_TEMPLATE_MANAGE) && hasModule("COMMUNICATION")}><MessageTemplates /></Guard>} />
               {/* Task & Team Calendar (gated by TASK_READ; sub-agents get a row-scoped personal calendar) */}
               <Route path="calendar" element={<Guard allow={hasPermission(P.TASK_READ)}><Calendar /></Guard>} />
               {/* All Tasks list — same TASK_READ gate and the same TASKS module as the calendar.
@@ -405,6 +478,13 @@ const AppRouter = () => {
               the board shows booking data and nothing else — a new OPS_* permission would be a
               second name for the same access. */}
               <Route path="operations" element={<Guard allow={hasPermission(P.BOOKING_READ) && hasModule("BOOKINGS")}><Operations /></Guard>} />
+              {/* One booking's delivery view. The SAME gate as the board on purpose: it reads the
+              same booking data, and a stricter gate here would let an ops executive see a row on
+              the board and be bounced to the dashboard on opening it. Writes inside are gated per
+              surface — service lines on BOOKING_UPDATE, checkpoints and the ops owner on
+              OPS_MANAGE. The nav rail needs no entry: findActiveDestination matches subtrees, so
+              /operations/<id> keeps "Operations" lit by itself. */}
+              <Route path="operations/:bookingPublicId" element={<Guard allow={hasPermission(P.BOOKING_READ) && hasModule("BOOKINGS")}><OperationsDetail /></Guard>} />
 
               <Route path="createquotation" element={<Guard allow={(hasPermission(P.QUOTATION_CREATE) || hasPermission(P.QUOTATION_UPDATE)) && hasPermission(P.LEAD_READ)}><CreateQuotation /></Guard>} />
               {/*
@@ -464,6 +544,11 @@ const AppRouter = () => {
 
               {/* ── Fleet / Vehicle Diary (guarded by FLEET_* permissions) ── */}
               <Route path="fleet" element={<Guard allow={hasPermission(P.FLEET_READ)}><FleetDashboard /></Guard>} />
+              {/* ── The SUPPLY side of the Transport Marketplace. Under /fleet because the operator is
+              a Vehicle Diary tenant and assigning a platform job picks their own vehicles and
+              drivers. Its own permissions — a fleet reader is not automatically a platform supplier. */}
+              <Route path="fleet/platform-jobs" element={<Guard allow={hasPermission(P.TRANSPORT_SUPPLIER_ORDER_MANAGE)}><SupplierOrders /></Guard>} />
+              <Route path="fleet/platform-listings" element={<Guard allow={hasPermission(P.TRANSPORT_SUPPLIER_LISTING_MANAGE)}><SupplierListings /></Guard>} />
               <Route path="fleet/vehicles" element={<Guard allow={hasPermission(P.FLEET_READ)}><FleetVehicles /></Guard>} />
               <Route path="fleet/vehicles/new" element={<Guard allow={hasPermission(P.FLEET_CREATE)}><FleetVehicleForm /></Guard>} />
               <Route path="fleet/vehicles/:publicId" element={<Guard allow={hasPermission(P.FLEET_READ)}><FleetVehicleDetail /></Guard>} />
@@ -511,11 +596,17 @@ const AppRouter = () => {
               "bookings" segment over the dynamic one regardless of order. */}
               <Route path="marketplace/bookings" element={<Guard allow={hasPermission(P.HOTEL_MARKETPLACE_VIEW)}><MarketplaceBookings /></Guard>} />
               <Route path="marketplace/bookings/:publicId" element={<Guard allow={hasPermission(P.HOTEL_MARKETPLACE_VIEW)}><MarketplaceBookingDetail /></Guard>} />
+              <Route path="hotel-operations" element={<Guard allow={hasPermission(P.HOTEL_MARKETPLACE_VIEW) && hasModule("HOTEL_MARKETPLACE")}><HotelOperations /></Guard>} />
               <Route path="marketplace/:publicId" element={<Guard allow={hasPermission(P.HOTEL_MARKETPLACE_VIEW)}><MarketplaceHotel /></Guard>} />
               {/* Requesting is a stronger act than browsing — it puts a payable on the tenant's books —
               so it gates on BOOK, not VIEW. More specific path, so route ranking picks it over
               ":publicId" regardless of declaration order. */}
               <Route path="marketplace/:publicId/request" element={<Guard allow={hasPermission(P.HOTEL_MARKETPLACE_BOOK)}><MarketplaceBookingRequest /></Guard>} />
+
+              {/* Transport Marketplace (tenant buying side). */}
+              <Route path="marketplace/transport" element={<Guard allow={hasPermission(P.TRANSPORT_MARKETPLACE_VIEW)}><TransportSearch /></Guard>} />
+              <Route path="marketplace/transport/orders" element={<Guard allow={hasPermission(P.TRANSPORT_MARKETPLACE_VIEW)}><TransportOrders /></Guard>} />
+              <Route path="marketplace/transport/:publicId/request" element={<Guard allow={hasPermission(P.TRANSPORT_MARKETPLACE_BOOK)}><TransportRequest /></Guard>} />
 
               {/* ── Sub-Agents (B2B franchise) — TENANT_ADMIN only ── */}
               <Route path="subagents" element={<Guard allow={isTenantAdmin()}><SubAgents /></Guard>} />

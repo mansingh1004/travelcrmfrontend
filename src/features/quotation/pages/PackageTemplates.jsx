@@ -1,8 +1,4 @@
-// src/features/quotation/pages/PackageTemplates.jsx
-//
-// The package-template library. A modern card grid an agent browses, searches and filters; create
-// and edit route to the dedicated builder. This is the lossless authoring surface — the only place
-// a template's cities are pinned to real master ids.
+
 
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";

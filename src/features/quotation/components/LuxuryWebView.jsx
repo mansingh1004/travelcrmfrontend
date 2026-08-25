@@ -1020,6 +1020,64 @@ const listOf = (value) =>
     .map(textOf)
     .filter((t) => String(t).trim());
 
+/* ── "6N/7D" inside the title ─────────────────────────────────────────────────
+   The title is free text an agent typed (see the note at the <h1>), so the night
+   and day counts can only be found by pattern — there is no field to read. Each
+   "6N" / "7D" run keeps its digits white and tints only the letter, so the
+   heading still reads as one line rather than as a two-colour label. The tints
+   are the bright ends of red and blue: plain red and blue sit too dark to be
+   legible on the hero photograph. */
+const NIGHTS_DAYS = /(\d+\s*)([ND])\b/gi;
+const NIGHT_TINT = "#FF6B6B";
+const DAY_TINT = "#7CC5FF";
+
+const renderNightsDays = (text) => {
+  const src = String(text ?? "");
+  const parts = [];
+  let last = 0;
+  for (const m of src.matchAll(NIGHTS_DAYS)) {
+    parts.push(src.slice(last, m.index), m[1]);
+    parts.push(
+      <span key={m.index} style={{ color: m[2].toUpperCase() === "N" ? NIGHT_TINT : DAY_TINT }}>
+        {m[2]}
+      </span>
+    );
+    last = m.index + m[0].length;
+  }
+  if (!parts.length) return src;
+  parts.push(src.slice(last));
+  return parts;
+};
+
+/* ── Description → points ─────────────────────────────────────────────────────
+   Descriptions are written in a <Textarea> (SightseeingTab.jsx:2757) and the service
+   stores them verbatim, newlines and all — so when an agent lists an activity's
+   highlights one per line, that is exactly what arrives here. Rendered as one block
+   it read as a paragraph and lost the shape it was written in.
+
+   Newlines win when there are any. Only when the whole thing is one paragraph does
+   it fall back to sentences, and that fallback has to earn its splits:
+   QuotationWebView breaks on every full stop, which turns "Visit Mt. Everest base
+   camp" into "Visit Mt" and "Everest base camp". Requiring a capital afterwards is
+   not enough on its own — "Everest" is capitalised — so the abbreviations that
+   actually turn up in itinerary copy are excluded by name. Leading -, * and • are
+   stripped because a list typed with its own bullets should not end up with two. */
+const SENTENCE_BREAK = /(?<!\b(?:Mt|St|Rd|Ft|Dr|Mr|Mrs|Ms|Jr|Sr|No|vs|etc|approx|a\.m|p\.m)\.)(?<=\.)\s+(?=[A-Z])/;
+
+const splitPoints = (text) => {
+  const raw = String(text || "").trim();
+  if (!raw) return [];
+  const parts = /\r|\n/.test(raw) ? raw.split(/\r\n|\r|\n/) : raw.split(SENTENCE_BREAK);
+  return parts.map((line) => line.replace(/^[-*•\s]+/, "").trim()).filter(Boolean);
+};
+
+/* Decorative only, and deliberately drawn from hues that mean nothing on this page.
+   Emerald and rose are left out: they carry "included" and "excluded" three sections
+   down, and a green bullet against a sightseeing line would answer a question the
+   itinerary is not being asked. Cycled by position, so a stop always paints the same
+   way twice running. */
+const POINT_COLORS = ["#0F4C4C", "#0EA5E9", "#8B5CF6", "#6366F1", "#06B6D4"];
+
 const num = (value) => {
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
@@ -1050,12 +1108,37 @@ function parseCancellationTiers(policies, travelDate, grandTotal) {
     const raw = String(textOf(item) || "").trim();
 
     let days = num(item?.daysBefore ?? item?.days ?? item?.daysPrior ?? item?.beforeDays);
-    let pct = num(item?.refundPercent ?? item?.refundPercentage ?? item?.percent ?? item?.percentage);
+    // Named refund keys state the direction outright; a bare `percent` does not, so it is
+    // only trusted once the sentence has said which way it points.
+    let pct = num(item?.refundPercent ?? item?.refundPercentage);
 
     if (pct == null && raw) {
+      /* A percentage in a cancellation rule means one of two opposite things, and the
+         same field carries both:
+
+           "30+ days before — 90% refund"          → 90 comes back
+           "30+ days before: 10% cancellation fee" → 10 is kept, 90 comes back
+
+         Reading every percentage as the refund turned a 10% fee into a 10% refund and
+         printed ₹3,434 back where the customer is owed ₹30,902 — a wrong number on the
+         one line of a quotation that says what they get if they pull out.
+
+         So the wording decides, and when it says neither the rule is skipped rather
+         than guessed: no rupee figure at all beats a confidently wrong one. */
       const m = raw.match(/(\d{1,3})\s*%/);
-      if (m) pct = Number(m[1]);
-      else if (/no[-\s]*refund|non[-\s]*refundable/i.test(raw)) pct = 0;
+      if (m) {
+        const value = Number(m[1]);
+        if (/\brefund/i.test(raw)) pct = value;
+        else if (/\b(fee|charge|deduct\w*|penalt\w*|retention|retain\w*|forfeit\w*|cancellation\s+cost)\b/i.test(raw)) {
+          pct = 100 - value;
+        } else {
+          const loose = num(item?.percent ?? item?.percentage);
+          if (loose == null) return;
+          pct = loose;
+        }
+      } else if (/no[-\s]*refund|non[-\s]*refundable|fully\s+non[-\s]*refundable/i.test(raw)) {
+        pct = 0;
+      }
     }
     if (days == null && raw) {
       const m = raw.match(/(\d{1,3})\s*\+?\s*days?/i);
@@ -1259,6 +1342,12 @@ export default function LuxuryWebView({ data, pdfUrl }) {
   const destinationText = customer.destination || (Array.isArray(q.destinations) ? q.destinations.join(" · ") : "") || q.destination || "Destination";
   const title = q.title || destinationText;
 
+  /* One string for both the hero and the sidebar's Duration row — they were the same
+     expression written twice, which is how two places that have to agree stop agreeing. */
+  const durationText = [q.days ? `${q.days} Days` : "", q.nights ? `${q.nights} Nights` : ""]
+    .filter(Boolean)
+    .join(" · ");
+
   const companyPhone = company.phone || company.contactNumber || q.companyPhone || "";
   const companyEmail = company.email || q.companyEmail || "";
   const companyName = company.name || "";
@@ -1392,6 +1481,34 @@ export default function LuxuryWebView({ data, pdfUrl }) {
   const thingsToDo = days.reduce((sum, d) => sum + (Array.isArray(d.activities) ? d.activities.length : 0), 0);
   const routeText = routeStops.map((s) => s.city).join(" → ") || destinationText;
 
+  /* What the total is made of, per service. Every block on the payload carries its own
+     `amount`, so this is read rather than derived.
+
+     EVERY priced service is listed, not the three most common ones: a quotation with a
+     flight in it would otherwise show rows that visibly fall short of the total, and a
+     customer counting them would be right to ask where the rest went.
+
+     `included: false` is honoured — a block can carry an amount from an earlier draft and
+     still be out of the package — and a zero is dropped, because "Hotels ₹0" answers
+     nothing.
+
+     The rows are NOT presented as a sum. Tax, TCS, markup and discount sit between them
+     and the grand total (totals.taxAmount / markup / discountAmount), so a "Subtotal"
+     line here would either be wrong or drag the whole invoice into a sidebar card. The
+     heading says what these are — the share each service takes — and claims no more. */
+  const costBreakdown = useMemo(() => (
+    [
+      ["Hotels", q.hotel],
+      ["Flights", q.flight],
+      ["Transport", q.vehicle],
+      ["Sightseeing", q.sightseeing],
+      ["Cruise", q.cruise],
+      ["Add-ons", q.addons],
+    ]
+      .filter(([, block]) => block?.included !== false && Number(block?.amount) > 0)
+      .map(([label, block]) => ({ label, amount: Number(block.amount) }))
+  ), [q]);
+
   const mealsText = useMemo(() => {
     const plans = [...new Set(hotels.map((h) => String(h?.mealPlan || "").trim()).filter(Boolean))];
     return plans.join(" · ");
@@ -1475,6 +1592,9 @@ export default function LuxuryWebView({ data, pdfUrl }) {
      dropping one does not leave a gap in the sequence. */
   const rendered = [
     hotels.length ? "hotels" : null,
+    // Between the hotels and the day-by-day: both of those answer "what am I getting",
+    // and the journey is the narrative that follows from them.
+    vehicles.length ? "transport" : null,
     days.length ? "days" : null,
     (inclusions.length || exclusions.length) ? "incl" : null,
     showPayment ? "pay" : null,
@@ -1498,6 +1618,24 @@ export default function LuxuryWebView({ data, pdfUrl }) {
         )}
       </div>
       <div className="border border-t-0 border-slate-200 bg-white">
+        {/* Directly under the figure it breaks down, and tinted so it reads as part of
+            the money block rather than as the first of the trip-detail rows below. */}
+        {costBreakdown.length > 0 && (
+          <div className="border-b border-slate-100 bg-slate-50/70 px-4 py-3">
+            <p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+              Included in your package
+            </p>
+            <dl className="space-y-1.5">
+              {costBreakdown.map((row) => (
+                <div key={row.label} className="flex items-baseline justify-between gap-3">
+                  <dt className="text-xs font-medium text-slate-500">{row.label}</dt>
+                  <dd className="text-sm font-bold tabular-nums text-slate-700">{inr(row.amount)}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        )}
+
         <dl className="divide-y divide-slate-100 text-sm">
           {routeText && (
             <div className="flex gap-3 px-4 py-3">
@@ -1509,7 +1647,7 @@ export default function LuxuryWebView({ data, pdfUrl }) {
             <div className="flex gap-3 px-4 py-3">
               <dt className="w-24 shrink-0 text-xs font-semibold text-slate-400">Duration</dt>
               <dd className="min-w-0 font-semibold text-slate-700">
-                {[q.days ? `${q.days} Days` : "", q.nights ? `${q.nights} Nights` : ""].filter(Boolean).join(" · ")}
+                {durationText}
               </dd>
             </div>
           )}
@@ -1677,7 +1815,9 @@ export default function LuxuryWebView({ data, pdfUrl }) {
         />
         {/* Teal scrim, not a plain black one — the headline has to hold on a bright
             beach photo and on a dark mountain one alike. */}
-        <div className="absolute inset-0" style={{ background: "linear-gradient(180deg, rgba(15,76,76,.55) 0%, rgba(15,76,76,.82) 100%)" }} aria-hidden="true" />
+        {/* <div className="absolute inset-0" style={{ background: "linear-gradient(180deg, rgba(15,76,76,.55) 0%, rgba(15,76,76,.82) 100%)" }} aria-hidden="true" /> */}
+<div className="absolute inset-0" style={{ background: "linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,.65) 100%)" }} aria-hidden="true" />
+
         <div className="relative mx-auto w-full max-w-[900px] px-4 py-14 text-center text-white sm:py-20">
           {q.quoteNo && (
             <span className="inline-block rounded-full border border-[#E9C46A]/60 px-3 py-1 text-[11px] font-bold tracking-[0.15em] text-[#E9C46A]">
@@ -1685,12 +1825,20 @@ export default function LuxuryWebView({ data, pdfUrl }) {
             </span>
           )}
           <h1 className="wc-serif mt-4 break-words text-3xl font-semibold leading-tight sm:text-5xl lg:text-6xl">
-            {title}
+            {renderNightsDays(title)}
           </h1>
-          {(customer.name || dateRangeText) && (
+          {/* Duration sits here rather than in the heading. The heading prints `q.title`,
+              which an agent may have written by hand — "Nimit – Nepal – 5N/6D" is a better
+              title than anything generated — so rewriting it to force the nights in would
+              throw that away. The auto-generated ones carry only "4N" and no day count
+              (Createquotation.jsx:250), and older quotations cannot be fixed at the source
+              because their title is already saved. Stating it below the title covers every
+              one of those cases and leaves the title alone. */}
+          {(customer.name || dateRangeText || durationText) && (
             <p className="mt-4 text-sm text-white/85 sm:text-base">
               {customer.name ? `Hi ${customer.name} — here's your handcrafted trip` : "Here's your handcrafted trip"}
               {dateRangeText && <span className="text-[#A7E8D2]"> · {dateRangeText}</span>}
+              {durationText && <span className="text-[#A7E8D2]"> · {durationText}</span>}
             </p>
           )}
           {/* The reference's trust pills (awards, trips completed, review counts)
@@ -1910,6 +2058,70 @@ export default function LuxuryWebView({ data, pdfUrl }) {
               </section>
             )}
 
+            {/* ── Transport ────────────────────────────────────────────────────
+                The vehicles were reaching the page only as a name on a transfer pill
+                between two route stops, and only when one of them happened to name
+                both cities. Everything else the payload carries about them — model,
+                type, capacity, how many, the dates they cover, the photo — never
+                rendered at all.
+
+                That became a hole the moment the cost card started printing a
+                Transport figure: a customer reads what it costs, looks for what it
+                buys, and finds nothing. */}
+            {vehicles.length > 0 && (
+              <section>
+                <SectionHeading no={no("transport")} title="How you'll travel" />
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {vehicles.map((v, i) => {
+                    const name = v?.model || v?.type || "Vehicle";
+                    const route = [v?.pickup, v?.drop].filter(Boolean).join(" → ");
+                    const dates = [v?.startDate, v?.endDate].filter(Boolean).map((d) => fmtDate(d)).join(" – ");
+                    const qty = Number(v?.qty) || 0;
+                    return (
+                      <div key={i} className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white">
+                        <Frame
+                          src={vehicleImg(v)}
+                          alt={name}
+                          className="relative h-40 w-full overflow-hidden"
+                          imgClassName="h-full w-full object-cover"
+                        >
+                          {qty > 1 && (
+                            <span className="absolute right-2 top-2 rounded-full bg-white/95 px-2 py-0.5 text-[10px] font-bold text-slate-700">
+                              × {qty}
+                            </span>
+                          )}
+                        </Frame>
+
+                        <div className="flex flex-1 flex-col gap-1.5 p-4">
+                          <p className="wc-serif text-base font-semibold text-slate-800">{name}</p>
+
+                          {/* The type only earns a line of its own when the title is the
+                              model — otherwise it IS the title and would print twice. */}
+                          {v?.type && v?.model && (
+                            <p className="text-xs font-semibold" style={{ color: TEAL }}>{v.type}</p>
+                          )}
+
+                          {v?.capacity && (
+                            <p className="text-xs text-slate-500">Seats {v.capacity}</p>
+                          )}
+                          {route && (
+                            <p className="text-xs font-semibold text-slate-600">{route}</p>
+                          )}
+                          {dates && <p className="text-xs text-slate-400">{dates}</p>}
+                          {qty > 1 && !vehicleImg(v) && (
+                            <p className="text-xs text-slate-500">{qty} vehicles</p>
+                          )}
+                          {v?.notes && (
+                            <p className="mt-1 text-[11px] leading-relaxed text-slate-500">{v.notes}</p>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
+
             {/*  ───────────────────────────────────────────── */}
             {days.length > 0 && (
               <section>
@@ -2041,9 +2253,23 @@ export default function LuxuryWebView({ data, pdfUrl }) {
                                           <span className="block text-sm font-semibold text-slate-800">
                                             {a?.attraction || a?.title || "Activity"}
                                           </span>
-                                          {a?.description && (
-                                            <span className="mt-0.5 line-clamp-2 block text-xs leading-relaxed text-slate-500">
-                                              {a.description}
+                                          {/* No line-clamp. It used to cut this at two lines, so a
+                                              stop written as four highlights showed two and gave no
+                                              sign the rest existed — and clamping a bullet list is
+                                              worse than clamping a paragraph, because what is hidden
+                                              is whole items rather than the tail of a sentence. */}
+                                          {splitPoints(a?.description).length > 0 && (
+                                            <span className="mt-1 block space-y-1">
+                                              {splitPoints(a.description).map((point, pi) => (
+                                                <span key={pi} className="flex items-start gap-1.5">
+                                                  <span
+                                                    className="mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full"
+                                                    style={{ background: POINT_COLORS[pi % POINT_COLORS.length] }}
+                                                    aria-hidden="true"
+                                                  />
+                                                  <span className="text-xs leading-relaxed text-slate-500">{point}</span>
+                                                </span>
+                                              ))}
                                             </span>
                                           )}
                                           {Array.isArray(a?.meals) && a.meals.length > 0 && (
@@ -2059,10 +2285,24 @@ export default function LuxuryWebView({ data, pdfUrl }) {
                                       </li>
                                     ))}
                                   </ol>
+                                ) : splitPoints(d?.description).length > 0 ? (
+                                  /* Same treatment as a stop's description — a day with no
+                                     activities still carries whatever the agent wrote, and it
+                                     is written the same way in the same kind of box. */
+                                  <ul className="space-y-1.5 px-4 py-5">
+                                    {splitPoints(d.description).map((point, pi) => (
+                                      <li key={pi} className="flex items-start gap-2">
+                                        <span
+                                          className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full"
+                                          style={{ background: POINT_COLORS[pi % POINT_COLORS.length] }}
+                                          aria-hidden="true"
+                                        />
+                                        <span className="text-sm leading-relaxed text-slate-500">{point}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
                                 ) : (
-                                  <p className="px-4 py-5 text-sm text-slate-400">
-                                    {d?.description || "Day at leisure."}
-                                  </p>
+                                  <p className="px-4 py-5 text-sm text-slate-400">Day at leisure.</p>
                                 )}
 
                                 {d?.overnightStay && (
@@ -2252,9 +2492,16 @@ export default function LuxuryWebView({ data, pdfUrl }) {
 
                           {/* Each cell is one band segment, and it labels its own LEFT
                               edge — so cell 0 reads "NOW" and every later cell reads the
-                              cut-off that opened it. The trailing marker closes the last
-                              segment and carries the departure date. */}
-                          <div className="mt-1.5 flex">
+                              cut-off that opened it.
+
+                              Check-in is positioned, not appended. As a flex sibling it
+                              added its own width to cells that already came to 100%, so the
+                              ruler ended up wider than the band it measures: the departure
+                              date hung off the right of the last segment, and the extra
+                              width pushed NOW off the left of the scroll box. Pinned to the
+                              right edge it lines up with where the band actually ends. */}
+                          <div className="relative mt-1.5">
+                            <div className="flex">
                             {cancelTiers.map((t, i) => {
                               const boundary = i === 0 ? null : cancelTiers[i - 1];
                               return (
@@ -2276,7 +2523,9 @@ export default function LuxuryWebView({ data, pdfUrl }) {
                                 </div>
                               );
                             })}
-                            <div className="shrink-0 text-left">
+                            </div>
+
+                            <div className="absolute right-0 top-0 text-right">
                               <span className="block text-[10px] font-semibold text-slate-500">
                                 {customer.travelDate
                                   ? new Date(customer.travelDate).toLocaleDateString("en-GB", { day: "numeric", month: "short" })

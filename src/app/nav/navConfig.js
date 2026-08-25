@@ -29,6 +29,7 @@ import {
   CalendarCheck,
   CalendarDays,
   CalendarPlus,
+  Car,
   CreditCard,
   Database,
   FileText,
@@ -47,6 +48,7 @@ import {
   UserCog,
   Users,
   Zap,
+  BedDouble,
   BellRing,
   Inbox,
   CircleUser,
@@ -120,22 +122,42 @@ export const NAV_SECTIONS = [
         Icon: Inbox,
         tone: "sky",
         keywords: "email inbox sent mail gmail imap",
-        // Same authority as reading conversations — see the note on P.COMM_READ — and the same plan
-        // module, matching the ModuleAccessFilter rule for /api/mailbox. Without hasModule the row
-        // showed on a plan that excludes COMMUNICATION and every call behind it answered 403.
-        can: () => hasPermission(P.COMM_READ) && hasModule("COMMUNICATION"),
+        // COMM_MAILBOX_READ — its OWN authority, not the one that reads conversations. This is the
+        // whole agency's mailbox with no row scope applied, so it is granted to managers and owners
+        // rather than to everyone who can answer their own threads. The plan module still applies,
+        // matching the ModuleAccessFilter rule for /api/mailbox.
+        can: () => hasPermission(P.COMM_MAILBOX_READ) && hasModule("COMMUNICATION"),
         path: "/Mailbox",
       },
       {
-        id: "whatsapp",
-        label: "WhatsApp",
+        id: "communication",
+        label: "Communication Center",
         Icon: MessageCircle,
         tone: "emerald",
-        keywords: "chat supplier vendor messages interakt",
-        // Same authority and the same plan module as Mailbox — it reads the same
-        // comm_conversations rows through the same COMM_READ endpoints.
+        keywords: "chat whatsapp email conversations inbox messages interakt",
+        // Same authority and the same plan module as Mailbox — these are the same
+        // comm_conversations rows behind the same COMM_READ endpoints.
         can: () => hasPermission(P.COMM_READ) && hasModule("COMMUNICATION"),
-        path: "/WhatsApp",
+        // Two channels, one screen each, over one table. A third channel is another child
+        // here — it is deliberately NOT a sibling top-level row, because the point of the
+        // Center is that a customer's history is one thing seen through several channels.
+        children: [
+          // Everything in one queue — lead work and operations work, both channels. The two below
+          // are the same screen with a channel pinned, kept because an operator who lives in one
+          // channel should not have to re-filter every morning.
+          { id: "communication.inbox", label: "Inbox", path: "/communication" },
+          { id: "communication.whatsapp", label: "WhatsApp", path: "/communication/whatsapp", alt: ["/WhatsApp"] },
+          { id: "communication.email", label: "Email", path: "/communication/email" },
+          {
+            id: "communication.templates",
+            label: "Message templates",
+            path: "/communication/templates",
+            // Its own gate, narrower than the group's: the backend grants COMM_TEMPLATE_MANAGE per
+            // user rather than by role, so most people who can read the inbox cannot edit what it
+            // is allowed to send.
+            can: () => hasPermission(P.COMM_TEMPLATE_MANAGE) && hasModule("COMMUNICATION"),
+          },
+        ],
       },
       {
         id: "reminders",
@@ -365,6 +387,23 @@ export const NAV_SECTIONS = [
             path: "/fleet/compliance",
             keywords: "insurance permit fitness puc expiry",
           },
+          /* The supply side of the Transport Marketplace. Their own `can` rather than the group's:
+             an operator with FLEET has these only if they also hold TRANSPORT_SUPPLIER, and a plain
+             Vehicle Diary customer who never joined the marketplace must not see two dead links. */
+          {
+            id: "fleet.platformJobs",
+            label: "Platform Jobs",
+            path: "/fleet/platform-jobs",
+            can: () => hasPermission(P.TRANSPORT_SUPPLIER_ORDER_MANAGE) && hasModule("TRANSPORT_SUPPLIER"),
+            keywords: "marketplace orders assign driver duty slip platform",
+          },
+          {
+            id: "fleet.platformListings",
+            label: "My Platform Listings",
+            path: "/fleet/platform-listings",
+            can: () => hasPermission(P.TRANSPORT_SUPPLIER_LISTING_MANAGE) && hasModule("TRANSPORT_SUPPLIER"),
+            keywords: "marketplace listing publish supply catalog",
+          },
         ],
       },
       {
@@ -389,6 +428,36 @@ export const NAV_SECTIONS = [
             label: "Hotel requests",
             path: "/marketplace/bookings",
             keywords: "approval queue status",
+          },
+          {
+            id: "marketplace.operations",
+            label: "Hotel Operations",
+            path: "/hotel-operations",
+            keywords: "hotel operations check in check out voucher confirmation platform property",
+          },
+        ],
+      },
+      {
+        id: "transportMarketplace",
+        label: "Platform Transport",
+        Icon: Car,
+        tone: "violet",
+        keywords: "transport marketplace vehicles cars coaches transfers",
+        // The buying side of transport is a separate add-on from both Vehicle
+        // Diary (FLEET) and the operator-facing TRANSPORT_SUPPLIER module.
+        can: () => hasPermission(P.TRANSPORT_MARKETPLACE_VIEW) && hasModule("TRANSPORT_MARKETPLACE"),
+        children: [
+          {
+            id: "transportMarketplace.browse",
+            label: "Browse vehicles",
+            path: "/marketplace/transport",
+            keywords: "search vehicles cars import request",
+          },
+          {
+            id: "transportMarketplace.requests",
+            label: "Transport requests",
+            path: "/marketplace/transport/orders",
+            keywords: "orders approval status duty slip",
           },
         ],
       },

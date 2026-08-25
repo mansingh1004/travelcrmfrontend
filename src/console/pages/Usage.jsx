@@ -20,7 +20,7 @@ const HUE = {
 const STATUS_CLS = {
   ACTIVE:    "bg-hue-emerald-soft text-hue-emerald",
   TRIAL:     "bg-hue-amber-soft text-hue-amber",
-  PAST_DUE:  "bg-hue-amber-soft text-hue-amber",
+  PAST_DUE:  "bg-hue-orange-soft text-hue-orange",
   SUSPENDED: "bg-hue-rose-soft text-hue-rose",
   EXPIRED:   "bg-surface-hover text-muted",
 };
@@ -158,7 +158,7 @@ export function OverrideModal({ tenant, onClose, onSaved }) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-4"
       onClick={busy || pendingPayload ? undefined : onClose}
     >
       <div
@@ -170,7 +170,7 @@ export function OverrideModal({ tenant, onClose, onSaved }) {
             <h3 className="text-base font-bold text-heading">Adjust quota</h3>
             <p className="mt-0.5 text-xs text-body">{tenant.organizationName}</p>
           </div>
-          <button onClick={onClose} disabled={busy} className="rounded-lg p-1 text-muted hover:bg-surface-hover hover:text-heading disabled:opacity-40">
+          <button onClick={onClose} disabled={busy} className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded-lg p-1 text-muted hover:bg-surface-hover hover:text-heading disabled:opacity-40">
             <X size={18} />
           </button>
         </div>
@@ -194,14 +194,14 @@ export function OverrideModal({ tenant, onClose, onSaved }) {
         <div className="mt-5 flex items-center justify-between gap-2">
           <button
             onClick={revert} disabled={busy}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-body hover:bg-surface-hover disabled:opacity-50"
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-body hover:bg-surface-hover disabled:opacity-50"
             title="Reset every limit to the tenant's plan defaults"
           >
             <RotateCcw size={14} /> Revert to plan
           </button>
           <div className="flex gap-2">
             <button onClick={onClose} disabled={busy}
-              className="rounded-lg px-3 py-2 text-xs font-medium text-body hover:bg-surface-hover">
+              className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded-lg px-3 py-2 text-xs font-medium text-body hover:bg-surface-hover">
               Cancel
             </button>
             <button
@@ -256,7 +256,7 @@ export default function Usage() {
     return <div className="py-24 text-center text-muted"><Loader2 size={22} className="mx-auto animate-spin" /></div>;
   }
   if (error || !data) {
-    return <div className="py-24 text-center text-red-500">{error || "No data."}</div>;
+    return <div className="py-24 text-center text-hue-rose">{error || "No data."}</div>;
   }
 
   const o = data.overview || {};
@@ -313,7 +313,7 @@ export default function Usage() {
       meta: { numeric: true },
       cell: ({ row }) => (
         <button onClick={() => setEditing(row.original)}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs font-semibold text-body hover:bg-surface-hover hover:text-heading">
+          className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs font-semibold text-body hover:bg-surface-hover hover:text-heading">
           <SlidersHorizontal size={13} /> Adjust
         </button>
       ),

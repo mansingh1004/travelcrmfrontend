@@ -146,7 +146,7 @@ export default function Billing() {
       cell: ({ row }) => (
         <div className="text-xs">
           <div className="text-body">{date(row.original.issueDate)}</div>
-          <div className={row.original.overdue ? "font-semibold text-hue-rose" : "text-muted"}>
+          <div className={row.original.overdue ? "font-semibold text-hue-orange" : "text-muted"}>
             Due {date(row.original.dueDate)}
           </div>
         </div>
@@ -162,7 +162,7 @@ export default function Billing() {
             {row.original.status}
           </span>
           {row.original.overdue && (
-            <span className="rounded-md bg-hue-rose-soft px-2 py-1 text-[11px] font-bold text-hue-rose">OVERDUE</span>
+            <span className="rounded-md bg-hue-orange-soft px-2 py-1 text-[11px] font-bold text-hue-orange">OVERDUE</span>
           )}
         </div>
       ),
@@ -184,7 +184,7 @@ export default function Billing() {
       cell: ({ row }) => (
         row.original.status === "UNPAID" || row.original.status === "PAID" ? (
           <button type="button" onClick={() => requestStateChange(row.original)}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs font-semibold text-body hover:bg-surface-hover">
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs font-semibold text-body hover:bg-surface-hover">
             {row.original.status === "UNPAID" ? <CheckCircle2 size={13} /> : <RotateCcw size={13} />}
             {row.original.status === "UNPAID" ? "Mark paid" : "Mark unpaid"}
           </button>
@@ -204,7 +204,7 @@ export default function Billing() {
         description="Cross-tenant invoice ledger, overdue queue and cash-settlement controls."
         meta={`${Number(pagination.totalElements || 0).toLocaleString("en-IN")} invoice(s) in this view`}
         actions={<button type="button" onClick={() => load(true)} disabled={refreshing}
-          className="inline-flex h-9 items-center gap-2 rounded-lg border border-border-strong bg-surface px-3 text-xs font-semibold text-heading hover:bg-surface-hover disabled:opacity-60">
+          className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex h-9 items-center gap-2 rounded-lg border border-border-strong bg-surface px-3 text-xs font-semibold text-heading hover:bg-surface-hover disabled:opacity-60">
           <RefreshCw size={14} className={refreshing ? "animate-spin" : ""} /> Refresh
         </button>} />
 
@@ -225,12 +225,12 @@ export default function Billing() {
           </div>
           <div className="flex flex-wrap gap-1 rounded-lg bg-surface-hover p-1">
             {STATUSES.map((item) => <button key={item || "ALL"} type="button" onClick={() => { setStatus(item); setPage(0); }}
-              className={`rounded-md px-3 py-1.5 text-xs font-semibold ${status === item ? "bg-accent text-white" : "text-body hover:bg-surface"}`}>
+              className={`focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded-md px-3 py-1.5 text-xs font-semibold ${status === item ? "bg-accent text-white" : "text-body hover:bg-surface"}`}>
               {item || "ALL"}
             </button>)}
           </div>
           <label className="inline-flex items-center gap-2 text-sm font-medium text-body">
-            <input type="checkbox" checked={overdue} onChange={(e) => { setOverdue(e.target.checked); setPage(0); }} className="h-4 w-4 accent-violet-600" /> Overdue only
+            <input type="checkbox" checked={overdue} onChange={(e) => { setOverdue(e.target.checked); setPage(0); }} className="h-4 w-4 accent-accent" /> Overdue only
           </label>
         </div>
       </div>
