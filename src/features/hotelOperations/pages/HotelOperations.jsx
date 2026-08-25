@@ -7,6 +7,7 @@ import {
   Clock3,
   CreditCard,
   FlaskConical,
+  Hotel,
   RefreshCw,
   TicketCheck,
 } from "lucide-react";
@@ -228,14 +229,17 @@ export default function HotelOperations() {
     const property = brand?.properties.find((item) => item.hotelPublicId === selectedHotelId);
     if (property) {
       return {
-        title: `${property.hotelName}, ${property.locationName}`,
-        description: `${property.totalBookings} mock bookings for this physical property`,
+        title: property.hotelName,
+        subtitle: `${property.locationName} · ${brand.brandName}`,
+        bookings: property.totalBookings,
       };
     }
     if (brand) {
+      const count = brand.properties.length;
       return {
         title: `${brand.brandName} - all locations`,
-        description: `${brand.totalBookings} mock bookings across ${brand.properties.length} properties`,
+        subtitle: `${count} ${count === 1 ? "property" : "properties"}`,
+        bookings: brand.totalBookings,
       };
     }
     return null;
@@ -284,6 +288,14 @@ export default function HotelOperations() {
       />
 
       <div className="space-y-4">
+        <ScopeBar
+          scope={selectedScope}
+          summary={summary}
+          loading={summaryLoading}
+          mockMode={mockMode}
+          onClear={clearHotelScope}
+        />
+
         <HotelOperationMetrics summary={summary} loading={summaryLoading} onFilter={changeStatus} />
 
         <ActionRequired summary={summary} loading={summaryLoading} status={status} onFilter={changeStatus} />
@@ -326,22 +338,6 @@ export default function HotelOperations() {
           />
         )}
 
-        {selectedScope && (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3">
-            <div>
-              <p className="text-xs font-extrabold text-blue-900">Showing: {selectedScope.title}</p>
-              <p className="mt-0.5 text-[11px] font-medium text-blue-700">{selectedScope.description}</p>
-            </div>
-            <button
-              type="button"
-              onClick={clearHotelScope}
-              className="rounded-lg bg-white px-3 py-1.5 text-xs font-bold text-blue-700 ring-1 ring-blue-200 hover:bg-blue-100"
-            >
-              Clear hotel filter
-            </button>
-          </div>
-        )}
-
         <HotelOperationFilters
           status={status}
           onStatus={changeStatus}
@@ -379,6 +375,74 @@ export default function HotelOperations() {
 
       <HotelOperationDrawer publicId={openBookingId} mock={mockMode} onClose={closeBooking} />
     </Page>
+  );
+}
+
+/**
+ * Names the dataset every figure below it describes. A property/brand selection scopes the summary
+ * request itself, so the scope has to be readable ABOVE the metric cards — otherwise the numbers
+ * change with no visible reason. With nothing selected it falls back to the tenant-wide total, which
+ * is the one aggregate that is live in both modes.
+ */
+function ScopeBar({ scope, summary, loading, mockMode, onClear }) {
+  const scoped = Boolean(scope);
+  const total = scoped ? scope.bookings : summary?.totalBookings;
+  const available = total !== null && total !== undefined;
+
+  return (
+    <section
+      aria-label="Selected hotel scope"
+      className={`flex flex-wrap items-center justify-between gap-3 rounded-2xl border px-4 py-3.5 shadow-sm ${
+        scoped ? "border-blue-200 bg-blue-50" : "border-slate-200/70 bg-white"
+      }`}
+    >
+      <div className="flex min-w-0 items-center gap-3">
+        <span
+          className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ring-1 ${
+            scoped ? "bg-blue-600 text-white ring-blue-600" : "bg-slate-50 text-slate-500 ring-slate-200"
+          }`}
+        >
+          <Hotel className="h-5 w-5" aria-hidden="true" />
+        </span>
+        <div className="min-w-0">
+          <p className={`truncate text-sm font-extrabold sm:text-base ${scoped ? "text-blue-900" : "text-slate-900"}`}>
+            {scoped ? scope.title : "All platform hotels"}
+          </p>
+          <p className={`mt-0.5 truncate text-[11px] font-medium ${scoped ? "text-blue-700" : "text-slate-500"}`}>
+            {scoped ? scope.subtitle : `${mockMode ? "Demo workspace" : "Current tenant"} · every property`}
+          </p>
+        </div>
+      </div>
+
+      <div className="flex shrink-0 items-center gap-4">
+        <div className="text-right">
+          {loading && !available ? (
+            <span className="block h-7 w-12 animate-pulse rounded-lg bg-slate-100" />
+          ) : (
+            <strong
+              className={`block text-2xl font-extrabold tabular-nums ${
+                available ? (scoped ? "text-blue-900" : "text-slate-900") : "text-slate-300"
+              }`}
+            >
+              {available ? total.toLocaleString() : "—"}
+            </strong>
+          )}
+          <span className={`mt-0.5 block text-[10px] font-bold uppercase tracking-wide ${scoped ? "text-blue-700" : "text-slate-400"}`}>
+            Bookings
+          </span>
+        </div>
+
+        {scoped && (
+          <button
+            type="button"
+            onClick={onClear}
+            className="rounded-lg bg-white px-3 py-2 text-xs font-bold text-blue-700 ring-1 ring-blue-200 transition hover:bg-blue-100"
+          >
+            Clear filter
+          </button>
+        )}
+      </div>
+    </section>
   );
 }
 

@@ -5,9 +5,10 @@ import {
   ChevronRight,
   MapPin,
   Users,
+  Wallet,
 } from "lucide-react";
 import { Empty, SkeletonRows, StatusDot } from "./hotelOperationUi";
-import { confirmationState, fmtDate, toOperationBooking, voucherState } from "../lib/hotelOperationModel";
+import { confirmationState, fmtDate, fmtMoney, toOperationBooking, voucherState } from "../lib/hotelOperationModel";
 
 const TONE = {
   green: "bg-emerald-50 text-emerald-700 ring-emerald-200",
@@ -64,7 +65,7 @@ export default function HotelBookingOperationsTable({ rows, loading, activeLabel
           </div>
 
           <div className="hidden overflow-x-auto md:block">
-            <table className="min-w-[1540px] w-full border-collapse text-left">
+            <table className="min-w-[1700px] w-full border-collapse text-left">
               <thead className="bg-slate-50/90 text-[10px] font-extrabold uppercase tracking-[0.08em] text-slate-500">
                 <tr>
                   <th className="sticky left-0 z-20 w-36 border-b border-r border-slate-200 bg-slate-50 px-4 py-3">Location</th>
@@ -75,6 +76,7 @@ export default function HotelBookingOperationsTable({ rows, loading, activeLabel
                   <th className="border-b border-slate-200 px-4 py-3 text-center">Pax</th>
                   <th className="border-b border-slate-200 px-4 py-3 text-center">Rooms</th>
                   <th className="border-b border-slate-200 px-4 py-3">Room / Meal</th>
+                  <th className="border-b border-slate-200 px-4 py-3 text-right">Payable</th>
                   <th className="border-b border-slate-200 px-4 py-3">Confirmation</th>
                   <th className="border-b border-slate-200 px-4 py-3">Voucher</th>
                   <th className="border-b border-slate-200 px-4 py-3">Booking status</th>
@@ -124,6 +126,21 @@ function DesktopBookingRow({ booking, onOpen }) {
         <p className="truncate text-xs font-semibold text-slate-700">{booking.roomName || "Not recorded"}</p>
         <p className="mt-0.5 truncate text-[11px] text-slate-500">{booking.mealPlan || "Meal plan not recorded"}</p>
       </td>
+      {/*
+        Payable, with outstanding under it. `amountOutstanding` is server-derived — never
+        `tenantPayable − amountPaid`, which is wrong the moment a cancellation is settled.
+        A REQUESTED row has no agreed price yet, so it shows an em dash rather than a zero.
+      */}
+      <td className="whitespace-nowrap px-4 py-3.5 text-right">
+        <p className="text-xs font-bold tabular-nums text-slate-800">
+          {fmtMoney(booking.tenantPayable, booking.currency)}
+        </p>
+        {booking.amountOutstanding > 0 && (
+          <p className="mt-0.5 text-[11px] font-semibold tabular-nums text-amber-700">
+            {fmtMoney(booking.amountOutstanding, booking.currency)} due
+          </p>
+        )}
+      </td>
       <td className="px-4 py-3.5"><SoftBadge value={confirmationState(booking.bookingStatus)} /></td>
       <td className="px-4 py-3.5"><SoftBadge value={voucherState(booking.voucherStatus)} /></td>
       <td className="px-4 py-3.5"><StatusDot status={booking.bookingStatus} /></td>
@@ -171,6 +188,18 @@ function MobileBookingCard({ booking, onOpen }) {
         <div className="min-w-0">
           <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-400"><BedDouble className="h-3 w-3" /> Room</p>
           <p className="mt-1 truncate text-xs font-semibold text-slate-700">{booking.roomName || "Not recorded"}</p>
+        </div>
+        {/* Mirrors the desktop Payable column — this markup is duplicated, so both move together. */}
+        <div className="col-span-2 min-w-0 border-t border-slate-200 pt-2">
+          <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-400"><Wallet className="h-3 w-3" /> Payable</p>
+          <p className="mt-1 text-xs font-semibold tabular-nums text-slate-700">
+            {fmtMoney(booking.tenantPayable, booking.currency)}
+            {booking.amountOutstanding > 0 && (
+              <span className="ml-1.5 font-bold text-amber-700">
+                · {fmtMoney(booking.amountOutstanding, booking.currency)} due
+              </span>
+            )}
+          </p>
         </div>
       </div>
     </button>
