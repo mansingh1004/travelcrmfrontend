@@ -1,19 +1,26 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
+  Ban,
   BedDouble,
   Building2,
   CalendarDays,
   Check,
   ClipboardList,
+  Download,
+  ExternalLink,
   Hotel,
   MapPin,
   Phone,
   Route,
+  TicketCheck,
   UserRound,
   Users,
+  Wallet,
   X,
 } from "lucide-react";
 import { getErrorMessage, isAlreadyReported, isCanceled } from "@shared/api/apiError";
+import { downloadBlob } from "@shared/lib/download";
 import { toast } from "@shared/ui/toast";
 import hotelOperationService from "../api/hotelOperationService";
 import { StatusDot } from "./hotelOperationUi";
@@ -21,6 +28,7 @@ import {
   operationTimeline,
   fmtDate,
   fmtDateTime,
+  fmtMoney,
   paymentState,
   toOperationBooking,
   voucherState,
@@ -34,9 +42,11 @@ const TONE = {
 };
 
 export default function HotelOperationDrawer({ publicId, mock = false, onClose }) {
+  const navigate = useNavigate();
   const [raw, setRaw] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [downloading, setDownloading] = useState(false);
   const closeRef = useRef(null);
 
   const load = useCallback(async (signal) => {
@@ -57,6 +67,28 @@ export default function HotelOperationDrawer({ publicId, mock = false, onClose }
       if (!signal?.aborted) setLoading(false);
     }
   }, [publicId, mock]);
+
+  /**
+   * Save the voucher PDF.
+   *
+   * The 404 the server answers until the platform issues the document is SILENT in the shared
+   * interceptor, so the message has to be rendered here or the button appears to do nothing.
+   */
+  const saveVoucher = useCallback(async () => {
+    setDownloading(true);
+    try {
+      const blob = await hotelOperationService.downloadVoucher(publicId);
+      downloadBlob(blob, `hotel-voucher-${raw?.voucherNumber || publicId}.pdf`);
+    } catch (err) {
+      if (!isAlreadyReported(err)) {
+        toast.error(getErrorMessage(err, "Could not download the voucher."));
+      }
+    } finally {
+      setDownloading(false);
+    }
+    // Depends on the whole row, not `raw?.voucherNumber`: the React Compiler infers `raw` and
+    // refuses to preserve a narrower manual dependency list. `raw` only changes on load anyway.
+  }, [publicId, raw]);
 
   useEffect(() => {
     if (!publicId) return undefined;
@@ -132,22 +164,51 @@ export default function HotelOperationDrawer({ publicId, mock = false, onClose }
           {loading ? <DrawerSkeleton /> : error ? (
             <ErrorState message={getErrorMessage(error, "Could not load this hotel booking.")} onRetry={() => load()} />
           ) : booking ? (
-            <DrawerContent key={booking.publicId} booking={booking} raw={raw} />
+            <DrawerContent
+              key={booking.publicId}
+              booking={booking}
+              raw={raw}
+              mock={mock}
+              navigate={navigate}
+              onDownloadVoucher={saveVoucher}
+              downloading={downloading}
+            />
           ) : (
             <ErrorState message="This hotel booking could not be found." onRetry={() => load()} />
           )}
         </div>
 
+        {/*
+          Read-only by design, not by omission. Accepting a revised price and requesting a
+          cancellation both commit money and both 409 on a stale view, so they live on ONE screen
+          that re-reads the row after every write — duplicating them here would mean two places to
+          keep correct. This links there instead of repeating them.
+        */}
         <footer className="shrink-0 border-t border-slate-200 bg-white px-4 py-3 text-xs text-slate-500 sm:px-6">
-          Read-only operations view. Booking actions remain unavailable until backend operation APIs are added.
+          {mock ? (
+            <span>Demo data — no booking API is called in this mode.</span>
+          ) : (
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span>Read-only operations view.</span>
+              <button
+                type="button"
+                onClick={() => navigate(`/marketplace/bookings/${publicId}`)}
+                className="inline-flex items-center gap-1.5 font-bold text-blue-700 underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+              >
+                Open full request to accept, decline or cancel
+                <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
+            </div>
+          )}
         </footer>
       </aside>
     </div>
   );
 }
 
-function DrawerContent({ booking, raw }) {
+function DrawerContent({ booking, raw, mock, navigate, onDownloadVoucher, downloading }) {
   const timeline = operationTimeline(raw);
+  const cancelling = Boolean(booking.cancelRequestedAt || booking.cancellationQuotedAt || booking.cancelledAt);
 
   return (
     <div className="space-y-5">
@@ -159,13 +220,41 @@ function DrawerContent({ booking, raw }) {
         <Chip value={paymentState(booking.paymentStatus)} />
       </div>
 
+      <RevisionOffer booking={booking} />
+
+      {booking.bookingStatus === "REJECTED" && booking.rejectionReason && (
+        <section className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3.5 shadow-sm">
+          <p className="flex items-center gap-2 text-sm font-extrabold text-rose-900">
+            <Ban className="h-4 w-4 shrink-0" aria-hidden="true" /> This request was not accepted
+          </p>
+          <p className="mt-1.5 text-xs leading-relaxed text-rose-800">{booking.rejectionReason}</p>
+        </section>
+      )}
+
       <DetailSection icon={ClipboardList} title="Booking information">
         <Field label="Booking ID" value={booking.bookingCode} mono />
         <Field label="Booking date" value={fmtDateTime(booking.bookingDate)} />
-        <Field label="CRM booking" value={booking.crmBookingCode || "Not linked"} mono={Boolean(booking.crmBookingCode)} />
+        <Field
+          label="CRM booking"
+          value={
+            booking.crmBookingPublicId && !mock ? (
+              <button
+                type="button"
+                onClick={() => navigate(`/BookingDetails/${booking.crmBookingPublicId}`)}
+                className="inline-flex items-center gap-1.5 font-mono text-blue-700 underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+              >
+                {booking.crmBookingCode || "Open booking"}
+                <ExternalLink className="h-3.5 w-3.5 shrink-0 text-blue-500" aria-hidden="true" />
+              </button>
+            ) : (
+              booking.crmBookingCode || "Not linked"
+            )
+          }
+        />
         <Field label="Travel agency / tenant" value="Current tenant" />
         <Field label="Agent" value="Not recorded" />
         <Field label="Booking status" value={<StatusDot status={booking.bookingStatus} />} />
+        <Field label="Cancellation terms" value={booking.cancellationTerms || "Not recorded"} wide />
       </DetailSection>
 
       <DetailSection icon={UserRound} title="Guest information">
@@ -194,9 +283,11 @@ function DrawerContent({ booking, raw }) {
         <Field label="Nights" value={booking.nights ?? "Not recorded"} />
         <Field label="Rooms" value={booking.rooms ?? "Not recorded"} icon={BedDouble} />
         <Field label="Room category" value={booking.roomName || "Not recorded"} />
-        <Field label="Bed type" value="Not recorded" />
+        <Field label="Bed type" value={booking.bedType || "Not recorded"} />
         <Field label="Meal plan" value={booking.mealPlan || "Not recorded"} />
       </DetailSection>
+
+      <MoneyPanel booking={booking} />
 
       <TravelContextPanel booking={booking} raw={raw} />
 
@@ -210,6 +301,15 @@ function DrawerContent({ booking, raw }) {
         <Field label="Special request" value={booking.specialRequest || "Not recorded"} wide />
         <Field label="Operations notes" value={booking.opsNotes || "Not recorded"} wide />
       </DetailSection>
+
+      <VoucherPanel
+        booking={booking}
+        mock={mock}
+        onDownload={onDownloadVoucher}
+        downloading={downloading}
+      />
+
+      {cancelling && <CancellationPanel booking={booking} />}
 
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="border-b border-slate-100 px-4 py-3.5">
@@ -232,6 +332,282 @@ function DrawerContent({ booking, raw }) {
         </ol>
       </section>
     </div>
+  );
+}
+
+/**
+ * A revised price waiting for an answer.
+ *
+ * The delta is the loudest thing in the drawer on purpose: the reader is not checking a status here,
+ * they are deciding whether to absorb a number or re-quote their customer, and they should not have
+ * to do the subtraction themselves.
+ *
+ * Rendered ONLY while the offer is open. A revision that has already been answered is history, and
+ * the timeline says so — repeating it here as a live decision would ask for an answer twice.
+ */
+function RevisionOffer({ booking }) {
+  const offer = booking.revision;
+  if (!offer || !offer.open) return null;
+
+  const { revised, previous, delta, expired } = offer;
+  const currency = booking.currency;
+
+  return (
+    <section className="rounded-2xl border border-amber-300 bg-amber-50/70 px-4 py-4 shadow-sm">
+      <p className="text-sm font-extrabold text-amber-950">The price changed — this needs your answer.</p>
+      <p className="mt-0.5 text-xs text-amber-800">
+        Nothing is confirmed and no room is held until it is accepted or declined.
+      </p>
+
+      <div className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        {previous !== null && (
+          <>
+            <span className="text-sm tabular-nums text-slate-500 line-through">{fmtMoney(previous, currency)}</span>
+            <span className="text-slate-400" aria-hidden="true">→</span>
+          </>
+        )}
+        <span className="text-2xl font-extrabold tabular-nums text-slate-900">{fmtMoney(revised, currency)}</span>
+        {delta !== null && delta !== 0 && (
+          <span className={`text-xs font-bold tabular-nums ${delta > 0 ? "text-rose-700" : "text-emerald-700"}`}>
+            {delta > 0 ? "+" : "−"}{fmtMoney(Math.abs(delta), currency)} {delta > 0 ? "more than before" : "less than before"}
+          </span>
+        )}
+      </div>
+      <p className="mt-1 text-[11px] font-medium text-amber-800">What you would owe the platform.</p>
+
+      {offer.reason && <p className="mt-3 text-xs leading-relaxed text-slate-700">{offer.reason}</p>}
+
+      {offer.newTerms && (
+        <div className="mt-3">
+          <p className="text-[10px] font-extrabold uppercase tracking-[0.08em] text-amber-700">
+            New cancellation terms if accepted
+          </p>
+          <p className="mt-0.5 text-xs leading-relaxed text-slate-700">{offer.newTerms}</p>
+        </div>
+      )}
+
+      {/* The server 409s an expired acceptance, so an offer past its deadline must never read as live. */}
+      {expired ? (
+        <p className="mt-3 rounded-xl bg-rose-100 px-3 py-2 text-xs font-semibold text-rose-900">
+          This offer expired on {fmtDateTime(offer.expiresAt)} and can no longer be accepted. Ask the
+          platform to re-check availability — it will come back with a fresh price.
+        </p>
+      ) : offer.expiresAt ? (
+        <p className="mt-3 text-[11px] font-bold text-amber-900">Answer by {fmtDateTime(offer.expiresAt)}.</p>
+      ) : null}
+    </section>
+  );
+}
+
+/**
+ * What the tenant owes the platform, what they are charging their customer, and where settlement
+ * stands. Three separate facts and never collapsed.
+ *
+ * Everything here has been on the response all along; the drawer simply was not reading it.
+ */
+function MoneyPanel({ booking }) {
+  const currency = booking.currency;
+  const priced = booking.tenantPayable !== null;
+  const margin =
+    booking.sellingAmount !== null && booking.tenantPayable !== null
+      ? booking.sellingAmount - booking.tenantPayable
+      : null;
+  // Re-priced between submit and approval — worth saying, because the tenant quoted the old number.
+  const repriced =
+    booking.quotedTenantPayable !== null &&
+    booking.tenantPayable !== null &&
+    booking.quotedTenantPayable !== booking.tenantPayable;
+
+  return (
+    <DetailSection icon={Wallet} title="Money">
+      {priced ? (
+        <Field
+          label="You owe the platform"
+          value={
+            <span className="flex flex-col gap-0.5">
+              <span className="tabular-nums">{fmtMoney(booking.tenantPayable, currency)}</span>
+              {booking.revision?.open && (
+                <span className="text-[11px] font-medium text-amber-700">
+                  A revised {fmtMoney(booking.revision.revised, currency)} is waiting for your answer.
+                </span>
+              )}
+              {!booking.revision?.open && repriced && (
+                <span className="text-[11px] font-medium text-slate-500">
+                  Quoted {fmtMoney(booking.quotedTenantPayable, currency)} when submitted
+                </span>
+              )}
+            </span>
+          }
+        />
+      ) : (
+        // A REQUESTED row has no agreed price. Rendering ₹0 would be a number the tenant could quote.
+        <Field label="You owe the platform" value="Not priced yet — the platform quotes on approval" wide />
+      )}
+
+      <Field label="Your price to customer" value={<span className="tabular-nums">{fmtMoney(booking.sellingAmount, currency)}</span>} />
+
+      {margin !== null && (
+        <Field
+          label="Your margin"
+          value={
+            <span className={`tabular-nums ${margin < 0 ? "text-rose-700" : "text-slate-800"}`}>
+              {fmtMoney(margin, currency)}
+            </span>
+          }
+        />
+      )}
+
+      {/*
+        Settlement, only once there is something to settle. `amountOutstanding` is SERVER-DERIVED —
+        after a settled cancellation the debt is the retained charge, not the original payable, so
+        `tenantPayable − amountPaid` would chase the tenant for a room they never used.
+      */}
+      {booking.paymentStatus && priced && (
+        <Field
+          label="Settlement"
+          value={
+            <span className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+              <Chip value={paymentState(booking.paymentStatus)} />
+              {booking.amountPaid > 0 && (
+                <span className="text-xs tabular-nums text-slate-500">{fmtMoney(booking.amountPaid, currency)} paid</span>
+              )}
+              {booking.amountOutstanding > 0 && (
+                <span className="text-xs font-bold tabular-nums text-slate-900">
+                  {fmtMoney(booking.amountOutstanding, currency)} outstanding
+                </span>
+              )}
+            </span>
+          }
+        />
+      )}
+    </DetailSection>
+  );
+}
+
+/**
+ * The voucher, and the one way to get the PDF.
+ *
+ * Nothing is rendered while NOT_ISSUED — an absent document is not a state that needs explaining,
+ * and the voucher chip at the top already says so. The bytes come from `/api/me/hotel-bookings`,
+ * which survives a lapsed add-on; see the service for why that prefix matters.
+ */
+function VoucherPanel({ booking, mock, onDownload, downloading }) {
+  if (booking.voucherStatus === "REVOKED") {
+    return (
+      <section className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3.5 shadow-sm">
+        <p className="text-sm font-extrabold text-amber-950">
+          The voucher{booking.voucherNumber ? ` ${booking.voucherNumber}` : ""} was withdrawn by the platform.
+        </p>
+        <p className="mt-1 text-xs leading-relaxed text-amber-800">
+          It is no longer valid at the hotel — do not send it to the guest. The platform will issue a
+          replacement if the stay is going ahead.
+        </p>
+      </section>
+    );
+  }
+
+  if (booking.voucherStatus !== "ISSUED") return null;
+
+  return (
+    <DetailSection icon={TicketCheck} title="Voucher">
+      <Field label="Voucher number" value={booking.voucherNumber || "Not recorded"} mono={Boolean(booking.voucherNumber)} />
+      <Field label="Issued" value={fmtDateTime(booking.voucherIssuedAt)} />
+      <Field
+        label="Document"
+        wide
+        value={
+          mock ? (
+            <span className="text-xs font-medium text-slate-500">Not available on demo data.</span>
+          ) : (
+            <span className="flex flex-col gap-1">
+              <button
+                type="button"
+                onClick={onDownload}
+                disabled={downloading}
+                className="inline-flex w-fit items-center gap-2 rounded-xl bg-slate-900 px-3.5 py-2 text-xs font-bold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Download className="h-3.5 w-3.5" aria-hidden="true" />
+                {downloading ? "Preparing…" : "Download voucher"}
+              </button>
+              <span className="text-[11px] font-medium text-slate-500">
+                Send this to the guest — it is what the hotel desk expects at check-in.
+              </span>
+            </span>
+          )
+        }
+      />
+    </DetailSection>
+  );
+}
+
+/**
+ * Cancellation, across its three stages: asked for, priced by the platform, settled.
+ *
+ * The charge and the refund are shown as the server states them. Nothing is derived here — what the
+ * hotel retained is the outcome of a negotiation between the platform and the supplier, and a
+ * locally-computed figure would be a guess presented as a debt.
+ */
+function CancellationPanel({ booking }) {
+  const quoteExpired = booking.cancellationQuoteExpired;
+
+  return (
+    <DetailSection icon={Ban} title="Cancellation">
+      {booking.cancelRequestedAt && (
+        <Field label="Requested" value={fmtDateTime(booking.cancelRequestedAt)} />
+      )}
+      {booking.cancelRequestReason && (
+        <Field label="Your reason" value={booking.cancelRequestReason} wide />
+      )}
+
+      {booking.quotedCancellationCharge !== null && (
+        <Field
+          label="Charge quoted"
+          value={
+            <span className="flex flex-col gap-0.5">
+              <span className="tabular-nums">{fmtMoney(booking.quotedCancellationCharge, booking.currency)}</span>
+              {booking.cancellationQuotedAt && (
+                <span className="text-[11px] font-medium text-slate-500">
+                  Quoted {fmtDateTime(booking.cancellationQuotedAt)}
+                </span>
+              )}
+              {booking.cancellationQuoteExpiresAt && (
+                <span className={`text-[11px] font-bold ${quoteExpired ? "text-rose-700" : "text-amber-700"}`}>
+                  {quoteExpired ? "Quote expired " : "Answer by "}
+                  {fmtDateTime(booking.cancellationQuoteExpiresAt)}
+                </span>
+              )}
+            </span>
+          }
+        />
+      )}
+      {booking.cancellationQuoteNote && (
+        <Field label="Platform note" value={booking.cancellationQuoteNote} wide />
+      )}
+
+      {booking.cancelledAt && <Field label="Cancelled" value={fmtDateTime(booking.cancelledAt)} />}
+      {booking.cancellationCharge !== null && (
+        <Field
+          label="Charge retained"
+          value={<span className="tabular-nums">{fmtMoney(booking.cancellationCharge, booking.currency)}</span>}
+        />
+      )}
+      {booking.refundAmount !== null && (
+        <Field
+          label="Refund to you"
+          value={<span className="tabular-nums text-emerald-700">{fmtMoney(booking.refundAmount, booking.currency)}</span>}
+        />
+      )}
+      {booking.cancellationReason && (
+        <Field label="Outcome" value={booking.cancellationReason} wide />
+      )}
+
+      {booking.cancelRequestedAt && !booking.cancelledAt && (
+        <p className="col-span-full rounded-xl bg-slate-50 px-3 py-2 text-[11px] leading-relaxed text-slate-600">
+          Until the platform settles this with the hotel the room is still held and what you owe still
+          stands. The final charge and any refund appear here once it is settled.
+        </p>
+      )}
+    </DetailSection>
   );
 }
 
