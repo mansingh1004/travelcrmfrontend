@@ -3671,7 +3671,14 @@ const phoneRef = useRef(null);
           followUpDate: toDateInput(lead.followUpDate ?? lead.followupDate ?? lead.nextFollowUpDate),
           packageType: lead.packageType ?? lead.tripType ?? "",
           travelDate: toDateInput(lead.travelDate ?? lead.tripDate ?? lead.departureDate),
-          returnDate: toDateInput(lead.returnDate),
+          /* The END of the trip. travelDate above already tries three aliases; this tried exactly
+             one, so a read model that names it anything else left the Travel Date control showing
+             "Aug 25, 2026 → …" with no end — the start hydrated, the end silently blank.
+             tripEndDate is the name the BOOKING side uses for the same value, which makes it the
+             most likely alias of the four. */
+          returnDate: toDateInput(
+            lead.returnDate ?? lead.tripEndDate ?? lead.endDate ?? lead.returnDt,
+          ),
           hotelCategory: lead.hotelCategory ?? "",
           mealPlanPreference: lead.mealPlanPreference ?? "",
           departCountry: lead.departCountry ?? lead.departureCountry ?? "India",
@@ -3707,6 +3714,67 @@ dropCountry:
   lead.dropCountry ??
   lead.returnCountry ??
   "India",
+
+          /* ── The six that were SENT on save but never read back ─────────────────────────────
+             Every one of these already goes out through transformFormData. Missing from this
+             reset() they came back as `undefined`, rendered blank, and then — this is the part that
+             mattered — the NEXT save read the blank form and wrote null/[] over what was stored.
+             Silent data loss on the second save of a lead that had been filled in correctly the
+             first time: the agent changes a phone number and the vehicle requirement disappears.
+
+             Hydrating them closes that loop. Note the fallbacks: while the server does not yet
+             return these keys the values are undefined, so each one falls back to its default and
+             the form behaves exactly as it does today — the overwrite is still possible until the
+             backend returns them, but nothing here regresses in the meantime. */
+          customerCity:    lead.customerCity    ?? lead.city    ?? "",
+          customerState:   lead.customerState   ?? lead.state   ?? "",
+          customerCountry: lead.customerCountry ?? lead.country ?? "",
+          /* whatsappSame is derived, not stored: a saved number that matches the phone means the
+             mirror was on. Comparing digits only, because "+91 98765 43210" and "919876543210" are
+             the same number stored two ways, and a false negative here would unlock the field and
+             let the two drift apart on the next save. */
+          whatsappNumber: lead.whatsappNumber ?? lead.whatsapp ?? "",
+          whatsappSame: (() => {
+            const digits = (v) => String(v || "").replace(/\D/g, "");
+            const saved = digits(lead.whatsappNumber ?? lead.whatsapp);
+            return !saved || saved === digits(lead.phone);
+          })(),
+
+          /* Requirement rows need CLIENT-SIDE ids — the row editors key on `id` and so do their
+             update/remove handlers, and the server has no reason to send one. Minted here with the
+             same factories the create path uses, so a loaded row is indistinguishable from a fresh
+             one. An absent or non-array value falls back to the create-path default: no vehicle
+             rows, one blank room row. */
+          vehicleRequirements: Array.isArray(lead.vehicleRequirements)
+            ? lead.vehicleRequirements.map((row) => ({
+                ...emptyVehicleRow(),
+                vehicleType: row?.vehicleType ?? "",
+                vehicleId:   row?.vehicleId   ?? "",
+                model:       row?.model       ?? "",
+                capacity:    row?.capacity == null ? "" : String(row.capacity),
+                quantity:    String(row?.quantity ?? 1),
+              }))
+            : [],
+          /* When the mix is absent, SEED THE ROW FROM THE FLAT COUNTERS — do not fall back to a
+             default row. `rooms` and `extraBeds` are old fields the server has always returned,
+             while roomRequirements is new and comes back empty until the DTO carries it. Defaulting
+             to emptyRoomRow() put a hard-coded 1 in the collapsed tile while the header badge —
+             which reads `rooms` — said 3. Two numbers for one fact, disagreeing on screen.
+             Same fallback the booking form already uses on its lead path. */
+          roomRequirements: Array.isArray(lead.roomRequirements) && lead.roomRequirements.length > 0
+            ? lead.roomRequirements.map((row) => ({
+                ...emptyRoomRow(),
+                roomType:  row?.roomType  ?? "Double",
+                acType:    row?.acType    ?? "Any",
+                count:     String(row?.count ?? 1),
+                extraBeds: String(row?.extraBeds ?? 0),
+              }))
+            : [{
+                ...emptyRoomRow(),
+                count:     String(toInt(lead.rooms ?? lead.roomCount ?? lead.noOfRooms ?? 1, 1)),
+                extraBeds: String(toInt(lead.extraBeds ?? lead.extraBedCount ?? 0)),
+              }],
+
           rooms: toInt(lead.rooms ?? lead.roomCount ?? lead.noOfRooms ?? 1, 1),
           ...adultPrefill,
           children: toInt(lead.children ?? lead.childCount ?? 0),

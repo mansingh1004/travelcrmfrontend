@@ -697,7 +697,7 @@
 //   );
 // }
 
-// /* ━━━ HELPERS ━━━ */
+// /* ━━━ HEPERS ━━━ */
 // function MiniDetail({ icon, label, val }) {
 //   return (
 //     <div>
