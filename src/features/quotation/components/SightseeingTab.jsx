@@ -2438,7 +2438,7 @@ export default function SightseeingTab({
           !activity.description
       );
 
-    // User ne manually data enter kar diya ho to overwrite mat karo.
+    // User  manually data enter kar diya ho to overwrite mat karo.
     if (!isPristine) {
       return;
     }
