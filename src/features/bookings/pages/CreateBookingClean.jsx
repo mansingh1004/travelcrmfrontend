@@ -617,18 +617,81 @@ export default function BookingFormPage() {
     const destinationName = typeof firstLeg?.destination === "string"
       ? firstLeg.destination
       : firstLeg?.destination?.name || lead.destination || "";
+    // const seed = {
+    //   customerName: lead.customerName || lead.customer?.name || "",
+    //   customerEmail: lead.email || lead.customer?.email || "",
+    //   customerCity: lead.departCity || lead.customer?.city || "",
+    //   birthday: lead.birthDate || lead.birthday || "",
+    //   anniversary: lead.anniversaryDate || lead.anniversary || "",
+    // };
+
     const seed = {
-      customerName: lead.customerName || lead.customer?.name || "",
-      customerEmail: lead.email || lead.customer?.email || "",
-      customerCity: lead.departCity || lead.customer?.city || "",
-      birthday: lead.birthDate || lead.birthday || "",
-      anniversary: lead.anniversaryDate || lead.anniversary || "",
-    };
+  customerName:
+    lead.customerName ||
+    lead.customer?.name ||
+    "",
+
+  customerEmail:
+    lead.email ||
+    lead.customer?.email ||
+    "",
+
+  customerCity:
+    lead.customerCity ||
+    lead.customer?.city ||
+    "",
+
+  customerState:
+    lead.customerState ||
+    lead.customer?.state ||
+    "",
+
+  customerCountry:
+    lead.customerCountry ||
+    lead.customer?.country ||
+    "",
+
+  birthday:
+    lead.birthDate ||
+    lead.birthday ||
+    "",
+
+  anniversary:
+    lead.anniversaryDate ||
+    lead.anniversary ||
+    "",
+};
+
     const adultPrefill = deriveAdultBreakdown({
       totalAdults: lead.totalAdults ?? lead.adults ?? lead.adultCount,
       male: lead.male ?? lead.maleCount,
       female: lead.female ?? lead.femaleCount,
     });
+
+
+    /* ── Lead contact → Booking contact ───────────────────────────── */
+
+const leadPhone =
+  lead.phone ||
+  lead.customer?.phone ||
+  "";
+
+const leadWhatsapp =
+  lead.whatsappNumber ||
+  lead.whatsapp ||
+  lead.customer?.whatsappNumber ||
+  "";
+
+const normalisePhoneDigits = (value) =>
+  String(value || "").replace(/\D/g, "");
+
+const leadWhatsappSameAsPhone =
+  !leadWhatsapp ||
+  (
+    normalisePhoneDigits(leadWhatsapp) ===
+    normalisePhoneDigits(leadPhone)
+  );
+
     /* A lead's itinerary is a LIST OF STAYS (destination + city + nights), not a route: it says
        where the party wants to go, never how they move between stops. Each stay therefore becomes
        the TO city of a leg, and the FROM is chained from the previous stay — which reconstructs
@@ -646,7 +709,7 @@ export default function BookingFormPage() {
         }))
       : null;
 
-    const itinerary = leadStays
+    let itinerary = leadStays
       ? leadStays.map((stay, index) => ({
           id: itinerarySequence++,
           fromCityId: index === 0 ? "" : leadStays[index - 1].cityId,
@@ -657,15 +720,221 @@ export default function BookingFormPage() {
         }))
       : null;
 
+      /* ── Final stay → Drop city ─────────────────────────────────────
+ *
+ * Lead itinerary contains STAYS only.
+ *
+ * Example:
+ *   Kathmandu 2N
+ *   Pokhara   2N
+ *
+ * Drop is journey-home information, not another stay.
+ * Booking route therefore becomes:
+ *
+ *   Pickup → Kathmandu 2N
+ *   Kathmandu → Pokhara 2N
+ *   Pokhara → Drop 0N
+ */
+
+const leadDropCity =
+  String(
+    lead.dropCity ||
+    lead.returnCity ||
+    ""
+  ).trim();
+
+const leadDropCityId =
+  lead.dropCityId ||
+  lead.returnCityId ||
+  "";
+
+
+if (
+  itinerary &&
+  itinerary.length > 0 &&
+  leadDropCity
+) {
+  const lastIndex =
+    itinerary.length - 1;
+
+  const lastLeg =
+    itinerary[lastIndex];
+
+  const lastStayCity =
+    String(
+      lastLeg.toCity || ""
+    ).trim();
+
+  const alreadyEndsAtDrop =
+    lastStayCity &&
+    lastStayCity.toLowerCase() ===
+      leadDropCity.toLowerCase();
+
+  /*
+   * Don't add duplicate:
+   *
+   * Pokhara → Pokhara 0N   ❌
+   *
+   * Only append when Drop differs from final stay.
+   */
+  if (
+    lastStayCity &&
+    !alreadyEndsAtDrop
+  ) {
+    itinerary = [
+      ...itinerary,
+      {
+        id: itinerarySequence++,
+
+        fromCityId:
+          lastLeg.toCityId || "",
+
+        fromCity:
+          lastStayCity,
+
+        toCityId:
+          leadDropCityId,
+
+        toCity:
+          leadDropCity,
+
+        /*
+         * Drop is not an overnight stay.
+         */
+        nights: "0",
+      },
+    ];
+  }
+}
+
+      /* ── Lead vehicle requirements → Booking requirements ─────────── */
+
+const leadVehicleRequirements =
+  Array.isArray(lead.vehicleRequirements)
+    ? lead.vehicleRequirements.map((row) => ({
+        /*
+         * UI row id is local only.
+         * Do NOT reuse backend id/publicId as the React row id.
+         * Booking's own edit hydration also creates a fresh nextRowId().
+         */
+        id: nextRowId(),
+
+        vehicleType:
+          row.vehicleType || "",
+
+        vehicleId:
+          row.vehicleId || "",
+
+        model:
+          row.model || "",
+
+        capacity:
+          row.capacity == null
+            ? ""
+            : String(row.capacity),
+
+        quantity:
+          String(row.quantity ?? 1),
+      }))
+    : [];
+
+
+
+    /* ── Lead room mix → Booking room mix ─────────────────────────── */
+
+const hasLeadRoomRequirements =
+  Array.isArray(lead.roomRequirements) &&
+  lead.roomRequirements.length > 0;
+
+const leadRoomRequirements =
+  hasLeadRoomRequirements
+    ? lead.roomRequirements.map((row) => ({
+        id: nextRowId(),
+
+        roomType:
+          row.roomType || "Double",
+
+        acType:
+          row.acType || "Any",
+
+        count:
+          String(row.count ?? 1),
+
+        extraBeds:
+          String(row.extraBeds ?? 0),
+      }))
+    : [
+        {
+          id: nextRowId(),
+          roomType: "Double",
+          acType: "Any",
+
+          /*
+           * Backward compatibility:
+           * older leads may only have flat rooms / extraBeds.
+           */
+          count:
+            String(lead.rooms ?? 1),
+
+          extraBeds:
+            String(lead.extraBeds ?? 0),
+        },
+      ];
+
+
+/* Keep old flat fields and new room rows synchronized. */
+
+const leadRoomCount =
+  Math.max(
+    1,
+    leadRoomRequirements.reduce(
+      (sum, row) =>
+        sum + (Number(row.count) || 0),
+      0
+    )
+  );
+
+const leadExtraBedCount =
+  leadRoomRequirements.reduce(
+    (sum, row) =>
+      sum + (Number(row.extraBeds) || 0),
+    0
+  );
+
     setForm((current) => ({
       ...current,
       ...seed,
-      customerPhone: lead.phone || lead.customer?.phone || "",
+      customerPhone:
+  leadPhone,
+
+customerWhatsapp:
+  leadWhatsapp,
+
+whatsappSameAsPhone:
+  leadWhatsappSameAsPhone,
       leadPublicId: lead.publicId || lead.id || "",
       destinationId: firstLeg?.destinationId || firstLeg?.destination?.id || lead.destinationId || current.destinationId,
       destination: destinationName || current.destination,
-      travelDate: dateInput(lead.travelDate) || current.travelDate,
-      packageType: lead.packageType || lead.tripType || current.packageType,
+      travelDate:
+  dateInput(
+    lead.travelDate
+  ) || current.travelDate,
+
+/*
+ * Lead calls the end date returnDate.
+ * Booking stores it as tripEndDate in tripSnapshot.
+ */
+tripEndDate:
+  dateInput(
+    lead.returnDate ||
+    lead.tripEndDate ||
+    lead.endDate
+  ) || current.tripEndDate,
+
+packageType:
+  lead.packageType ||
+  lead.tripType ||
+  current.packageType,
       departCountry: lead.departCountry || lead.departureCountry || current.departCountry,
       departCity: lead.departCity || lead.departureCity || current.departCity,
       departureMode: normalizeDepartureMode(lead.departureMode || lead.transportMode) || current.departureMode,
@@ -685,6 +954,46 @@ export default function BookingFormPage() {
       pickupAddress: lead.pickupAddress || lead.roadPickupAddress || current.pickupAddress,
       pickupDateTime: String(lead.pickupDateTime || lead.pickupAt || current.pickupDateTime).slice(0, 16),
       vehiclePreference: lead.vehiclePreference || lead.preferredVehicle || current.vehiclePreference,
+
+/* ── Drop carried directly from the Lead ─────────────────────── */
+
+dropCountry:
+  lead.dropCountry ||
+  lead.returnCountry ||
+  current.dropCountry,
+
+dropCity:
+  lead.dropCity ||
+  lead.returnCity ||
+  current.dropCity,
+
+dropMode:
+  normalizeDepartureMode(
+    lead.dropMode ||
+    lead.returnMode
+  ) || current.dropMode,
+
+dropDateTime:
+  String(
+    lead.dropDateTime ||
+    lead.dropAt ||
+    current.dropDateTime
+  ).slice(0, 16),
+
+
+
+  vehicleRequirements:
+  leadVehicleRequirements,
+
+roomRequirements:
+  leadRoomRequirements,
+
+rooms:
+  String(leadRoomCount),
+
+extraBeds:
+  String(leadExtraBedCount),
+
       rooms: String(lead.rooms ?? current.rooms),
       showAdultBreakdown: adultPrefill.showAdultBreakdown,
       male: adultPrefill.male == null ? null : String(adultPrefill.male),
@@ -3088,8 +3397,8 @@ export default function BookingFormPage() {
               </div>
               <div>
                 <label className="mb-1.5 block text-xs font-semibold text-slate-600">Passengers</label>
-                {/* Capped at the  totalTravellers is derived from `form`, so the cap
-                    holds regardless of which card the counters themselves live in. */}
+                {/*   totalTravellers is derived from `form`, so the cap
+                    of which card the counters themselves live in. */}
                 <input type="number" min="1" max={Math.max(totalTravellers, 1)} value={form.assistancePassengerCount} onFocus={(event) => event.target.select()} onChange={(event) => setField("assistancePassengerCount", event.target.value)} className={controlClass("assistancePassengerCount")} />
               </div>
               <div>
