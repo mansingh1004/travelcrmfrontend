@@ -39,6 +39,12 @@ import {
 
 import { leadService } from "@features/leads";
 import { hotelService, sightseeingService, vehicleService } from "@features/masters";
+// Same-feature relative import, not the barrel: eslint's no-restricted-imports only blocks
+// deep CROSS-feature paths, and this component is not part of the quotation feature's public API.
+// It is shared internally so both quotation builders create attractions through one form.
+// See the note on its declaration in SightseeingTab.
+import { SightseeingFormModal } from "../components/SightseeingTab";
+import { HotelFormModal } from "../components/HotelTab";
 // Relative, not through the feature's own barrel — this file IS part of the quotation feature.
 import { templateService } from "../api/templateService";
 import { useToast } from "@shared/ui/toast";
@@ -563,7 +569,15 @@ function SectionCard({ title, icon: Icon, badge, action, addScope = false, child
     // Flat on purpose: this card is always nested INSIDE an accordion section's white card, so a
     // second shadow, a tinted header and a white-on-white ringed tile stacked three surfaces on top
     // of each other. One inner border, one pastel tile, nothing else.
-    <section data-quick-addscope={addScope ? "true" : undefined} className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+    /* NOT overflow-hidden.
+       Every picker on this screen renders its dropdown as an absolutely-positioned list inside this
+       card. With overflow-hidden, any part of that list extending past the card's bottom edge was
+       CLIPPED — so a picker on the last row of a short card showed two options and nothing else,
+       and the option being reached for simply was not on screen.
+       Nothing here needs the clip: the header carries a border, not a background, and every child
+       that paints to an edge (the platform banner, images) has its own rounding and sits inside the
+       p-4. */
+    <section data-quick-addscope={addScope ? "true" : undefined} className="rounded-lg border border-slate-200 bg-white">
       <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 px-4 py-3">
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
           <Icon className="h-4 w-4" />
@@ -712,7 +726,17 @@ function AsyncCombobox({ value, onValueChange, onSelect, loadOptions, cacheKey, 
       ) : null}
 
       {focused && !loading && options.length > 0 && (
-        <ul role="listbox" className="absolute z-40 mt-1 max-h-64 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-xl">
+        /* onMouseDown preventDefault on the LIST, not just on each option.
+           The input closes the panel 120ms after it blurs. Each <li> already prevented that, but the
+           <ul> itself did not — so pressing on the SCROLLBAR, or on the padding between options,
+           blurred the input and the list disappeared mid-scroll. With more than ~5 results (any
+           vehicle or sightseeing search) scrolling is the normal way to reach an option, which is
+           why this reads as "the dropdown does not respond when I try to select". */
+        <ul
+          role="listbox"
+          onMouseDown={(event) => event.preventDefault()}
+          className="absolute z-40 mt-1 max-h-64 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 shadow-xl"
+        >
           {options.map((option, index) => (
             <li
               key={option.publicId || option.id || `${getLabel(option)}-${index}`}
@@ -1060,6 +1084,50 @@ function QuickHotelStays({ data, setData, loadHotels }) {
     } : stay),
   }));
 
+  /* ── Add Hotel — create a master record without leaving the quote ───────────────────────────
+     Same reasoning as Add Attraction in Sightseeing: the picker can only offer what the Hotel
+     Master already holds, and quoting a property that has never been entered meant leaving the
+     quotation, creating it in Masters, coming back and finding your place again. This opens the
+     SAME modal HotelTab uses, so the record is identical either way.
+
+     `hotelModalStayId` remembers which stay asked, because one modal serves every stay row. */
+  const [hotelModalOpen, setHotelModalOpen] = useState(false);
+  const [hotelModalStayId, setHotelModalStayId] = useState(null);
+
+  const openHotelModal = (stayId) => {
+    setHotelModalStayId(stayId);
+    setHotelModalOpen(true);
+  };
+
+  const handleHotelSaved = async (saved) => {
+    setHotelModalOpen(false);
+    const stayId = hotelModalStayId;
+    setHotelModalStayId(null);
+    if (!saved || stayId == null) return;
+
+    const stay = data.rows.find((row) => row.id === stayId);
+    if (!stay) return;
+
+    /* Re-read the saved hotel through the same search the picker uses before selecting it.
+       The modal returns what it POSTed, which need not carry the server-side shape the rest of this
+       panel depends on — roomTypes with their rates, mealPlans. chooseHotel derives room lines and
+       prices from exactly those, so selecting the POST response directly can produce a stay with a
+       hotel name and no room rates. Falls back to `saved` if the lookup finds nothing, which is
+       still better than not selecting it at all. */
+    const idOfHotel = (h) => h?.publicId || h?.hotelId || h?.id;
+    let fresh = saved;
+    try {
+      const results = await loadHotels(saved.name || "", stay.city);
+      const match = (Array.isArray(results) ? results : []).find(
+        (h) => idOfHotel(h) === idOfHotel(saved),
+      );
+      if (match) fresh = match;
+    } catch {
+      // Search failed — keep `saved`. The agent can re-pick from the dropdown if rates are missing.
+    }
+    chooseHotel(stay, fresh);
+  };
+
   const chooseHotel = (stay, hotel) => {
     const roomTypeOptions = Array.isArray(hotel.roomTypes)
       ? hotel.roomTypes.filter((room) => room?.active !== false)
@@ -1237,6 +1305,10 @@ function QuickHotelStays({ data, setData, loadHotels }) {
         >
           <div>
             <Field label="Hotel" required hint={stay.city ? `Searching ${stay.city} first` : "Searches the Hotel Master"}>
+              {/* Picker and its ⊕ on one row: the button is only wanted at the moment the search
+                  comes back empty, so it belongs beside the box rather than in a toolbar. */}
+              <div className="flex items-start gap-1.5">
+                <div className="min-w-0 flex-1">
               <AsyncCombobox
                 value={stay.name}
                 onValueChange={(name) => clearHotel(stay.id, name)}
@@ -1258,6 +1330,17 @@ function QuickHotelStays({ data, setData, loadHotels }) {
                 ].filter(Boolean).join(" · ")}
                 placeholder="Type hotel name"
               />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => openHotelModal(stay.id)}
+                  title="Add a new hotel to the Hotel Master"
+                  aria-label="Add hotel"
+                  className="mt-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-600"
+                >
+                  <Plus className="h-4 w-4" />
+                </button>
+              </div>
             </Field>
           </div>
 
@@ -1377,9 +1460,22 @@ function QuickHotelStays({ data, setData, loadHotels }) {
           </div>
         </SectionCard>
       ))}
+      {/* This adds a STAY — another hotel block in the itinerary — not a hotel to the master. It
+          said "Add hotel", which is what the new ⊕ beside each picker actually does; two buttons
+          with one label, doing different things, is most of why the master one looked missing. */}
       <button type="button" onClick={addHotel} data-quick-add className="inline-flex items-center gap-2 rounded-lg border border-dashed border-blue-300 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100">
-        <Plus className="h-4 w-4" /> Add hotel
+        <Plus className="h-4 w-4" /> Add stay
       </button>
+
+      {/* One modal for every stay row — `hotelModalStayId` remembers which one opened it.
+          editHotel is always null: this entry point only CREATES. Editing a master record stays in
+          the Hotel tab, which holds the full master list and can resolve a selection back to it. */}
+      <HotelFormModal
+        open={hotelModalOpen}
+        onClose={() => { setHotelModalOpen(false); setHotelModalStayId(null); }}
+        editHotel={null}
+        onSaved={handleHotelSaved}
+      />
     </div>
   );
 }
@@ -1433,6 +1529,98 @@ function SightseeingPanel({ data, setData, loadSightseeing }) {
     ...current,
     rows: current.rows.map((row) => row.id === id ? { ...row, ...patch } : row),
   }));
+
+  /* ── More than one activity per day ────────────────────────────────────────────────────────
+     A quick-quote row was one DAY carrying exactly one activity, flat: attraction, startTime,
+     transfer, pricePerPax, pax. A real day is often two or three — Phewa Lake in the morning,
+     Sarangkot at sunset — and the only way to record that here was to add another DAY, which put
+     "Day 5" and "Day 6" on a five-day trip and threw the dates out.
+
+     ADDITIVE, not a migration. The flat fields stay exactly as they are and remain the day's FIRST
+     activity; `activities[]` holds the second onward. That matters because of what reads this shape
+     downstream: the Modern, Luxury and Premium templates already do `(d.activities || [])` — they
+     render an activities array today and fall back to the flat fields — so nothing about the PDFs,
+     the web views or the saved payload has to change, and a quotation saved before this still opens
+     correctly. A full migration to activities-only would have rewritten initialModel, the content
+     test, the subtotal and every stored quotation for no gain the agent can see.
+
+     Each extra activity carries its own price and pax, mirroring the full quotation, and the
+     subtotal picks them up — see SECTION_TOTAL.sightseeing. */
+  const newActivity = (day) => ({
+    id: rowId(),
+    attraction: "",
+    startTime: "",
+    description: "",
+    transfer: "Private",
+    imagePath: "",
+    pricePerPax: 0,
+    // Inherited so the common case — same party, same city — needs no retyping.
+    pax: day.pax ?? 1,
+    city: day.city || "",
+    destination: day.destination || "",
+  });
+
+  const addActivity = (dayId) => setData((current) => ({
+    ...current,
+    rows: current.rows.map((row) => (
+      row.id === dayId ? { ...row, activities: [...(row.activities || []), newActivity(row)] } : row
+    )),
+  }));
+
+  const patchActivity = (dayId, activityId, patch) => setData((current) => ({
+    ...current,
+    rows: current.rows.map((row) => (
+      row.id === dayId
+        ? { ...row, activities: (row.activities || []).map((act) => (act.id === activityId ? { ...act, ...patch } : act)) }
+        : row
+    )),
+  }));
+
+  const removeActivity = (dayId, activityId) => setData((current) => ({
+    ...current,
+    rows: current.rows.map((row) => (
+      row.id === dayId
+        ? { ...row, activities: (row.activities || []).filter((act) => act.id !== activityId) }
+        : row
+    )),
+  }));
+
+  /* ── Add Attraction — create a master record without leaving the quote ──────────────────────
+     The picker can only offer what the Sightseeing Master already holds. When an agent is quoting
+     something that has never been entered — a new trek, a newly opened museum — the flow was: leave
+     the quotation, open Masters, create it, come back, find your place again. The full quotation
+     solved this long ago with a ⊕ beside every attraction box; this is the SAME modal, imported
+     rather than reimplemented, so a record created here is indistinguishable from one created there.
+
+     `target` remembers which box asked for it — a day's own attraction, or one of its extra
+     activities — because the modal is one component serving every box on the screen and it has to
+     write the result back to the one that opened it. */
+  const [attractionModalOpen, setAttractionModalOpen] = useState(false);
+  const [attractionTarget, setAttractionTarget] = useState(null);
+
+  const openAttractionModal = (dayId, activityId = null) => {
+    setAttractionTarget({ dayId, activityId });
+    setAttractionModalOpen(true);
+  };
+
+  const handleAttractionSaved = (saved) => {
+    setAttractionModalOpen(false);
+    if (!saved || !attractionTarget) { setAttractionTarget(null); return; }
+
+    /* Fill the box that opened the modal, exactly as picking the record from the dropdown would —
+       same fields, same HTML-stripped description — so a created attraction and a selected one are
+       identical from here on. */
+    const patch = {
+      attraction: saved.title || "",
+      description: String(saved.description || "").replace(/<[^>]*>/g, "").trim(),
+      imagePath: saved.imagePath || saved.imageUrl || "",
+      city: saved.city || saved.cityName || "",
+    };
+    const { dayId, activityId } = attractionTarget;
+    if (activityId) patchActivity(dayId, activityId, patch);
+    else update(dayId, patch);
+    setAttractionTarget(null);
+  };
 
   /* Sightseeing is the longest section on this screen: it is one card PER DAY, so a 5-day trip means
      five price boxes, and in practice an agency quotes one per-person day rate across the whole
@@ -1492,6 +1680,10 @@ function SightseeingPanel({ data, setData, loadSightseeing }) {
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <div className="md:col-span-2">
               <Field label="Attraction / activity" required>
+                {/* The picker and its ⊕ share a row: the button is only ever wanted at the moment
+                    the search comes back empty, so it belongs beside the box, not in a toolbar. */}
+                <div className="flex items-start gap-1.5">
+                  <div className="min-w-0 flex-1">
                 <AsyncCombobox
                   value={row.attraction}
                   onValueChange={(attraction) => update(row.id, { attraction, imagePath: "" })}
@@ -1509,6 +1701,17 @@ function SightseeingPanel({ data, setData, loadSightseeing }) {
                   getSublabel={(item) => [item.city || item.cityName, item.estimatedHours ? `${item.estimatedHours}h` : ""].filter(Boolean).join(" · ")}
                   placeholder="Type attraction name"
                 />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => openAttractionModal(row.id)}
+                    title="Add a new attraction to the Sightseeing Master"
+                    aria-label="Add attraction"
+                    className="mt-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-slate-200 text-slate-500 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-600"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </button>
+                </div>
               </Field>
             </div>
             <Field label="Date"><Input type="date" value={row.date} onChange={(event) => update(row.id, { date: event.target.value })} /></Field>
@@ -1529,6 +1732,88 @@ function SightseeingPanel({ data, setData, loadSightseeing }) {
               <figcaption className="mt-1 text-[11px] font-semibold text-slate-400">Photo from Sightseeing Master</figcaption>
             </figure>
           )}
+
+          {/* The day's SECOND activity onward. Inset and tinted so it reads as belonging to the day
+              above it rather than as another day — the mistake this whole block exists to fix. */}
+          {(row.activities || []).map((act, actIndex) => (
+            <div key={act.id} className="mt-3 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+              <div className="mb-2.5 flex items-center justify-between gap-2">
+                {/* +2, not +1: the flat fields above are activity 1 of this day. */}
+                <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                  Activity {actIndex + 2}
+                </p>
+                <IconButton label="Remove activity" danger onClick={() => removeActivity(row.id, act.id)}>
+                  <Trash2 className="h-4 w-4" />
+                </IconButton>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <div className="md:col-span-2">
+                  <Field label="Attraction / activity">
+                    {/* Same master-backed picker as the day's first activity, scoped to the same
+                        destination and city, so a second activity is found the same way as the first —
+                        including the ⊕ for when it is not in the master yet. */}
+                    <div className="flex items-start gap-1.5">
+                      <div className="min-w-0 flex-1">
+                    <AsyncCombobox
+                      value={act.attraction}
+                      onValueChange={(attraction) => patchActivity(row.id, act.id, { attraction, imagePath: "" })}
+                      onSelect={(item) => patchActivity(row.id, act.id, {
+                        attraction: item.title || "",
+                        startTime: String(item.suggestedStartTime || act.startTime || "").slice(0, 5),
+                        description: String(item.description || "").replace(/<[^>]*>/g, "").trim(),
+                        imagePath: item.imagePath || item.imageUrl || "",
+                        city: item.city || item.cityName || act.city,
+                      })}
+                      loadOptions={(query) => loadSightseeing(query, row.destination, row.city)}
+                      cacheKey={`sightseeing:${row.destination || ""}:${row.city || ""}`}
+                      getLabel={(item) => item.title || "Activity"}
+                      getImage={(item) => item.imagePath || item.imageUrl || ""}
+                      getSublabel={(item) => [item.city || item.cityName, item.estimatedHours ? `${item.estimatedHours}h` : ""].filter(Boolean).join(" · ")}
+                      placeholder="Type attraction name"
+                    />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => openAttractionModal(row.id, act.id)}
+                        title="Add a new attraction to the Sightseeing Master"
+                        aria-label="Add attraction"
+                        className="mt-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-600"
+                      >
+                        <Plus className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </Field>
+                </div>
+                <Field label="Start time"><Input type="time" value={act.startTime} onChange={(event) => patchActivity(row.id, act.id, { startTime: event.target.value })} /></Field>
+                <Field label="Transfer"><Select options={TRANSFER} value={act.transfer} onChange={(event) => patchActivity(row.id, act.id, { transfer: event.target.value })} /></Field>
+                <Field label="Price / pax (₹)"><Input type="number" min="0" value={act.pricePerPax} onFocus={(event) => event.target.select()} onChange={(event) => patchActivity(row.id, act.id, { pricePerPax: event.target.value })} /></Field>
+                <Field label="PAX"><Input type="number" min="1" value={act.pax} onFocus={(event) => event.target.select()} onChange={(event) => patchActivity(row.id, act.id, { pax: event.target.value })} /></Field>
+                <div className="xl:col-span-4"><Field label="Description"><Input value={act.description} placeholder="Optional short description" onChange={(event) => patchActivity(row.id, act.id, { description: event.target.value })} /></Field></div>
+              </div>
+
+              {act.imagePath && (
+                <figure className="mt-3 w-full max-w-sm">
+                  <img src={act.imagePath} alt={act.attraction || "Activity"} loading="lazy" className="h-36 w-full rounded-lg border border-slate-200 object-cover" />
+                  <figcaption className="mt-1 text-[11px] font-semibold text-slate-400">Photo from Sightseeing Master</figcaption>
+                </figure>
+              )}
+            </div>
+          ))}
+
+          {/* Inside the day card, exactly where the full quotation puts it. The departure day is
+              excluded: it is a check-out, not a day anyone books activities on. */}
+          {!row.isDepartureDay && (
+            <div className="mt-3 border-t border-slate-100 pt-3">
+              <button
+                type="button"
+                onClick={() => addActivity(row.id)}
+                className="inline-flex items-center gap-2 rounded-lg border border-dashed border-slate-300 px-3 py-2 text-xs font-bold text-slate-600 transition hover:border-blue-400 hover:text-blue-600"
+              >
+                <Plus className="h-3.5 w-3.5" /> Add Activity
+              </button>
+            </div>
+          )}
         </SectionCard>
       ))}
       {/* The new row is cloned off the last one for its city/destination/pax, and the last one is now
@@ -1536,8 +1821,20 @@ function SightseeingPanel({ data, setData, loadSightseeing }) {
           day would inherit the flag, drop out of the completion and summary counts above, and the
           agent's real activities would stop registering. */}
       <button type="button" onClick={() => setData((current) => ({ ...current, rows: [...current.rows, { ...current.rows[current.rows.length - 1], id: rowId(), day: current.rows.length + 1, isDepartureDay: false, attraction: "", description: "", imagePath: "", pricePerPax: 0 }] }))} data-quick-add className="inline-flex items-center gap-2 rounded-lg border border-dashed border-blue-300 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100">
-        <Plus className="h-4 w-4" /> Add activity
+        <Plus className="h-4 w-4" /> Add day
       </button>
+
+      {/* One modal for the whole panel, not one per box — `attractionTarget` remembers which box
+          opened it. editingItem is always null here: this entry point only CREATES. Editing an
+          existing master record stays in the full quotation, which can resolve the selected
+          attraction back to its master row; the quick quote holds only a title and has nothing
+          reliable to look up. */}
+      <SightseeingFormModal
+        isOpen={attractionModalOpen}
+        onClose={() => { setAttractionModalOpen(false); setAttractionTarget(null); }}
+        editingItem={null}
+        onSaved={handleAttractionSaved}
+      />
     </div>
   );
 }
@@ -1838,7 +2135,12 @@ const lines = (value) => String(value || "")
 // Hotels are absent on purpose: save() already blocks unless EVERY stay is complete.
 const ROW_HAS_CONTENT = {
   flight: (row) => Boolean(row.airline || String(row.from || "").trim() || String(row.to || "").trim()),
-  sightseeing: (row) => Boolean(String(row.attraction || "").trim()),
+  /* A day counts if ANY of its activities is filled, not just the flat first one. Without the
+     second half, a day where the agent left activity 1 blank and filled activity 2 would be
+     silently dropped from the saved quotation AND from the running total — the exact class of
+     bug the departure-day comment in initialModel warns about, one layer down. */
+  sightseeing: (row) => Boolean(String(row.attraction || "").trim())
+    || (row.activities || []).some((act) => String(act?.attraction || "").trim()),
   vehicle: (row) => Boolean(String(row.model || "").trim() || String(row.type || "").trim()),
   cruise: (row) => Boolean(String(row.name || "").trim()),
   addons: (row) => Boolean(String(row.serviceType || "").trim()),
@@ -1859,7 +2161,17 @@ const sectionTotal = {
     return sum + roomTotal * nights;
   }, 0),
   flight: (rows) => rows.reduce((sum, row) => sum + asNumber(row.pricePerPax) * Math.max(1, asNumber(row.pax, 1)), 0),
-  sightseeing: (rows) => rows.reduce((sum, row) => sum + asNumber(row.pricePerPax) * Math.max(1, asNumber(row.pax, 1)), 0),
+  /* The day's own price, plus every extra activity's. Each activity carries its own price and
+     pax exactly as the full quotation does, so a second activity on a day is charged rather
+     than quietly free. */
+  sightseeing: (rows) => rows.reduce((sum, row) => (
+    sum
+    + asNumber(row.pricePerPax) * Math.max(1, asNumber(row.pax, 1))
+    + (row.activities || []).reduce(
+        (actSum, act) => actSum + asNumber(act.pricePerPax) * Math.max(1, asNumber(act.pax, 1)),
+        0,
+      )
+  ), 0),
   vehicle: (rows) => rows.reduce((sum, row) => sum + asNumber(row.pricePerVehicle) * Math.max(1, asNumber(row.qty, 1)), 0),
   cruise: (rows) => rows.reduce((sum, row) => sum + asNumber(row.pricePerPax) * Math.max(1, asNumber(row.pax, 1)), 0),
   addons: (rows) => rows.reduce((sum, row) => sum + asNumber(row.pricePerUnit) * Math.max(1, asNumber(row.quantity, 1)), 0),
