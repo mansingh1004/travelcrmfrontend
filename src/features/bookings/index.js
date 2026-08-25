@@ -14,7 +14,7 @@ export { default as bookingService } from "./api/bookingService";
    booking merely inherits — a lead that already knows "1 Innova, 3 Deluxe AC" should not have to
    say it again at conversion. Exported through the index (never deep-imported) so the boundary
    rule in CLAUDE.md holds: leads reaches bookings only through its public API. */
-// export { VehicleRequirementRows, RoomRequirementRows } from "./components/RequirementRows";
+export { VehicleRequirementRows, RoomRequirementRows } from "./components/RequirementRows";
 /* Same reason, one card up: the lead form's Rapid mode renders the BOOKING's Travel Details card
    rather than a lookalike of it, so dates, pickup mode and drop are asked in one shape across both
    screens and cannot drift apart. It is fully props-driven (`form` + `setField`), so the lead
