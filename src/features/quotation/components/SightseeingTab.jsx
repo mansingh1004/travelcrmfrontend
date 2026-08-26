@@ -1982,7 +1982,13 @@ const ssEmptyForm = {
   imagePath: "", imagePreview: "", description: "", remarks: "",
 };
 
-function SightseeingFormModal({ isOpen, onClose, editingItem, onSaved }) {
+/* Exported so the QUICK QUOTATION can open the same modal.
+   Quick Quotation lives in this same feature, so it imports this directly rather than through the
+   barrel. Sharing the component beats writing a second create-attraction form: two forms writing
+   to the Sightseeing Master would drift in their fields and their validation, and an attraction
+   created from the quick quote must be indistinguishable from one created here.
+   onSaved(saved, mode) — mode is "create" or "update". */
+export function SightseeingFormModal({ isOpen, onClose, editingItem, onSaved }) {
   const [form, setForm] = useState({ ...ssEmptyForm });
   const [saving, setSaving] = useState(false);
   const [imgUploading, setImgUploading] = useState(false);
