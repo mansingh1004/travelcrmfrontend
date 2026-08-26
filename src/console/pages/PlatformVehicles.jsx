@@ -23,6 +23,7 @@ import {
   EmptyState, SkeletonCards, Pager, ChipBar, ViewToggle, useViewMode,
   useToast, cn,
 } from "../components/hotelUi";
+import SuperAdminMfaActionModal from "../components/SuperAdminMfaActionModal";
 import { transportAdminService as svc } from "../api/transportAdminService";
 
 const PAGE_SIZE = 12;
@@ -81,11 +82,18 @@ export default function PlatformVehicles() {
 
   useEffect(load, [load]);
 
+  /* Publish, unpublish and delete each carry `@RequireSuperAdminStepUp` server-side: the first two
+     change what every agency on the platform can buy, and the third is irreversible. The code is
+     collected by the modal and threaded through — passing none looked fine locally only because
+     `app.super-admin.dev-login.enabled=true` short-circuits the check, and was a 403 in production. */
+  const [pending, setPending] = useState(null); // {kind:"publish"|"delete", row}
+  const [busy, setBusy] = useState(false);
+
   /** Publish/unpublish is its own verb, never a save side effect — it is what makes a row sellable. */
-  async function togglePublish(row) {
+  async function togglePublish(row, mfaCode) {
     try {
-      if (row.status === "ACTIVE") await svc.unpublishVehicle(row.publicId);
-      else await svc.publishVehicle(row.publicId);
+      if (row.status === "ACTIVE") await svc.unpublishVehicle(row.publicId, mfaCode);
+      else await svc.publishVehicle(row.publicId, mfaCode);
       load();
     } catch (e) {
       showToast(e?.normalized?.message ?? "Could not change that vehicle's status.", "error");
@@ -93,12 +101,24 @@ export default function PlatformVehicles() {
   }
 
   /** Refuses server-side while any tenant holds a projection — that refusal is the safety, not this. */
-  async function remove(row) {
+  async function remove(row, mfaCode) {
     try {
-      await svc.deleteVehicle(row.publicId);
+      await svc.deleteVehicle(row.publicId, mfaCode);
       load();
     } catch (e) {
       showToast(e?.normalized?.message ?? "Could not delete that vehicle.", "error");
+    }
+  }
+
+  async function runPending(mfaCode) {
+    if (!pending) return;
+    setBusy(true);
+    try {
+      if (pending.kind === "delete") await remove(pending.row, mfaCode);
+      else await togglePublish(pending.row, mfaCode);
+    } finally {
+      setBusy(false);
+      setPending(null);
     }
   }
 
@@ -166,8 +186,8 @@ export default function PlatformVehicles() {
                 key={v.publicId}
                 vehicle={v}
                 onOpen={() => openEditor(v)}
-                onTogglePublish={() => togglePublish(v)}
-                onRemove={() => remove(v)}
+                onTogglePublish={() => setPending({ kind: "publish", row: v })}
+                onRemove={() => setPending({ kind: "delete", row: v })}
               />
             ))}
           </div>
@@ -212,8 +232,8 @@ export default function PlatformVehicles() {
                   <TableCell><VehicleStatusBadge value={v.status} /></TableCell>
                   <TableCell>
                     <div className="flex justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
-                      <PublishButton row={v} onClick={() => togglePublish(v)} />
-                      <DeleteButton onClick={() => remove(v)} />
+                      <PublishButton row={v} onClick={() => setPending({ kind: "publish", row: v })} />
+                      <DeleteButton onClick={() => setPending({ kind: "delete", row: v })} />
                     </div>
                   </TableCell>
                 </TableRow>
@@ -222,6 +242,31 @@ export default function PlatformVehicles() {
           </Table>
           <Pager {...pagerProps} onPage={setPage} />
         </GlassCard>
+      )}
+
+      {pending && (
+        <SuperAdminMfaActionModal
+          title={
+            pending.kind === "delete"
+              ? "Confirm vehicle deletion"
+              : pending.row.status === "ACTIVE" ? "Confirm unpublish" : "Confirm publish"
+          }
+          description={
+            pending.kind === "delete"
+              ? `This permanently removes ${pending.row.name} from the catalog. It is refused while any agency still holds a copy.`
+              : pending.row.status === "ACTIVE"
+                ? `This withdraws ${pending.row.name} from sale. Orders already placed and copies already imported are untouched.`
+                : `This puts ${pending.row.name} on sale to every agency on the platform.`
+          }
+          confirmLabel={
+            pending.kind === "delete"
+              ? "Delete vehicle"
+              : pending.row.status === "ACTIVE" ? "Unpublish" : "Publish"
+          }
+          saving={busy}
+          onClose={busy ? undefined : () => setPending(null)}
+          onConfirm={runPending}
+        />
       )}
     </PageShell>
   );

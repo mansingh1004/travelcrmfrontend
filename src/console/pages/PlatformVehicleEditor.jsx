@@ -17,6 +17,7 @@ import {
   PageShell, HotelStyles, GlassCard,
   Input, Textarea, Label, Select, Button,
 } from "../components/hotelUi";
+import SuperAdminMfaActionModal from "../components/SuperAdminMfaActionModal";
 import { transportAdminService as svc } from "../api/transportAdminService";
 
 /** Mirrors `TransportVehicleType` loosely — the field is a free string server-side, so this is a
@@ -40,6 +41,13 @@ const EMPTY = {
   cityCode: "",
   coverageNote: "",
   supplierVendorPublicId: "",
+  // Who the vehicle actually belongs to. These MUST be on the form even though nothing here reads
+  // them for display: the server applies the request wholesale (`PlatformVehicleCatalogServiceImpl
+  // .apply` sets both unconditionally), so a field the editor does not send is a field the next save
+  // nulls. A listing promoted from a transport partner arrives carrying both, and this page was
+  // quietly erasing them on every edit.
+  ownerCompanyName: "",
+  ownerName: "",
 };
 
 export default function PlatformVehicleEditor() {
@@ -55,6 +63,7 @@ export default function PlatformVehicleEditor() {
   const [loadError, setLoadError] = useState("");
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
+  const [mfaOpen, setMfaOpen] = useState(false);
 
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
 
@@ -63,9 +72,19 @@ export default function PlatformVehicleEditor() {
     setForm({
       ...EMPTY,
       ...full,
+      // The admin DTO is @JsonInclude(NON_NULL), so an unset field is ABSENT rather than null and the
+      // spread above leaves it undefined — which flips its input from controlled to uncontrolled.
+      // Every optional string the form binds therefore gets an explicit "" here.
       passengerCapacity: full.passengerCapacity ?? "",
       luggageCapacity: full.luggageCapacity ?? "",
       supplierVendorPublicId: full.supplierVendorPublicId ?? "",
+      ownerCompanyName: full.ownerCompanyName ?? "",
+      ownerName: full.ownerName ?? "",
+      description: full.description ?? "",
+      primaryImageUrl: full.primaryImageUrl ?? "",
+      stateName: full.stateName ?? "",
+      cityCode: full.cityCode ?? "",
+      coverageNote: full.coverageNote ?? "",
       // The wire carries a list; the editor is one comma-separated box, because a chip editor for
       // six words is more machinery than the job needs.
       amenities: Array.isArray(full.amenities) ? full.amenities.join(", ") : "",
@@ -93,7 +112,15 @@ export default function PlatformVehicleEditor() {
     return () => { alive = false; };
   }, [publicId, isNew, hydrate]);
 
-  async function save() {
+  /* Create and update are both `@RequireSuperAdminStepUp` server-side (PLATFORM_VEHICLE_CREATE /
+     _UPDATE), and `SuperAdminStepUpAspect` reads the code off the `X-SuperAdmin-Mfa-Code` header. It
+     is collected once here and threaded through, exactly as PlatformHotelEditor does.
+
+     This page used to call `svc.updateVehicle(publicId, payload)` with no code at all. It looked
+     correct locally only because `app.super-admin.dev-login.enabled=true` makes
+     `SuperAdminStepUpService.requireCode` return early; against a real deployment every save on this
+     screen was a 403 with no way past it. A missing code is not a silent no-op. */
+  async function save(mfaCode) {
     setSaving(true);
     setFormError("");
     try {
@@ -114,12 +141,17 @@ export default function PlatformVehicleEditor() {
         cityCode: form.cityCode?.trim() || null,
         coverageNote: form.coverageNote?.trim() || null,
         supplierVendorPublicId: form.supplierVendorPublicId?.trim() || null,
+        ownerCompanyName: form.ownerCompanyName?.trim() || null,
+        ownerName: form.ownerName?.trim() || null,
       };
-      if (publicId) await svc.updateVehicle(publicId, payload);
-      else await svc.createVehicle(payload);
+      if (publicId) await svc.updateVehicle(publicId, payload, mfaCode);
+      else await svc.createVehicle(payload, mfaCode);
       navigate("/console/transport-catalog");
     } catch (e) {
       setFormError(e?.normalized?.message ?? "Could not save that vehicle.");
+      // Keep the operator on the page with the modal shut: the message belongs beside the form,
+      // where the field that caused it is, not inside a dialog they must dismiss to read it.
+      setMfaOpen(false);
     } finally {
       setSaving(false);
     }
@@ -202,7 +234,9 @@ export default function PlatformVehicleEditor() {
               value here turns into a 409 on their side rather than a silently wrong master row. */}
           <Section title="Reports from">
             <div className="grid grid-cols-2 gap-3">
-              <F id="v-city" label="City" value={form.cityName} onChange={(e) => set({ cityName: e.target.value })} />
+              {/* Required server-side (@NotBlank). Marked and gated here too, or a blank city is a
+                  400 the operator meets only after pressing Save. */}
+              <F id="v-city" label="City" required value={form.cityName} onChange={(e) => set({ cityName: e.target.value })} />
               <F id="v-state" label="State" value={form.stateName} onChange={(e) => set({ stateName: e.target.value })} />
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -240,6 +274,22 @@ export default function PlatformVehicleEditor() {
               value={form.supplierVendorPublicId}
               onChange={(e) => set({ supplierVendorPublicId: e.target.value })}
             />
+            {/* Carried over when a transport partner's fleet is promoted into the catalog. Editable
+                here so a save round-trips them instead of clearing them — see the note on EMPTY. */}
+            <div className="grid grid-cols-2 gap-3">
+              <F
+                id="v-owner-company"
+                label="Owner company"
+                value={form.ownerCompanyName}
+                onChange={(e) => set({ ownerCompanyName: e.target.value })}
+              />
+              <F
+                id="v-owner-name"
+                label="Owner name"
+                value={form.ownerName}
+                onChange={(e) => set({ ownerName: e.target.value })}
+              />
+            </div>
           </Section>
 
           {/* Rates hang off a product publicId, so there is nothing to attach them to until the
@@ -263,7 +313,10 @@ export default function PlatformVehicleEditor() {
           back up to save. */}
       <div className="sticky bottom-0 z-20 -mx-4 border-t border-border bg-surface/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6">
         <div className="flex flex-wrap items-center gap-3">
-          <Button onClick={save} disabled={saving || !form.name.trim()}>
+          <Button
+            onClick={() => { setFormError(""); setMfaOpen(true); }}
+            disabled={saving || !form.name.trim() || !form.cityName.trim()}
+          >
             {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
             {saving ? "Saving…" : isNew ? "Create as draft" : "Save changes"}
           </Button>
@@ -274,6 +327,21 @@ export default function PlatformVehicleEditor() {
           </span>
         </div>
       </div>
+
+      {mfaOpen && (
+        <SuperAdminMfaActionModal
+          title={isNew ? "Confirm new vehicle" : "Confirm vehicle changes"}
+          description={
+            isNew
+              ? "This adds the vehicle to the platform catalog as a draft. No agency sees it until it is published."
+              : "This saves the vehicle. Every agency holding a copy re-syncs it on their next read."
+          }
+          confirmLabel={isNew ? "Create draft" : "Save changes"}
+          saving={saving}
+          onClose={saving ? undefined : () => setMfaOpen(false)}
+          onConfirm={save}
+        />
+      )}
     </PageShell>
   );
 }
@@ -347,6 +415,11 @@ function RateCards({ vehiclePublicId, rates, onChanged }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [open, setOpen] = useState(false);
+  /* All three rate verbs are `@RequireSuperAdminStepUp(PLATFORM_VEHICLE_RATE_CHANGE)` — a supplier's
+     net rate is the number every approval is priced from. They cannot batch under one code the way
+     the hotel editor's sequence does, because each is its own button press; so the pending action is
+     parked here and the modal below replays it once a code is in hand. */
+  const [pending, setPending] = useState(null); // {kind:"save"} | {kind:"delete", rate}
 
   const set = (k, v) => setDraft((d) => ({ ...d, [k]: v }));
   const num = (v) => (v === "" || v === null || v === undefined ? null : Number(v));
@@ -374,7 +447,7 @@ function RateCards({ vehiclePublicId, rates, onChanged }) {
     setErr("");
   }
 
-  async function save() {
+  async function save(mfaCode) {
     setBusy(true);
     setErr("");
     try {
@@ -393,8 +466,8 @@ function RateCards({ vehiclePublicId, rates, onChanged }) {
         inclusionsText: draft.inclusionsText?.trim() || null,
         active: !!draft.active,
       };
-      if (editingRate) await svc.updateRate(vehiclePublicId, editingRate, payload);
-      else await svc.addRate(vehiclePublicId, payload);
+      if (editingRate) await svc.updateRate(vehiclePublicId, editingRate, payload, mfaCode);
+      else await svc.addRate(vehiclePublicId, payload, mfaCode);
       reset();
       setOpen(false);
       await onChanged();
@@ -402,22 +475,28 @@ function RateCards({ vehiclePublicId, rates, onChanged }) {
       setErr(e?.normalized?.message ?? "Could not save that rate.");
     } finally {
       setBusy(false);
+      setPending(null);
     }
   }
 
-  async function remove(r) {
+  async function remove(r, mfaCode) {
     setBusy(true);
     setErr("");
     try {
-      await svc.deleteRate(vehiclePublicId, r.publicId);
+      await svc.deleteRate(vehiclePublicId, r.publicId, mfaCode);
       if (editingRate === r.publicId) reset();
       await onChanged();
     } catch (e) {
       setErr(e?.normalized?.message ?? "Could not delete that rate.");
     } finally {
       setBusy(false);
+      setPending(null);
     }
   }
+
+  /** Replays whichever verb the operator pressed, once the modal has handed back a code. */
+  const runPending = (mfaCode) =>
+    pending?.kind === "delete" ? remove(pending.rate, mfaCode) : save(mfaCode);
 
   return (
     <GlassCard className="p-4">
@@ -473,7 +552,7 @@ function RateCards({ vehiclePublicId, rates, onChanged }) {
                 {r.netRate == null ? "—" : `${r.currency === "INR" ? "₹" : `${r.currency} `}${Number(r.netRate).toLocaleString("en-IN")}`}
               </div>
               <button
-                onClick={() => remove(r)}
+                onClick={() => { setErr(""); setPending({ kind: "delete", rate: r }); }}
                 disabled={busy}
                 title="Delete this rate"
                 className="shrink-0 rounded-lg border border-hue-rose/25 px-2 py-1 text-xs font-semibold text-hue-rose hover:bg-hue-rose-soft disabled:opacity-50"
@@ -534,11 +613,30 @@ function RateCards({ vehiclePublicId, rates, onChanged }) {
 
           <div className="flex justify-end gap-2">
             <Button size="sm" variant="outline" onClick={() => { reset(); setOpen(false); }}>Cancel</Button>
-            <Button size="sm" onClick={save} disabled={busy}>
+            <Button
+              size="sm"
+              onClick={() => { setErr(""); setPending({ kind: "save" }); }}
+              disabled={busy}
+            >
               {busy ? "Saving…" : editingRate ? "Update rate" : "Add rate"}
             </Button>
           </div>
         </div>
+      )}
+
+      {pending && (
+        <SuperAdminMfaActionModal
+          title={pending.kind === "delete" ? "Confirm rate removal" : "Confirm rate change"}
+          description={
+            pending.kind === "delete"
+              ? "This removes the contracted rate. Whoever approves the next order for this vehicle will price it without one."
+              : "This changes what the platform pays the operator. No agency sees this figure."
+          }
+          confirmLabel={pending.kind === "delete" ? "Remove rate" : editingRate ? "Update rate" : "Add rate"}
+          saving={busy}
+          onClose={busy ? undefined : () => setPending(null)}
+          onConfirm={runPending}
+        />
       )}
     </GlassCard>
   );
