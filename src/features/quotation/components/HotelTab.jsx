@@ -244,7 +244,15 @@ const emptyHotelForm = {
   imagePath: "", roomType: "Standard",
 };
 
-function HotelFormModal({ open, onClose, editHotel, onSaved }) {
+/* Exported so the QUICK QUOTATION can open the same modal, exactly as it does with
+   SightseeingFormModal. Quick Quotation is in this same feature, so it imports this directly rather
+   than through the barrel — this is shared internals, not public API.
+
+   One form, two callers, on purpose: a hotel created from the quick quote has to be
+   indistinguishable from one created here, and two forms writing to the Hotel Master would drift in
+   their fields, their room-type handling and their validation.
+   onSaved(saved, isEdit). */
+export function HotelFormModal({ open, onClose, editHotel, onSaved }) {
   const [form,        setForm]        = useState(emptyHotelForm);
   const [errors,      setErrors]      = useState({});
   const [saving,      setSaving]      = useState(false);

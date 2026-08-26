@@ -849,6 +849,13 @@ function LeadRow({
   // Weblink view count — whichever field the analytics payload carries.
   const weblinkViews = q?.viewCount ?? q?.weblinkViews ?? q?.views ?? 0;
   const logCount = lead.logCount ?? (Array.isArray(lead.logs) ? lead.logs.length : 0);
+
+  // How many times this contact has written in through an online platform, and therefore how many
+  // duplicate leads were NOT opened. The backend counts APPENDS, so the enquiry that opened the lead
+  // is not in it — hence +1 for the total a human would count. Zero means nobody has re-enquired,
+  // which is the common case, so the badge stays off rather than rendering "1".
+  const repeatEnquiries = Number(lead.repeatEnquiryCount) || 0;
+  const totalEnquiries = repeatEnquiries + 1;
   const webLink = q?.publicId ? `${window.location.origin}/q/${q.publicId}` : null;
 
   // Always show the lead's real stage/type even if it's outside the manually-selectable set.
@@ -907,6 +914,17 @@ function LeadRow({
               <span className="text-[10px] font-bold text-slate-400 font-mono flex-shrink-0" title={lead.publicId || lead.id}>
                 {displayCode}
               </span>
+              {/* Repeat enquiries. This is pressure FROM the customer, which is the opposite of what
+                  the Logging column counts (effort BY the team) — so it sits on the identity line
+                  where the agent is already looking, not buried in an activity total. Amber rather
+                  than red: someone asking again is a buying signal, not an error. */}
+              {repeatEnquiries > 0 && (
+                <span
+                  title={`${totalEnquiries} enquiries from this contact. The repeat ones were logged on this lead instead of opening new leads.`}
+                  className="inline-flex items-center gap-0.5 text-[10px] font-extrabold px-1.5 py-0.5 rounded-full border border-amber-200 bg-amber-100 text-amber-700 flex-shrink-0">
+                  <Inbox size={9} />{totalEnquiries}x
+                </span>
+              )}
             </div>
             <PhoneLink phone={lead.phone} iconSize={10}
               className="text-[11px] text-slate-500 max-w-full"

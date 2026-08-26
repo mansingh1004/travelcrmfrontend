@@ -34,10 +34,22 @@ const consoleRealm = createAuthRealm({
   clearSession: clearConsoleSession,
 });
 
+/*
+ * `handleError` RETURNS the normalized error — attach it rather than dropping it on the floor.
+ *
+ * Without this line `error.normalized` is undefined at every call site, so the common console idiom
+ * `e?.normalized?.message ?? "Could not save."` silently renders the fallback for EVERY failure and
+ * the server's own copy is never shown: "Set the passenger capacity before publishing it", the 409
+ * naming the duplicate rate, and every field-level validation message were all invisible.
+ *
+ * Note `shared/api/http.js` discards it the same way, so `.normalized` is a console-only convention
+ * for now. A page moved from here into `features/` must switch to `getErrorMessage(err, fallback)`
+ * from `@shared/api/apiError`, which is the app-wide idiom and reads the same normalizer.
+ */
 ConsoleAPI.interceptors.response.use(
   (response) => response,
   (error) => {
-    consoleRealm.handleError(error);
+    error.normalized = consoleRealm.handleError(error);
     return Promise.reject(error);
   }
 );
