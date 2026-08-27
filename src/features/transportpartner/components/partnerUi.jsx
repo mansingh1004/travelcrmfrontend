@@ -27,7 +27,7 @@ export const FONT = "'Plus Jakarta Sans',system-ui,-apple-system,'Segoe UI',Robo
  * 40px is a miss-and-retry on a phone.
  */
 export const inputCls =
-  "w-full min-h-11 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-base text-slate-800 " +
+  "w-full min-h-11 rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-base text-slate-800 " +
   "placeholder-slate-400 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 " +
   "disabled:bg-slate-50 disabled:text-slate-500";
 
@@ -44,17 +44,24 @@ export function Page({ children, lang = "en" }) {
  *
  * `id` doubles as the scroll-spy anchor, so `scroll-mt` has to clear whatever is sticky above it:
  * header + section chips on a phone, header only from `lg:` where the nav moves into the sidebar.
+ *
+ * Three values, not two, because the header itself is two rows below `sm:` — the language switcher
+ * and the save badge wrap onto their own line there rather than crushing the title — and a section
+ * scrolled to with the phone's offset would land underneath it.
  */
 export function Card({ id, title, hint, right, children }) {
   return (
     <section
       id={id}
-      className="scroll-mt-32 rounded-2xl border border-slate-200 bg-white shadow-sm lg:scroll-mt-24"
+      className="scroll-mt-48 rounded-xl border border-slate-200 bg-white shadow-sm sm:scroll-mt-32 lg:scroll-mt-24"
     >
+      {/* Stacked below sm:. `right` is a summary line ("2 vehicles · 5 rates · 3/12 photos") that
+          does not fit beside a heading on a 320px phone, and squeezing it there either overflowed
+          the card or crushed the title to an ellipsis. It gets its own line instead. */}
       {title && (
-        <header className="flex items-start gap-3 border-b border-slate-100 px-4 py-3.5 sm:px-5">
+        <header className="flex flex-col gap-1.5 border-b border-slate-100 px-4 py-3.5 sm:flex-row sm:items-start sm:gap-3 sm:px-5">
           <div className="min-w-0 flex-1">
-            <h2 className="text-[15px] font-bold text-slate-900">{title}</h2>
+            <h2 className="text-[15px] font-semibold text-slate-900">{title}</h2>
             {hint && <p className="mt-0.5 text-[13px] leading-snug text-slate-500">{hint}</p>}
           </div>
           {right}
@@ -74,14 +81,14 @@ export function Card({ id, title, hint, right, children }) {
 export function Row({ label, hint, required, error, children }) {
   return (
     <label className="flex flex-col gap-1.5 sm:flex-row sm:gap-4">
-      <span className={`text-[13px] font-semibold sm:w-44 sm:shrink-0 sm:pt-3 ${error ? "text-rose-600" : "text-slate-700"}`}>
+      <span className={`text-[11px] font-normal sm:w-44 sm:shrink-0 sm:pt-3.5 ${error ? "text-rose-600" : "text-slate-500"}`}>
         {label}
         {required && <span className="ml-0.5 text-rose-500">*</span>}
-        {hint && <span className="block text-[12px] font-normal text-slate-400">{hint}</span>}
+        {hint && <span className="block text-[11px] font-normal text-slate-400">{hint}</span>}
       </span>
       <span className={`min-w-0 flex-1 ${error ? INVALID : ""}`}>
         {children}
-        {error && <span className="mt-1 block text-[12px] font-semibold text-rose-600">{error}</span>}
+        {error && <span className="mt-1 block text-[11px] font-medium text-rose-600">{error}</span>}
       </span>
     </label>
   );
@@ -107,12 +114,12 @@ const INVALID =
 export function Field({ label, hint, error, className = "", children }) {
   return (
     <label className={`block min-w-0 ${className}`}>
-      <span className={`mb-1 block truncate text-[12px] font-semibold ${error ? "text-rose-600" : "text-slate-600"}`}>
+      <span className={`mb-1 block truncate text-[11px] font-normal ${error ? "text-rose-600" : "text-slate-500"}`}>
         {label}
         {hint && <span className="ml-1 font-normal text-slate-400">· {hint}</span>}
       </span>
       <span className={`block ${error ? INVALID : ""}`}>{children}</span>
-      {error && <span className="mt-1 block text-[12px] font-semibold text-rose-600">{error}</span>}
+      {error && <span className="mt-1 block text-[11px] font-medium text-rose-600">{error}</span>}
     </label>
   );
 }
@@ -130,7 +137,7 @@ export function Field({ label, hint, error, className = "", children }) {
 export function FieldBlock({ label, hint, className = "", children }) {
   return (
     <div className={`min-w-0 ${className}`}>
-      <span className="mb-1 block truncate text-[12px] font-semibold text-slate-600">
+      <span className="mb-1 block truncate text-[11px] font-normal text-slate-500">
         {label}
         {hint && <span className="ml-1 font-normal text-slate-400">· {hint}</span>}
       </span>
@@ -141,11 +148,11 @@ export function FieldBlock({ label, hint, className = "", children }) {
 
 export function Btn({ variant = "primary", size = "md", className = "", children, busy, ...rest }) {
   const base =
-    "inline-flex items-center justify-center gap-2 rounded-xl font-bold transition " +
+    "inline-flex items-center justify-center gap-2 rounded-lg font-medium transition " +
     "disabled:cursor-not-allowed disabled:opacity-50";
   const sizes = {
     sm: "min-h-9 px-3 py-1.5 text-[13px]",
-    md: "min-h-11 px-4 py-2.5 text-[14px]",
+    md: "min-h-11 px-4 py-2.5 text-[13px]",
   };
   const tones = {
     primary: "bg-blue-600 text-white hover:bg-blue-700 shadow-sm",
@@ -172,7 +179,7 @@ export function Notice({ tone = "info", children }) {
     error: "border-rose-200 bg-rose-50 text-rose-800",
     success: "border-emerald-200 bg-emerald-50 text-emerald-800",
   };
-  return <div className={`rounded-xl border px-4 py-3 text-[14px] leading-relaxed ${tones[tone]}`}>{children}</div>;
+  return <div className={`rounded-xl border px-4 py-3 text-[13px] leading-relaxed ${tones[tone]}`}>{children}</div>;
 }
 
 /** Toggle pill. Used for the amenity quick-picks and the vehicle-type suggestions. */
@@ -183,7 +190,7 @@ export function Chip({ on, disabled, onClick, className = "", children }) {
       disabled={disabled}
       onClick={onClick}
       aria-pressed={on}
-      className={`min-h-10 rounded-xl border px-3.5 text-[13px] font-semibold transition
+      className={`min-h-11 rounded-lg border px-3.5 text-[13px] font-medium transition
         disabled:cursor-not-allowed disabled:opacity-60 ${
           on
             ? "border-blue-500 bg-blue-50 text-blue-700"
@@ -209,8 +216,10 @@ export function Stepper({ id, value, onChange, min = 0, max = 99, disabled, inva
     onChange(String(next));
   };
   const btn =
-    "grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white " +
+    "grid h-11 w-11 shrink-0 place-items-center rounded-lg border border-slate-200 bg-white " +
     "text-slate-600 transition hover:bg-slate-50 disabled:opacity-40";
+  // The input carries `min-w-0`: a number field's intrinsic width is wider than what is left beside
+  // two 44px buttons inside a card on a 320px phone, and without it the row overflows instead.
   return (
     <div className="flex items-center gap-1.5">
       <button type="button" className={btn} disabled={disabled || (n ?? min) <= min}
@@ -221,7 +230,7 @@ export function Stepper({ id, value, onChange, min = 0, max = 99, disabled, inva
         id={id} type="number" inputMode="numeric" min={min} max={max} value={value} disabled={disabled}
         aria-invalid={Boolean(invalid)}
         onChange={(e) => onChange(e.target.value)}
-        className={`${inputCls} [appearance:textfield] px-1 text-center font-semibold
+        className={`${inputCls} min-w-0 [appearance:textfield] px-1 text-center font-medium
                     [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
       />
       <button type="button" className={btn} disabled={disabled || (n ?? min) >= max}
@@ -334,8 +343,8 @@ export function PhotoUploader({
           <input ref={inputRef} type="file" accept={accept} multiple
             className="hidden" onChange={pick} disabled={busy || full} />
           <button type="button" disabled={busy || full} onClick={() => inputRef.current?.click()}
-            className="flex w-full flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed
-                       border-slate-300 bg-white px-4 py-5 text-[14px] font-semibold text-slate-600
+            className="flex w-full flex-col items-center justify-center gap-1 rounded-xl border border-dashed
+                       border-slate-300 bg-white px-4 py-5 text-[13px] font-medium text-slate-600
                        transition hover:border-blue-400 hover:bg-blue-50/40 hover:text-blue-600 disabled:opacity-60">
             {busy ? (
               <>
@@ -352,7 +361,7 @@ export function PhotoUploader({
                     ? t("photoLimit")
                     : images.length ? t("addMorePhotos") : t("addPhotos")}
                 </span>
-                <span className="text-[12px] font-normal text-slate-400">
+                <span className="text-[11px] font-normal text-slate-400">
                   {full ? t("removeAnyPhoto") : hint}
                 </span>
               </>
@@ -376,7 +385,7 @@ export function PhotoUploader({
                 <img src={src} alt="" loading="lazy" className="h-full w-full object-cover" />
 
                 {isMain && (
-                  <span className="absolute left-1.5 top-1.5 rounded-md bg-blue-600 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                  <span className="absolute left-1.5 top-1.5 rounded-lg bg-blue-600 px-1.5 py-0.5 text-[11px] font-medium text-white">
                     {t("cover")}
                   </span>
                 )}
@@ -392,7 +401,7 @@ export function PhotoUploader({
                     {showMainBadge && !isMain && onMakeMain && (
                       <button type="button" onClick={() => onMakeMain(i)}
                         className="absolute inset-x-1.5 bottom-1.5 rounded-lg bg-white/95 py-1 text-[11px]
-                                   font-bold text-slate-600 shadow-sm transition hover:text-blue-600">
+                                   font-medium text-slate-600 shadow-sm transition hover:text-blue-600">
                         {t("makeCover")}
                       </button>
                     )}
