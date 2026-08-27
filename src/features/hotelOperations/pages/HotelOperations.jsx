@@ -33,7 +33,7 @@ export default function HotelOperations() {
   const openBookingId = searchParams.get("booking");
   const mockParam = searchParams.get("mock");
   // Opening the sidebar destination in local development should immediately provide a populated
-  // screen for UI review. Production remains live-by-default; `?mock=1` is still an explicit demo.
+  // screen for review. Production remains live-by-default; `?mock=1` is still an explicit demo.
   const mockMode = mockParam === "1" || (import.meta.env.DEV && mockParam === null);
   const selectedBrandId = mockMode ? searchParams.get("brand") : null;
   const selectedHotelId = mockMode ? searchParams.get("hotel") : null;

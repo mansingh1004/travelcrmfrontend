@@ -140,6 +140,7 @@ const ConsolePlatformHotelEditor = lazyPage(consoleFeature, "ConsolePlatformHote
 const ConsoleMarketplaceBookings = lazyPage(consoleFeature, "ConsoleMarketplaceBookings");
 const ConsoleTransportRequests = lazyPage(consoleFeature, "ConsoleTransportRequests");
 const ConsolePlatformVehicles = lazyPage(consoleFeature, "ConsolePlatformVehicles");
+const ConsolePlatformVehicleEditor = lazyPage(consoleFeature, "ConsolePlatformVehicleEditor");
 const ConsoleTransportCommissions = lazyPage(consoleFeature, "ConsoleTransportCommissions");
 const ConsoleTransportPartners = lazyPage(consoleFeature, "ConsoleTransportPartners");
 const ConsoleTransportPartnerReview = lazyPage(consoleFeature, "ConsoleTransportPartnerReview");
@@ -340,6 +341,9 @@ const AppRouter = () => {
               {/* Where the transport catalog is actually filled. Nothing a tenant browses exists
               until a row here is published. */}
               <Route path="transport-catalog" element={<ConsolePlatformVehicles />} />
+              {/* new BEFORE :publicId, or "new" is read as an id and the editor never renders. */}
+              <Route path="transport-catalog/new" element={<ConsolePlatformVehicleEditor />} />
+              <Route path="transport-catalog/:publicId/edit" element={<ConsolePlatformVehicleEditor />} />
               {/* Where the catalog above comes FROM: invite an operator, read what they submitted,
               publish their fleet. The invite list and the review are two routes for the same reason
               the hotel pair are — a submission carries a whole fleet, and each vehicle carries its

@@ -10,13 +10,13 @@ export { default as BookingDetails } from "./pages/BookingDetails";
 export { default as bookingService } from "./api/bookingService";
 
 /* The requirement editors, shared with the LEAD form.
-   "What the trip needs, not what is finally assigned" is a question the enquiry asks first and the
+   "What the needs, not what is finally assigned" is a question the enquiry asks first and the
    booking merely inherits — a lead that already knows "1 Innova, 3 Deluxe AC" should not have to
-   say it again at conversion. Exported through the index (never deep-imported) so the boundary
+   at conversion. Exported through the index (never deep-imported) so the boundary
    rule in CLAUDE.md holds: leads reaches bookings only through its public API. */
-export { VehicleRequirementRows, RoomRequirementRows } from "./components/RequirementRows";
+// export { VehicleRequirementRows, RoomRequirementRows } from "./components/RequirementRows";
 /* Same reason, one card up: the lead form's Rapid mode renders the BOOKING's Travel Details card
-   rather than a lookalike of it, so dates, pickup mode and drop are asked in one shape across both
+    than a lookalike of it, so dates, pickup mode and drop are asked in one shape across both
    screens and cannot drift apart. It is fully props-driven (`form` + `setField`), so the lead
    passes a small alias proxy — the two forms name four of these fields differently (returnDate /
    departureMode / departCountry / departCity) while the option strings and every sub-field are
@@ -43,7 +43,7 @@ export { default as CreateBooking } from "./pages/CreateBookingClean";
 // way. Exported here  than deep-imported: eslint no-restricted-imports blocks @features/*/*,
 // and a second copy of this editor would drift from the booking one the first time either changed.
 // Already exported at line 17; a second active export here causes an ESM duplicate-export error.
-// export { VehicleRequirementRows, RoomRequirementRows } from "./components/RequirementRows";
+export { VehicleRequirementRows, RoomRequirementRows } from "./components/RequirementRows";
 export { emptyVehicleRow, emptyRoomRow } from "./lib/bookingTripModel";
 
 
