@@ -130,7 +130,10 @@ export default function PlatformVehicles() {
     return { page, totalPages, total, from, to };
   }, [pagination, page, rows]);
 
-  const openEditor = (row) => navigate(`/console/transport-catalog/${row.publicId}/edit`);
+  /* A row opens the READ view, not the form. Landing straight in an editor put the only way to look
+     at a listing behind the only way to change it — an operator checking what a coach seats had a
+     live form under the cursor. Edit is a click taken from the detail page. */
+  const openDetail = (row) => navigate(`/console/transport-catalog/${row.publicId}`);
 
   return (
     <PageShell>
@@ -185,7 +188,7 @@ export default function PlatformVehicles() {
               <VehicleCard
                 key={v.publicId}
                 vehicle={v}
-                onOpen={() => openEditor(v)}
+                onOpen={() => openDetail(v)}
                 onTogglePublish={() => setPending({ kind: "publish", row: v })}
                 onRemove={() => setPending({ kind: "delete", row: v })}
               />
@@ -208,7 +211,7 @@ export default function PlatformVehicles() {
             </TableHeader>
             <TableBody>
               {rows.map((v) => (
-                <TableRow key={v.publicId} className="cursor-pointer" onClick={() => openEditor(v)}>
+                <TableRow key={v.publicId} className="cursor-pointer" onClick={() => openDetail(v)}>
                   <TableCell>
                     <div className="flex items-center gap-3">
                       {v.primaryImageUrl ? (
