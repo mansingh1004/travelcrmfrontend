@@ -343,23 +343,19 @@ export const blankDefaults = () => ({
      elderly parents are different hotels at the same budget, and "when will you decide" sorts the
      callback list that "when do you travel" cannot.
 
-     ⚠ NONE OF THESE HAVE COLUMNS YET. They live in form state and are deliberately NOT in
-     transformFormData's payload, so a lead saved today drops them rather than 400ing on an unknown
-     property. That is the agreed order — UI first, migration after — and it is safe only because
-     the transform whitelists fields instead of spreading the form object. Do not "fix" it by
-     spreading; wire each field when its column lands. */
+     Most of these still have no columns and deliberately stay outside the payload. Budget basis
+     and child ages are the exceptions: both are persisted by the lead contract. The transform is a
+     whitelist, so any future qualification field still needs an explicit backend field and mapping. */
   tripFor: "",
-  /* whatsappSame / whatsappNumber are NOT part of the column-less set around them any more — V22
-     gave WhatsApp a column and transformFormData now sends it (as null when "same as phone", so
-     there is never a second copy of the number to keep in step). */
+  /* whatsappSame is a UI latch; transformFormData persists the resolved phone or separate number
+     under the backend's canonical customerWhatsapp key. */
   whatsappSame: true,
   whatsappNumber: "",
   occasion: "",
   dateFlexibility: "EXACT",
   dateNote: "",
   decideBy: "",
-  /* "Total" or "PER_PERSON" — what the budget number MEANS. No column yet, like the rest of the
-     qualification set; it is here so the control has somewhere to live. */
+  /* "Total" or "PER_PERSON" — persisted alongside the budget amount. */
   budgetBasis: "TOTAL",
   /* Source of truth; the child COUNT follows this array, not the other way round. */
   childAges: [],
@@ -1324,8 +1320,8 @@ export function LeadFormPanels({
 
   /* ── WhatsApp — the booking form's field, finally given a control here ────────────────────────
      `whatsappSame` / `whatsappNumber` have been in blankDefaults and in transformFormData since
-     V22 (which sends `customerWhatsapp: null` while the tick is on, so "same as phone" stays ONE
-     value rather than a copy that can drift). What was missing was any way to switch the tick off:
+     V22. The transformer now resolves that latch to the phone or separate number and sends the
+     backend's canonical `customerWhatsapp` property. What was missing was a way to switch it off:
      the lead form had no WhatsApp input at all, so the column could only ever be written by the
      BOOKING form — the exact "type it twice" split the V22 columns were added to end. Edit mode
      already round-trips the saved number (applyLead reads lead.customerWhatsapp); it simply had
@@ -1837,8 +1833,8 @@ export function LeadFormPanels({
               Brought across from CreateBookingClean's Customer Details, tick and all.
 
               `whatsappSame` / `whatsappNumber` have been in blankDefaults and in transformFormData
-              since V22 (which sends `customerWhatsapp: null` while the tick is on, so "same as
-              phone" stays ONE value rather than a copy that can drift). What was missing was any
+              since V22. The transformer resolves the latch to the phone or separate number and
+              sends the backend's canonical `customerWhatsapp` property. What was missing was a
               way to switch the tick off: the lead form had no WhatsApp input at all, so the column
               could only ever be written by the BOOKING form — the exact "type it twice" split
               those columns were added to end. Edit mode already round-tripped a saved number
@@ -3469,13 +3465,30 @@ export default function LeadFormPage() {
           male: lead.male ?? lead.maleCount,
           female: lead.female ?? lead.femaleCount,
         });
+        const leadPhone = lead.phone ?? lead.mobile ?? lead.contactNumber ?? lead.customer?.phone ?? "";
+        const storedWhatsapp = lead.customerWhatsapp ?? lead.whatsappNumber ?? lead.whatsapp ?? "";
+        const contactDigits = (value) => String(value || "").replace(/\D/g, "");
+        const roomRequirementRows = Array.isArray(lead.roomRequirements) && lead.roomRequirements.length > 0
+          ? lead.roomRequirements.map((row) => ({
+              ...emptyRoomRow(),
+              roomType: row.roomType || "Double",
+              acType: row.acType || "Any",
+              count: String(row.count ?? 1),
+              extraBeds: String(row.extraBeds ?? 0),
+            }))
+          : [{
+              ...emptyRoomRow(),
+              count: String(lead.rooms ?? lead.roomCount ?? lead.noOfRooms ?? 1),
+              extraBeds: String(lead.extraBeds ?? lead.extraBedCount ?? 0),
+            }];
 
         reset({
           ...blankDefaults(),
           customerName: lead.customerName ?? lead.customer?.name ?? lead.name ?? "",
-          phone: lead.phone ?? lead.mobile ?? lead.contactNumber ?? lead.customer?.phone ?? "",
+          phone: leadPhone,
           email: lead.email ?? lead.customer?.email ?? "",
           budget: lead.budget ?? lead.estimatedValue ?? "",
+          budgetBasis: lead.budgetBasis ?? "TOTAL",
           leadSource: lead.leadSource ?? lead.source ?? "",
           leadType: lead.leadType ?? lead.type ?? "Fresh",
           leadStage: lead.leadStage ?? lead.stage ?? "New Lead",
@@ -3488,6 +3501,8 @@ export default function LeadFormPage() {
           packageType: lead.packageType ?? lead.tripType ?? "",
           travelDate: toDateInput(lead.travelDate ?? lead.tripDate ?? lead.departureDate),
           returnDate: toDateInput(lead.returnDate),
+          hotelCategory: lead.hotelCategory ?? "",
+          mealPlanPreference: lead.mealPlanPreference ?? "",
           departCountry: lead.departCountry ?? lead.departureCountry ?? "India",
           departCity: lead.departCity ?? lead.departureCity ?? "",
           departureMode: lead.departureMode ?? lead.transportMode ?? "",
@@ -3500,6 +3515,7 @@ export default function LeadFormPage() {
           pickupAddress: lead.pickupAddress ?? lead.roadPickupAddress ?? "",
           pickupDateTime: String(lead.pickupDateTime ?? lead.pickupAt ?? "").slice(0, 16),
           vehiclePreference: lead.vehiclePreference ?? lead.preferredVehicle ?? "",
+          dropAddress: lead.dropAddress ?? "",
           // Drop-off, and where the customer lives — new in V22, so an older lead simply has
           // nulls here and the fields open blank rather than seeding a wrong value.
           dropCity: lead.dropCity ?? "",
@@ -3511,10 +3527,9 @@ export default function LeadFormPage() {
           // Only fall back to the "India" default when the lead genuinely has nothing — a lead
           // saved with a blank country must not silently acquire one on reopen.
           customerCountry: lead.customerCountry ?? "India",
-          /* WhatsApp. A null means "same as the phone", which is exactly how it was written — see
-             transformFormData — so the tick has to be derived from the absence, not defaulted. */
-          whatsappSame: !lead.customerWhatsapp,
-          whatsappNumber: lead.customerWhatsapp ?? "",
+          /* WhatsApp. Absence or the same canonical digits means the UI latch should reopen ticked. */
+          whatsappSame: !storedWhatsapp || contactDigits(storedWhatsapp) === contactDigits(leadPhone),
+          whatsappNumber: storedWhatsapp,
           // Vehicles come back without the client-side key the rows are tracked by, so it is
           // re-minted here; nothing about it is persisted.
           vehicleRequirements: Array.isArray(lead.vehicleRequirements)
@@ -3530,8 +3545,10 @@ export default function LeadFormPage() {
           rooms: toInt(lead.rooms ?? lead.roomCount ?? lead.noOfRooms ?? 1, 1),
           ...adultPrefill,
           children: toInt(lead.children ?? lead.childCount ?? 0),
+          childAges: Array.isArray(lead.childAges) ? lead.childAges : [],
           infants: toInt(lead.infants ?? lead.infantCount ?? 0),
           extraBeds: toInt(lead.extraBeds ?? lead.extraBedCount ?? 0),
+          roomRequirements: roomRequirementRows,
           specialAssistanceRequired: Boolean(
             lead.specialAssistanceRequired ?? lead.needsSpecialAssistance ??
             (Array.isArray(lead.specialAssistanceTypes) && lead.specialAssistanceTypes.length > 0)

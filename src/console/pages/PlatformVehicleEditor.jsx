@@ -144,9 +144,19 @@ export default function PlatformVehicleEditor() {
         ownerCompanyName: form.ownerCompanyName?.trim() || null,
         ownerName: form.ownerName?.trim() || null,
       };
-      if (publicId) await svc.updateVehicle(publicId, payload, mfaCode);
-      else await svc.createVehicle(payload, mfaCode);
-      navigate("/console/transport-catalog");
+      // Land on the RECORD, not the list. A save that dumps the operator back into a catalog of
+      // twelve cards makes them hunt for the row to check the change took — and a newly created
+      // draft is invisible there until they think to filter. `create` answers with the DTO, so the
+      // new vehicle has a page to go to as well.
+      if (publicId) {
+        await svc.updateVehicle(publicId, payload, mfaCode);
+        navigate(`/console/transport-catalog/${publicId}`);
+      } else {
+        const created = await svc.createVehicle(payload, mfaCode);
+        navigate(created?.publicId
+          ? `/console/transport-catalog/${created.publicId}`
+          : "/console/transport-catalog");
+      }
     } catch (e) {
       setFormError(e?.normalized?.message ?? "Could not save that vehicle.");
       // Keep the operator on the page with the modal shut: the message belongs beside the form,
@@ -181,11 +191,15 @@ export default function PlatformVehicleEditor() {
     <PageShell>
       <HotelStyles />
       <div className="pb-28">
+        {/* Back to where the edit was decided on, not to the top of the catalog: an operator who
+            opened a vehicle, chose Edit and then changed their mind expects the row they were
+            reading, not a list they have to find it in again. A NEW vehicle has no detail page to
+            return to, so that one goes to the catalog. */}
         <button
-          onClick={() => navigate("/console/transport-catalog")}
+          onClick={() => navigate(isNew ? "/console/transport-catalog" : `/console/transport-catalog/${publicId}`)}
           className="mb-3 inline-flex items-center gap-1.5 text-sm font-semibold text-muted transition hover:text-heading focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
         >
-          <ArrowLeft size={15} /> Transport catalog
+          <ArrowLeft size={15} /> {isNew ? "Transport catalog" : "Back to vehicle"}
         </button>
 
         <header className="mb-4">

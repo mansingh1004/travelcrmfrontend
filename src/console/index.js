@@ -36,6 +36,7 @@ export { default as ConsoleMarketplaceBookings } from "./pages/MarketplaceBookin
 export { default as ConsoleTransportRequests } from "./pages/TransportRequests";
 export { default as ConsolePlatformVehicles } from "./pages/PlatformVehicles";
 export { default as ConsolePlatformVehicleEditor } from "./pages/PlatformVehicleEditor";
+export { default as ConsolePlatformVehicleDetail } from "./pages/PlatformVehicleDetail";
 export { default as ConsoleTransportCommissions } from "./pages/TransportCommissions";
 export { default as ConsoleTransportPartners } from "./pages/TransportPartners";
 export { default as ConsoleTransportPartnerReview } from "./pages/TransportPartnerReview";
