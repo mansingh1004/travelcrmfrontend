@@ -201,7 +201,7 @@ function nextFreeRate(vehicle) {
   return { ...BLANK_RATE, _key: newKey() };
 }
 
-/** Server DTO → form state. Every field is a controlled input, so null must become "". */
+/** Server DTO → form Every field is a controlled input, so null must become "". */
 function toForm(dto) {
   return {
     companyName: dto?.companyName ?? "",
