@@ -376,8 +376,17 @@ function useSectionSpy(ready) {
   return active;
 }
 
+/**
+ * "smooth", unless the operator's OS says otherwise.
+ *
+ * Read per call rather than once at module load: the setting can change while the tab is open, and
+ * a form this long is open for a while.
+ */
+const scrollBehavior = () =>
+  (window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth");
+
 const goToSection = (id) =>
-  document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  document.getElementById(id)?.scrollIntoView({ behavior: scrollBehavior(), block: "start" });
 
 /**
  * Take the operator to the exact input a checklist item is about, and put the caret in it.
@@ -392,7 +401,7 @@ const goToSection = (id) =>
 const goToField = (item) => {
   const el = item?.field ? document.getElementById(item.field) : null;
   if (!el) { goToSection(item?.section); return; }
-  el.scrollIntoView({ behavior: "smooth", block: "center" });
+  el.scrollIntoView({ behavior: scrollBehavior(), block: "center" });
   setTimeout(() => el.focus({ preventScroll: true }), 320);
 };
 
@@ -759,11 +768,11 @@ function TransportPartnerRegisterContent() {
   if (expired) {
     return (
       <Centered>
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
           <div className="mb-4 flex justify-end"><LanguageSwitcher /></div>
           <Clock className="mx-auto mb-3 rounded-full bg-amber-50 p-1.5 text-amber-500" size={34} />
-          <h1 className="text-lg font-bold text-slate-900">{t("expiredTitle")}</h1>
-          <p className="mt-1.5 text-[14px] leading-relaxed text-slate-600">
+          <h1 className="text-[18px] font-semibold text-slate-900">{t("expiredTitle")}</h1>
+          <p className="mt-1.5 text-[13px] leading-relaxed text-slate-600">
             {t("expiredBody")}
           </p>
           <p className="mt-3 text-[13px] text-slate-400">
@@ -776,11 +785,11 @@ function TransportPartnerRegisterContent() {
   if (fatal) {
     return (
       <Centered>
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
           <div className="mb-4 flex justify-end"><LanguageSwitcher /></div>
           <X className="mx-auto mb-3 rounded-full bg-rose-50 p-1.5 text-rose-500" size={34} />
-          <h1 className="text-lg font-bold text-slate-900">{t("unavailable")}</h1>
-          <p className="mt-1.5 text-[14px] text-slate-600">{fatal}</p>
+          <h1 className="text-[18px] font-semibold text-slate-900">{t("unavailable")}</h1>
+          <p className="mt-1.5 text-[13px] text-slate-600">{fatal}</p>
         </div>
       </Centered>
     );
@@ -790,21 +799,27 @@ function TransportPartnerRegisterContent() {
     <Page lang={language}>
       {/* ── Sticky chrome ─────────────────────────────────────────────────── */}
       <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/90 backdrop-blur">
-        <div className="mx-auto flex max-w-screen-2xl items-center gap-3 px-4 py-3 sm:px-6">
+        {/* Wraps below sm:. The switcher alone is ~135px and the badge another ~85 — on a 320px
+            phone those two plus the icon leave the title about a dozen pixels, i.e. "R… W…". They
+            travel together in one wrapper so the pair drops to its own line rather than the badge
+            wrapping alone, and the components are still rendered once. */}
+        <div className="mx-auto flex max-w-screen-2xl flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 sm:flex-nowrap sm:px-6">
           <Bus className="shrink-0 text-blue-600" size={20} />
           <div className="min-w-0 flex-1">
-            <h1 className="truncate text-[15px] font-extrabold text-slate-900">{t("registerFleet")}</h1>
+            <h1 className="truncate text-[18px] font-semibold text-slate-900">{t("registerFleet")}</h1>
             {session?.contactName && (
-              <p className="truncate text-[12px] text-slate-500">{t("welcome", { name: session.contactName })}</p>
+              <p className="truncate text-[11px] text-slate-500">{t("welcome", { name: session.contactName })}</p>
             )}
           </div>
-          <LanguageSwitcher />
-          <SaveBadge
-            state={saveState}
-            editable={editable}
-            complete={outstanding.length === 0}
-            onRetry={() => save(formRef.current)}
-          />
+          <div className="flex w-full shrink-0 items-center justify-end gap-3 sm:w-auto">
+            <LanguageSwitcher />
+            <SaveBadge
+              state={saveState}
+              editable={editable}
+              complete={outstanding.length === 0}
+              onRetry={() => save(formRef.current)}
+            />
+          </div>
         </div>
 
         {/* Section nav — chips on a phone, sidebar from lg: up (rendered once, hidden per breakpoint). */}
@@ -814,14 +829,13 @@ function TransportPartnerRegisterContent() {
             <div className="flex w-max gap-1 px-3 py-2">
               {SECTIONS.map((s) => (
                 <button key={s.id} type="button" onClick={() => goToSection(s.id)}
-                  className={`flex min-h-9 shrink-0 items-center gap-1.5 rounded-lg px-3 text-[13px] font-semibold transition ${
+                  className={`flex min-h-11 shrink-0 items-center gap-1.5 border-b-2 px-3 text-[13px] font-medium transition ${
                     activeSection === s.id
-                      ? "bg-blue-600 text-white"
-                      : "bg-slate-100 text-slate-600"}`}>
+                      ? "border-blue-600 text-blue-700"
+                      : "border-transparent text-slate-500"}`}>
                   {t(s.labelKey)}
                   {pendingBySection[s.id] && (
-                    <span className={`grid h-4 min-w-4 place-items-center rounded-full px-1 text-[10px] font-bold ${
-                      activeSection === s.id ? "bg-white/25 text-white" : "bg-amber-400 text-amber-950"}`}>
+                    <span className="grid h-4 min-w-4 place-items-center rounded-full bg-slate-200 px-1 text-[11px] font-medium text-slate-600">
                       {pendingBySection[s.id]}
                     </span>
                   )}
@@ -840,13 +854,13 @@ function TransportPartnerRegisterContent() {
               <nav className="space-y-0.5">
                 {SECTIONS.map((s) => (
                   <button key={s.id} type="button" onClick={() => goToSection(s.id)}
-                    className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] font-semibold transition ${
+                    className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] font-medium transition ${
                       activeSection === s.id
                         ? "bg-blue-50 text-blue-700"
                         : "text-slate-600 hover:bg-slate-100"}`}>
                     <span className="min-w-0 flex-1 truncate">{t(s.labelKey)}</span>
                     {pendingBySection[s.id] ? (
-                      <span className="grid h-4 min-w-4 place-items-center rounded-full bg-amber-400 px-1 text-[10px] font-bold text-amber-950">
+                      <span className="grid h-4 min-w-4 place-items-center rounded-full bg-slate-200 px-1 text-[11px] font-medium text-slate-600">
                         {pendingBySection[s.id]}
                       </span>
                     ) : (
@@ -857,7 +871,7 @@ function TransportPartnerRegisterContent() {
               </nav>
 
               <div className="rounded-xl border border-slate-200 bg-white p-3.5">
-                <div className="mb-2 flex items-center justify-between text-[12px] font-bold text-slate-600">
+                <div className="mb-2 flex items-center justify-between text-[11px] font-medium text-slate-500">
                   <span>{t("readySubmit")}</span>
                   <span className="tabular-nums text-slate-400">{doneCount}/{checklist.length}</span>
                 </div>
@@ -866,7 +880,7 @@ function TransportPartnerRegisterContent() {
                   {checklist.map((c) => (
                     <li key={c.id}>
                       <button type="button" onClick={() => revealField(c)}
-                        className="flex w-full items-start gap-2 text-left text-[12.5px] leading-snug">
+                        className="flex w-full items-start gap-2 text-left text-[13px] leading-snug">
                         <span className={`mt-0.5 grid h-3.5 w-3.5 shrink-0 place-items-center rounded-full ${
                           c.done ? "bg-emerald-500 text-white" : "border border-slate-300"}`}>
                           {c.done && <Check size={9} strokeWidth={3.5} />}
@@ -884,7 +898,11 @@ function TransportPartnerRegisterContent() {
         )}
 
         {/* ── Form ─────────────────────────────────────────────────────────── */}
-        <main className="min-w-0 flex-1 space-y-4 pb-32 lg:pb-8" onKeyDown={onFormKeyDown}>
+        {/* Capped: the shell runs to `max-w-screen-2xl`, and a text input stretched across 1400px of
+            a wide monitor reads as broken rather than generous. */}
+        {/* `pb-32` at EVERY width, not just on a phone: the submit bar is `fixed` on a laptop too,
+            so a smaller desktop padding left the last rate row sitting underneath it. */}
+        <main className="min-w-0 max-w-5xl flex-1 space-y-4 pb-32" onKeyDown={onFormKeyDown}>
           {done && (
             <Notice tone="success">
               <strong>{t("thankTitle")}</strong> {t("thankBody")}
@@ -939,12 +957,14 @@ function TransportPartnerRegisterContent() {
           {/* SECTION 1 of 2 — everything about the business, in one card.
               The four old headings are still here as group labels, because "which box is the phone
               number in" is a real question; they are just not four separate cards any more. Two
-              columns from lg: each group is a handful of one-line fields, so a single column left a
-              laptop scrolling past a lot of half-empty white before reaching the part that matters.
+              columns from md: each group is a handful of one-line fields, so a single column left a
+              tablet scrolling past a lot of half-empty white before reaching the part that matters
+              — and a tablet has MORE room here than a 1024px laptop does, because the checklist
+              sidebar only appears at lg and takes 272px of it.
               Fields use the stacked label, not the wide Row label, because a 44-unit label gutter
               inside a half-width column leaves the input too narrow to read what you typed. */}
           <Card id="details" title={t("details")} hint={t("detailsHint")}>
-            <div className="grid gap-x-8 gap-y-7 lg:grid-cols-2">
+            <div className="grid gap-x-8 gap-y-7 md:grid-cols-2">
               <Group title={t("company")}>
                 {/* "/ Owner name" is not a second field — it is the same column, labelled for who actually
                     fills it. Most of this trade is sole proprietors with no registered company, and a
@@ -1049,9 +1069,11 @@ function TransportPartnerRegisterContent() {
             </div>
           </Card>
 
+          {/* Three counts on one line are wider than a 320px card header, so on a phone the badge
+              sits under the title (Card stacks its header below sm:) and is allowed to wrap. */}
           <Card id="fleet" title={t("fleetRates")} hint={t("fleetHint")}
             right={vehicleCount > 0 && (
-              <span className="shrink-0 rounded-lg bg-slate-100 px-2.5 py-1 text-[12px] font-bold text-slate-600">
+              <span className="self-start rounded-lg bg-slate-100 px-2.5 py-1 text-[11px] font-medium tabular-nums text-slate-600 sm:shrink-0">
                 {vehicleCount} {t(vehicleCount === 1 ? "vehicle" : "vehicles")} · {rateCount} {t(rateCount === 1 ? "rate" : "rates")}
                 {" · "}{photoCount}/{PHOTO_LIMITS.maxPhotos} {t(photoCount === 1 ? "photo" : "photos")}
               </span>
@@ -1099,14 +1121,17 @@ function TransportPartnerRegisterContent() {
           <div className="mx-auto flex max-w-screen-2xl items-center gap-3 px-4 py-3 sm:px-6">
             <div className="min-w-0 flex-1">
               {outstanding.length === 0 ? (
-                <p className="flex items-center gap-1.5 text-[13px] font-bold text-emerald-600">
+                <p className="flex items-center gap-1.5 text-[13px] font-medium text-emerald-600">
                   <Check size={15} /> {t("everythingFilled")}
                 </p>
               ) : (
                 <button type="button" onClick={openOutstanding}
-                  className="flex items-center gap-1.5 text-left text-[13px] font-bold text-slate-600">
+                  className="flex w-full min-w-0 items-center gap-1.5 text-left text-[13px] font-medium text-slate-600">
                   <ListChecks size={15} className="shrink-0 text-amber-500" />
-                  <span className="truncate">
+                  {/* `min-w-0` is what makes `truncate` bite: a flex item's default min-width is
+                      auto, so a nowrap span sizes to its text and spills out from under the
+                      Submit button — which is where the phone's horizontal scrollbar came from. */}
+                  <span className="min-w-0 flex-1 truncate">
                     {t(outstanding.length === 1 ? "thingLeft" : "thingsLeft", { count: outstanding.length })}
                     <span className="ml-1 font-medium text-slate-400">· {t("seeWhat")}</span>
                   </span>
@@ -1124,11 +1149,11 @@ function TransportPartnerRegisterContent() {
       {sheetOpen && (
         <div className="fixed inset-0 z-40 flex items-end bg-slate-900/40 lg:hidden"
           onClick={() => setSheetOpen(false)}>
-          <div className="max-h-[70vh] w-full overflow-y-auto rounded-t-2xl bg-white p-4"
+          <div className="max-h-[70vh] w-full overflow-y-auto rounded-t-xl bg-white p-4"
             style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}
             onClick={(e) => e.stopPropagation()}>
             <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-[15px] font-bold text-slate-900">{t("stillFill")}</h2>
+              <h2 className="text-[15px] font-medium text-slate-900">{t("stillFill")}</h2>
               <button type="button" onClick={() => setSheetOpen(false)} aria-label={t("close")}
                 className="grid h-9 w-9 place-items-center rounded-lg text-slate-400 hover:bg-slate-100">
                 <X size={18} />
@@ -1139,11 +1164,11 @@ function TransportPartnerRegisterContent() {
                 <li key={c.id}>
                   <button type="button"
                     onClick={() => { setSheetOpen(false); revealField(c); }}
-                    className="flex w-full items-center gap-2.5 rounded-xl px-3 py-3 text-left text-[14px]
+                    className="flex min-h-11 w-full items-center gap-2.5 rounded-lg px-3 py-3 text-left text-[13px]
                                font-medium text-slate-700 hover:bg-slate-50">
                     <span className="h-2 w-2 shrink-0 rounded-full bg-amber-400" />
                     <span className="min-w-0 flex-1">{c.label}</span>
-                    <span className="shrink-0 text-[12px] font-semibold text-blue-600">{t("go")}</span>
+                    <span className="shrink-0 text-[11px] font-medium text-blue-600">{t("go")}</span>
                   </button>
                 </li>
               ))}
@@ -1205,7 +1230,7 @@ function VehicleCard({
   const cover = coverOf(vehicle);
 
   return (
-    <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50/60">
+    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
       <div className="flex items-center gap-2 p-3 sm:px-4">
         <button type="button" onClick={onToggle}
           className="flex min-w-0 flex-1 items-center gap-2.5 text-left">
@@ -1217,18 +1242,18 @@ function VehicleCard({
               the same size as the thumbnail so a fleet with mixed photo states does not stagger. */}
           {cover ? (
             <img src={cover} alt=""
-              className="h-9 w-12 shrink-0 rounded-md object-cover ring-1 ring-slate-200" />
+              className="h-9 w-12 shrink-0 rounded-lg border border-slate-200 object-cover" />
           ) : (
-            <span className="grid h-9 w-12 shrink-0 place-items-center rounded-md bg-slate-200/70 text-slate-400">
+            <span className="grid h-9 w-12 shrink-0 place-items-center rounded-lg bg-slate-100 text-slate-400">
               <Car size={16} />
             </span>
           )}
           <span className="min-w-0">
-            <span className="block truncate text-[13.5px] font-bold text-slate-700">
+            <span className="block truncate text-[13px] font-semibold text-slate-700">
               {vehicle.name?.trim() || t("vehicleN", { number: index + 1 })}
             </span>
             {collapsed && (
-              <span className="block truncate text-[12px] text-slate-500">
+              <span className="block truncate text-[11px] tabular-nums text-slate-500">
                 {[
                   vehicle.vehicleType?.trim(),
                   Number(vehicle.passengerCapacity) >= 1 ? `${vehicle.passengerCapacity} ${t("seats")}` : null,
@@ -1241,7 +1266,7 @@ function VehicleCard({
         </button>
         {!readOnly && (
           <button type="button" onClick={onRemove} aria-label={t("removeVehicle", { number: index + 1 })}
-            className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-rose-600">
+            className="grid h-11 w-11 shrink-0 place-items-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-rose-600">
             <Trash2 size={15} />
           </button>
         )}
@@ -1313,7 +1338,7 @@ function VehicleCard({
           {/* Said once, here, next to the field — because it is the requirement most likely to look
               arbitrary and it is the one that blocks publication two steps later. */}
           {!readOnly && !(Number(vehicle.passengerCapacity) >= 1) && (
-            <p className="text-[12.5px] leading-relaxed text-slate-500">
+            <p className="text-[13px] leading-relaxed text-slate-500">
               {t("seatExplanation")}
             </p>
           )}
@@ -1338,7 +1363,7 @@ function VehicleCard({
               <div className="mt-2 flex flex-wrap gap-2">
                 {customAmenities.map((a) => (
                   <span key={a}
-                    className="inline-flex min-h-10 items-center gap-1.5 rounded-xl bg-slate-100 px-3.5 text-[13px] font-semibold text-slate-700">
+                    className="inline-flex min-h-11 items-center gap-1.5 rounded-lg bg-slate-100 px-3.5 text-[13px] font-medium text-slate-700">
                     {a}
                     {!readOnly && (
                       <button type="button" aria-label={t("removeItem", { name: a })}
@@ -1352,12 +1377,14 @@ function VehicleCard({
               </div>
             )}
 
+            {/* `min-w-0` on the input: a `w-full` flex item still refuses to shrink past its
+                intrinsic width, which pushed the Add button off a 320px screen. */}
             {!readOnly && (
               <div className="mt-2 flex gap-2">
-                <input className={inputCls} value={amenityDraft} placeholder={t("somethingElse")}
+                <input className={`${inputCls} min-w-0`} value={amenityDraft} placeholder={t("somethingElse")}
                   onChange={(e) => setAmenityDraft(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addAmenity(); } }} />
-                <Btn variant="ghost" onClick={addAmenity} disabled={!amenityDraft.trim()}>
+                <Btn variant="ghost" onClick={addAmenity} disabled={!amenityDraft.trim()} className="shrink-0">
                   <Plus size={15} /> {t("add")}
                 </Btn>
               </div>
@@ -1389,9 +1416,9 @@ function VehicleCard({
           </FieldBlock>
 
           {/* ── Rates ───────────────────────────────────────────── */}
-          <div className="rounded-xl border border-slate-200 bg-white p-3">
+          <div className="border-t border-slate-200 pt-4">
             <div className="mb-2.5 flex items-center justify-between gap-2">
-              <span className="text-[12px] font-bold uppercase tracking-wide text-slate-500">
+              <span className="text-[13px] font-medium text-slate-500">
                 {t("netRates")}
               </span>
               {!readOnly && (
@@ -1404,7 +1431,7 @@ function VehicleCard({
             {/* Stated once per vehicle: the pair below is the KEY, not two independent dropdowns.
                 One line per journey type and pricing method is the whole model, and an operator who
                 does not know that will try to add two per-km outstation rows and lose one. */}
-            <p className="mb-2.5 text-[12px] leading-relaxed text-slate-500">
+            <p className="mb-2.5 text-[11px] leading-relaxed text-slate-500">
               {t("rateExplanation")}
             </p>
 
@@ -1442,22 +1469,25 @@ function RateRow({ rate, index, readOnly, duplicate, onChange, onRemove }) {
   const { language, t } = usePartnerI18n();
   const unit = modelUnit(rate.rateModel, language);
   return (
-    <div className={`rounded-xl border p-3 ${
-      duplicate ? "border-amber-300 bg-amber-50/60" : "border-slate-200 bg-slate-50/70"}`}>
+    <div className={`pt-4 ${index === 0 || duplicate ? "" : "border-t border-slate-100"} ${
+      duplicate ? "border-l-2 border-amber-400 bg-amber-50/60 pb-3 pl-3" : ""}`}>
       <div className="mb-2.5 flex items-center justify-between gap-2">
-        <span className="min-w-0 truncate text-[12px] font-bold text-slate-500">
+        <span className="min-w-0 truncate text-[11px] font-medium text-slate-500">
           {serviceLabel(rate.serviceType, language)} · {modelLabel(rate.rateModel, language)}
         </span>
         {!readOnly && (
           <button type="button" onClick={onRemove} aria-label={t("removeRate", { number: index + 1 })}
-            className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-rose-600">
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-rose-600">
             <Trash2 size={14} />
           </button>
         )}
       </div>
 
-      <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-12">
-        <Field label={t("kindJourney")} className="lg:col-span-4">
+      {/* One line only from xl:. At lg the checklist sidebar has just claimed 272px, so twelve
+          columns inside a vehicle card leave the journey select about 190px — not enough to read
+          "Outstation — round trip" — while the same four fields in two rows are comfortable. */}
+      <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-12">
+        <Field label={t("kindJourney")} className="xl:col-span-4">
           <select className={inputCls} value={rate.serviceType} disabled={readOnly}
             onChange={(e) => onChange({ serviceType: e.target.value })}>
             {SERVICE_TYPES.map(([value]) => (
@@ -1465,7 +1495,7 @@ function RateRow({ rate, index, readOnly, duplicate, onChange, onRemove }) {
             ))}
           </select>
         </Field>
-        <Field label={t("howPrice")} className="lg:col-span-3">
+        <Field label={t("howPrice")} className="xl:col-span-3">
           <select className={inputCls} value={rate.rateModel} disabled={readOnly}
             onChange={(e) => onChange({ rateModel: e.target.value })}>
             {RATE_MODELS.map(([value]) => (
@@ -1475,12 +1505,12 @@ function RateRow({ rate, index, readOnly, duplicate, onChange, onRemove }) {
         </Field>
         {/* The label carries the unit. "Net rate: 4000" is four different amounts of money depending
             on the model beside it, and only the operator knows which they meant. */}
-        <Field label={t("netUnit", { unit })} hint={t("wePay")} className="lg:col-span-3">
-          <input className={inputCls} type="number" min="0" step="0.01" inputMode="decimal"
+        <Field label={t("netUnit", { unit })} hint={t("wePay")} className="xl:col-span-3">
+          <input className={`${inputCls} text-center tabular-nums`} type="number" min="0" step="0.01" inputMode="decimal"
             value={rate.netRate} disabled={readOnly} placeholder="4000"
             onChange={(e) => onChange({ netRate: e.target.value })} />
         </Field>
-        <Field label={t("currency")} className="lg:col-span-2">
+        <Field label={t("currency")} className="xl:col-span-2">
           <select className={inputCls} value={rate.currency} disabled={readOnly}
             onChange={(e) => onChange({ currency: e.target.value })}>
             {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
@@ -1489,39 +1519,39 @@ function RateRow({ rate, index, readOnly, duplicate, onChange, onRemove }) {
       </div>
 
       {rate.rateModel === "CUSTOM_QUOTE" && (
-        <p className="mt-2 text-[12px] leading-relaxed text-slate-500">
+        <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
           {t("customQuoteHelp")}
         </p>
       )}
 
       <div className="mt-2.5 grid gap-2.5 sm:grid-cols-3">
         <Field label={t("includedKm")} hint={t("optional")}>
-          <input className={inputCls} type="number" min="0" step="1" inputMode="numeric"
+          <input className={`${inputCls} text-center tabular-nums`} type="number" min="0" step="1" inputMode="numeric"
             value={rate.includedKm} disabled={readOnly} placeholder="80"
             onChange={(e) => onChange({ includedKm: e.target.value })} />
         </Field>
         <Field label={t("beyondKm")}>
-          <input className={inputCls} type="number" min="0" step="0.01" inputMode="decimal"
+          <input className={`${inputCls} text-center tabular-nums`} type="number" min="0" step="0.01" inputMode="decimal"
             value={rate.extraKmRate} disabled={readOnly} placeholder="14"
             onChange={(e) => onChange({ extraKmRate: e.target.value })} />
         </Field>
         <Field label={t("driverAllowance")} hint={t("perDay")}>
-          <input className={inputCls} type="number" min="0" step="0.01" inputMode="decimal"
+          <input className={`${inputCls} text-center tabular-nums`} type="number" min="0" step="0.01" inputMode="decimal"
             value={rate.driverAllowance} disabled={readOnly} placeholder="300"
             onChange={(e) => onChange({ driverAllowance: e.target.value })} />
         </Field>
         <Field label={t("includedHours")} hint={t("optional")}>
-          <input className={inputCls} type="number" min="0" step="1" inputMode="numeric"
+          <input className={`${inputCls} text-center tabular-nums`} type="number" min="0" step="1" inputMode="numeric"
             value={rate.includedHours} disabled={readOnly} placeholder="8"
             onChange={(e) => onChange({ includedHours: e.target.value })} />
         </Field>
         <Field label={t("beyondHour")}>
-          <input className={inputCls} type="number" min="0" step="0.01" inputMode="decimal"
+          <input className={`${inputCls} text-center tabular-nums`} type="number" min="0" step="0.01" inputMode="decimal"
             value={rate.extraHourRate} disabled={readOnly} placeholder="150"
             onChange={(e) => onChange({ extraHourRate: e.target.value })} />
         </Field>
         <Field label={t("nightHalt")} hint={t("driverOut")}>
-          <input className={inputCls} type="number" min="0" step="0.01" inputMode="decimal"
+          <input className={`${inputCls} text-center tabular-nums`} type="number" min="0" step="0.01" inputMode="decimal"
             value={rate.nightHalt} disabled={readOnly} placeholder="400"
             onChange={(e) => onChange({ nightHalt: e.target.value })} />
         </Field>
@@ -1541,7 +1571,7 @@ function RateRow({ rate, index, readOnly, duplicate, onChange, onRemove }) {
       </div>
 
       {duplicate && (
-        <p className="mt-2 text-[12px] font-semibold text-amber-700">
+        <p className="mt-2 text-[11px] font-medium text-amber-700">
           {t("duplicateRate", {
             service: serviceLabel(rate.serviceType, language),
             model: modelLabel(rate.rateModel, language),
@@ -1558,7 +1588,7 @@ function SaveBadge({ state, editable, complete, onRetry }) {
   if (!editable) return null;
   if (state === "saving") {
     return (
-      <span className="inline-flex shrink-0 items-center gap-1 text-[12px] text-slate-500">
+      <span className="inline-flex shrink-0 items-center gap-1 text-[11px] text-slate-500">
         <Loader2 size={12} className="animate-spin" /> {t("saving")}
       </span>
     );
@@ -1570,7 +1600,7 @@ function SaveBadge({ state, editable, complete, onRetry }) {
   if (state === "saved") {
     return (
       <span
-        className={`inline-flex shrink-0 items-center gap-1 text-[12px] font-semibold ${
+        className={`inline-flex shrink-0 items-center gap-1 text-[11px] font-medium ${
           complete ? "text-emerald-600" : "text-slate-500"
         }`}
         title={complete
@@ -1584,7 +1614,7 @@ function SaveBadge({ state, editable, complete, onRetry }) {
   if (state === "error") {
     return (
       <button type="button" onClick={onRetry}
-        className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-[12px] font-semibold
+        className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium
                    text-rose-600 transition hover:bg-rose-50">
         <CloudOff size={12} /> {t("notSavedRetry")}
       </button>
@@ -1604,8 +1634,8 @@ function SaveBadge({ state, editable, complete, onRetry }) {
 function Group({ title, hint, children }) {
   return (
     <div className="min-w-0">
-      <h3 className="text-[12px] font-bold uppercase tracking-wide text-slate-400">{title}</h3>
-      {hint && <p className="mt-0.5 text-[12px] leading-snug text-slate-500">{hint}</p>}
+      <h3 className="text-[13px] font-medium text-slate-500">{title}</h3>
+      {hint && <p className="mt-0.5 text-[11px] leading-snug text-slate-400">{hint}</p>}
       <div className="mt-3 space-y-4">{children}</div>
     </div>
   );
