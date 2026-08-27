@@ -160,6 +160,63 @@ export function VehicleRequirementRows({ rows, vehicles = [], loading = false, o
         label: vehicle.capacity ? `${vehicle.name} — ${vehicle.capacity} Seater` : vehicle.name,
       }));
 
+  /* ── Why the Model box came back EMPTY on edit ────────────────────────────────────────────────
+     The select was bound to `row.vehicleId` alone, and its options are built from the vehicle
+     MASTER. So it rendered its placeholder whenever the id failed to resolve — which is most of the
+     time on a saved row:
+
+       • the row was stored with a model NAME and no id (any path that typed the model rather than
+         picking it from the master);
+       • the id was stored in one form and the master exposes another — options key on
+         `id ?? publicId ?? name`, so a publicId saved against a master that has a numeric id is a
+         string mismatch, not a match;
+       • the type filter above excluded it, because Vehicle Type is matched as an exact string and a
+         master row whose type differs by case or spacing drops out of the list entirely.
+
+     In every one of those cases `row.model` and `row.capacity` WERE saved and hydrated — the row
+     carries them precisely so a booking still reads correctly when the master row is renamed or
+     removed — but nothing on screen could show them. The value was there; the control had no way
+     to display it.
+
+     So: resolve by id, fall back to the stored NAME, and if neither lands, inject a synthetic
+     option carrying what was saved. Showing "Innova Crysta — 7 Seater (saved)" is the truth; an
+     empty box invites someone to re-pick a vehicle that was already right, and silently rewrites
+     the row when they do. */
+  const SAVED_MODEL = "__saved_model__";
+
+  const modelFieldFor = (row) => {
+    const base = modelOptions(row.vehicleType);
+    const savedId = String(row.vehicleId || "");
+    const savedName = String(row.model || "").trim();
+
+    const byId = savedId && base.find((option) => option.value === savedId);
+    if (byId) return { options: base, value: byId.value };
+
+    // The name is the other half every row carries. Matched against the bare name and against the
+    // "Name — N Seater" label, since options are built either way depending on capacity.
+    const byName = savedName && base.find((option) => (
+      option.label === savedName || option.label.startsWith(`${savedName} — `)
+    ));
+    if (byName) return { options: base, value: byName.value };
+
+    if (savedName) {
+      return {
+        options: [
+          {
+            value: SAVED_MODEL,
+            label: row.capacity
+              ? `${savedName} — ${row.capacity} Seater (saved)`
+              : `${savedName} (saved)`,
+          },
+          ...base,
+        ],
+        value: SAVED_MODEL,
+      };
+    }
+
+    return { options: base, value: "" };
+  };
+
   return (
     <div className="space-y-2">
       {/* Column headers only exist to label rows. Vehicles start empty (most bookings need none),
@@ -201,11 +258,15 @@ export function VehicleRequirementRows({ rows, vehicles = [], loading = false, o
           />
 
           <SearchableSelect
-            options={modelOptions(row.vehicleType)}
-            value={String(row.vehicleId || "")}
+            options={modelFieldFor(row).options}
+            value={modelFieldFor(row).value}
             onChange={(next) => {
+              /* The synthetic "(saved)" row is a READ-ONLY echo of what is stored. Re-selecting it
+                 must do nothing: treating it as a pick would look the id up in the master, find
+                 nothing, and blank the model and capacity it exists to display. */
+              if (next === SAVED_MODEL) return;
               onUpdate(row.id, "vehicleId", next);
-              const picked = vehicles.find((vehicle) => String(vehicle.id ?? vehicle.publicId) === String(next));
+              const picked = vehicles.find((vehicle) => String(vehicle.id ?? vehicle.publicId ?? vehicle.name) === String(next));
               // Name AND capacity are stored alongside the id: the booking must still read correctly
               // if the master row is later renamed or removed.
               onUpdate(row.id, "model", picked?.name || "");
