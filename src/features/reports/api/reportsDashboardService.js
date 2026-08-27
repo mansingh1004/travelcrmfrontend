@@ -52,9 +52,13 @@ const reportsDashboardService = {
   //   period:          "month",
   //   generatedAt:     "Jun 22, 2026 10:22 AM"
   // }
-  getSummary: (period = "month") => {
+  /* customFrom / customTo added: this took `period` only and called buildPeriodParams with one
+     argument, so the from/to branch could never fire. Selecting "Custom" sent period=custom with no
+     dates and the stat cards silently showed whatever the server defaults to — a range nobody
+     chose, presented as the range they did. Every other method here already threads them. */
+  getSummary: (period = "month", customFrom, customTo) => {
     return api.get("/reports/summary", {
-      params: buildPeriodParams(period),
+      params: buildPeriodParams(period, customFrom, customTo),
     });
   },
 
@@ -225,9 +229,26 @@ const reportsDashboardService = {
   //   link.setAttribute("download", "reports.pdf");
   //   document.body.appendChild(link);
   //   link.click();
-  exportAll: (period = "month", format = "pdf") => {
+  /* ── EXPORT ALL ───────────────────────────────────────────────────────────────────────────────
+     `format` is "csv" or "pdf". PDF is the combined document — all six reports in one file — which
+     is what the dashboard's Download PDF action asks for; CSV stays the raw-data export.
+
+     customFrom / customTo were missing here and the params were hand-built rather than going
+     through buildPeriodParams — the only method in this file that did so. The effect: choose a
+     custom range, export, and you silently get the server's default period instead. An export that
+     quietly covers the wrong dates is worse than one that fails, because nothing on the file says
+     so and it goes to a customer or an accountant as fact.
+
+     BACKEND NOTES for this endpoint:
+       • must accept format=pdf, not only csv
+       • must honour from/to when period=custom, like every other /reports endpoint
+       • must send Content-Disposition: attachment with a filename
+       • must NOT return a JSON error body with HTTP 200 — the caller wraps the response in a Blob
+         unconditionally, so a 200-with-error downloads as a corrupt file that opens to garbage.
+         Errors must be real 4xx/5xx statuses. */
+  exportAll: (period = "month", format = "pdf", customFrom, customTo) => {
     return api.get("/reports/export", {
-      params: { period, format },
+      params: { ...buildPeriodParams(period, customFrom, customTo), format },
       responseType: "blob",  // important for file download
     });
   },
