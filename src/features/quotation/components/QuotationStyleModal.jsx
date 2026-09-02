@@ -223,7 +223,7 @@
 
 import { useEffect, useRef } from "react";
 
-import { X, FileText, Sparkles, Crown, Gem, Check } from "lucide-react";
+import { X, FileText, Sparkles, Crown, Gem, Check, Columns3 } from "lucide-react";
 
 const FONT = "'Plus Jakarta Sans', system-ui, sans-serif";
 
@@ -261,12 +261,31 @@ const STYLES = [
     icon: Gem,
     points: ["Full-bleed navy & gold coffee-table book", "Photo cover, day cards, hotel spreads"],
   },
+  /* NOT a taste choice, which is why it carries `comparisonOnly` and the four above do not.
+     The others are four looks for the same document; this one describes what the document IS — a
+     quotation built around 2–3 side-by-side columns. Offering it for an ordinary quotation would
+     let an agent pick a design with nothing to put in it (it degrades to a single package rather
+     than erroring, so they would never find out), which is why it appears only once the quotation
+     actually has options.
+
+     The reverse direction stays open on purpose: a COMPARISON quotation can still be downloaded as
+     Classic/Modern/Premium, and that is useful rather than a loophole — the server substitutes the
+     recommended option at the top level, so those give a clean single-package document of the
+     package being recommended. */
+  {
+    value: "COMPARISON",
+    title: "Comparison",
+    accent: "#7c3aed",
+    icon: Columns3,
+    comparisonOnly: true,
+    points: ["All options side by side, one page", "Shared itinerary and terms printed once"],
+  },
 ];
 
-/* Column count follows the number of designs so the last row is never a lone orphan:
-   4 designs → 2×2, 3 designs → one row of 3. Both class strings appear as literals here on purpose;
-   Tailwind scans source text, so a template-built class name would not be generated. */
-const GRID_COLS = STYLES.length === 3 ? "sm:grid-cols-3" : "sm:grid-cols-2";
+/* Column count follows the number of designs shown so the last row is never a lone orphan:
+   4 designs → 2×2, 3 → one row of 3, 5 → 3+2. Every class string appears as a literal here on
+   purpose; Tailwind scans source text, so a template-built class name would not be generated. */
+const gridColsFor = (count) => (count === 3 || count === 5 ? "sm:grid-cols-3" : "sm:grid-cols-2");
 
 function StyleCard({ def, isSaved, actionLabel, onPick, cardRef }) {
   const Icon = def.icon;
@@ -375,6 +394,11 @@ export default function QuotationStyleModal({ savedStyle, mode = "download", onS
   }, [onClose]);
 
   const savedValue = savedStyle || "CLASSIC";
+  /* The Comparison design is offered only when the quotation IS one. Keyed off the saved style
+     because that is the only signal this dialog receives, and it is a faithful one: the builder
+     sets COMPARISON precisely when the quote carries two or more options. */
+  const visibleStyles = STYLES.filter((def) => !def.comparisonOnly || savedValue === "COMPARISON");
+  const gridCols = gridColsFor(visibleStyles.length);
 
   return (
     <div
@@ -421,8 +445,8 @@ export default function QuotationStyleModal({ savedStyle, mode = "download", onS
         </div>
 
         {/* The scroll region. Everything above it stays put. */}
-        <div className={`grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-y-auto overscroll-contain p-4 sm:p-5 ${GRID_COLS}`}>
-          {STYLES.map((def) => (
+        <div className={`grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-y-auto overscroll-contain p-4 sm:p-5 ${gridCols}`}>
+          {visibleStyles.map((def) => (
             <StyleCard
               key={def.value}
               def={def}

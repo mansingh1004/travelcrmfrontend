@@ -386,7 +386,25 @@ export const leadService = {
   updateLead: (publicId, formData, services, itinerary) =>
     API.put(`/leads/${publicId}`, transformFormData(formData, services, itinerary)),
 
+  // ── TEMPERATURE (Hot / Warm / Cold) ───────────────────────
+  //
+  // A dedicated PATCH, deliberately NOT the full-entity PUT above. Three reasons:
+  //   1. transformFormData WHITELISTS fields, so provenance (who pinned it, when, why) would be
+  //      silently dropped on the way out;
+  //   2. sending the whole lead to change one pill re-submits every other field from whatever the
+  //      client last rendered — which is exactly how a stale form value used to overwrite the
+  //      temperature on an unrelated save;
+  //   3. it carries its own permission (LEAD_TEMPERATURE_OVERRIDE), which a blanket PUT cannot express.
+  //
+  // Same shape as PATCH /leads/{publicId}/stage, the other single-field lead mutation.
 
+  /** Pin a lead's temperature over the rules. `temperature` is the wire value: 'Hot' | 'Warm' | 'Cold'. */
+  overrideTemperature: (publicId, temperature, reason = null) =>
+    API.patch(`/leads/${publicId}/temperature`, { temperature, reason }),
+
+  /** Clear the pin and fall back to whatever the scoring rules say. */
+  revertTemperature: (publicId) =>
+    API.delete(`/leads/${publicId}/temperature`),
 
   // ── DELETE ────────────────────────────────────────────────
 

@@ -19,6 +19,9 @@ export {
   quickQuoteSteps,
   quickQuoteCompletion,
   quickQuotePayload,
+  // Both hosts must call this after every create/update, or a second save duplicates a
+  // comparison's columns. See its note in QuickQuotation.jsx.
+  adoptQuoteOptionIds,
   quickQuoteGrandTotal,
   quickQuoteProblems,
   rememberQuickQuoteDefaults,
