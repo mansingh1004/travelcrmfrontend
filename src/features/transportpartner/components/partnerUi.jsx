@@ -81,14 +81,14 @@ export function Card({ id, title, hint, right, children }) {
 export function Row({ label, hint, required, error, children }) {
   return (
     <label className="flex flex-col gap-1.5 sm:flex-row sm:gap-4">
-      <span className={`text-[11px] font-normal sm:w-44 sm:shrink-0 sm:pt-3.5 ${error ? "text-rose-600" : "text-slate-500"}`}>
+      <span className={`text-[13px] font-semibold sm:w-44 sm:shrink-0 sm:pt-3.5 ${error ? "text-rose-600" : "text-slate-700"}`}>
         {label}
         {required && <span className="ml-0.5 text-rose-500">*</span>}
-        {hint && <span className="block text-[11px] font-normal text-slate-400">{hint}</span>}
+        {hint && <span className="block text-[12px] font-normal text-slate-500">{hint}</span>}
       </span>
       <span className={`min-w-0 flex-1 ${error ? INVALID : ""}`}>
         {children}
-        {error && <span className="mt-1 block text-[11px] font-medium text-rose-600">{error}</span>}
+        {error && <span className="mt-1 block text-[12px] font-semibold text-rose-600">{error}</span>}
       </span>
     </label>
   );
@@ -114,12 +114,12 @@ const INVALID =
 export function Field({ label, hint, error, className = "", children }) {
   return (
     <label className={`block min-w-0 ${className}`}>
-      <span className={`mb-1 block truncate text-[11px] font-normal ${error ? "text-rose-600" : "text-slate-500"}`}>
+      <span className={`mb-1 block truncate text-[12px] font-semibold ${error ? "text-rose-600" : "text-slate-600"}`}>
         {label}
-        {hint && <span className="ml-1 font-normal text-slate-400">· {hint}</span>}
+        {hint && <span className="ml-1 font-normal text-slate-500">· {hint}</span>}
       </span>
       <span className={`block ${error ? INVALID : ""}`}>{children}</span>
-      {error && <span className="mt-1 block text-[11px] font-medium text-rose-600">{error}</span>}
+      {error && <span className="mt-1 block text-[12px] font-semibold text-rose-600">{error}</span>}
     </label>
   );
 }
@@ -137,9 +137,9 @@ export function Field({ label, hint, error, className = "", children }) {
 export function FieldBlock({ label, hint, className = "", children }) {
   return (
     <div className={`min-w-0 ${className}`}>
-      <span className="mb-1 block truncate text-[11px] font-normal text-slate-500">
+      <span className="mb-1 block truncate text-[12px] font-semibold text-slate-600">
         {label}
-        {hint && <span className="ml-1 font-normal text-slate-400">· {hint}</span>}
+        {hint && <span className="ml-1 font-normal text-slate-500">· {hint}</span>}
       </span>
       {children}
     </div>
@@ -361,7 +361,7 @@ export function PhotoUploader({
                     ? t("photoLimit")
                     : images.length ? t("addMorePhotos") : t("addPhotos")}
                 </span>
-                <span className="text-[11px] font-normal text-slate-400">
+                <span className="text-[12px] font-normal text-slate-500">
                   {full ? t("removeAnyPhoto") : hint}
                 </span>
               </>
