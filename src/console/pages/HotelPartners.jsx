@@ -87,7 +87,7 @@ export default function HotelPartners() {
         </div>
         <button type="button" onClick={copyPublicRegistrationLink}
           title="Permanent self-registration link — no invite needed"
-          className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 py-2 text-sm font-bold text-white hover:bg-blue-700">
+          className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-semibold text-body hover:bg-surface-hover">
           <Copy size={15} /> Public link
         </button>
         <button onClick={load}
