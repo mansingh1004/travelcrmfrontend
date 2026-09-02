@@ -75,7 +75,7 @@ export function Row({ label, hint, required, error, children }) {
       <span className={`text-[13px] font-semibold sm:w-44 sm:shrink-0 sm:pt-3 ${error ? "text-rose-600" : "text-slate-700"}`}>
         {label}
         {required && <span className="ml-0.5 text-rose-500">*</span>}
-        {hint && <span className="block text-[12px] font-normal text-slate-400">{hint}</span>}
+        {hint && <span className="block text-[12px] font-normal text-slate-500">{hint}</span>}
       </span>
       <span className={`min-w-0 flex-1 ${error ? INVALID : ""}`}>
         {children}
@@ -106,7 +106,7 @@ export function Field({ label, hint, error, className = "", children }) {
     <label className={`block min-w-0 ${className}`}>
       <span className={`mb-1 block truncate text-[12px] font-semibold ${error ? "text-rose-600" : "text-slate-600"}`}>
         {label}
-        {hint && <span className="ml-1 font-normal text-slate-400">· {hint}</span>}
+        {hint && <span className="ml-1 font-normal text-slate-500">· {hint}</span>}
       </span>
       <span className={`block ${error ? INVALID : ""}`}>{children}</span>
       {error && <span className="mt-1 block text-[12px] font-semibold text-rose-600">{error}</span>}
@@ -315,7 +315,7 @@ export function PhotoUploader({ images, onAdd, onRemove, onMakeMain, onUpload, d
               <>
                 <ImagePlus size={20} />
                 <span>{images.length ? "Add more photos" : "Add photos"}</span>
-                <span className="text-[12px] font-normal text-slate-400">
+                <span className="text-[12px] font-normal text-slate-500">
                   JPG, PNG or WebP · up to 5 MB each
                 </span>
               </>

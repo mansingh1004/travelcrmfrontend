@@ -790,7 +790,7 @@ function TransportPartnerRegisterContent() {
           <p className="mt-1.5 text-[13px] leading-relaxed text-slate-600">
             {t("expiredBody")}
           </p>
-          <p className="mt-3 text-[13px] text-slate-400">
+          <p className="mt-3 text-[13px] text-slate-500">
             {t("expiredSaved")}
           </p>
         </div>
@@ -888,7 +888,7 @@ function TransportPartnerRegisterContent() {
               <div className="rounded-xl border border-slate-200 bg-white p-3.5">
                 <div className="mb-2 flex items-center justify-between text-[11px] font-medium text-slate-500">
                   <span>{t("readySubmit")}</span>
-                  <span className="tabular-nums text-slate-400">{doneCount}/{checklist.length}</span>
+                  <span className="tabular-nums text-slate-500">{doneCount}/{checklist.length}</span>
                 </div>
                 <ProgressBar done={doneCount} total={checklist.length} />
                 <ul className="mt-3 space-y-1.5">
@@ -1094,7 +1094,7 @@ function TransportPartnerRegisterContent() {
               </span>
             )}>
             {vehicleCount === 0 && (
-              <p className="text-[13px] text-slate-400">{t("noVehicles")}</p>
+              <p className="text-[13px] text-slate-500">{t("noVehicles")}</p>
             )}
 
             {form.vehicles.map((vehicle, vi) => (
@@ -1148,7 +1148,7 @@ function TransportPartnerRegisterContent() {
                       Submit button — which is where the phone's horizontal scrollbar came from. */}
                   <span className="min-w-0 flex-1 truncate">
                     {t(outstanding.length === 1 ? "thingLeft" : "thingsLeft", { count: outstanding.length })}
-                    <span className="ml-1 font-medium text-slate-400">· {t("seeWhat")}</span>
+                    <span className="ml-1 font-medium text-slate-500">· {t("seeWhat")}</span>
                   </span>
                 </button>
               )}
@@ -1446,7 +1446,7 @@ function VehicleCard({
             {/* Stated once per vehicle: the pair below is the KEY, not two independent dropdowns.
                 One line per journey type and pricing method is the whole model, and an operator who
                 does not know that will try to add two per-km outstation rows and lose one. */}
-            <p className="mb-2.5 text-[11px] leading-relaxed text-slate-500">
+            <p className="mb-2.5 text-[12px] leading-relaxed text-slate-600">
               {t("rateExplanation")}
             </p>
 
@@ -1462,7 +1462,7 @@ function VehicleCard({
               ))}
 
               {vehicle.rates.length === 0 && (
-                <p className="text-[13px] text-slate-400">{t("addOneRate")}</p>
+                <p className="text-[13px] text-slate-500">{t("addOneRate")}</p>
               )}
             </div>
           </div>
@@ -1534,7 +1534,7 @@ function RateRow({ rate, index, readOnly, duplicate, onChange, onRemove }) {
       </div>
 
       {rate.rateModel === "CUSTOM_QUOTE" && (
-        <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
+        <p className="mt-2 text-[12px] leading-relaxed text-slate-600">
           {t("customQuoteHelp")}
         </p>
       )}
@@ -1650,7 +1650,7 @@ function Group({ title, hint, children }) {
   return (
     <div className="min-w-0">
       <h3 className="text-[13px] font-medium text-slate-500">{title}</h3>
-      {hint && <p className="mt-0.5 text-[11px] leading-snug text-slate-400">{hint}</p>}
+      {hint && <p className="mt-0.5 text-[12px] leading-snug text-slate-500">{hint}</p>}
       <div className="mt-3 space-y-4">{children}</div>
     </div>
   );
