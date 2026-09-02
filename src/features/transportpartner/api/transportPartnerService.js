@@ -6,6 +6,28 @@ const unwrap = (res) => res?.data?.data ?? res?.data;
 const path = (token, suffix = "") =>
   `/transport-partner/registrations/${encodeURIComponent(token)}${suffix}`;
 
+// React StrictMode intentionally replays mount effects in development. Share the one in-flight
+// bootstrap so opening the permanent public URL cannot mint two blank registrations before
+// navigation puts the first token into the address bar.
+let publicStartPromise = null;
+
+function startPublicRegistration() {
+  if (publicStartPromise) return publicStartPromise;
+
+  const run = partnerClient
+    .post("/transport-partner/self-registration/start")
+    .then(unwrap)
+    .then((data) => {
+      if (!data?.token) throw new Error("The server did not return a registration session.");
+      return data;
+    });
+
+  publicStartPromise = run;
+  const clear = () => { if (publicStartPromise === run) publicStartPromise = null; };
+  run.then(clear, clear);
+  return run;
+}
+
 /**
  * The photo limits the SERVER enforces, restated here so the UI can say them before a file is
  * picked rather than after a 5 MB upload comes back rejected.
@@ -72,6 +94,12 @@ export function partnerErrorMessage(
 }
 
 export const transportPartnerService = {
+  /**
+   * Mint a session from the permanent public link, which carries no credential of its own. Only the
+   * tokenless route calls this; everything after it is the ordinary invite flow, unchanged.
+   */
+  startPublicRegistration,
+
   /** Open the link. The backend creates the draft on first call, so this doubles as "start". */
   resolve: (token) => partnerClient.get(path(token)).then(unwrap),
 
