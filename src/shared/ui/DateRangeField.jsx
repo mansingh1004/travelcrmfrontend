@@ -33,6 +33,8 @@ export default function DateRangeField({
   disabled = false,
   invalid = false,
   id = "date-range",
+  yearsAhead = 5,
+  yearsBehind = 2,
 }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
@@ -43,6 +45,23 @@ export default function DateRangeField({
   const range = useMemo(() => (from ? { from, to } : undefined), [from, to]);
 
   const nights = from && to ? Math.round((to - from) / 86400000) : null;
+
+  /* The navigable range, and it MUST be stated explicitly.
+     `captionLayout="dropdown"` makes react-day-picker fill both dropdowns from startMonth/endMonth,
+     and its fallback for a missing endMonth is `endOfYear(today)` — see getNavMonth.js in the
+     package. So leaving endMonth off did not mean "no limit", it meant "this calendar stops on 31
+     December of the current year": nobody could enter a trip for next year at all. The matching
+     startMonth fallback is `today - 100 years`, which offered 1926 as a travel date.
+     Bounds are props so a caller with a different horizon can widen them rather than fork this. */
+  const [startMonth, endMonth] = useMemo(() => {
+    const today = new Date();
+    const floor = minDate
+      ? parseLocal(minDate)
+      : new Date(today.getFullYear() - yearsBehind, 0, 1);
+    // Last day of December, `yearsAhead` years out.
+    const ceiling = new Date(today.getFullYear() + yearsAhead, 11, 31);
+    return [floor, ceiling];
+  }, [minDate, yearsAhead, yearsBehind]);
 
   /* Close on outside click and on Escape. Both, because they answer different intents: Escape is
      "I changed my mind", an outside click is "I am done" — and a popover that only honours one of
@@ -138,7 +157,11 @@ export default function DateRangeField({
             onSelect={handleSelect}
             numberOfMonths={1}
             defaultMonth={from || undefined}
-            startMonth={minDate ? parseLocal(minDate) : undefined}
+            startMonth={startMonth}
+            endMonth={endMonth}
+            /* Only minDate DISABLES days. The bounds above limit what the dropdowns can navigate to;
+               they must not silently make past dates unselectable, because a lead is sometimes
+               recorded after the enquiry and the agent needs the real date. */
             disabled={minDate ? { before: parseLocal(minDate) } : undefined}
             /* Clicking a day when a complete range already exists starts a NEW range rather than
                extending the old one — otherwise correcting a date means clearing first, and every

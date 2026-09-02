@@ -227,6 +227,11 @@ export default function ReportsDashboard() {
   const [loading,      setLoading]      = useState(true);
   const [toast,        setToast]        = useState(null);
   const [summary,      setSummary]      = useState(null);
+  /* "Custom" was a selectable filter that collected nothing — no inputs, no state — so it sent
+     period=custom with no dates and every figure on the page silently fell back to the server
+     default. A filter that changes nothing while claiming to is worse than no filter. */
+  const [customFrom,   setCustomFrom]   = useState("");
+  const [customTo,     setCustomTo]     = useState("");
 
   const [reportStatsOpen, setReportStatsOpen] = useState(false);
 
@@ -235,12 +240,14 @@ export default function ReportsDashboard() {
   useEffect(()=>{
     let alive = true;
     setLoading(true);
-    reportsDashboardService.getSummary(activeFilter)
+    reportsDashboardService.getSummary(activeFilter, customFrom, customTo)
       .then((res)=>{ if(alive) setSummary(res.data); })
       .catch(()=>{ if(alive) showToast("Failed to load report data.", "error"); })
       .finally(()=>{ if(alive) setLoading(false); });
     return ()=>{ alive = false; };
-  },[activeFilter, showToast]);
+    /* Waits for BOTH dates before refetching: a half-entered range would fire a request on the
+       first keystroke of the year and show a wrong period until the second date landed. */
+  },[activeFilter, customFrom, customTo, showToast]);
 
   // Stat-card values from the live summary (fall back to 0 while loading)
   const statValues = {
@@ -250,20 +257,74 @@ export default function ReportsDashboard() {
     "Revenue Tracked": `₹${Number(summary?.revenueTracked ?? 0).toLocaleString("en-IN")}`,
   };
 
-  const handleExportAll = async () => {
+  /* One handler, two formats. There were two buttons on this page — "Export All" and "Generate
+     Report" — and only the first did anything; the second was a toast saying "coming soon". They
+     are the same action with a different file type, so they share this and say so in their labels:
+     Export CSV (raw rows) and Download PDF (all six reports as one document).
+
+     A PDF of six reports takes real time server-side, so the button has to show it. Without a
+     pending state the only feedback is a download that appears up to half a minute later, and the
+     natural response to a button that looks inert is to press it again — which is how you get three
+     overlapping report jobs. */
+  const [exporting, setExporting] = useState("");
+
+  const handleExport = async (format) => {
+    if (exporting) return;                 // a second press while one is running would queue a duplicate
+    setExporting(format);
     try {
-      const res = await reportsDashboardService.exportAll(activeFilter, "csv");
+      const res = await reportsDashboardService.exportAll(
+        activeFilter,
+        format,
+        // Only meaningful when the period is "custom"; buildPeriodParams ignores them otherwise.
+        customFrom,
+        customTo,
+      );
+
+      /* A JSON error body served with HTTP 200 would sail past axios and get wrapped in a Blob —
+         downloading as a "report" that opens to garbage. Checking the content type keeps a failed
+         export a visible failure rather than a corrupt file the user forwards to a customer. */
+      const type = res?.data?.type || "";
+      if (type.includes("json") || type.includes("text/html")) {
+        throw new Error("Server returned an error instead of a file");
+      }
+
+      /* The declared type is not enough on its own. A backend that ignores `format` and returns CSV
+         for every request sends a perfectly valid text/csv — which no negative type check catches.
+         Saved under a .pdf name it downloads clean and then fails to open, which reads to the user
+         as a broken app rather than a format the server never implemented. So for PDF we check the
+         actual bytes: every real PDF begins with "%PDF-". */
+      if (format === "pdf") {
+        const head = await res.data.slice(0, 5).text();
+        if (head !== "%PDF-") {
+          throw new Error("NOT_A_PDF");
+        }
+      }
+
       const url  = window.URL.createObjectURL(new Blob([res.data]));
       const link = document.createElement("a");
       link.href  = url;
-      link.setAttribute("download", `reports-${activeFilter}.csv`);
+      // The real range, not just the word "custom" — three exports named reports-custom.pdf in a
+      // downloads folder are indistinguishable.
+      const stamp = activeFilter === "custom" && customFrom && customTo
+        ? `${customFrom}-to-${customTo}`
+        : activeFilter;
+      link.setAttribute("download", `reports-${stamp}.${format}`);
       document.body.appendChild(link);
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
-      showToast("Reports exported.");
-    } catch {
-      showToast("Export failed. Try again.", "error");
+      showToast(format === "pdf" ? "Report downloaded." : "Reports exported.");
+    } catch (err) {
+      // Naming the actual cause: "Export failed. Try again." invites the user to retry a button that
+      // cannot succeed until the endpoint learns the format, and hides a backend gap as a glitch.
+      showToast(
+        err?.message === "NOT_A_PDF"
+          ? "The server sent a CSV, not a PDF. PDF export isn't enabled on the backend yet."
+          : "Export failed. Try again.",
+        "error",
+      );
+    } finally {
+      setExporting("");
     }
   };
 
@@ -276,7 +337,7 @@ export default function ReportsDashboard() {
 
   const handleRefresh = () => {
     setLoading(true);
-    reportsDashboardService.getSummary(activeFilter)
+    reportsDashboardService.getSummary(activeFilter, customFrom, customTo)
       .then((res)=>{ setSummary(res.data); showToast("Reports refreshed."); })
       .catch(()=>showToast("Failed to refresh.", "error"))
       .finally(()=>setLoading(false));
@@ -329,11 +390,16 @@ export default function ReportsDashboard() {
                   text-sm font-bold transition-all shadow-sm">
                 <FiRefreshCw className={`w-4 h-4 ${loading?"animate-spin":""}`}/> Refresh
               </button>
+              {/* Renamed from "Export All". It exports CSV; the Quick Insights button downloads
+                  the combined PDF. Two buttons labelled by what they DO, rather than one vague
+                  label beside one that did nothing. */}
               <button
-                onClick={handleExportAll}
+                onClick={()=>handleExport("csv")}
+                disabled={Boolean(exporting)}
                 className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700
-                  text-white text-sm font-bold shadow-md shadow-blue-200 transition-all">
-                <FiDownload className="w-4 h-4"/> Export All
+                  text-white text-sm font-bold shadow-md shadow-blue-200 transition-all disabled:opacity-60">
+                <FiDownload className={`w-4 h-4 ${exporting==="csv"?"animate-bounce":""}`}/>
+                {exporting==="csv" ? "Exporting…" : "Export CSV"}
               </button>
             </div>
           </div>
@@ -440,10 +506,31 @@ export default function ReportsDashboard() {
                 </button>
               ))}
             </div>
+            {/* Shown only for Custom — four extra controls on every other period would be noise
+                for a range nobody is choosing. */}
+            {activeFilter==="custom" && (
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  type="date" value={customFrom} max={customTo || undefined}
+                  onChange={(e)=>setCustomFrom(e.target.value)}
+                  aria-label="From date"
+                  className="rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 outline-none focus:border-blue-400"
+                />
+                <span className="text-xs font-bold text-slate-400">to</span>
+                <input
+                  type="date" value={customTo} min={customFrom || undefined}
+                  onChange={(e)=>setCustomTo(e.target.value)}
+                  aria-label="To date"
+                  className="rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 outline-none focus:border-blue-400"
+                />
+              </div>
+            )}
             <div className="sm:ml-auto text-xs text-slate-400 font-medium flex-shrink-0">
               📅 Showing data for:{" "}
               <span className="font-bold text-blue-600">
-                {DATE_FILTERS.find(f=>f.id===activeFilter)?.label}
+                {activeFilter==="custom" && customFrom && customTo
+                  ? `${customFrom} → ${customTo}`
+                  : DATE_FILTERS.find(f=>f.id===activeFilter)?.label}
               </span>
             </div>
           </div>
@@ -502,11 +589,15 @@ export default function ReportsDashboard() {
                   All reports are filtered by the selected time period.
                 </p>
               </div>
+              {/* Was a toast saying "coming soon". It now does the thing the panel describes:
+                  all six reports, for the selected period, as one PDF. */}
               <button
-                onClick={()=>showToast("Report generation coming soon.")}
+                onClick={()=>handleExport("pdf")}
+                disabled={Boolean(exporting)}
                 className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white text-blue-600 font-bold text-sm
-                  hover:bg-blue-50 transition-all shadow-md flex-shrink-0">
-                <FiBarChart2 className="w-4 h-4"/> Generate Report
+                  hover:bg-blue-50 transition-all shadow-md flex-shrink-0 disabled:opacity-70">
+                <FiBarChart2 className={`w-4 h-4 ${exporting==="pdf"?"animate-pulse":""}`}/>
+                {exporting==="pdf" ? "Generating…" : "Generate Report"}
               </button>
             </div>
           </div>
