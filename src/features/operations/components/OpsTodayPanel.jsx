@@ -372,7 +372,11 @@ export default function OpsTodayPanel({ booking, record, recordLoaded, refreshKe
      against the itinerary; a task carries startAt/endAt/dueDate as Instants because somebody typed
      a time into a calendar. So these are shown with their times in ink, not as "not recorded".
 
-     Fetched by DAY and narrowed to this booking here, because no task endpoint filters by booking.
+     Fetched BY BOOKING on the server, then narrowed to the rendered day here. It used to fetch a
+     three-day window over /tasks and match the booking in the browser, because no task endpoint
+     filtered by booking; /tasks/list now takes bookingPublicId. That matters beyond tidiness —
+     /tasks is capped at 200 rows server-side, and the cap lands BEFORE the browser-side filter, so
+     on a busy week this panel could show "nothing outstanding" for a trip that has open tasks.
      Behind TASK_READ, which an operations executive may not hold — in which case the block simply
      does not render, like every other optional block on this panel. */
   const canReadTasks = hasPermission(P.TASK_READ);
@@ -383,15 +387,12 @@ export default function OpsTodayPanel({ booking, record, recordLoaded, refreshKe
     let cancelled = false;
     (async () => {
       try {
-        /* A THREE-DAY window, then narrowed to the day here. The endpoint takes instants and this
-           browser cannot know the tenant's offset, so asking for exactly 00:00Z–23:59Z would cut
-           the day at the wrong place — in IST that drops anything before 05:30 and pulls in the
-           previous evening. Over-fetching by a day either side and filtering on the rendered date
-           costs one small request and cannot silently lose a 6am departure task. */
-        const all = await operationsService.tasksBetween(
-          `${addIsoDays(viewDate, -1)}T00:00:00Z`,
-          `${addIsoDays(viewDate, 1)}T23:59:59Z`
-        );
+        /* No date window is sent any more: the server already narrows to this booking, and a trip
+           carries few enough tasks that the whole set is cheaper than a window. The day filter stays
+           in the browser for the same reason it always did — this browser cannot know the tenant's
+           offset, so cutting the day server-side at 00:00Z–23:59Z would slice it in the wrong place
+           (in IST that drops anything before 05:30 and pulls in the previous evening). */
+        const all = await operationsService.tasksForBooking(bookingPublicId);
         if (cancelled) return;
         const onDay = (t) => {
           const stamp = t?.startAt || t?.dueDate;
@@ -399,7 +400,7 @@ export default function OpsTodayPanel({ booking, record, recordLoaded, refreshKe
           const m = /^(\d{4}-\d{2}-\d{2})/.exec(String(stamp));
           return m ? m[1] === viewDate : false;
         };
-        setTasks((all || []).filter((t) => t?.bookingPublicId === bookingPublicId && onDay(t)));
+        setTasks((all || []).filter(onDay));
       } catch (err) {
         if (cancelled) return;
         if (!isAlreadyReported(err)) console.warn("Booking tasks lookup failed", err);

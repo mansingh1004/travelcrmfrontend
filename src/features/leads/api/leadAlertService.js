@@ -89,6 +89,48 @@ export const leadAlertService = {
     const res = await API.post(`/leads/${publicId}/reopen-claim`, { note });
     return unwrap(res);
   },
+
+  /**
+   * Hand EVERY still-open lead from one owner to another — the "agent went on leave" action.
+   * Manager/admin only (LEAD_REASSIGN_LOCKED).
+   *
+   * Both ids are user publicIds, NOT lead ids. The server selects the leads itself, on purpose:
+   * a client-assembled list is only as complete as the page the user was looking at, so a 100-row
+   * grid would quietly hand over 100 of 140 leads and nobody would notice the other 40.
+   *
+   * Resolves to `{ fromUserPublicId, fromUserName, toUserPublicId, toUserName, movedCount }`.
+   * `movedCount` can legitimately be 0 — an agent with nothing open is not an error.
+   */
+  async reassignBulk(payload) {
+    const res = await API.post("/leads/reassign/bulk", payload);
+    return unwrap(res);
+  },
+
+  /**
+   * What reassignBulk WOULD move, without moving it. Same body as the write — that is the only way
+   * the number on the confirmation screen and the number the write produces cannot disagree.
+   *
+   * `toUserId` may be omitted: the manager picks who is leaving and reads the count before choosing
+   * who covers, so the server skips validation on this route.
+   *
+   * Resolves to `{ total, skippedClaimable, byStage: [{ stage, count }] }`.
+   */
+  async previewReassignBulk(payload) {
+    const res = await API.post("/leads/reassign/bulk/preview", payload);
+    return unwrap(res);
+  },
+
+  /**
+   * Give a hand-over back when the owner returns. Takes the `batchId` the hand-over returned.
+   *
+   * NOT the same as handing over in reverse: only the leads that batch moved come back, and only
+   * those still sitting with the covering agent and still open — anything they closed, or that a
+   * manager has since moved on, stays put.
+   */
+  async undoReassignBulk(batchId) {
+    const res = await API.post(`/leads/reassign/bulk/${batchId}/undo`);
+    return unwrap(res);
+  },
 };
 
 /**

@@ -83,6 +83,9 @@ import {
   QuotationStyleModal,
   buildQuickQuoteModel,
   quickQuotePayload,
+  // Takes the option ids the server just assigned back into the model. Without it a second save
+  // claims every comparison column is new and builds the whole set again — see its own note.
+  adoptQuoteOptionIds,
   quickQuoteGrandTotal,
   quickQuoteTotals,
   quotationService,
@@ -4068,6 +4071,8 @@ export default function LeadFormPage() {
             // enquiry, the same way the lead's own sticky fields do. Only after the server accepted
             // the quotation — see rememberQuickQuoteDefaults.
             rememberQuickQuoteDefaults(quoteModel);
+            // Before anything can save again — the Update button below runs off this same model.
+            setQuoteModel((current) => adoptQuoteOptionIds(current, body));
             setCreatedQuote({
               id: String(newQuotationId),
               quoteNo: body.quoteNo == null ? "" : String(body.quoteNo),
@@ -4212,12 +4217,15 @@ export default function LeadFormPage() {
     try {
       // includeLead:false — re-sending leadId asks the backend for a fresh lead snapshot, which
       // would overwrite the customer/PAX context captured when the quotation was created.
-      await quotationService.updateQuotation(createdQuote.id, quickQuotePayload({
+      const updated = await quotationService.updateQuotation(createdQuote.id, quickQuotePayload({
         model: quoteModel,
         lead: createdQuote.lead,
         leadId: createdQuote.leadPublicId,
         includeLead: false,
       }));
+      // The FIRST update is where a comparison's columns get their ids, because create ran before
+      // the agent added them. Adopting on every update also covers a column added later.
+      setQuoteModel((current) => adoptQuoteOptionIds(current, updated?.data?.data || updated?.data));
       showToast("Quotation updated.", "success");
     } catch (error) {
       if (!isAlreadyReported(error)) showToast(getErrorMessage(error, "Could not update the quotation."), "error");

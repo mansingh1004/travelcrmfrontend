@@ -379,6 +379,12 @@ const operationsService = {
    * on the server would be better and is worth adding, but this needs no backend change to be
    * useful today.
    *
+   * SUPERSEDED by {@link tasksForBooking}. That premise is no longer true — /tasks/list now takes
+   * bookingPublicId — and /tasks is now hard-capped server-side at 200 rows with only a WARN in the
+   * log, so on a busy week this silently returns a truncated day and the caller cannot tell. Kept
+   * because it is still correct for a genuine whole-window read and nothing in this project deletes
+   * a working method; new callers should use tasksForBooking.
+   *
    * Returns a BARE ARRAY — this endpoint answers with List<TaskResponse>, not the ApiResponse
    * envelope the rest of this file unwraps. Reading res.data.data here would silently yield
    * undefined and an empty panel.
@@ -386,6 +392,27 @@ const operationsService = {
   tasksBetween: async (fromIso, toIso) => {
     const res = await API.get("/tasks", { params: { from: fromIso, to: toIso } });
     return Array.isArray(res?.data) ? res.data : (res?.data?.data ?? []);
+  },
+
+  /**
+   * Open + closed tasks linked to ONE booking, resolved server-side.
+   *
+   * Replaces fetching a whole day and matching `t.bookingPublicId === id` in the browser. That join
+   * ran over /tasks, which is unpaged and now capped at 200: the truncation lands before the filter,
+   * so a trip with real outstanding work could render an empty panel and nothing would say why.
+   *
+   * Uses the PagedApiResponse envelope (data + pagination), NOT the bare array tasksBetween reads —
+   * /tasks/list is the enveloped route. It also applies the assignee row scope that /tasks does not,
+   * which is the stricter and correct behaviour for a per-trip panel.
+   *
+   * No date window is sent: "what is outstanding on this trip" is not a per-day question, and the
+   * caller still narrows to the day it is rendering.
+   */
+  tasksForBooking: async (bookingPublicId, size = 100) => {
+    const res = await API.get("/tasks/list", {
+      params: { tab: "ALL", bookingPublicId, size, sortBy: "dueDate", sortDir: "asc" },
+    });
+    return Array.isArray(res?.data?.data) ? res.data.data : [];
   },
 
   /**

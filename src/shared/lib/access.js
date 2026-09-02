@@ -33,6 +33,12 @@ export const P = {
   // Claim window: take a new lead off whoever the auto-assignment gave it to (open leads only),
   // and — separately, manager-only — move or reopen one AFTER first contact locked it.
   LEAD_CLAIM: "LEAD_CLAIM", LEAD_REASSIGN_LOCKED: "LEAD_REASSIGN_LOCKED",
+  // Lead temperature engine. CONFIGURE edits the tenant-wide Hot/Warm/Cold rules and is
+  // TENANT_ADMIN-only by default (like ACCOUNTING_SETTINGS_MANAGE); OVERRIDE pins one lead's
+  // temperature and goes to every role that can already edit a lead, because the grid's Type
+  // dropdown has always allowed exactly that.
+  LEAD_SCORING_CONFIGURE: "LEAD_SCORING_CONFIGURE",
+  LEAD_TEMPERATURE_OVERRIDE: "LEAD_TEMPERATURE_OVERRIDE",
   BOOKING_READ: "BOOKING_READ", BOOKING_CREATE: "BOOKING_CREATE", BOOKING_UPDATE: "BOOKING_UPDATE", BOOKING_CANCEL: "BOOKING_CANCEL", BOOKING_DELETE: "BOOKING_DELETE",
   BOOKING_PROFIT_READ: "BOOKING_PROFIT_READ",
   // High-privilege: override/waive a cancellation charge and disburse refunds. TENANT_ADMIN-only
@@ -142,6 +148,9 @@ const ROLE_PERMISSIONS = {
     // Works the pipeline AND supervises it. Mirrors Permission.defaultsFor(MANAGER) and the
     // V2 PART 18 backfill's MANAGER branch.
     P.LEAD_CLAIM, P.LEAD_REASSIGN_LOCKED,
+    // Pins a lead's temperature over the scoring engine. Mirrors defaultsFor(MANAGER) and the
+    // V23 backfill. NOT LEAD_SCORING_CONFIGURE — editing the rules re-scores the whole agency.
+    P.LEAD_TEMPERATURE_OVERRIDE,
     P.BOOKING_READ, P.BOOKING_CREATE, P.BOOKING_UPDATE, P.BOOKING_CANCEL, P.BOOKING_DELETE, P.BOOKING_PROFIT_READ,
     // Runs the operations board. Mirrors defaultsFor(MANAGER) and the V29 backfill.
     P.OPS_MANAGE,
@@ -170,6 +179,9 @@ const ROLE_PERMISSIONS = {
     // Claims open leads; deliberately NOT LEAD_REASSIGN_LOCKED — once a colleague has spoken to
     // the customer, taking the lead is a manager's call. Mirrors defaultsFor(TRAVEL_AGENT).
     P.LEAD_CLAIM,
+    // The role that actually talks to the customer, so the role best placed to say "this one is
+    // hot, whatever the rules think". Mirrors defaultsFor(TRAVEL_AGENT).
+    P.LEAD_TEMPERATURE_OVERRIDE,
     P.BOOKING_READ, P.BOOKING_CREATE, P.BOOKING_UPDATE,
     // Agents deliver the trips they sell — chasing a hotel is the job, not a privilege.
     P.OPS_MANAGE,
@@ -217,6 +229,8 @@ const ROLE_PERMISSIONS = {
   // effective keys come from /permissions/me.
   [ROLES.SUB_AGENT]: [
     P.LEAD_READ, P.LEAD_CREATE, P.LEAD_UPDATE, P.LEAD_DELETE,
+    // Its own leads only (row-scope OWN), and it already edits the Type pill on them today.
+    P.LEAD_TEMPERATURE_OVERRIDE,
     P.QUOTATION_READ, P.QUOTATION_CREATE, P.QUOTATION_UPDATE, P.QUOTATION_DELETE,
     P.BOOKING_READ, P.BOOKING_CREATE, P.BOOKING_UPDATE,
     // Its OWN bookings only — the board already row-scopes a sub-agent's rows, so this

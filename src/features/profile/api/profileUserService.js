@@ -32,6 +32,21 @@ const userService = {
   // POST /api/users/{publicId}/reset-password
   resetPassword: (publicId, newPassword, confirmPassword) =>
     API.post(`/users/${publicId}/reset-password`, { newPassword, confirmPassword }),
+
+  // PUT /api/users/{publicId}/leave — inclusive date window, both dates required.
+  // Only effect server-side: auto-assignment stops picking this user while the window is open.
+  // Their login, permissions and existing leads are untouched.
+  setLeave: async (publicId, onLeaveFrom, onLeaveTo) => {
+    const res = await API.put(`/users/${publicId}/leave`, { onLeaveFrom, onLeaveTo });
+    return { data: mapUserFromApi(unwrap(res)) };
+  },
+
+  // DELETE /api/users/{publicId}/leave — early return from leave.
+  // Separate from setLeave because a null date in a partial update means "unchanged", not "clear".
+  clearLeave: async (publicId) => {
+    const res = await API.delete(`/users/${publicId}/leave`);
+    return { data: mapUserFromApi(unwrap(res)) };
+  },
 };
 
 export default userService;
