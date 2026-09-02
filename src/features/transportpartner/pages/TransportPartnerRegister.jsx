@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import {
   Bus, Car, Check, ChevronDown, Clock, CloudOff, ListChecks, Loader2, Plus,
   RotateCw, Send, Trash2, X,
@@ -424,6 +424,7 @@ export default function TransportPartnerRegister() {
 
 function TransportPartnerRegisterContent() {
   const { token } = useParams();
+  const navigate = useNavigate();
   const { language, t } = usePartnerI18n();
   const languageRef = useRef(language);
   const tRef = useRef(t);
@@ -467,8 +468,20 @@ function TransportPartnerRegisterContent() {
 
   useEffect(() => {
     let alive = true;
+    let navigated = false;
     (async () => {
       try {
+        // The permanent public link carries no credential. Mint one, REPLACE the address so Back
+        // and Refresh behave naturally, then let this same effect re-run and hydrate through the
+        // ordinary token route — the form that follows is byte-for-byte the invited operator's.
+        if (!token) {
+          const started = await transportPartnerService.startPublicRegistration();
+          if (!alive) return;
+          navigated = true;
+          navigate(`/transport-partner/register/${encodeURIComponent(started.token)}`, { replace: true });
+          return;
+        }
+
         const data = await transportPartnerService.resolve(token);
         if (!alive) return;
         const hydratedForm = toForm(data.registration);
@@ -491,13 +504,15 @@ function TransportPartnerRegisterContent() {
         // Expiry is the one failure with an action attached — it earns a screen of its own that
         // tells the operator what to do about it.
         if (isLinkExpired(err)) setExpired(true);
-        else setFatal(partnerErrorMessage(err, tRef.current("openFailed"), languageRef.current));
+        else setFatal(partnerErrorMessage(err, tRef.current(token ? "openFailed" : "startFailed"), languageRef.current));
       } finally {
-        if (alive) setLoading(false);
+        // Navigation starts a fresh token-bound run of this effect. Let that run own the loading
+        // state, or the component renders once with `form === null` between the two requests.
+        if (alive && !navigated) setLoading(false);
       }
     })();
     return () => { alive = false; };
-  }, [token]);
+  }, [navigate, token]);
 
   /**
    * Saves run one at a time, chained.

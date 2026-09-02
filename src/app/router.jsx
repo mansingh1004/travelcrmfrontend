@@ -282,6 +282,10 @@ const AppRouter = () => {
             exactly the same reason: nested under "/" it would render <Layout/>,
             which bounces an unauthenticated operator to /login before they ever
             see the form. The token in the path IS the credential. */}
+            {/* The permanent public link — no invite, no token. The page mints a
+                session and replaces the URL with the :token form below, so both
+                routes render the same component and only the entry differs. */}
+            <Route path="/transport-partner/register" element={<TransportPartnerRegister />} />
             <Route path="/transport-partner/register/:token" element={<TransportPartnerRegister />} />
 
             {/* ── Customer-facing Traveler Portal — SEPARATE realm ──────────────

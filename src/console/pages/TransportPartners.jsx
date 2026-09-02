@@ -66,6 +66,23 @@ export default function TransportPartners() {
   }, [tab]);
 
   useEffect(() => { load(); }, [load]);
+  /**
+   * The PERMANENT link, not an invite. It carries no token — the page mints one on open — so it can
+   * go on a website or a WhatsApp broadcast and be reused by any number of operators. Approval is
+   * still what gates a vehicle reaching the catalog, so a public link grants nothing but a form.
+   */
+  const copyPublicRegistrationLink = async () => {
+    const link = `${window.location.origin}/transport-partner/register`;
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("Clipboard unavailable");
+      await navigator.clipboard.writeText(link);
+      toast.success("Public transport registration link copied.");
+    } catch {
+      // Clipboard access needs HTTPS (or localhost). The prompt keeps the link usable on a LAN.
+      window.prompt("Copy the public transport registration link:", link);
+    }
+  };
+
 
   return (
     <div className="space-y-6">
@@ -76,6 +93,11 @@ export default function TransportPartners() {
             Invite a fleet operator to register itself, then review the vehicles and rates they send.
           </p>
         </div>
+        <button type="button" onClick={copyPublicRegistrationLink}
+          title="Permanent self-registration link — no invite needed"
+          className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-semibold text-body hover:bg-surface-hover">
+          <Copy size={15} /> Public link
+        </button>
         <button onClick={load}
           className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-semibold text-body hover:bg-surface-hover">
           <RefreshCw size={14} /> Refresh
