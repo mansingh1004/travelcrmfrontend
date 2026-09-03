@@ -269,7 +269,7 @@ function StatCard({ icon: Icon, label, value, helper, className }) {
           <p className="truncate text-[10px] font-extrabold uppercase tracking-[0.14em] text-slate-400 sm:text-[11px] sm:tracking-[0.16em]">
             {label}
           </p>
-          <p className="mt-2 truncate text-xl font-black tracking-tight text-slate-900 sm:text-2xl lg:text-3xl">
+          <p className="mt-2 truncate text-xl font-extrabold tracking-tight text-slate-900 sm:text-2xl lg:text-3xl">
             {value}
           </p>
           <p className="mt-1 truncate text-[11px] font-medium text-slate-500 sm:text-xs">{helper}</p>
@@ -356,7 +356,7 @@ function IssuedUrlModal({ url, onClose }) {
         aria-modal="true"
         aria-labelledby="issued-url-title"
         onMouseDown={(event) => event.stopPropagation()}
-        className="relative flex max-h-[88dvh] w-full flex-col overflow-y-auto rounded-t-[28px] bg-white shadow-2xl sm:max-h-[85vh] sm:max-w-xl sm:rounded-[28px]"
+        className="relative flex max-h-[88dvh] w-full flex-col overflow-y-auto rounded-t-3xl bg-white shadow-2xl sm:max-h-[85vh] sm:max-w-xl sm:rounded-3xl"
       >
         <div className="flex shrink-0 justify-center pb-1 pt-2.5 sm:hidden">
           <span className="h-1.5 w-10 rounded-full bg-slate-300" />
@@ -372,7 +372,7 @@ function IssuedUrlModal({ url, onClose }) {
                 <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-slate-400">
                   Connection created
                 </p>
-                <h2 id="issued-url-title" className="mt-1 text-xl font-black text-slate-900">
+                <h2 id="issued-url-title" className="mt-1 text-xl font-extrabold text-slate-900">
                   Save your secure intake URL
                 </h2>
               </div>
@@ -530,7 +530,7 @@ function AddConnectionDrawer({ channel, onClose, onCreated }) {
                 <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">
                   New connection
                 </p>
-                <h2 className="truncate text-xl font-black text-slate-900">
+                <h2 className="truncate text-xl font-extrabold text-slate-900">
                   Connect {channel.displayName}
                 </h2>
               </div>
@@ -780,7 +780,7 @@ function DeliveriesDrawer({ conn, onClose }) {
                 <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">
                   Delivery diagnostics
                 </p>
-                <h3 className="truncate text-xl font-black">
+                <h3 className="truncate text-xl font-extrabold">
                   Recent deliveries
                 </h3>
                 <p className="mt-0.5 truncate text-xs text-slate-400">
@@ -929,7 +929,7 @@ function ChannelCard({ channel, selected, onClick }) {
     <button
       type="button"
       onClick={onClick}
-      className={`group relative flex min-h-[230px] flex-col overflow-hidden rounded-[26px] border bg-white/90 p-5 text-left shadow-sm ${ui.glow} backdrop-blur-xl transition-all duration-300 hover:-translate-y-1.5 hover:shadow-xl focus:outline-none focus:ring-4 ${ui.ring} ${
+      className={`group relative flex min-h-[230px] flex-col overflow-hidden rounded-2xl border bg-white/90 p-5 text-left shadow-sm ${ui.glow} backdrop-blur-xl transition-all duration-300 hover:-translate-y-1.5 hover:shadow-xl focus:outline-none focus:ring-4 ${ui.ring} ${
         selected
           ? `border-transparent ring-4 ${ui.ring} shadow-xl`
           : "border-slate-200/80 hover:border-slate-300"
@@ -965,7 +965,7 @@ function ChannelCard({ channel, selected, onClick }) {
       </div>
 
       <div className="mt-5">
-        <h3 className="text-lg font-black tracking-tight text-slate-900">
+        <h3 className="text-lg font-extrabold tracking-tight text-slate-900">
           {channel.displayName}
         </h3>
         <p className="mt-1 line-clamp-2 min-h-10 text-xs font-medium leading-5 text-slate-500">
@@ -978,7 +978,7 @@ function ChannelCard({ channel, selected, onClick }) {
           <p className="text-[9px] font-extrabold uppercase tracking-[0.14em] text-slate-400">
             Connections
           </p>
-          <p className="mt-1 text-base font-black text-slate-800">
+          <p className="mt-1 text-base font-extrabold text-slate-800">
             {fmtNumber(connectionCount)}
           </p>
         </div>
@@ -987,7 +987,7 @@ function ChannelCard({ channel, selected, onClick }) {
           <p className="text-[9px] font-extrabold uppercase tracking-[0.14em] text-slate-400">
             Leads
           </p>
-          <p className="mt-1 text-base font-black text-slate-800">
+          <p className="mt-1 text-base font-extrabold text-slate-800">
             {fmtNumber(leadCount)}
           </p>
         </div>
@@ -1035,7 +1035,7 @@ function ConnectionRow({
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <h3 className="truncate text-base font-black text-slate-900">
+              <h3 className="truncate text-base font-extrabold text-slate-900">
                 {conn.label}
               </h3>
               <StatusBadge status={status} />
@@ -1046,7 +1046,7 @@ function ConnectionRow({
                 <p className="text-[10px] font-extrabold uppercase tracking-wide text-slate-400">
                   Leads received
                 </p>
-                <p className="mt-1 flex items-center gap-1.5 text-sm font-black text-slate-800">
+                <p className="mt-1 flex items-center gap-1.5 text-sm font-extrabold text-slate-800">
                   <BarChart3 className="h-4 w-4 text-blue-500" />
                   {fmtNumber(leadCount)}
                 </p>
@@ -1056,7 +1056,7 @@ function ConnectionRow({
                 <p className="text-[10px] font-extrabold uppercase tracking-wide text-slate-400">
                   Token prefix
                 </p>
-                <code className="mt-1 block truncate text-sm font-black text-slate-700">
+                <code className="mt-1 block truncate text-sm font-extrabold text-slate-700">
                   {conn.tokenPrefix || "—"}…
                 </code>
               </div>
@@ -1191,7 +1191,7 @@ function ChannelConnectionsModal({
         aria-modal="true"
         aria-labelledby="channel-connections-title"
         onMouseDown={(event) => event.stopPropagation()}
-        className="flex max-h-[88dvh] w-full flex-col overflow-hidden rounded-t-[30px] bg-slate-50 shadow-2xl sm:max-h-[92vh] sm:max-w-5xl sm:rounded-[30px]"
+        className="flex max-h-[88dvh] w-full flex-col overflow-hidden rounded-t-3xl bg-slate-50 shadow-2xl sm:max-h-[92vh] sm:max-w-5xl sm:rounded-3xl"
       >
         <div className="flex shrink-0 justify-center bg-white pb-1 pt-2.5 sm:hidden">
           <span className="h-1.5 w-10 rounded-full bg-slate-300" />
@@ -1212,7 +1212,7 @@ function ChannelConnectionsModal({
                 </p>
                 <h2
                   id="channel-connections-title"
-                  className="truncate text-xl font-black text-slate-900 sm:text-2xl"
+                  className="truncate text-xl font-extrabold text-slate-900 sm:text-2xl"
                 >
                   {channel.displayName}
                 </h2>
@@ -1515,45 +1515,81 @@ export default function LeadSources() {
   }, [channels]);
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_#dbeafe_0,_transparent_30%),linear-gradient(to_bottom_right,_#f8fafc,_#eef2ff,_#f8fafc)]">
-      <div className="mx-auto max-w-7xl px-3 py-4 sm:px-5 sm:py-6 lg:px-8">
-        <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex min-w-0 items-start gap-3">
-            <button
-              type="button"
-              onClick={() => navigate(-1)}
-              aria-label="Go back"
-              className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-600 shadow-sm transition-all hover:-translate-x-0.5 hover:border-blue-200 hover:text-blue-600 hover:shadow-md"
-            >
-              <ArrowLeft className="h-4 w-4" />
-            </button>
+    /* Page chrome matched to the settings siblings (CompanySettings, EmailConfiguration,
+       WhatsAppConfiguration) and the wider CRM: the shared gradient shell, Plus Jakarta Sans,
+       and the full-bleed translucent header bar with icon tile + breadcrumb. The previous
+       bespoke radial gradient and back-arrow header made this the only page in Settings that
+       read as a different product. */
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-100"
+      style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif" }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap');
+        @keyframes slideIn { from{transform:translateX(110%);opacity:0} to{transform:translateX(0);opacity:1} }
+        @keyframes fadeUp  { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes popIn   { from{transform:scale(.92);opacity:0} to{transform:scale(1);opacity:1} }
+        .fade-up { animation: fadeUp .45s ease both; }
+        ::-webkit-scrollbar{width:5px;height:5px}
+        ::-webkit-scrollbar-track{background:#f1f5f9;border-radius:99px}
+        ::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:99px}
+        @media (prefers-reduced-motion: reduce) {
+          * { animation: none !important; transition: none !important; }
+        }
+      `}</style>
 
-            <div className="min-w-0">
-              <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-blue-600">
-                Settings · Automation
-              </p>
-              <h1 className="mt-1 text-2xl font-black tracking-tight text-slate-900 sm:text-3xl">
-                Lead Sources
-              </h1>
-              <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-500">
-                Connect every place your enquiries arrive from and manage each
-                integration from one responsive workspace.
-              </p>
+      {/* ── PAGE HEADER ── */}
+      <div className="bg-white/70 backdrop-blur-md border-b border-slate-100">
+        <div className="max-w-screen-xl mx-auto px-4 sm:px-6 py-5">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-600 to-cyan-500
+                flex items-center justify-center text-white shadow-lg shadow-blue-200 flex-shrink-0">
+                <Link2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h1 className="text-xl font-extrabold text-slate-800 tracking-tight">
+                  Lead Sources
+                </h1>
+                <p className="text-sm text-slate-400 mt-0.5">
+                  Connect every place your enquiries arrive from
+                  <span className="hidden sm:inline ml-3 text-slate-300">|</span>
+                  <span className="hidden sm:inline ml-3 text-xs">
+                    <span className="hover:text-blue-600 cursor-pointer transition-colors" onClick={() => navigate("/")}>Home</span>
+                    <span className="mx-1 text-slate-300">/</span>
+                    <span className="hover:text-blue-600 cursor-pointer transition-colors" onClick={() => navigate("/CompanySettings")}>Settings</span>
+                    <span className="mx-1 text-slate-300">/</span>
+                    <span className="text-blue-600 font-bold">Lead Sources</span>
+                  </span>
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <button
+                type="button"
+                onClick={refresh}
+                disabled={refreshing}
+                className="flex flex-1 sm:flex-none items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200
+                  hover:border-blue-300 bg-white hover:bg-blue-50 text-slate-600 hover:text-blue-600
+                  text-sm font-bold transition-all shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <RefreshCw className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`} />
+                {refreshing ? "Refreshing..." : "Refresh"}
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate("/CompanySettings")}
+                className="flex flex-1 sm:flex-none items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200
+                  hover:border-blue-300 bg-white hover:bg-blue-50 text-slate-600 hover:text-blue-600
+                  text-sm font-bold transition-all shadow-sm"
+              >
+                <ArrowLeft className="w-4 h-4" /> Back to Settings
+              </button>
             </div>
           </div>
+        </div>
+      </div>
 
-          <button
-            type="button"
-            onClick={refresh}
-            disabled={refreshing}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-extrabold text-slate-700 shadow-sm transition-all hover:-translate-y-0.5 hover:border-blue-200 hover:text-blue-700 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
-          >
-            <RefreshCw
-              className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`}
-            />
-            {refreshing ? "Refreshing..." : "Refresh data"}
-          </button>
-        </header>
+      <div className="max-w-screen-xl mx-auto px-4 sm:px-6 py-6">
 
         <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <StatCard
@@ -1601,13 +1637,13 @@ export default function LeadSources() {
             </div>
           )}
 
-          <section className="rounded-[28px] border border-white/80 bg-white/80 p-4 shadow-xl shadow-slate-200/40 backdrop-blur-xl sm:p-5 lg:p-6">
+          <section className="rounded-2xl border border-white/80 bg-white/80 p-4 shadow-xl shadow-slate-200/40 backdrop-blur-xl sm:p-5 lg:p-6">
             <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
               <div>
                 <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-blue-600">
                   Integration marketplace
                 </p>
-                <h2 className="mt-1 text-xl font-black tracking-tight text-slate-900">
+                <h2 className="mt-1 text-xl font-extrabold tracking-tight text-slate-900">
                   Select a lead source
                 </h2>
                 <p className="mt-1 text-sm text-slate-500">

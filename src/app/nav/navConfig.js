@@ -685,7 +685,9 @@ export const NAV_SECTIONS = [
         Icon: Settings,
         tone: "slate",
         keywords: "company preferences configuration branding",
-        can: () => hasPermission(P.SETTINGS_MANAGE),
+        // The GROUP is gated on SETTINGS_MANAGE, but the scoring child carries its own key below —
+        // can() on a child is what lets one row in the group be more tightly held than the rest.
+        can: () => hasPermission(P.SETTINGS_MANAGE) || hasPermission(P.LEAD_SCORING_CONFIGURE),
         children: [
           { id: "settings.company", label: "Company settings", path: "/CompanySettings" },
           {
@@ -699,6 +701,13 @@ export const NAV_SECTIONS = [
             label: "WhatsApp configuration",
             path: "/WhatsAppConfiguration",
             keywords: "interakt templates",
+          },
+          {
+            id: "settings.scoring",
+            label: "Lead temperature rules",
+            path: "/LeadScoringRules",
+            keywords: "hot warm cold scoring temperature rules engine priority",
+            can: () => hasPermission(P.LEAD_SCORING_CONFIGURE),
           },
         ],
       },

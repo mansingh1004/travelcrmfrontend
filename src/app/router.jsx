@@ -99,6 +99,7 @@ const CompanySettings = lazyPage(settings, "CompanySettings");
 const EmailConfiguration = lazyPage(settings, "EmailConfiguration");
 const WhatsAppConfiguration = lazyPage(settings, "WhatsAppConfiguration");
 const LeadSources = lazyPage(settings, "LeadSources");
+const LeadScoringRules = lazyPage(settings, "LeadScoringRules");
 
 const SubscriptionInfo = lazyPage(() => import("@features/subscription"), "SubscriptionInfo");
 const Dashboard = lazyPage(() => import("@features/dashboard"), "Dashboard");
@@ -281,6 +282,10 @@ const AppRouter = () => {
             exactly the same reason: nested under "/" it would render <Layout/>,
             which bounces an unauthenticated operator to /login before they ever
             see the form. The token in the path IS the credential. */}
+            {/* The permanent public link — no invite, no token. The page mints a
+                session and replaces the URL with the :token form below, so both
+                routes render the same component and only the entry differs. */}
+            <Route path="/transport-partner/register" element={<TransportPartnerRegister />} />
             <Route path="/transport-partner/register/:token" element={<TransportPartnerRegister />} />
 
             {/* ── Customer-facing Traveler Portal — SEPARATE realm ──────────────
@@ -538,6 +543,10 @@ const AppRouter = () => {
               <Route path="EmailConfiguration" element={<Guard allow={hasPermission(P.SETTINGS_MANAGE)}><EmailConfiguration /></Guard>} />
               <Route path="WhatsAppConfiguration" element={<Guard allow={hasPermission(P.SETTINGS_MANAGE)}><WhatsAppConfiguration /></Guard>} />
               <Route path="LeadSources" element={<Guard allow={hasPermission(P.SETTINGS_MANAGE)}><LeadSources /></Guard>} />
+              {/* Gated on its OWN key, not SETTINGS_MANAGE: editing the Hot/Warm/Cold rules
+                  re-scores every lead in the agency, so it is a separate grant from company
+                  settings. Backend @PreAuthorize is the real gate; this just hides the route. */}
+              <Route path="LeadScoringRules" element={<Guard allow={hasPermission(P.LEAD_SCORING_CONFIGURE)}><LeadScoringRules /></Guard>} />
               <Route path="SubscriptionInfo" element={<Guard allow={!isSubAgent()}><SubscriptionInfo /></Guard>} />
               <Route path="Dashboard" element={<Guard allow={!isSubAgent() && hasModule("DASHBOARD")}><Dashboard /></Guard>} />
               <Route path="trash" element={<Guard allow={hasPermission(P.TRASH_VIEW)}><TrashPage /></Guard>} />

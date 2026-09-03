@@ -2111,7 +2111,7 @@ export default function HotelPartnerRegister() {
               <div className="rounded-xl border border-slate-200 bg-white p-3.5">
                 <div className="mb-2 flex items-center justify-between text-[12px] font-bold text-slate-600">
                   <span>Ready to submit</span>
-                  <span className="tabular-nums text-slate-400">{doneCount}/{checklist.length}</span>
+                  <span className="tabular-nums text-slate-500">{doneCount}/{checklist.length}</span>
                 </div>
                 <ProgressBar done={doneCount} total={checklist.length} />
                 <ul className="mt-3 space-y-1.5">
@@ -2435,7 +2435,7 @@ export default function HotelPartnerRegister() {
               </span>
             )}>
             {roomCount === 0 && (
-              <p className="text-[13px] text-slate-400">No rooms yet. Add at least one to submit.</p>
+              <p className="text-[13px] text-slate-500">No rooms yet. Add at least one to submit.</p>
             )}
 
             {form.rooms.map((room, ri) => (
@@ -2483,7 +2483,7 @@ export default function HotelPartnerRegister() {
                   <ListChecks size={15} className="shrink-0 text-amber-500" />
                   <span className="truncate">
                     {outstanding.length} thing{outstanding.length === 1 ? "" : "s"} left
-                    <span className="ml-1 font-medium text-slate-400">· see what</span>
+                    <span className="ml-1 font-medium text-slate-500">· see what</span>
                   </span>
                 </button>
               )}
@@ -2764,7 +2764,7 @@ function RoomCard({
               })}
 
               {room.rates.length === 0 && (
-                <p className="text-[13px] text-slate-400">Add at least one rate.</p>
+                <p className="text-[13px] text-slate-500">Add at least one rate.</p>
               )}
             </div>
           </div>

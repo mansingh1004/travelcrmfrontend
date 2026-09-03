@@ -12,8 +12,14 @@
 //
 // The font is applied here, in <Page/>. There is no global font-family rule in the tenant app —
 // omit it and the screen silently renders in the browser default.
+//
+// PAGINATION IS NOT HERE ANY MORE. The <Pager/> below is superseded by @shared/ui/Pager, which six
+// other screens already render; the grid imports that one. See the note above it before reusing.
 // ─────────────────────────────────────────────────────────────────────────────
-import { Inbox, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
+import {
+  Inbox, TriangleAlert, RefreshCw,
+  ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
+} from "lucide-react";
 
 const FONT = "'Plus Jakarta Sans',system-ui,sans-serif";
 
@@ -77,17 +83,24 @@ export function GridHead({ cols, children }) {
   );
 }
 
+/**
+ * A grid row.
+ *
+ * The gold tint is a CLASS, not an inline style written from onMouseEnter. Two things were wrong
+ * with the imperative version: a mouse handler can never fire for a keyboard user, so tabbing into
+ * a row's action button highlighted nothing (focus-within covers that; focus-visible covers a row
+ * that is itself made focusable later), and the literal `#eeda9218` bypassed the gold scale
+ * registered in index.css — @theme is the one place the brand champagne is spelled out.
+ */
 export function GridRow({ cols, index = 0, children, className = "" }) {
   return (
     <div
-      className={`hidden md:grid items-stretch gap-0 px-5 py-3.5 border-b border-slate-50 transition-colors group ${className}`}
+      className={`hidden md:grid items-stretch gap-0 px-5 py-3.5 border-b border-slate-50 transition-colors group hover:bg-gold-300/10 focus-within:bg-gold-300/10 focus-visible:bg-gold-300/10 ${className}`}
       style={{
         gridTemplateColumns: cols,
         animation: "fadeUp .35s ease both",
         animationDelay: `${index * 30}ms`,
       }}
-      onMouseEnter={(e) => { e.currentTarget.style.background = "#eeda9218"; }}
-      onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
     >
       {children}
     </div>
@@ -121,6 +134,36 @@ export function Badge({ tone = "slate", children, className = "" }) {
 export const inputCls =
   "w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-700 font-medium placeholder-slate-400 focus:border-blue-400 focus:ring-2 focus:ring-blue-50 outline-none transition-all hover:border-slate-300";
 
+/** Filter-bar control. Same language as `inputCls`, one step down — a filter strip sitting on top
+ *  of a dense grid must not out-weigh the rows it narrows. */
+export const selectCls =
+  "rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-600 focus:border-blue-400 focus:ring-2 focus:ring-blue-50 outline-none transition-all hover:border-slate-300";
+
+/**
+ * Row-action button. Icon-only because row actions live in a ~92px column: a labelled button there
+ * either wraps or pushes a data column off the grid. `title` doubles as the accessible name, so
+ * every call site has to pass one.
+ */
+export function IconBtn({ title, onClick, disabled, tone = "slate", className = "", children }) {
+  const tones = {
+    slate:   "hover:text-blue-600 hover:border-blue-200",
+    emerald: "hover:text-emerald-600 hover:border-emerald-200",
+    rose:    "hover:text-rose-600 hover:border-rose-200",
+  };
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      onClick={onClick}
+      disabled={disabled}
+      className={`p-1.5 rounded-lg border border-transparent text-slate-400 transition-all disabled:opacity-40 disabled:cursor-not-allowed ${tones[tone] ?? tones.slate} ${className}`}
+    >
+      {children}
+    </button>
+  );
+}
+
 export function GridSkeleton({ cols, rows = 5 }) {
   return [...Array(rows)].map((_, i) => (
     <div
@@ -140,7 +183,7 @@ export function GridSkeleton({ cols, rows = 5 }) {
   ));
 }
 
-export function GridEmpty({ icon: Icon = Inbox, title = "Nothing here yet", hint }) {
+export function GridEmpty({ icon: Icon = Inbox, title = "Nothing here yet", hint, action }) {
   return (
     <div className="text-center py-20 px-5">
       <div className="flex flex-col items-center justify-center">
@@ -149,11 +192,53 @@ export function GridEmpty({ icon: Icon = Inbox, title = "Nothing here yet", hint
         </div>
         <p className="text-lg font-extrabold text-slate-600 mb-1">{title}</p>
         {hint && <p className="text-sm text-slate-400 max-w-sm mx-auto leading-relaxed">{hint}</p>}
+        {action && <div className="mt-4">{action}</div>}
       </div>
     </div>
   );
 }
 
+/**
+ * A failed load, rendered as a failed load.
+ *
+ * Deliberately NOT GridEmpty: "Nothing due here" on a request that 500-ed tells someone their day
+ * is clear when the server never answered, and that is the one wrong answer a task list must never
+ * give. The retry is the whole remedy — the tab, filters and row scope are unchanged, so the same
+ * question asked again is the fix.
+ */
+export function GridError({ title = "Couldn't load tasks", message, onRetry }) {
+  return (
+    <div className="text-center py-20 px-5">
+      <div className="flex flex-col items-center justify-center">
+        <div className="w-16 h-16 bg-rose-50 border border-rose-100 rounded-2xl flex items-center justify-center mb-4 shadow-sm -rotate-3">
+          <TriangleAlert size={28} className="text-rose-500" />
+        </div>
+        <p className="text-lg font-extrabold text-slate-600 mb-1">{title}</p>
+        {message && <p className="text-sm text-slate-400 max-w-sm mx-auto leading-relaxed">{message}</p>}
+        {onRetry && (
+          <button
+            type="button"
+            onClick={onRetry}
+            className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-slate-200 text-sm font-bold text-slate-600 hover:border-blue-300 hover:text-blue-600 transition-all"
+          >
+            <RefreshCw className="w-3.5 h-3.5" /> Try again
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * SUPERSEDED by `@shared/ui/Pager` — kept, not deleted, because a kit export is a contract and
+ * unused is not the same as removable here.
+ *
+ * Prefer the shared control: it is the one six other screens render, it carries the rows-per-page
+ * select this one never had, and it takes `pageSize` rather than pre-computed `from`/`to`, so a
+ * call site cannot report a range that disagrees with the page it is showing. This copy also
+ * rebuilds an `Array.from` of length `totalPages` on every render just to throw most of it away —
+ * fine at 12 pages, not at 4,000. Don't carry that shape into anything new.
+ */
 export function Pager({ page, totalPages, total, from, to, onPage }) {
   if (!total) return null;
   const pages = Array.from({ length: totalPages }, (_, i) => i)

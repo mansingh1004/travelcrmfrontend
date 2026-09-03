@@ -150,8 +150,13 @@ const normalizedServices = (lead) =>
 // Master-data loaders for the panels' comboboxes. Module scope, not useCallback inside the page:
 // they close over nothing, and both hosts of the builder (this page and the rapid lead form) need
 // the exact same lookups. A platform-synced hotel that its owner deactivated must not be sellable.
-const loadHotels = async (query, city) => {
-  const response = await hotelService.listHotels({ q: query || undefined, city: city || undefined, size: 20 });
+// `stars` is an EXACT match on the server (`h.stars = :stars`, HotelRepository), not a floor — so 4
+// returns four-star properties only, never "four and up". That is exactly what the comparison
+// auto-builder wants (one tier per column) and why the picker leaves it undefined.
+const loadHotels = async (query, city, stars) => {
+  const response = await hotelService.listHotels({
+    q: query || undefined, city: city || undefined, stars: stars || undefined, size: 20,
+  });
   return extractList(response)
     .filter((hotel) => {
       const platformOwned = hotel?.platformOwned === true || hotel?.origin === "PLATFORM_SYNC";
@@ -462,6 +467,18 @@ export function initialModel(lead) {
     title: [lead.customerName, destination, nights ? `${nights}N` : ""].filter(Boolean).join(" – ") || "Quotation",
     templateStyle: "CLASSIC",
     enabledCore,
+    /* Comparison alternatives. EMPTY is the normal case and means "not a comparison" — every quote
+       that exists today has none, quickQuotePayload then emits no `options` key at all, and the
+       server reads that as "leave the comparison alone". Nothing below this line changes for a
+       quote the agent never turns into a comparison.
+
+       When it is non-empty each entry carries its OWN `hotel` and `vehicle` in exactly the shape
+       model.hotel / model.vehicle have, which is what lets HotelPanel and VehiclePanel be pointed
+       at an option with no changes to either. The model's own hotel/vehicle stay put: they seeded
+       the first option and remain the SHARED fallback the server inherits from. */
+    options: [],
+    /* Which option the Hotel/Vehicle panels are editing. UI state — never sent. */
+    activeOptionId: null,
     hotel: {
       title: "Hotel Details",
       notes: "",
@@ -789,6 +806,75 @@ const masterRoomRate = (roomType) => {
   if (roomType?.baseRate === "" || roomType?.baseRate == null) return null;
   const rate = Number(roomType.baseRate);
   return Number.isFinite(rate) ? rate : null;
+};
+
+/**
+ * The three price fields a room line carries, seeded from the master.
+ *
+ * <p>`RoomType.baseRate` is documented on the entity as the tenant's own SELLING rate per room per
+ * night — not a vendor cost — so putting it in the price box is the number the agent was about to
+ * type, not a margin leak, and the quote-level markup still applies on top of it. Until now the rate
+ * was read off the master, printed in the room-type dropdown label, and then thrown away: every room
+ * line of every option was typed by hand, which is most of what made a 3-column comparison feel like
+ * three quotations. Typing over it flips rateSource to MANUAL (the price input's own onChange), so
+ * "where did this number come from" stays answerable. MASTER/MANUAL/MISSING is the vocabulary
+ * QuotationHotel.rateSource already documents — MASTER simply had no producer on this screen.
+ */
+const seedRoomRate = (baseRate) => ({
+  pricePerRoom: baseRate == null ? "" : String(baseRate),
+  masterBaseRate: baseRate,
+  rateSource: baseRate == null ? "MISSING" : "MASTER",
+});
+
+/**
+ * The stay patch that choosing `hotel` produces: its room-type and meal-plan menus, and this stay's
+ * room lines re-derived against them with rates seeded from the master.
+ *
+ * <p>Module scope, and pure — it returns the patch instead of applying it — because two callers need
+ * byte-identical behaviour: the Hotel panel's picker, and the comparison auto-builder, which fills
+ * whole columns without the panel ever being mounted. Duplicating this was how a column could end up
+ * with a hotel name and no room rates.
+ */
+const hotelStayPatch = (stay, hotel) => {
+  const roomTypeOptions = Array.isArray(hotel.roomTypes)
+    ? hotel.roomTypes.filter((room) => room?.active !== false)
+    : [];
+  const mealPlanOptions = Array.isArray(hotel.mealPlans)
+    ? hotel.mealPlans.filter((meal) => meal?.active !== false)
+    : [];
+  const defaultMeal = mealPlanOptions[0] || null;
+  const hotelImage = hotel.imagePath || hotel.imageUrl || "";
+  const roomLines = (stay.roomLines || []).map((line) => {
+    const roomType = findPreferredRoomType(roomTypeOptions, line);
+    const baseRate = masterRoomRate(roomType);
+    return {
+      ...line,
+      roomType: roomType?.name || (line.roomCategoryPreference !== "Any" ? line.roomCategoryPreference : ""),
+      roomTypeMasterPublicId: roomType?.publicId || null,
+      platformRoomPublicId: roomType?.platformSourcePublicId || null,
+      bedType: roomType?.bedType || (line.bedPreference !== "Any" ? line.bedPreference : ""),
+      occupancy: roomType?.occupancy == null ? null : asNumber(roomType.occupancy),
+      mealPlan: defaultMeal?.name || "",
+      mealPlanMasterPublicId: defaultMeal?.publicId || null,
+      platformMealPlanPublicId: defaultMeal?.platformSourcePublicId || null,
+      ...seedRoomRate(baseRate),
+      imagePath: roomType?.images?.[0] || hotelImage,
+    };
+  });
+  return {
+    name: hotel.name || "",
+    city: hotel.city || hotel.cityName || stay.city,
+    stars: asNumber(hotel.stars),
+    imagePath: hotelImage || roomLines.find((line) => line.imagePath)?.imagePath || "",
+    hotelMasterPublicId: hotel.publicId || null,
+    platformHotelPublicId: hotel.platformHotelPublicId || null,
+    hotelOrigin: hotel.origin || (hotel.platformOwned ? "PLATFORM_SYNC" : "TENANT"),
+    platformOwned: hotel.platformOwned === true || hotel.origin === "PLATFORM_SYNC",
+    syncStatus: hotel.syncStatus || null,
+    roomTypeOptions,
+    mealPlanOptions,
+    roomLines,
+  };
 };
 
 const findPreferredRoomType = (options, allocation) => {
@@ -1128,49 +1214,7 @@ function QuickHotelStays({ data, setData, loadHotels }) {
     chooseHotel(stay, fresh);
   };
 
-  const chooseHotel = (stay, hotel) => {
-    const roomTypeOptions = Array.isArray(hotel.roomTypes)
-      ? hotel.roomTypes.filter((room) => room?.active !== false)
-      : [];
-    const mealPlanOptions = Array.isArray(hotel.mealPlans)
-      ? hotel.mealPlans.filter((meal) => meal?.active !== false)
-      : [];
-    const defaultMeal = mealPlanOptions[0] || null;
-    const hotelImage = hotel.imagePath || hotel.imageUrl || "";
-    const roomLines = stay.roomLines.map((line) => {
-      const roomType = findPreferredRoomType(roomTypeOptions, line);
-      const baseRate = masterRoomRate(roomType);
-      return {
-        ...line,
-        roomType: roomType?.name || (line.roomCategoryPreference !== "Any" ? line.roomCategoryPreference : ""),
-        roomTypeMasterPublicId: roomType?.publicId || null,
-        platformRoomPublicId: roomType?.platformSourcePublicId || null,
-        bedType: roomType?.bedType || (line.bedPreference !== "Any" ? line.bedPreference : ""),
-        occupancy: roomType?.occupancy == null ? null : asNumber(roomType.occupancy),
-        mealPlan: defaultMeal?.name || "",
-        mealPlanMasterPublicId: defaultMeal?.publicId || null,
-        platformMealPlanPublicId: defaultMeal?.platformSourcePublicId || null,
-        pricePerRoom: "",
-        masterBaseRate: baseRate,
-        rateSource: "MISSING",
-        imagePath: roomType?.images?.[0] || hotelImage,
-      };
-    });
-    updateStay(stay.id, {
-      name: hotel.name || "",
-      city: hotel.city || hotel.cityName || stay.city,
-      stars: asNumber(hotel.stars),
-      imagePath: hotelImage || roomLines.find((line) => line.imagePath)?.imagePath || "",
-      hotelMasterPublicId: hotel.publicId || null,
-      platformHotelPublicId: hotel.platformHotelPublicId || null,
-      hotelOrigin: hotel.origin || (hotel.platformOwned ? "PLATFORM_SYNC" : "TENANT"),
-      platformOwned: hotel.platformOwned === true || hotel.origin === "PLATFORM_SYNC",
-      syncStatus: hotel.syncStatus || null,
-      roomTypeOptions,
-      mealPlanOptions,
-      roomLines,
-    });
-  };
+  const chooseHotel = (stay, hotel) => updateStay(stay.id, hotelStayPatch(stay, hotel));
 
   const chooseRoomType = (stay, line, selectedKey) => {
     const roomType = stay.roomTypeOptions.find((option, index) =>
@@ -1182,9 +1226,7 @@ function QuickHotelStays({ data, setData, loadHotels }) {
       platformRoomPublicId: roomType.platformSourcePublicId || null,
       bedType: roomType.bedType || "",
       occupancy: roomType.occupancy == null ? null : asNumber(roomType.occupancy),
-      pricePerRoom: "",
-      masterBaseRate: baseRate,
-      rateSource: "MISSING",
+      ...seedRoomRate(baseRate),
       imagePath: roomType.images?.[0] || stay.imagePath || "",
     } : {
       roomType: "", roomTypeMasterPublicId: null, platformRoomPublicId: null, bedType: "", occupancy: null,
@@ -2182,18 +2224,217 @@ const sectionTotal = {
    form — and both must compute the running total, the done-ticks and the section list identically.
    One implementation is the only way that stays true. */
 
+/* ─── Comparison options ──────────────────────────────────────────────────────────────────────
+   One quote carrying 2–3 priced alternatives, so the customer compares on one page instead of
+   opening three quotations.
+
+   ONLY hotel and vehicle vary. That is not a limitation of the server — an option there may
+   override any of the six sections — it is the shape of the job: the itinerary, the sightseeing,
+   the inclusions and the terms are the SAME trip in every column, and repeating them per option
+   would be three copies of one paragraph for the customer and three times the typing for the agent.
+   Everything outside this list stays on the model and is sent once, and the server inherits it into
+   every option. Adding a third varying section later is one more entry here plus one more panel
+   route — the payload and the server already handle it. */
+const COMPARED_SECTIONS = ["hotel", "vehicle"];
+
+/** Owner's cap, 27 Aug. Enforced on the server too (`@Size(max = 3)`), which is the real gate. */
+const MAX_QUOTE_OPTIONS = 3;
+
+/* The strip's scroll anchor. The header's Compare button lives in this page's top bar while the
+   strip itself renders inside QuickQuoteSections — a different component — so the button reaches it
+   by DOM id rather than by ref. Threading a ref down through the accordion for one scroll would be a
+   wider change than the button is worth, and the id is stable because there is exactly one strip. */
+const COMPARE_STRIP_ID = "quote-compare-strip";
+
+const optionsOf = (model) => (Array.isArray(model?.options) ? model.options : []);
+
+/* Nothing outside this module needs any of the helpers below, so none of them is exported: the
+   hosts drive the builder through QuickQuoteSections and quickQuotePayload, which already know
+   about options. Exporting them would widen the feature's public surface for no consumer and add a
+   react-refresh warning apiece. */
+
+/** The option the Hotel/Vehicle panels are editing; null when this is not a comparison at all. */
+const quickQuoteActiveOption = (model) => {
+  const options = optionsOf(model);
+  if (options.length === 0) return null;
+  return options.find((option) => option.id === model.activeOptionId) || options[0];
+};
+
+/**
+ * The option whose figures stand for the whole quote — the running total, the completion ticks and
+ * the "Final quotation" line. The recommended one, else the first.
+ *
+ * <p>It must match what the server puts at the TOP LEVEL of the response (QuotationMapper's
+ * defaultOptionView: recommended, else first), or the figure the agent reads while building would
+ * not be the figure the customer's document leads with.
+ */
+const headlineOption = (model) => {
+  const options = optionsOf(model);
+  if (options.length === 0) return null;
+  return options.find((option) => option.recommended) || options[0];
+};
+
+/** The hotel/vehicle data a given option sells — its own. Falls back to the model's for safety. */
+const sectionFor = (model, option, key) => (option && option[key] ? option[key] : model[key]);
+
+/* Fresh ids on every row and room line. Two options must never share a row id, or editing a hotel
+   in one column silently edits the same hotel in another — the exact bug initialModel already
+   guards against between two stays. */
+const cloneSection = (section) => ({
+  ...section,
+  rows: (section?.rows || []).map((row) => ({
+    ...row,
+    id: rowId(),
+    ...(row.roomLines ? { roomLines: row.roomLines.map((line) => ({ ...line, id: rowId() })) } : {}),
+    ...(row.activities ? { activities: row.activities.map((act) => ({ ...act, id: rowId() })) } : {}),
+  })),
+});
+
+/** A new column, copied from `source` so the agent edits differences instead of retyping the trip. */
+const makeQuoteOption = (source, label) => ({
+  id: rowId(),
+  // Null until the server has saved it. Echoed back on edit so a rename or a reorder keeps the
+  // option — and keeps a share link the customer already opened pointing at the same column.
+  publicId: null,
+  label,
+  subtitle: "",
+  recommended: false,
+  hotel: cloneSection(source.hotel),
+  vehicle: cloneSection(source.vehicle),
+});
+
+/** Turn an ordinary quote into a comparison: column 1 is what is already built, column 2 a copy. */
+const startComparison = (model) => {
+  if (!model || optionsOf(model).length > 0) return model;
+  const first = makeQuoteOption(model, "Option 1");
+  first.recommended = true;
+  const second = makeQuoteOption(model, "Option 2");
+  return { ...model, options: [first, second], activeOptionId: first.id, templateStyle: "COMPARISON" };
+};
+
+/* ── Auto-build ───────────────────────────────────────────────────────────────────────────────
+   `startComparison` gives two columns that are COPIES of each other, so every column after the
+   first is the same trip re-picked and re-priced by hand: hotel search, room type, price, per stay,
+   per column. That is the whole reason a comparison felt like three quotations.
+
+   The tiers below turn the job around. The itinerary already says which city each stay is in, and
+   the Hotel Master already knows that city's 3/4/5-star properties AND their selling rates — so the
+   three columns can be DERIVED and the agent is left adjusting rather than typing. Nothing here is
+   final: every field lands in the ordinary panels and is editable exactly as if it had been picked
+   by hand. */
+const AUTO_OPTION_TIERS = [
+  { label: "Budget", stars: 3 },
+  // The middle tier carries the star, because the recommended column is what the cover and every
+  // roll-up figure lead with (headlineOption) — and an agent who auto-builds and sends without
+  // touching it should be recommending the middle package, not the cheapest.
+  { label: "Deluxe", stars: 4, recommended: true },
+  { label: "Premium", stars: 5 },
+];
+
+/** Can auto-build do anything at all here? Only stays that name a city can be looked up. */
+const autoBuildableStays = (model) =>
+  (model?.hotel?.rows || []).filter((stay) => String(stay?.city || "").trim());
+
+/**
+ * Build one column per tier by pulling that tier's hotel for each stay's city out of the master.
+ *
+ * <p>Requests are deduplicated per (city, stars) and issued together, so a 3-stay trip across 2
+ * cities costs 6 lookups, not 9, and they overlap. A tier with no property in that city leaves the
+ * stay exactly as the copy had it — a half-built column the agent can finish beats a silently empty
+ * one — and every such gap is reported back so the toast can name it.
+ *
+ * <p>Returns the options; it does not touch the model. The caller applies them, which keeps this
+ * function testable and keeps the async gap out of the state update.
+ */
+const autoBuildOptions = async (model) => {
+  const stays = autoBuildableStays(model);
+  const cities = [...new Set(stays.map((stay) => String(stay.city).trim()))];
+
+  const wanted = cities.flatMap((city) => AUTO_OPTION_TIERS.map((tier) => ({ city, stars: tier.stars })));
+  const found = new Map();
+  await Promise.all(wanted.map(async ({ city, stars }) => {
+    try {
+      // Empty query, so this is "every N-star hotel in this city" — the master's own order decides
+      // which one, the same list the picker would have shown.
+      const results = await loadHotels("", city, stars);
+      if (results.length > 0) found.set(`${city}|${stars}`, results[0]);
+    } catch {
+      // One tier failing must not sink the other eight. It shows up as a gap in the toast, and the
+      // agent picks that stay by hand — which is exactly where they were before this button existed.
+    }
+  }));
+
+  const gaps = [];
+  const options = AUTO_OPTION_TIERS.map((tier) => {
+    const option = makeQuoteOption(model, tier.label);
+    option.recommended = Boolean(tier.recommended);
+    let matched = 0;
+    option.hotel = {
+      ...option.hotel,
+      rows: option.hotel.rows.map((stay) => {
+        const city = String(stay?.city || "").trim();
+        if (!city) return stay;
+        const hotel = found.get(`${city}|${tier.stars}`);
+        if (!hotel) {
+          gaps.push(`${city} (${tier.stars}★)`);
+          return stay;
+        }
+        matched += 1;
+        return { ...stay, ...hotelStayPatch(stay, hotel) };
+      }),
+    };
+    // Only claim the tier on the customer's document when the column actually holds that tier.
+    if (matched > 0) option.subtitle = `${tier.stars}-star stays`;
+    return { option, matched };
+  });
+
+  return {
+    options: options.map((entry) => entry.option),
+    matched: options.reduce((sum, entry) => sum + entry.matched, 0),
+    gaps: [...new Set(gaps)],
+  };
+};
+
+/**
+ * Drop back to a single package. The surviving column's hotel/vehicle are folded onto the model, so
+ * the agent keeps the rows they built instead of reverting to whatever the base happened to hold.
+ */
+const endComparison = (model) => {
+  if (!model || optionsOf(model).length === 0) return model;
+  const keep = headlineOption(model);
+  return {
+    ...model,
+    hotel: keep ? cloneSection(keep.hotel) : model.hotel,
+    vehicle: keep ? cloneSection(keep.vehicle) : model.vehicle,
+    options: [],
+    activeOptionId: null,
+    templateStyle: model.templateStyle === "COMPARISON" ? "CLASSIC" : model.templateStyle,
+  };
+};
+
+/** Section totals for ONE option — the per-column price in the strip and in the payload. */
+const quickQuoteOptionTotals = (model, option) => {
+  const hotel = sectionTotal.hotel(sectionFor(model, option, "hotel").rows);
+  const vehicle = sectionTotal.vehicle(filledRows("vehicle", sectionFor(model, option, "vehicle").rows));
+  const flight = sectionTotal.flight(filledRows("flight", model.flight.rows));
+  const sightseeing = sectionTotal.sightseeing(filledRows("sightseeing", model.sightseeing.rows));
+  const cruise = sectionTotal.cruise(filledRows("cruise", model.cruise.rows));
+  const addons = sectionTotal.addons(filledRows("addons", model.addons.rows));
+  const result = { hotel, flight, sightseeing, vehicle, cruise, addons };
+  result.subtotal = model.enabledCore.reduce((sum, id) => sum + result[id], 0) + addons;
+  return result;
+};
+
+/** What the customer pays for ONE option, through the same breakdown the Pricing panel prints. */
+const quickQuoteOptionGrandTotal = (model, option) =>
+  priceBreakdown(model.pricing, quickQuoteOptionTotals(model, option).subtotal).grandTotal;
+
 export const quickQuoteTotals = (model) => {
   if (!model) return { hotel: 0, flight: 0, sightseeing: 0, vehicle: 0, cruise: 0, addons: 0, subtotal: 0 };
-  const result = {
-    hotel: sectionTotal.hotel(model.hotel.rows),
-    flight: sectionTotal.flight(filledRows("flight", model.flight.rows)),
-    sightseeing: sectionTotal.sightseeing(filledRows("sightseeing", model.sightseeing.rows)),
-    vehicle: sectionTotal.vehicle(filledRows("vehicle", model.vehicle.rows)),
-    cruise: sectionTotal.cruise(filledRows("cruise", model.cruise.rows)),
-    addons: sectionTotal.addons(filledRows("addons", model.addons.rows)),
-  };
-  result.subtotal = model.enabledCore.reduce((sum, id) => sum + result[id], 0) + result.addons;
-  return result;
+  // On a comparison the running total is the HEADLINE option's, matching the figure the server puts
+  // at the top level of the document. On an ordinary quote `headlineOption` is null and this is the
+  // model's own hotel/vehicle — i.e. exactly what it has always been.
+  return quickQuoteOptionTotals(model, headlineOption(model));
 };
 
 /* What the customer is actually asked to pay — the same number PricingPanel prints as "Final
@@ -2203,6 +2444,12 @@ export const quickQuoteGrandTotal = (model) =>
 
 export const quickQuoteCompletion = (model) => {
   if (!model) return {};
+  /* On a comparison the tick has to mean "EVERY column is filled in", not "the one I am looking at
+     is". A half-built third option is exactly the thing an agent forgets, and a green tick on the
+     Hotel section while one column has no hotel is the form telling them it is safe to send. */
+  const options = optionsOf(model);
+  const everyOption = (key, test) =>
+    (options.length ? options : [null]).every((option) => test(sectionFor(model, option, key)));
   return {
     /* Only the hotel NAME and the fact that a stay has room lines. Room type and selling price used
        to be part of this test — `room.roomType.trim() && asNumber(room.pricePerRoom) > 0` — which is
@@ -2211,15 +2458,15 @@ export const quickQuoteCompletion = (model) => {
        (Createquotation.jsx's only save rule is a non-empty title; HotelTab defaults them to "" and 0),
        so Quick Quote was stricter than the flow it replicates. The name stays required because a
        nameless stay prints as a blank hotel card on the customer's PDF. */
-    hotel: model.hotel.rows.length > 0 && model.hotel.rows.every((stay) =>
-      stay.name.trim() && stay.roomLines.length > 0),
+    hotel: everyOption("hotel", (hotel) => hotel.rows.length > 0 && hotel.rows.every((stay) =>
+      stay.name.trim() && stay.roomLines.length > 0)),
     flight: model.flight.rows.some((row) => row.airline && row.from.trim() && row.to.trim()),
     /* Departure days do not count. initialModel() pre-fills the final day with "Departure from
        <city>", so a bare `.some(row => row.attraction.trim())` would report the section complete on
        an itinerary with no actual sightseeing in it — and validateQuickQuote's firstIncompleteCore
        gate would wave through a ticked Sightseeing service the agent never filled in. */
     sightseeing: model.sightseeing.rows.some((row) => !row.isDepartureDay && row.attraction.trim()),
-    vehicle: model.vehicle.rows.some((row) => row.model.trim()),
+    vehicle: everyOption("vehicle", (vehicle) => vehicle.rows.some((row) => row.model.trim())),
     cruise: model.cruise.rows.some((row) => row.name.trim()),
     addons: model.addons.rows.length === 0 || model.addons.rows.every((row) => row.serviceType.trim()),
     terms: Boolean(model.terms.inclusions.trim() || model.terms.exclusions.trim()),
@@ -2262,6 +2509,10 @@ const plural = (count, singular, pluralForm) =>
 // running total and the saved payload use, so a header never advertises a row that will not be sent.
 const sectionSummary = (id, model) => {
   if (!model) return "";
+  /* Hotel and Vehicle describe the ACTIVE comparison column, matching what their panels are
+     editing. A collapsed header that summarised a different column than the one the agent just
+     typed into would be worse than no summary at all. */
+  const activeOption = quickQuoteActiveOption(model);
   switch (id) {
     case SERVICES_STEP: {
       const chosen = CORE_SERVICES.filter(({ id: coreId }) => model.enabledCore.includes(coreId));
@@ -2270,7 +2521,8 @@ const sectionSummary = (id, model) => {
         : "Nothing selected — pick at least one";
     }
     case "hotel": {
-      const named = model.hotel.rows.filter((stay) => String(stay.name || "").trim());
+      const named = sectionFor(model, activeOption, "hotel").rows
+        .filter((stay) => String(stay.name || "").trim());
       if (!named.length) return "No hotel chosen yet";
       const rooms = named.reduce(
         (sum, stay) => sum + (stay.roomLines || []).reduce((count, room) => count + Math.max(1, asNumber(room.rooms, 1)), 0),
@@ -2292,7 +2544,7 @@ const sectionSummary = (id, model) => {
         : `${plural(model.sightseeing.rows.length, "day")} planned · no activity yet`;
     }
     case "vehicle": {
-      const rows = filledRows("vehicle", model.vehicle.rows);
+      const rows = filledRows("vehicle", sectionFor(model, activeOption, "vehicle").rows);
       return rows.length ? plural(rows.length, "vehicle") : "No vehicle added yet";
     }
     case "cruise": {
@@ -2466,6 +2718,248 @@ function AccordionSection({
  * therefore hands the id back to the host, which toggles the lead field and lets the existing sync
  * grow the section.
  */
+/**
+ * The comparison strip — one quote carrying 2–3 priced alternatives.
+ *
+ * <p>It sits ABOVE the accordion rather than inside the Hotel panel because it governs the whole
+ * document: which column the customer is being steered towards, what each column costs, and whether
+ * this is a comparison at all. The sections it does not govern stay visibly shared below it, which
+ * is the point — the agent types the itinerary and the terms ONCE.
+ *
+ * <p>Off by default and entirely absent until the agent asks for it, so an ordinary quote is the
+ * screen it has always been plus one small button.
+ */
+function OptionStrip({ model, setModel }) {
+  const options = optionsOf(model);
+  const active = quickQuoteActiveOption(model);
+  const { showToast } = useToast();
+  const [autoBusy, setAutoBusy] = useState(false);
+  // Offered only when the itinerary actually gives it something to look up. A button that can only
+  // ever answer "nothing found" is worse than no button.
+  const canAutoBuild = autoBuildableStays(model).length > 0;
+  /* Read AFTER the await to decide whether the result still applies — the toast must not claim
+     "three options built" when the updater below declined to build them. A flag assigned inside the
+     setModel updater cannot do this job: React runs an updater during the state update, not at the
+     call, so it is still false on the next line, and StrictMode runs it twice. Synced in an effect
+     rather than during render, which is the rule react-hooks/refs enforces. */
+  const modelRef = useRef(model);
+  useEffect(() => { modelRef.current = model; });
+
+  const patchOption = (id, patch) => setModel((current) => ({
+    ...current,
+    options: current.options.map((option) => (option.id === id ? { ...option, ...patch } : option)),
+  }));
+
+  const runAutoBuild = async () => {
+    if (autoBusy) return;
+    setAutoBusy(true);
+    try {
+      /* Built from the model as it is RIGHT NOW and applied when the lookups return. The guard in
+         the updater is what makes that safe: if the agent started a comparison by hand while the
+         requests were in flight, their columns win and this result is dropped rather than
+         overwriting work they can see on screen. */
+      const { options: built, matched, gaps } = await autoBuildOptions(model);
+      if (matched === 0) {
+        showToast("No matching hotels in the Hotel Master for these cities. Add rates there, or build the options by hand.", "error");
+        return;
+      }
+      if (optionsOf(modelRef.current).length > 0) return;
+      setModel((current) => (optionsOf(current).length > 0
+        ? current
+        : { ...current, options: built, activeOptionId: built[0].id, templateStyle: "COMPARISON" }));
+      showToast(gaps.length
+        ? `Three options built. No hotel found for ${gaps.join(", ")} — those stays kept the current hotel.`
+        : "Three options built from the Hotel Master. Check the prices before you send.");
+    } catch (error) {
+      if (!isAlreadyReported(error)) showToast(getErrorMessage(error, "Could not build the options."), "error");
+    } finally {
+      setAutoBusy(false);
+    }
+  };
+
+  if (options.length === 0) {
+    return (
+      <div id={COMPARE_STRIP_ID} className="flex scroll-mt-28 flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-3 py-2">
+        <p className="text-xs text-slate-500">
+          Quoting more than one package? Offer them side by side in a single quotation.
+        </p>
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          {canAutoBuild && (
+            <button
+              type="button"
+              onClick={runAutoBuild}
+              disabled={autoBusy}
+              title="Budget / Deluxe / Premium, filled from the 3, 4 and 5-star hotels in the Hotel Master for these cities"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-violet-300 bg-violet-600 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {autoBusy
+                ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                : <Zap className="h-3.5 w-3.5" />}
+              {autoBusy ? "Building…" : "Auto-build 3 options"}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setModel((current) => startComparison(current))}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-violet-200 bg-white px-3 py-1.5 text-xs font-bold text-violet-700 transition hover:bg-violet-50"
+          >
+            <Sparkles className="h-3.5 w-3.5" /> Compare options
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <>
+    {/* PINNED, and this is the whole reason the strip is split in two.
+        The columns are switched and added while the agent is deep inside the Hotel panel, which is
+        hundreds of pixels below — so an option bar that scrolls away means scrolling back up to the
+        top for every single column. Sticky works here only because this element is a direct child of
+        the accordion's tall container: a sticky child stops sticking at its own parent's bottom
+        edge, so wrapping this in any short div silently kills it.
+
+        `top` comes from the CSS variable the header publishes rather than a fixed number, because
+        the header WRAPS on a narrow window and a hardcoded offset is only correct at one width.
+        The background is fully opaque for the same reason it is pinned — content scrolls underneath.
+        z-20 sits below the header's z-30 and below the pickers' z-40, so it covers neither. */}
+    <div
+      id={COMPARE_STRIP_ID}
+      style={{ top: "var(--qq-header-h, 4.5rem)" }}
+      className="sticky z-20 scroll-mt-28 rounded-xl border border-violet-200 bg-violet-50 p-3 shadow-sm"
+    >
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <p className="text-[11px] font-bold uppercase tracking-wide text-violet-700">
+          Comparison — the customer picks one
+        </p>
+        <button
+          type="button"
+          onClick={() => setModel((current) => endComparison(current))}
+          className="text-[11px] font-semibold text-slate-500 underline-offset-2 transition hover:text-slate-700 hover:underline"
+        >
+          Stop comparing
+        </button>
+      </div>
+
+      {/* One pill per column. Only Hotel and Vehicle follow the selection; everything else below is
+          shared, which is why the pills carry the whole-quote price rather than a section price. */}
+      <div className="flex flex-wrap items-center gap-2">
+        {options.map((option) => {
+          const selected = Boolean(active && active.id === option.id);
+          const total = quickQuoteOptionGrandTotal(model, option);
+          return (
+            <button
+              key={option.id}
+              type="button"
+              onClick={() => setModel((current) => ({ ...current, activeOptionId: option.id }))}
+              className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-bold transition ${
+                selected
+                  ? "border-violet-400 bg-white text-violet-800 shadow-sm"
+                  : "border-transparent bg-white/60 text-slate-500 hover:bg-white"
+              }`}
+            >
+              {option.recommended && <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-500" />}
+              <span>{String(option.label || "").trim() || "Untitled"}</span>
+              <span className="tabular-nums font-semibold text-slate-400">
+                ₹{total.toLocaleString("en-IN", { maximumFractionDigits: 0 })}
+              </span>
+            </button>
+          );
+        })}
+
+        {options.length < MAX_QUOTE_OPTIONS && (
+          <button
+            type="button"
+            onClick={() => setModel((current) => {
+              const source = quickQuoteActiveOption(current) || current;
+              const next = makeQuoteOption(source, `Option ${current.options.length + 1}`);
+              return { ...current, options: [...current.options, next], activeOptionId: next.id };
+            })}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-violet-200 bg-white px-3 py-1.5 text-xs font-bold text-violet-700 transition hover:bg-violet-50"
+          >
+            <Plus className="h-3.5 w-3.5" /> Add option
+          </button>
+        )}
+      </div>
+
+    </div>
+
+    {/* NOT pinned, deliberately. The name, the note and the recommend flag are typed once per column
+        and then left alone, so pinning them would spend permanent screen height on fields nobody is
+        looking at — while the pills above, which are used constantly, are what has to stay reachable. */}
+      {/* The selected column's own details. One editor rather than inline-editable pills: the label
+          is what the customer reads as a heading, and it deserves a real field. */}
+      {active && (
+        <div className="flex flex-wrap items-end gap-2 rounded-xl border border-violet-200 bg-violet-50/50 p-3">
+          <label className="flex min-w-[10rem] flex-1 flex-col gap-1">
+            <span className="text-[11px] font-bold text-slate-500">Option name</span>
+            <input
+              value={active.label || ""}
+              onChange={(event) => patchOption(active.id, { label: event.target.value })}
+              placeholder="Budget"
+              className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm font-semibold text-slate-700 outline-none focus:border-violet-400"
+            />
+          </label>
+          <label className="flex min-w-[12rem] flex-[2] flex-col gap-1">
+            <span className="text-[11px] font-bold text-slate-500">One-line note (optional)</span>
+            <input
+              value={active.subtitle || ""}
+              onChange={(event) => patchOption(active.id, { subtitle: event.target.value })}
+              placeholder="3-star properties, breakfast included"
+              className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-700 outline-none focus:border-violet-400"
+            />
+          </label>
+          <button
+            type="button"
+            /* At most one recommended column — the same rule the server enforces. Ticking a new
+               favourite unticks the old one here rather than letting the server silently drop it. */
+            onClick={() => setModel((current) => ({
+              ...current,
+              options: current.options.map((option) => ({
+                ...option,
+                recommended: option.id === active.id ? !active.recommended : false,
+              })),
+            }))}
+            className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-bold transition ${
+              active.recommended
+                ? "border-amber-300 bg-amber-50 text-amber-700"
+                : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
+            }`}
+          >
+            <Star className={`h-3.5 w-3.5 ${active.recommended ? "fill-amber-400 text-amber-500" : ""}`} />
+            {active.recommended ? "Recommended" : "Recommend"}
+          </button>
+          {options.length > 1 && (
+            <button
+              type="button"
+              onClick={() => setModel((current) => {
+                const left = current.options.filter((option) => option.id !== active.id);
+                // Dropping to one column is no longer a comparison; fold it back rather than leaving
+                // a one-column table nobody asked for.
+                if (left.length < 2) return endComparison({ ...current, options: left, activeOptionId: left[0]?.id || null });
+                return {
+                  ...current,
+                  options: left,
+                  activeOptionId: left.some((option) => option.id === current.activeOptionId)
+                    ? current.activeOptionId : left[0].id,
+                };
+              })}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-500 transition hover:border-rose-200 hover:text-rose-600"
+            >
+              <Trash2 className="h-3.5 w-3.5" /> Remove
+            </button>
+          )}
+        </div>
+      )}
+
+      <p className="px-1 text-[11px] text-slate-500">
+        Hotel and Vehicle below belong to <b>{String(active?.label || "").trim() || "this option"}</b>.
+        Everything else — itinerary, add-ons, terms and pricing — is shared by all options.
+      </p>
+    </>
+  );
+}
+
 export const QuickQuoteSections = forwardRef(function QuickQuoteSections({
   model,
   setModel,
@@ -2478,6 +2972,14 @@ export const QuickQuoteSections = forwardRef(function QuickQuoteSections({
 }, ref) {
   const steps = useMemo(() => quickQuoteSteps(model), [model]);
   const totals = useMemo(() => quickQuoteTotals(model), [model]);
+  /* The ACTIVE column's figures, for the two section headers that follow the selection. `totals`
+     above stays the HEADLINE column's, because that is what the Pricing panel and the running
+     "Final quotation" mean — the number the customer's document leads with. The distinction is only
+     visible on a comparison; off one, both are the same object's worth of numbers. */
+  const activeTotals = useMemo(
+    () => (model ? quickQuoteOptionTotals(model, quickQuoteActiveOption(model)) : totals),
+    [model, totals],
+  );
   const completion = useMemo(() => quickQuoteCompletion(model), [model]);
 
   /* Problems are collected always, DISPLAYED only after a save has been attempted — a form that
@@ -2596,6 +3098,39 @@ export const QuickQuoteSections = forwardRef(function QuickQuoteSections({
       return { ...current, [part]: nextPart };
     });
   }, [setModel]);
+
+  /**
+   * Writes for a section that a comparison OPTION owns — hotel and vehicle.
+   *
+   * <p>This is the whole of Option A's mechanism: `HotelPanel` and `VehiclePanel` are handed the
+   * ACTIVE option's section instead of the model's, in the same shape, so neither panel knows a
+   * comparison exists and neither needed a single line changed. Off a comparison there is no active
+   * option and this is `setPart` verbatim.
+   */
+  const setComparedPart = useCallback((part, updater) => {
+    setModel((current) => {
+      if (!current) return current;
+      const active = quickQuoteActiveOption(current);
+      if (!active) {
+        const nextPart = typeof updater === "function" ? updater(current[part]) : updater;
+        return { ...current, [part]: nextPart };
+      }
+      return {
+        ...current,
+        options: current.options.map((option) => {
+          if (option.id !== active.id) return option;
+          const nextPart = typeof updater === "function" ? updater(option[part]) : updater;
+          return { ...option, [part]: nextPart };
+        }),
+      };
+    });
+  }, [setModel]);
+
+  /** The section the panels should READ — the active option's, or the model's when not comparing. */
+  const comparedPart = useCallback(
+    (part) => sectionFor(model, quickQuoteActiveOption(model), part),
+    [model],
+  );
 
   /* Ticking a service IS the request to fill it in, so the section it just created opens straight
      away — the agent picks Hotel and is already typing hotel rows, instead of picking, scrolling and
@@ -2744,10 +3279,12 @@ export const QuickQuoteSections = forwardRef(function QuickQuoteSections({
             )}
           </>
         );
-      case "hotel": return <HotelPanel data={model.hotel} setData={(updater) => setPart("hotel", updater)} loadHotels={loadHotels} />;
+      // Hotel and Vehicle are the two sections a comparison option owns — they read and write the
+      // ACTIVE column. Every other case below stays on the model and is shared by all options.
+      case "hotel": return <HotelPanel data={comparedPart("hotel")} setData={(updater) => setComparedPart("hotel", updater)} loadHotels={loadHotels} />;
       case "flight": return <FlightPanel data={model.flight} setData={(updater) => setPart("flight", updater)} />;
       case "sightseeing": return <SightseeingPanel data={model.sightseeing} setData={(updater) => setPart("sightseeing", updater)} loadSightseeing={loadSightseeing} />;
-      case "vehicle": return <VehiclePanel data={model.vehicle} setData={(updater) => setPart("vehicle", updater)} loadVehicles={loadVehicles} />;
+      case "vehicle": return <VehiclePanel data={comparedPart("vehicle")} setData={(updater) => setComparedPart("vehicle", updater)} loadVehicles={loadVehicles} />;
       case "cruise": return <CruisePanel data={model.cruise} setData={(updater) => setPart("cruise", updater)} />;
       case "addons": return <AddonsPanel data={model.addons} setData={(updater) => setPart("addons", updater)} />;
       case "terms": return <TermsPanel data={model.terms} setData={(updater) => setPart("terms", updater)} />;
@@ -2760,6 +3297,16 @@ export const QuickQuoteSections = forwardRef(function QuickQuoteSections({
 
   return (
     <div className={`space-y-3 ${className}`} onKeyDown={handleKeys}>
+      {/* Above the accordion on purpose: it governs the whole document, and the sections it does
+          NOT govern staying visibly below it is what tells the agent the itinerary and the terms
+          are typed once. Renders as a single dismissable prompt until they ask for it.
+
+          Mounted BARE, with no wrapper div, and that is load-bearing: once comparing it renders a
+          STICKY pill bar, and a sticky element only sticks inside its own parent's box. A wrapper
+          here would be a few pixels tall, so the bar would unstick after the first section — the
+          exact problem it exists to solve. Its two halves are siblings of the sections instead,
+          which is also what gives them this container's `space-y-3`. */}
+      <OptionStrip model={model} setModel={setModel} />
       {sections.map((meta, index) => (
         <AccordionSection
           key={meta.id}
@@ -2773,7 +3320,9 @@ export const QuickQuoteSections = forwardRef(function QuickQuoteSections({
           // agent opens six panels looking for the red one.
           problemCount={(problemsBySection[meta.id] || []).length}
           done={meta.id === SERVICES_STEP ? model.enabledCore.length > 0 : Boolean(completion[meta.id])}
-          amount={meta.id === SERVICES_STEP ? null : asNumber(totals[meta.id])}
+          amount={meta.id === SERVICES_STEP
+            ? null
+            : asNumber((COMPARED_SECTIONS.includes(meta.id) ? activeTotals : totals)[meta.id])}
           summary={sectionSummary(meta.id, model)}
           onToggle={() => revealSection(openSection === meta.id ? "" : meta.id)}
           footer={(
@@ -2866,66 +3415,134 @@ export const QuickQuoteSections = forwardRef(function QuickQuoteSections({
  * is false on update — sending leadId asks the backend to take a fresh lead snapshot, which would
  * overwrite the customer/PAX context captured when the quote was created.
  */
+/** One stay's room lines flattened to the wire shape. One persisted hotel row per ROOM. */
+const hotelRowsPayload = (hotel) => (hotel?.rows || []).flatMap((stay) => stay.roomLines.map((room) => ({
+  hotelMasterPublicId: stay.hotelMasterPublicId,
+  roomTypeMasterPublicId: room.roomTypeMasterPublicId,
+  mealPlanMasterPublicId: room.mealPlanMasterPublicId,
+  platformHotelPublicId: stay.platformHotelPublicId,
+  platformRoomPublicId: room.platformRoomPublicId,
+  platformMealPlanPublicId: room.platformMealPlanPublicId,
+  name: stay.name,
+  city: stay.city,
+  checkIn: stay.checkIn,
+  checkOut: stay.checkOut,
+  refundable: stay.refundable,
+  stars: stay.stars,
+  imagePath: room.imagePath || stay.imagePath,
+  /* Blank → null, not "". Both are now reachable because room type is optional, and null is the
+     value the PDF templates are written against: quotation-premium renders
+     `fmt.orElse(h.roomType, 'To be confirmed')` and quotation-modern hides its chip on
+     `h.roomType != null`. An empty string would satisfy neither and print a blank cell. No
+     template changes — the templates already handle null correctly. */
+  roomType: String(room.roomType || "").trim() || null,
+  mealPlan: room.mealPlan,
+  bedType: room.bedType,
+  occupancy: room.occupancy,
+  adults: room.adults,
+  children: room.children,
+  infants: room.infants,
+  extraBeds: room.extraBeds,
+  childAges: room.childAges,
+  rateSource: room.rateSource,
+  /* Was passed through raw. That was safe only while validation guaranteed a positive number;
+     with the price optional the blank case is now reachable and `""` would hit a BigDecimal
+     deserializer. Sent as null instead — the column is nullable, computeTotals reads section
+     amounts (not this), and quotation-premium's rate line is guarded by `h.pricePerRoom != null`,
+     so a blank price simply omits the line rather than printing "₹ 0". */
+  pricePerRoom: String(room.pricePerRoom ?? "").trim() === "" ? null : asNumber(room.pricePerRoom),
+  // Normalised, not passed through: the qty box holds a string, and "" would reach the server as
+  // a room count of nothing on a line the page has already priced as one room.
+  rooms: Math.max(1, asNumber(room.rooms, 1)),
+})));
+
+/**
+ * The comparison columns, or `undefined` when this is not a comparison.
+ *
+ * <p><b>Undefined, never null and never `[]`, when there is nothing to say.</b> Those three mean
+ * three different things by the time they reach the server: an ABSENT key leaves an existing
+ * comparison untouched, an EMPTY array deletes it, and a populated one replaces it. Quick Quote
+ * emits the key only when it actually has columns, so saving an ordinary quote can never delete a
+ * comparison — and `buildQuotationPayload` drops an undefined value before it reaches the wire.
+ *
+ * <p>Each option sends ONLY the sections it varies. Everything else is left off, which the server
+ * reads as INHERIT — that is what keeps a three-column quote from being three copies of one trip.
+ */
+const quickQuoteOptionsPayload = (model) => {
+  const options = optionsOf(model);
+  // One option is not a comparison; it would render as an ordinary single-package quotation anyway.
+  // Sending it would still be correct, but it would flip the document to the COMPARISON design for a
+  // table with one column. The lone option is kept in the MODEL — the agent is one click from a
+  // second — it just is not sent yet.
+  if (options.length < 2) return undefined;
+  return options.slice(0, MAX_QUOTE_OPTIONS).map((option, index) => {
+    const totals = quickQuoteOptionTotals(model, option);
+    return {
+      publicId: option.publicId || null,
+      label: String(option.label || `Option ${index + 1}`).trim(),
+      subtitle: String(option.subtitle || "").trim() || null,
+      sortOrder: index,
+      recommended: Boolean(option.recommended),
+      hotel: {
+        included: model.enabledCore.includes("hotel"),
+        title: option.hotel.title,
+        amount: totals.hotel,
+        notes: option.hotel.notes,
+        hotels: hotelRowsPayload(option.hotel),
+      },
+      vehicle: {
+        included: model.enabledCore.includes("vehicle"),
+        title: option.vehicle.title,
+        amount: totals.vehicle,
+        vehicles: filledRows("vehicle", option.vehicle.rows),
+      },
+    };
+  });
+};
+
 export const quickQuotePayload = ({ model, lead, leadId, includeLead = true }) => {
   if (!model) return null;
   const totals = quickQuoteTotals(model);
+  const options = quickQuoteOptionsPayload(model);
   const itineraryId = lead?.itinerary?.[0]?.publicId || lead?.itinerary?.[0]?.id || null;
+  // The COMPARISON design is chosen by the SHAPE of the quote, not by taste: a document built around
+  // N columns has nowhere to put them in the other four designs. An ordinary quote keeps whatever
+  // the agent picked.
+  const templateStyle = options ? "COMPARISON" : model.templateStyle;
+
+  /* THE QUOTATION LEVEL MIRRORS THE HEADLINE OPTION on a comparison — not the pre-comparison base.
+     `headlineOption` is null on an ordinary quote, so this is the model's own hotel/vehicle and
+     nothing changes there.
+
+     It matters because several things read the quotation's OWN columns and know nothing about
+     options: the lead list's Amount and Margin, the booking form's "as per quotation" amount
+     prefill, and the pipeline's quoted-value card all come from a single-table projection
+     (`QuotationRepository.findLatestRefsForLeads`) that never joins quotation_options. Sending the
+     stale base here would show the agent a figure for a package the customer was never offered.
+     Sending the recommended option's makes every one of those read correctly, with no server
+     change. The rows are carried too so the figure and the lines behind it agree. */
+  const headline = headlineOption(model);
+  const baseHotel = sectionFor(model, headline, "hotel");
+  const baseVehicle = sectionFor(model, headline, "vehicle");
   return {
     leadId: includeLead ? leadId : null,
     destinationId: itineraryId,
     title: model.title.trim(),
     version: "v1.0",
     quotationStage: "Draft",
-    templateStyle: model.templateStyle,
+    templateStyle,
+    options,
     flightIncluded: model.enabledCore.includes("flight"),
     flightTitle: model.flight.title,
     flightAmount: totals.flight,
     journey: model.flight.journey,
     segments: filledRows("flight", model.flight.rows),
     hotelIncluded: model.enabledCore.includes("hotel"),
-    hotelTitle: model.hotel.title,
+    hotelTitle: baseHotel.title,
     hotelAmount: totals.hotel,
-    hotelNotes: model.hotel.notes,
+    hotelNotes: baseHotel.notes,
     quickQuoteHotelMetadata: true,
-    hotels: model.hotel.rows.flatMap((stay) => stay.roomLines.map((room) => ({
-      hotelMasterPublicId: stay.hotelMasterPublicId,
-      roomTypeMasterPublicId: room.roomTypeMasterPublicId,
-      mealPlanMasterPublicId: room.mealPlanMasterPublicId,
-      platformHotelPublicId: stay.platformHotelPublicId,
-      platformRoomPublicId: room.platformRoomPublicId,
-      platformMealPlanPublicId: room.platformMealPlanPublicId,
-      name: stay.name,
-      city: stay.city,
-      checkIn: stay.checkIn,
-      checkOut: stay.checkOut,
-      refundable: stay.refundable,
-      stars: stay.stars,
-      imagePath: room.imagePath || stay.imagePath,
-      /* Blank → null, not "". Both are now reachable because room type is optional, and null is the
-         value the PDF templates are written against: quotation-premium renders
-         `fmt.orElse(h.roomType, 'To be confirmed')` and quotation-modern hides its chip on
-         `h.roomType != null`. An empty string would satisfy neither and print a blank cell. No
-         template changes — the templates already handle null correctly. */
-      roomType: String(room.roomType || "").trim() || null,
-      mealPlan: room.mealPlan,
-      bedType: room.bedType,
-      occupancy: room.occupancy,
-      adults: room.adults,
-      children: room.children,
-      infants: room.infants,
-      extraBeds: room.extraBeds,
-      childAges: room.childAges,
-      rateSource: room.rateSource,
-      /* Was passed through raw. That was safe only while validation guaranteed a positive number;
-         with the price optional the blank case is now reachable and `""` would hit a BigDecimal
-         deserializer. Sent as null instead — the column is nullable, computeTotals reads section
-         amounts (not this), and quotation-premium's rate line is guarded by `h.pricePerRoom != null`,
-         so a blank price simply omits the line rather than printing "₹ 0". */
-      pricePerRoom: String(room.pricePerRoom ?? "").trim() === "" ? null : asNumber(room.pricePerRoom),
-      // Normalised, not passed through: the qty box holds a string, and "" would reach the server as
-      // a room count of nothing on a line the page has already priced as one room.
-      rooms: Math.max(1, asNumber(room.rooms, 1)),
-    }))),
+    hotels: hotelRowsPayload(baseHotel),
     sightseeingIncluded: model.enabledCore.includes("sightseeing"),
     sightseeingTitle: model.sightseeing.title,
     sightseeingAmount: totals.sightseeing,
@@ -2945,9 +3562,9 @@ export const quickQuotePayload = ({ model, lead, leadId, includeLead = true }) =
       }],
     })),
     vehicleIncluded: model.enabledCore.includes("vehicle"),
-    vehicleTitle: model.vehicle.title,
+    vehicleTitle: baseVehicle.title,
     vehicleAmount: totals.vehicle,
-    vehicles: filledRows("vehicle", model.vehicle.rows),
+    vehicles: filledRows("vehicle", baseVehicle.rows),
     cruiseIncluded: model.enabledCore.includes("cruise"),
     cruiseTitle: model.cruise.title,
     cruiseAmount: totals.cruise,
@@ -2966,6 +3583,40 @@ export const quickQuotePayload = ({ model, lead, leadId, includeLead = true }) =
     tax: model.pricing.tax,
     markup: model.pricing.markup,
   };
+};
+
+/**
+ * Take the option ids the server just assigned back into the model.
+ *
+ * <p><b>Both hosts must call this after every successful create AND update, or saving twice creates
+ * the columns twice.</b> `publicId` is how the server recognises an option it already has: null
+ * means "this one is new". A model that never learns the ids it was given keeps claiming every
+ * column is new, so the second save builds a fresh set beside the first — and even where the old
+ * ones are retired correctly, the columns the customer's share link points at have silently changed
+ * identity, which is exactly what carrying the id was meant to prevent.
+ *
+ * <p>Matched by position, not by label: `quickQuotePayload` numbers `sortOrder` from the array index
+ * and the server preserves it, so index N here is sortOrder N there. Labels are free text and two
+ * columns may briefly share one while the agent is typing.
+ *
+ * <p>Returns the same object when there is nothing to adopt, so calling it from an effect or after
+ * an unrelated save cannot loop or churn state.
+ */
+export const adoptQuoteOptionIds = (model, savedQuotation) => {
+  const saved = savedQuotation?.options;
+  if (!model || !optionsOf(model).length || !Array.isArray(saved) || saved.length === 0) return model;
+  const byOrder = new Map(saved.map((option, index) => [
+    option?.sortOrder == null ? index : option.sortOrder,
+    option?.publicId || null,
+  ]));
+  let changed = false;
+  const options = model.options.map((option, index) => {
+    const assigned = byOrder.get(index);
+    if (option.publicId || !assigned) return option;
+    changed = true;
+    return { ...option, publicId: assigned };
+  });
+  return changed ? { ...model, options } : model;
 };
 
 /**
@@ -2995,8 +3646,29 @@ export const quickQuoteProblems = (model) => {
   if (model.enabledCore.length === 0 && model.addons.rows.length === 0) {
     push("Select at least one service for this quotation.", SERVICES_STEP);
   }
+  /* ── Comparison columns ──────────────────────────────────────────────────────────────────────
+     Checked before the section rules below, because those now run across EVERY column and a column
+     with no label is the thing that makes their messages unreadable. */
+  const options = optionsOf(model);
+  if (options.length > MAX_QUOTE_OPTIONS) {
+    push(`A comparison can carry at most ${MAX_QUOTE_OPTIONS} options.`, "hotel");
+  }
+  if (options.some((option) => !String(option.label || "").trim())) {
+    push("Give every comparison option a name — the customer reads it as the column heading.", "hotel");
+  }
+  {
+    const labels = options.map((option) => String(option.label || "").trim().toLowerCase()).filter(Boolean);
+    if (new Set(labels).size !== labels.length) {
+      push("Two comparison options have the same name — the customer cannot tell them apart.", "hotel");
+    }
+  }
+
+  /* The two multiplication guards below run over every column, not just the one on screen. A zeroed
+     room count in a collapsed option prices as one room and silently disagrees with the quote. */
+  const hotelsToCheck = options.length ? options.map((option) => option.hotel) : [model.hotel];
   if (model.enabledCore.includes("hotel")
-    && model.hotel.rows.some((stay) => stay.roomLines.some((room) => asNumber(room.adults) < 1))) {
+    && hotelsToCheck.some((hotel) => hotel.rows.some((stay) =>
+      stay.roomLines.some((room) => asNumber(room.adults) < 1)))) {
     push("Every hotel room needs at least one adult.", "hotel", "[data-room-adults]");
   }
   /* A line stands for N rooms now, and the qty box is typeable — so it can be cleared or zeroed.
@@ -3004,7 +3676,8 @@ export const quickQuoteProblems = (model) => {
      disagreeing with what the agent is looking at. Rejected here instead, next to the two rules it
      belongs with, rather than clamped silently on the way out. */
   if (model.enabledCore.includes("hotel")
-    && model.hotel.rows.some((stay) => stay.roomLines.some((room) => asNumber(room.rooms, 0) < 1))) {
+    && hotelsToCheck.some((hotel) => hotel.rows.some((stay) =>
+      stay.roomLines.some((room) => asNumber(room.rooms, 0) < 1)))) {
     push("Every room type needs at least 1 room.", "hotel", "[data-room-qty]");
   }
   /* The selling-price gate is gone on purpose. It read:
@@ -3044,7 +3717,16 @@ export const quickQuoteProblems = (model) => {
      (subtotal 0, markup ₹5,000) is valid and passes.
 
      Mirrored on the server in QuotationServiceImpl — this one is the fast, in-context half. */
-  if (quickQuoteGrandTotal(model) <= 0) {
+  if (options.length) {
+    // Every COLUMN, not just the headline one. A ₹0 alternative sitting beside two priced ones is
+    // the same "free holiday" document, and the running total — which shows only the headline —
+    // cannot reveal it.
+    const zeroed = options.filter((option) => quickQuoteOptionGrandTotal(model, option) <= 0);
+    zeroed.forEach((option) => {
+      const name = String(option.label || "").trim() || "An option";
+      push(`${name} totals ₹0 — add at least one price before creating it.`, "pricing");
+    });
+  } else if (quickQuoteGrandTotal(model) <= 0) {
     push("This quotation totals ₹0 — add at least one price before creating it.", "pricing");
   }
   return problems;
@@ -3205,6 +3887,54 @@ export default function QuickQuotation() {
     }
   }, [quotationId, showToast]);
 
+  /**
+   * Publish this header's measured height as `--qq-header-h` on the page root, for the comparison
+   * bar to pin against.
+   *
+   * The header is `flex-wrap`, so its height is NOT a constant — it grows a row on a narrow window
+   * and shrinks when the save button loses its label. A hardcoded `top-[70px]` is therefore correct
+   * at exactly one width and leaves either a strip of content showing through above the bar or a
+   * gap below the header at every other one.
+   *
+   * Written straight to the DOM rather than into state on purpose: nothing RENDERS from this value,
+   * only CSS reads it, so putting it in state would re-render the whole page on every resize tick to
+   * produce identical markup.
+   */
+  const headerRef = useRef(null);
+  useEffect(() => {
+    const el = headerRef.current;
+    if (!el) return undefined;
+    const publish = () => el.parentElement?.style.setProperty("--qq-header-h", `${el.offsetHeight}px`);
+    publish();
+    if (typeof ResizeObserver === "undefined") return undefined;   // older browser: the fallback in the bar's `top` covers it
+    const observer = new ResizeObserver(publish);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  /**
+   * The header's Compare control — ONE handler for both states, because `startComparison` already
+   * returns the model unchanged once options exist. That identity return is what makes this safe to
+   * call while comparing: React bails out of the re-render, and the click is a plain scroll.
+   *
+   * Deliberately never the reverse. Turning comparison OFF drops the columns the agent built (that
+   * is `endComparison`'s whole job), and a destructive action does not belong on a one-word button
+   * in a toolbar — "Stop comparing" stays on the strip, next to the work it discards.
+   *
+   * The scroll is deferred a frame: on the first click the strip has only just grown from a one-line
+   * prompt into the full editor, and scrolling to its pre-render height lands short of it.
+   */
+  const openComparison = useCallback(() => {
+    setModel((current) => startComparison(current));
+    requestAnimationFrame(() => {
+      // `start`, not `center`: the bar is sticky and lands directly under the header, so centring it
+      // would scroll the page to a position it immediately springs back from. `scroll-mt-28` on the
+      // bar itself is what keeps the header from covering it.
+      document.getElementById(COMPARE_STRIP_ID)
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }, []);
+
   if (!leadId) {
     return (
       <main className="flex min-h-[70vh] items-center justify-center p-6" style={{ fontFamily: QUICK_QUOTE_FONT }}>
@@ -3232,6 +3962,11 @@ export default function QuickQuotation() {
   const infants = Math.max(0, asNumber(lead?.infants));
   const doneCount = steps.filter(({ id }) => completion[id]).length;
 
+  // Drives the header's Compare button. A count rather than a boolean because the button reports the
+  // state back — "Comparing · 2" is what tells the agent the quote they are about to send carries
+  // columns, on a screen where the strip itself can be scrolled off the top.
+  const optionCount = optionsOf(model).length;
+
   // The submit control appears in the header AND as the last section's primary action; both must
   // read identically, so the label and the disabled rule are derived once.
   const submitDisabled = saving || (Boolean(quotationId) && !canUpdateQuotation);
@@ -3244,7 +3979,7 @@ export default function QuickQuotation() {
 
   return (
     <main className="min-h-screen bg-slate-50" style={{ fontFamily: QUICK_QUOTE_FONT }}>
-      <header className="sticky top-0 z-30 border-b border-slate-200 bg-white">
+      <header ref={headerRef} className="sticky top-0 z-30 border-b border-slate-200 bg-white">
         <div className="mx-auto max-w-[1400px] px-4 py-3 sm:px-6">
           <div className="flex flex-wrap items-center gap-3">
             <button type="button" onClick={() => navigate(-1)} className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50" title="Back">
@@ -3285,6 +4020,27 @@ export default function QuickQuotation() {
                   Open full editor
                 </button>
               )}
+              {/* NOT gated on quotationId, unlike Share and PDF below: comparison is something the
+                  agent decides while building, usually before the first save, and a control that
+                  only appears after saving would be found last instead of first. The strip above the
+                  accordion stays the workspace — this is the entry point beside the other actions. */}
+              <button
+                type="button"
+                onClick={openComparison}
+                title={optionCount
+                  ? `${optionCount} options on this quote — jump to the comparison strip`
+                  : "Offer 2–3 packages side by side in one quotation"}
+                className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2.5 text-xs font-bold transition ${
+                  optionCount
+                    ? "border-violet-300 bg-violet-50 text-violet-700 hover:bg-violet-100"
+                    : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">
+                  {optionCount ? `Comparing · ${optionCount}` : "Compare"}
+                </span>
+              </button>
               {quotationId && (
                 <>
                   <button

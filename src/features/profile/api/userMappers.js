@@ -61,6 +61,14 @@ export function mapUserFromApi(d) {
     role:        ROLE_TO_LABEL[d.role] || "Staff",
     status:      d.isActive ? "Active" : "Inactive",
     isActive:    !!d.isActive,
+    // Leave is a THIRD axis, deliberately not folded into `status`. An agent on leave is still an
+    // active user — they log in, they own their leads, the Active/Inactive tabs must keep counting
+    // them. The only thing leave changes is that auto-assignment stops picking them.
+    // `onLeave` is computed server-side against the server's today, so two clients in different
+    // timezones cannot disagree about a boundary day.
+    onLeave:     !!d.onLeave,
+    onLeaveFrom: d.onLeaveFrom || "",
+    onLeaveTo:   d.onLeaveTo || "",
     createdAt:   fmtDate(d.createdAt),
     lastUpdated: "—",
     lastLogin:   "—",
