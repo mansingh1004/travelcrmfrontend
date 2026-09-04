@@ -15,7 +15,6 @@ import {
   ArrowUpCircle,
   BedDouble,
   Building2,
-  CalendarRange,
   Car,
   ClipboardCheck,
   Coins,
@@ -24,6 +23,8 @@ import {
   Handshake,
   LayoutDashboard,
   Megaphone,
+  Package,
+  Wand2,
   Percent,
   Palette as PaletteIcon,
   ScrollText,
@@ -40,8 +41,23 @@ import { getConsoleIdentity } from "../lib/consoleAuth";
 
 export const CONSOLE_NAV_NAMESPACE = "console";
 
-/** Pins are operator choices; the five daily destinations below make a fresh rail useful already. */
-export const CONSOLE_DEFAULT_PINS = [];
+/**
+ * What a brand-new operator finds pinned.
+ *
+ * The comment here used to promise "the five daily destinations below" over an EMPTY array, so a
+ * fresh console opened with a five-row rail and everything else behind More. These three are
+ * deliberately NOT rail items: the sidebar drops a pin that already has a rail row
+ * (ConsoleSidebar pinnedRows), so seeding Tenants or Hotel Requests would render nothing.
+ *
+ * They are the three the action inbox sends an operator to most often that the rail does not
+ * carry — a partner waiting on review, money waiting on collection, and the catalog those two
+ * feed. Pins are operator choices, so anyone can unpin them.
+ */
+export const CONSOLE_DEFAULT_PINS = [
+  "console.hotelPartners",
+  "console.billing",
+  "console.hotelCatalog",
+];
 
 export const CONSOLE_NAV_SECTIONS = [
   {
@@ -57,162 +73,191 @@ export const CONSOLE_NAV_SECTIONS = [
         // Exact-match only: without this every /console/* route would keep the
         // dashboard lit, since the nav model treats a path as covering its subtree.
         exact: true,
-        keywords: "home platform stats",
+        keywords: "home platform stats action inbox queues",
       },
     ],
   },
+  // ───────────────────────────────────────────────────────────────────────────
+  // WHO is on the platform, and WHAT they are allowed to use.
+  //
+  // Split out of the old "Business" section, which held five screens under one
+  // heading called "Customers & Billing" — a name that admits it is two subjects.
+  // Feature Flags moved in from Administration: it answers "what can this tenant
+  // use", which is a question about a customer, not about running the service. It
+  // sat two rows from "Ops / Danger" and one row from Tenants, and the wrong one
+  // of those was its neighbour.
+  // ───────────────────────────────────────────────────────────────────────────
   {
     id: "customers",
-    label: "Business",
+    label: "Customers",
     items: [
       {
-        id: "console.customersBilling",
-        label: "Customers & Billing",
+        id: "console.customerAccounts",
+        label: "Accounts & access",
         Icon: Building2,
-        keywords: "tenants subscriptions upgrades usage billing quotas",
+        keywords: "tenants organizations agencies users staff impersonate modules entitlements flags",
         children: [
-      {
-        id: "console.tenants",
-        primary: 2,
-        label: "Tenants",
-        path: "/console/tenants",
-        Icon: Building2,
-        keywords: "organizations agencies accounts",
-      },
-      {
-        id: "console.billing",
-        label: "Billing & Collections",
-        path: "/console/billing",
-        Icon: Wallet,
-        keywords: "invoices revenue collections outstanding overdue payments finance",
-      },
-      {
-        id: "console.plans",
-        label: "Subscriptions",
-        path: "/console/plans",
-        Icon: CreditCard,
-        keywords: "plans pricing modules",
-      },
-      {
-        id: "console.upgrades",
-        primary: 3,
-        label: "Subscription & Add-ons",
-        path: "/console/upgrade-requests",
-        Icon: ArrowUpCircle,
-        badge: "upgrades",
-        keywords: "upgrade requests approvals seats licenses",
-      },
-      {
-        id: "console.usage",
-        primary: 5,
-        label: "Usage & Quotas",
-        path: "/console/usage",
-        Icon: Gauge,
-        keywords: "limits storage metering overage",
-      },
+          {
+            id: "console.tenants",
+            primary: 2,
+            label: "Tenants",
+            path: "/console/tenants",
+            Icon: Building2,
+            keywords: "organizations agencies accounts",
+          },
+          {
+            // Moved out of the retired "Security" section. This is tenant STAFF — the row an
+            // operator opens to impersonate somebody who cannot log in. Filing it beside
+            // SuperAdmins put a customer-support screen next to a platform-operator one on the
+            // strength of the word "access"; they are answered by different people about
+            // different populations.
+            id: "console.users",
+            label: "Users",
+            path: "/console/users",
+            Icon: Users,
+            keywords: "tenant staff impersonate access security",
+          },
+          {
+            // Moved out of Administration. Its neighbours now are the tenant it applies to and
+            // the plan that pays for it, which is the order the question is actually asked in.
+            id: "console.flags",
+            label: "Feature Flags",
+            path: "/console/feature-flags",
+            Icon: ToggleLeft,
+            keywords: "modules entitlements toggles plan add-on",
+          },
         ],
       },
     ],
   },
+  // ───────────────────────────────────────────────────────────────────────────
+  // WHAT they pay, and what they owe.
+  //
+  // Credit limits joined this group from the hotel marketplace. It is the
+  // platform's exposure to a tenant — the same subject as an overdue invoice —
+  // and filing it under Hotels meant the operator asking "how far into us is this
+  // agency" had to already know the answer lived beside a room rate. The entity is
+  // hotel-only today (`tenant_marketplace_credit` has no transport or package
+  // counterpart); the label says "Credit limits" rather than "Hotel credit" so it
+  // does not have to be renamed when a second marketplace grows one.
+  // ───────────────────────────────────────────────────────────────────────────
   {
-    id: "marketplace",
-    label: "Marketplace",
+    id: "revenue",
+    label: "Revenue",
+    items: [
+      {
+        id: "console.revenue",
+        label: "Plans & billing",
+        Icon: Wallet,
+        keywords: "subscriptions plans pricing invoices collections outstanding overdue upgrades usage quotas credit",
+        children: [
+          {
+            id: "console.plans",
+            label: "Subscriptions",
+            path: "/console/plans",
+            Icon: CreditCard,
+            keywords: "plans pricing modules",
+          },
+          {
+            id: "console.billing",
+            label: "Billing & Collections",
+            path: "/console/billing",
+            Icon: Wallet,
+            keywords: "invoices revenue collections outstanding overdue payments finance",
+          },
+          {
+            id: "console.upgrades",
+            primary: 3,
+            label: "Subscription & Add-ons",
+            path: "/console/upgrade-requests",
+            Icon: ArrowUpCircle,
+            badge: "upgrades",
+            keywords: "upgrade requests approvals seats licenses",
+          },
+          {
+            id: "console.usage",
+            primary: 5,
+            label: "Usage & Quotas",
+            path: "/console/usage",
+            Icon: Gauge,
+            keywords: "limits storage metering overage",
+          },
+          {
+            id: "console.hotelCredit",
+            label: "Credit limits",
+            path: "/console/hotel-credit",
+            Icon: Wallet,
+            keywords: "tenant credit outstanding limit owed settlement payment balance exposure hotel",
+          },
+        ],
+      },
+    ],
+  },
+  // ───────────────────────────────────────────────────────────────────────────
+  // WHAT WE SELL THEM. Renamed from "Marketplace", which named the mechanism
+  // rather than the job — every group under it is a supply line.
+  //
+  // Three siblings, deliberately not one group: different suppliers, different
+  // rate vocabulary, different tables, different commercial rules. The only thing
+  // they share is this heading, which is exactly the amount of shared-ness the
+  // truth supports.
+  // ───────────────────────────────────────────────────────────────────────────
+  {
+    id: "supply",
+    label: "Supply",
     items: [
       {
         id: "console.hotelMarketplace",
         label: "Hotel Marketplace",
         Icon: BedDouble,
-        keywords: "hotels marketplace supply bookings partners pricing credit commissions",
+        keywords: "hotels marketplace supply bookings partners pricing commissions",
         children: [
-      {
-        id: "console.hotelCatalog",
-        label: "Hotel Catalog",
-        path: "/console/hotel-catalog",
-        Icon: BedDouble,
-        keywords: "supply inventory rooms rates",
-      },
-      {
-        id: "console.hotelNominations",
-        label: "Hotel Nominations",
-        path: "/console/hotel-nominations",
-        Icon: Handshake,
-        // Its own badge, and it earns one: a nomination is a tenant waiting on the
-        // platform, and until this screen existed it was invisible entirely — the
-        // table, the API and the console client were all written, with no page.
-        // Listed BEFORE partners because that is the order of the flow: a nomination
-        // becomes an invite becomes a registration.
-        badge: "hotelNominations",
-        keywords: "proposed suggested property tenant request catalog",
-      },
-      {
-        id: "console.hotelPartners",
-        label: "Hotel Partners",
-        path: "/console/hotel-partners",
-        Icon: Handshake,
-        keywords: "invite onboarding registration supplier property owner",
-      },
-      {
-        id: "console.hotelRequests",
-        primary: 4,
-        label: "Hotel Requests",
-        path: "/console/hotel-requests",
-        Icon: ClipboardCheck,
-        // Its own badge, separate from "upgrades": a booking request is time-critical
-        // in a way a plan upgrade is not — a tenant is holding a customer while this
-        // sits unanswered.
-        badge: "hotelRequests",
-        keywords: "approval queue bookings",
-      },
-      {
-        id: "console.hotelOccupancy",
-        label: "Stay Calendar",
-        path: "/console/hotel-occupancy",
-        Icon: CalendarRange,
-        // No badge: it is a picture of what is already committed, not work waiting to be done.
-        // Sits directly under Hotel Requests because it is what an operator opens WHILE deciding
-        // one — "how many of this property's rooms do I already hold that week".
-        keywords: "occupancy rooms nights stays calendar allotment availability",
-      },
-      {
-        id: "console.hotelPricing",
-        label: "Pricing Rules",
-        path: "/console/hotel-pricing",
-        Icon: Percent,
-        // ⚠ The platform's own margin structure. No tenant counterpart exists or may exist.
-        keywords: "markup commission margin commercial rule rate",
-      },
-      {
-        id: "console.hotelCredit",
-        label: "Tenant Credit",
-        path: "/console/hotel-credit",
-        Icon: Wallet,
-        keywords: "outstanding limit owed settlement payment balance",
-      },
-      {
-        id: "console.commissions",
-        label: "Platform Earnings",
-        path: "/console/hotel-commissions",
-        Icon: Coins,
-        // No badge: the earning ledger is a report, not a queue.
-        keywords: "commission ledger revenue",
-      },
+          {
+            id: "console.hotelCatalog",
+            label: "Hotel Catalog",
+            path: "/console/hotel-catalog",
+            Icon: BedDouble,
+            keywords: "supply inventory rooms rates",
+          },
+          {
+            id: "console.hotelPartners",
+            label: "Hotel Partners",
+            path: "/console/hotel-partners",
+            Icon: Handshake,
+            // Carries the badge the separate Nominations row used to. A nomination is a tenant
+            // waiting on the platform, and it is now the first view of this screen — the count
+            // has to stay visible on the row that owns it or the queue goes quiet again, which
+            // is exactly the state that left it invisible for months before it had a page.
+            badge: "hotelNominations",
+            keywords: "invite onboarding registration supplier property owner nominations nominated proposed suggested tenant request",
+          },
+          {
+            id: "console.hotelRequests",
+            primary: 4,
+            label: "Hotel Requests",
+            path: "/console/hotel-requests",
+            Icon: ClipboardCheck,
+            // Its own badge, separate from "upgrades": a booking request is time-critical
+            // in a way a plan upgrade is not — a tenant is holding a customer while this
+            // sits unanswered.
+            badge: "hotelRequests",
+            keywords: "approval queue bookings stay calendar occupancy rooms nights allotment availability",
+          },
+          {
+            id: "console.commissions",
+            label: "Hotel earnings",
+            path: "/console/hotel-commissions",
+            Icon: Coins,
+            // No badge: the earning ledger is a report, not a queue. Directly after the pricing
+            // rule because the rule is what PRODUCES the row in it.
+            keywords: "platform earnings commission ledger revenue",
+          },
         ],
       },
-      // ─────────────────────────────────────────────────────────────────────
-      // The second supply line, and a SIBLING of the hotel group rather than a
-      // member of it. The three transport screens used to sit inside the group
-      // labelled "Hotel Marketplace", which made a coach operator's catalog read
-      // as a kind of hotel — an operator hunting for a vehicle had to already
-      // know it was filed under hotels to find it, and the group's own label
-      // said otherwise.
-      //
-      // They are two businesses that happen to share a booking model: different
-      // suppliers, different rate vocabulary (service type and rate model, not
-      // meal plan and occupancy), different tables, different commercial rules.
-      // The only thing they share is the section header above them, which is
-      // exactly the amount of shared-ness the truth supports.
-      // ─────────────────────────────────────────────────────────────────────
       {
+        // The second supply line. It used to sit inside the group labelled "Hotel Marketplace",
+        // which made a coach operator's catalog read as a kind of hotel — an operator hunting for
+        // a vehicle had to already know it was filed under hotels to find it.
         id: "console.transportMarketplace",
         label: "Transport Marketplace",
         Icon: Car,
@@ -233,14 +278,15 @@ export const CONSOLE_NAV_SECTIONS = [
             path: "/console/transport-partners",
             Icon: Handshake,
             // Directly under the catalog because it is where the catalog comes FROM: an invite
-            // becomes a registration becomes published supply. Filed after it rather than before
-            // for the same reason the hotel group leads with its catalog — the row an operator
-            // opens daily sits above the one they touch when onboarding somebody new.
+            // becomes a registration becomes published supply.
             keywords: "invite onboarding registration operator supplier vehicle owner fleet",
           },
           {
             id: "console.transportRequests",
-            primary: 4,
+            // 6, not 4: the hotel queue already holds slot 4. `primary` is a POSITION, so two rows
+            // claiming the same number leaves the rail's order decided by array order rather than
+            // by intent — exactly what the numbering exists to prevent.
+            primary: 6,
             label: "Transport Requests",
             path: "/console/transport-requests",
             Icon: ClipboardCheck,
@@ -249,17 +295,6 @@ export const CONSOLE_NAV_SECTIONS = [
             // them would hide a car nobody has assigned behind a pile of hotel enquiries.
             badge: "transportRequests",
             keywords: "approval queue transport vehicle cab duty slip assignment driver",
-          },
-          {
-            id: "console.transportPricing",
-            label: "Pricing Rules",
-            path: "/console/transport-pricing",
-            Icon: Percent,
-            // ⚠ The platform's own margin structure, over vehicles this time. No tenant counterpart
-            // exists or may exist — a tenant who could read a rule could compute the platform's cut
-            // on every journey it prices. Sits immediately before the earnings ledger because the
-            // rule is what PRODUCES the row in it, which is the same order the hotel group uses.
-            keywords: "markup commission margin commercial rule rate service type vehicle",
           },
           {
             id: "console.transportEarnings",
@@ -272,103 +307,134 @@ export const CONSOLE_NAV_SECTIONS = [
           },
         ],
       },
-    ],
-  },
-  {
-    id: "access",
-    label: "Security",
-    items: [
       {
-        id: "console.access",
-        label: "Access",
-        Icon: Users,
-        keywords: "users superadmins operators security access",
+        // Packages is a GROUP now, like its two siblings. Its two screens used to be loose items
+        // in this section — the only supply line whose rows sat at a different level from the
+        // rest, so the reader had to work out whether that meant something. It did not.
+        //
+        // Two rows rather than five because partner onboarding, pricing rules and an earnings
+        // ledger do not exist for packages yet. When they land they belong here, in this order.
+        id: "console.packageMarketplace",
+        label: "Package Marketplace",
+        Icon: Package,
+        keywords: "packages tours itineraries fixed departure catalog custom mix requests",
         children: [
-      {
-        id: "console.users",
-        label: "Users",
-        path: "/console/users",
-        Icon: Users,
-        keywords: "tenant staff impersonate",
-      },
-      {
-        id: "console.superadmins",
-        label: "SuperAdmins",
-        path: "/console/superadmins",
-        Icon: UserCog,
-        keywords: "operators mfa invite",
-        can: () => getConsoleIdentity().role === "SUPER_ADMIN",
-      },
+          {
+            id: "console.packageCatalog",
+            label: "Package Catalog",
+            path: "/console/package-catalog",
+            Icon: Package,
+            // The only catalog here that agencies WRITE into, so its review queue counts other
+            // people's submissions rather than the platform's own backlog.
+            keywords: "packages tours itineraries fixed departure catalog listings review approve agency",
+          },
+          {
+            // Its own row rather than a third tab on the catalog. The catalog answers "what is on
+            // sale"; this answers "who is waiting on me" — a different question, on a different
+            // clock, and the one that goes stale if it is a tab nobody opens.
+            id: "console.packageMix",
+            label: "Custom requests",
+            path: "/console/package-catalog/mix",
+            Icon: Wand2,
+            keywords: "mix match custom package request price estimate build your own quote",
+          },
         ],
       },
+      // A SIBLING of the three catalogs, not a child of one. It covers all three supply lines,
+      // so filing it under Hotel Marketplace would have said the opposite — and that is exactly
+      // where the hotel half of it used to live, which is why there were two rows.
+      {
+        // ONE row for the platform's margin, with a section per supply line. There were two
+        // — hotel and transport — and packages would have made a third, all answering the
+        // same question. The id stays `console.hotelPricing` because pins are stored by id;
+        // `alt` keeps the row lit on the two redirected paths.
+        id: "console.hotelPricing",
+        label: "Pricing rules",
+        path: "/console/pricing",
+        alt: ["/console/hotel-pricing", "/console/transport-pricing"],
+        Icon: Percent,
+        // ⚠ The platform's own margin structure. No tenant counterpart exists or may exist.
+        keywords: "pricing rules markup commission margin commercial rate hotel transport vehicle package tier",
+      },
     ],
   },
+  // ───────────────────────────────────────────────────────────────────────────
+  // RUNNING THE SERVICE. SuperAdmins joined from the retired "Security" section:
+  // who operates the platform is an operations question, and its neighbours here
+  // are the audit log that records what they did and the config they can change.
+  //
+  // "Security" is gone as a heading. It was a section containing one group
+  // containing two links — three levels of chrome for two rows — and it grouped a
+  // tenant-facing screen with a platform-facing one because both could be called
+  // access.
+  // ───────────────────────────────────────────────────────────────────────────
   {
     id: "platform",
-    label: "Administration",
+    label: "Platform",
     items: [
       {
         id: "console.platform",
-        label: "Platform",
+        label: "Operations",
         Icon: Settings2,
-        keywords: "configuration flags email audit announcements operations",
+        keywords: "configuration email audit announcements operations superadmins health danger",
         children: [
-      {
-        id: "console.flags",
-        label: "Feature Flags",
-        path: "/console/feature-flags",
-        Icon: ToggleLeft,
-        keywords: "modules entitlements toggles",
-      },
-      {
-        id: "console.config",
-        label: "Global Config",
-        path: "/console/config",
-        Icon: Settings2,
-        keywords: "settings maintenance",
-      },
-      {
-        id: "console.platform-email",
-        label: "Platform Email",
-        path: "/console/platform-email",
-        Icon: Mail,
-        keywords: "smtp mailbox inbox sent invites sender",
-      },
-      {
-        id: "console.platform-health",
-        label: "Platform Health",
-        path: "/console/platform-health",
-        Icon: ServerCog,
-        keywords: "health jobs scheduler failures database mail notifications backlog operations",
-      },
-      {
-        id: "console.audit",
-        label: "Audit Log",
-        path: "/console/audit",
-        Icon: ScrollText,
-        keywords: "security history trail",
-      },
-      {
-        id: "console.announcements",
-        label: "Announcements",
-        path: "/console/announcements",
-        Icon: Megaphone,
-        keywords: "broadcast notice banner",
-      },
-      ...(import.meta.env.DEV ? [{
-        id: "console.palette",
-        label: "Design Tokens",
-        path: "/console/palette",
-        Icon: PaletteIcon,
-        keywords: "theme colours palette",
-      }] : []),
-      {
-        id: "console.ops",
-        label: "Ops / Danger",
-        path: "/console/ops",
-        Icon: Wrench,
-        keywords: "export purge hard delete danger zone",
-      },
+          {
+            id: "console.superadmins",
+            label: "SuperAdmins",
+            path: "/console/superadmins",
+            Icon: UserCog,
+            keywords: "operators mfa invite security access",
+            can: () => getConsoleIdentity().role === "SUPER_ADMIN",
+          },
+          {
+            id: "console.config",
+            label: "Global Config",
+            path: "/console/config",
+            Icon: Settings2,
+            keywords: "settings maintenance",
+          },
+          {
+            id: "console.platform-email",
+            label: "Platform Email",
+            path: "/console/platform-email",
+            Icon: Mail,
+            keywords: "smtp mailbox inbox sent invites sender",
+          },
+          {
+            id: "console.platform-health",
+            label: "Platform Health",
+            path: "/console/platform-health",
+            Icon: ServerCog,
+            keywords: "health jobs scheduler failures database mail notifications backlog operations",
+          },
+          {
+            id: "console.audit",
+            label: "Audit Log",
+            path: "/console/audit",
+            Icon: ScrollText,
+            keywords: "security history trail",
+          },
+          {
+            id: "console.announcements",
+            label: "Announcements",
+            path: "/console/announcements",
+            Icon: Megaphone,
+            keywords: "broadcast notice banner",
+          },
+          ...(import.meta.env.DEV ? [{
+            id: "console.palette",
+            label: "Design Tokens",
+            path: "/console/palette",
+            Icon: PaletteIcon,
+            keywords: "theme colours palette",
+          }] : []),
+          {
+            id: "console.ops",
+            label: "Ops / Danger",
+            path: "/console/ops",
+            Icon: Wrench,
+            keywords: "export purge hard delete danger zone",
+          },
         ],
       },
     ],

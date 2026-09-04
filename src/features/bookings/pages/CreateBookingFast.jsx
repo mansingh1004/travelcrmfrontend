@@ -1737,16 +1737,12 @@ export default function BookingFormPage() {
     customerEmail: (f) => (!editing && f.customerEmail && !emailPattern.test(f.customerEmail) ? "Enter a valid email" : ""),
     destination: (f) => (!String(f.destination || "").trim() ? "Destination is required" : ""),
     /* "Not in the past" is a rule about SCHEDULING a trip, so it applies to the date the clerk
-       picks — not to the one the form loaded. A booking spends most of its life with its travel date
-       behind it (mid-trip, or travelled and awaiting settlement), and because the edit form
-       round-trips every field, this rule used to make a booking permanently uneditable the day the
-       trip started: no amount correction, no assignee change, no services. The backend's matching
-       @FutureOrPresent has been dropped from UpdateBookingRequestDTO for the same reason. */
-    travelDate: (f) => {
-      if (!f.travelDate) return "Travel date is required";
-      if (editing && f.travelDate === loadedRef.current.travelDate) return "";
-      return f.travelDate < today() ? "Travel date cannot be in the past" : "";
-    },
+       picks — not to the one the form loaded. That framing was itself wrong: recording a booking is
+       not scheduling one. Trips are routinely keyed in after they start or finish (a phone booking
+       entered days later, a migrated backlog, a walk-in settled once the party is back), so the rule
+       blocked correct records rather than mistakes. Travel date is now required but unbounded; both
+       backend @FutureOrPresent constraints were dropped to match. */
+    travelDate: (f) => (!f.travelDate ? "Travel date is required" : ""),
     // A booking taken before its price is settled is normal — the server accepts a zero or
     // absent amount as "not priced yet". Only a negative figure is refused.
     customerAmount: (f) => (Number(f.customerAmount) < 0 ? "Amount cannot be negative" : ""),

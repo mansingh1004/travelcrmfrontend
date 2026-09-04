@@ -179,10 +179,13 @@ export default function FastTravelDetails({
                   <span className="block text-[10px] font-bold uppercase tracking-widest text-slate-400">Start</span>
                   {/* Still `travelDate`: this IS the trip's start and remains the column the server
                       stores, reports and filters on. Only the label changed. */}
+                  {/* No `min`. Bookings and leads are both routinely entered after the trip has
+                      started or finished — a late keying-in, a migrated backlog — and a picker that
+                      refuses those dates makes the record impossible to enter correctly at all. The
+                      backend dropped its matching @FutureOrPresent for the same reason. */}
                   <input
                     name="travelDate"
                     type="date"
-                    min={new Date().toISOString().slice(0, 10)}
                     value={form.travelDate}
                     onChange={(event) => setField("travelDate", event.target.value)}
                     onBlur={() => onBlurField?.("travelDate")}
@@ -194,7 +197,8 @@ export default function FastTravelDetails({
                 <div className="min-w-0 px-3 py-2">
                   <span className="block text-[10px] font-bold uppercase tracking-widest text-slate-400">End</span>
                   {/* `min` is the start date, so the picker cannot offer a trip that ends before it
-                      begins — the same cheap correction the start date's own `min` makes. */}
+                      begins. This one stays: it is a rule about the two dates relative to each
+                      other, not about the calendar, so backdating the trip keeps it valid. */}
                   <input
                     name="tripEndDate"
                     type="date"

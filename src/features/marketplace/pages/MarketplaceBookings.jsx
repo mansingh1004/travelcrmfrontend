@@ -109,8 +109,12 @@ export function MarketplaceBookings() {
   const activeLabel = status ? (BOOKING_STATUS[status]?.label ?? status) : "All requests";
   const resultCount = pagination?.totalElements ?? rows.length;
 
+  // Full width, not max-w-6xl. This is a wide operational table — booking code, hotel, city,
+  // dates, status, payable — and capping it at 1152px spent the right third of a desktop on
+  // empty gutter while the columns inside squeezed. The Page shell keeps its px-5/sm:px-8
+  // gutters, so full-width still is not edge-to-edge.
   return (
-    <Page width="max-w-6xl">
+    <Page width="max-w-none">
       <PageHeader
         title="Hotel booking requests"
         subtitle="Requests you've sent to the platform. Only the platform can confirm a hotel."

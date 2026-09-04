@@ -32,9 +32,11 @@ export default function HotelOperations() {
   const status = VALID_STATUSES.has(queryStatus) ? queryStatus : "ALL";
   const openBookingId = searchParams.get("booking");
   const mockParam = searchParams.get("mock");
-  // Opening the sidebar destination in local development should immediately provide a populated
-  // screen for review. Production remains live-by-default; `?mock=1` is still an explicit demo.
-  const mockMode = mockParam === "1" || (import.meta.env.DEV && mockParam === null);
+  // Mock is OPT-IN only. It used to default on in dev, so anyone opening this screen locally saw
+  // 718 lines of fabricated bookings unless they knew to pass ?mock=0. This is now the single
+  // hotel-bookings destination, and reviewing the only screen against fake data is how a mock
+  // ships. ?mock=1 still gives the demo, deliberately and visibly.
+  const mockMode = mockParam === "1";
   const selectedBrandId = mockMode ? searchParams.get("brand") : null;
   const selectedHotelId = mockMode ? searchParams.get("hotel") : null;
 

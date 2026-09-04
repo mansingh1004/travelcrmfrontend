@@ -402,14 +402,29 @@ export function Tabs({ options, value, onChange, className }) {
             aria-selected={active}
             onClick={() => onChange(o.value)}
             className={cn(
-              "-mb-px whitespace-nowrap border-b-2 px-3 py-2 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/10",
-              active
-                ? "border-slate-900 font-medium text-slate-900"
-                : "border-transparent text-slate-500 hover:text-slate-900",
+              // relative, because the active marker is an absolutely-positioned bar rather than a
+              // bottom border: a border cannot be rounded on one edge only, and the marker is meant
+              // to read as a tab sitting ON the rail — which is what the curved top says.
+              "relative -mb-px whitespace-nowrap px-3 py-2 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600/20",
+              active ? "font-semibold text-blue-800" : "text-slate-500 hover:text-slate-900",
             )}
           >
             {o.label}
-            {o.count != null && <span className="ml-1.5 text-[12px] tabular-nums text-slate-500">{o.count}</span>}
+            {o.count != null && (
+              <span className={cn("ml-1.5 text-[12px] tabular-nums", active ? "text-blue-700" : "text-slate-500")}>
+                {o.count}
+              </span>
+            )}
+            {/* The marker. inset-x-2 keeps it under the label rather than spanning the whole button,
+                so it reads as underlining the word instead of drawing a divider. bottom-0 combined
+                with the button's own -mb-px lands it exactly over the rail's hairline, so the rail
+                appears to pass behind it. */}
+            {active && (
+              <span
+                aria-hidden="true"
+                className="absolute inset-x-2 bottom-0 h-1 rounded-t-full bg-blue-700"
+              />
+            )}
           </button>
         );
       })}

@@ -14,7 +14,7 @@ import {
 import { userService } from "../api/userService";
 import { ConsoleTable, ConsolePager } from "../components/ConsoleTable";
 import { isLocalSuperAdminMfaDisabled } from "../lib/consoleEnvironment";
-import { clearMyPermissions, clearMyEntitlements, primeSessionCaches } from "@shared/lib/access";
+import { startImpersonation } from "../lib/impersonate";
 
 const inputCls =
   "w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-heading placeholder:text-muted focus:border-accent focus:outline-none focus:ring-2 focus:ring-focus";
@@ -306,24 +306,10 @@ export default function Users() {
     setMfaError("");
     try {
       if (action.type === "impersonate") {
-        const data = await userService.impersonate(user.publicId, mfaCode);
-        localStorage.setItem("token", data.token);
-        localStorage.setItem("userEmail", data.email);
-        localStorage.setItem("userRole", data.role);
-        localStorage.setItem(
-          "impersonation",
-          JSON.stringify({
-            name: data.name,
-            email: data.email,
-            tenantName: data.tenantName,
-            tenantCode: data.tenantCode,
-            startedAt: Date.now(),
-          })
-        );
-        clearMyPermissions();
-        clearMyEntitlements();
-        await primeSessionCaches(data.token);
-        window.open("/", "_blank", "noopener");
+        // The token write + cache reset + prime now live in console/lib/impersonate.js, so the
+        // tenant detail page can offer the same action without a second copy of a sequence whose
+        // steps are a privilege boundary rather than housekeeping.
+        await startImpersonation(user, mfaCode);
         showToast("success", `Opened a session as ${user.email}`);
       } else {
         const lock = action.type === "lock";

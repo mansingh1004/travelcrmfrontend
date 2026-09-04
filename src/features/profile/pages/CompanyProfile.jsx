@@ -532,6 +532,11 @@ function EditProfileTab({
        its own Justdial page, and one column could never hold three. toListingRows tolerates the
        field being absent entirely, which it is on every company saved before this existed. */
     businessListings: toListingRows(company.businessListings),
+    /* The letterhead block a package quotation prints (V34). Certifications are edited as one
+       comma-separated line and split on the way out. Seeded to "" so the inputs stay controlled on a
+       company saved before these fields existed. */
+    about: company.about || "",
+    certifications: (company.certifications || []).join(", "),
   });
   const [errs, setErrs] = useState({});
   const [saving, setSaving] = useState(false);
@@ -615,6 +620,7 @@ function EditProfileTab({
       const res = await companyService.update({
         ...form,
         businessListings: toListingsPayload(form.businessListings),
+        certifications: String(form.certifications || "").split(",").map((s) => s.trim()).filter(Boolean),
       });
       const updated = unwrap(res) || {};
 
@@ -877,6 +883,27 @@ function EditProfileTab({
         </div>
       </SectionCard>
 
+      {/* About & certifications — the letterhead block printed on every package quotation the
+          agency sends (V34). Kept beside the social presence rather than on a separate tab because
+          it is the same job: how the agency presents itself to a customer. */}
+      <SectionCard title="About & Certifications"
+        subtitle="Shown to customers under your name on package quotations" delay={110}>
+        <div className="space-y-4">
+          <div>
+            <Label hint="Two or three sentences. Who you are, how long you have been doing this.">About the agency</Label>
+            <textarea rows={4} value={form.about} onChange={e => set("about", e.target.value)}
+              className={inp(false) + " resize-none"}
+              placeholder="We are a family-run travel company planning holidays across India since 2012…" />
+          </div>
+          <div>
+            <Label hint="Comma separated. Printed as badges.">Certifications & memberships</Label>
+            <input value={form.certifications} onChange={e => set("certifications", e.target.value)}
+              className={inp(false)}
+              placeholder="IATA accredited, Ministry of Tourism approved, TAAI member" />
+          </div>
+        </div>
+      </SectionCard>
+
       {/* Address */}
       <SectionCard title="Address & Location" icon={<FiMapPin className="w-4 h-4" />} delay={120}>
         <div className="space-y-4">
@@ -912,7 +939,7 @@ function EditProfileTab({
               : <><FiSave className="w-4 h-4" />Update Profile</>}
           </button>
           <button type="button" disabled={saving}
-            onClick={() => { setForm({ name: company.name, prefix: company.prefix, email: company.email, website: company.website || "", phone: company.phone, operatingSince: company.operatingSince, totalReviews: company.totalReviews, tripsSold: company.tripsSold || 0, gstin: company.gstin || "", tan: company.tan || "", address: company.address || "", state: company.state || "", ...EMPTY_SOCIAL, ...Object.fromEntries(SOCIAL_NETWORKS.map((n) => [n.field, company[n.field] || ""])), businessListings: toListingRows(company.businessListings) }); setErrs({}); showToast("Form reset to saved values."); }}
+            onClick={() => { setForm({ name: company.name, prefix: company.prefix, email: company.email, website: company.website || "", phone: company.phone, operatingSince: company.operatingSince, totalReviews: company.totalReviews, tripsSold: company.tripsSold || 0, gstin: company.gstin || "", tan: company.tan || "", address: company.address || "", state: company.state || "", ...EMPTY_SOCIAL, ...Object.fromEntries(SOCIAL_NETWORKS.map((n) => [n.field, company[n.field] || ""])), businessListings: toListingRows(company.businessListings), about: company.about || "", certifications: (company.certifications || []).join(", ") }); setErrs({}); showToast("Form reset to saved values."); }}
             className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-3 rounded-xl border-2 border-red-100
               hover:border-red-200 text-red-400 hover:text-red-600 font-bold text-sm transition-all bg-white hover:bg-red-50 disabled:opacity-40">
             <FiRefreshCw className="w-4 h-4" /> Reset

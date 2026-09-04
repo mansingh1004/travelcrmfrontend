@@ -18,7 +18,9 @@ import { marketplaceBookingService } from "../api/marketplaceBookingService";
 import { marketplaceCommissionService } from "../api/marketplaceCommissionService";
 import { marketplaceOccupancyService } from "../api/marketplaceOccupancyService";
 import { platformHotelService } from "../api/platformHotelService";
+import { platformHealthService } from "../api/platformHealthService";
 import { ConsolePageHeader, ConsolePanel } from "./ConsoleUi";
+import { NowTag } from "./RangePicker";
 
 const money = (value, currency = "INR") => `${currency === "INR" ? "₹" : `${currency} `}${Number(value || 0).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
 const count = (pagination, fallback = 0) => Number(pagination?.totalElements ?? fallback ?? 0);
@@ -60,7 +62,8 @@ function SmallLink({ to, children }) {
   return <Link to={to} className="inline-flex items-center gap-1 text-xs font-semibold text-accent hover:underline">{children} <ArrowRight size={13} /></Link>;
 }
 
-export default function HotelMarketplaceDashboard({ pendingBookings = 0, openNominations = 0 }) {
+export default function HotelMarketplaceDashboard({ pendingBookings = 0, openNominations = 0,
+  range, periodLabel = "this month" }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -68,14 +71,18 @@ export default function HotelMarketplaceDashboard({ pendingBookings = 0, openNom
 
   const load = useCallback(async (background = false) => {
     background ? setRefreshing(true) : setLoading(true);
+    const rangeReady = Boolean(range?.from && range?.to);
     const results = await Promise.allSettled([
       platformHotelService.list({ page: 0, size: 1 }),
       platformHotelService.list({ page: 0, size: 1, status: "ACTIVE" }),
       hotelPartnerService.listRegistrations({ page: 0, size: 1, status: "SUBMITTED" }),
       marketplaceCreditService.list(),
-      marketplaceCommissionService.summary({}),
+      // This endpoint has always taken from/to; the console simply never passed them, so the
+      // earning figure was all-time on a screen with a period selector above it.
+      marketplaceCommissionService.summary(rangeReady ? range : {}),
       marketplaceOccupancyService.list({}),
       marketplaceBookingService.list({ page: 0, size: 6 }),
+      rangeReady ? platformHealthService.pulse(range) : Promise.resolve(null),
     ]);
     const value = (index, fallback) => results[index].status === "fulfilled" ? results[index].value : fallback;
     const catalog = value(0, { items: [], pagination: null });
@@ -85,6 +92,7 @@ export default function HotelMarketplaceDashboard({ pendingBookings = 0, openNom
     const earnings = value(4, {});
     const occupancy = value(5, []);
     const bookings = value(6, { items: [], pagination: null });
+    const pulse = value(7, null);
 
     const occupancyTotals = occupancy.reduce((totals, property) => ({
       committed: totals.committed + Number(property.totalRoomNightsCommitted || 0),
@@ -104,6 +112,7 @@ export default function HotelMarketplaceDashboard({ pendingBookings = 0, openNom
       outstanding,
       creditCurrency: credits[0]?.currency || "INR",
       earnings,
+      pulse,
       occupancyTotals,
       busiest,
       recentBookings: bookings.items,
@@ -111,7 +120,7 @@ export default function HotelMarketplaceDashboard({ pendingBookings = 0, openNom
     setDegraded(results.some((result) => result.status === "rejected"));
     setLoading(false);
     setRefreshing(false);
-  }, []);
+  }, [range?.from, range?.to]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -139,10 +148,10 @@ export default function HotelMarketplaceDashboard({ pendingBookings = 0, openNom
       )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <HotelMetric label="Published hotel supply" value={loading ? "—" : `${active}/${total}`} helper={`${drafts} draft, inactive or suspended properties`} Icon={Hotel} tone="emerald" />
-        <HotelMetric label="Booking decisions" value={pendingBookings} helper="Requests currently waiting on the platform" Icon={ClipboardCheck} tone="amber" danger={pendingBookings > 0} />
-        <HotelMetric label="Committed room-nights" value={loading ? "—" : data.occupancyTotals.committed.toLocaleString("en-IN")} helper="Current occupancy window; not hotel availability" Icon={CalendarRange} tone="sky" />
-        <HotelMetric label="Net platform earning" value={loading ? "—" : money(data.earnings?.netEarning, earningCurrency)} helper={`${money(data?.earnings?.pendingBalance, earningCurrency)} pending settlement`} Icon={Coins} tone="violet" />
+        <HotelMetric label={<>Published hotel supply<NowTag /></>} value={loading ? "—" : `${active}/${total}`} helper={`${drafts} draft, inactive or suspended properties`} Icon={Hotel} tone="emerald" />
+        <HotelMetric label={<>Booking decisions<NowTag /></>} value={pendingBookings} helper="Requests currently waiting on the platform" Icon={ClipboardCheck} tone="amber" danger={pendingBookings > 0} />
+        <HotelMetric label={<>Committed room-nights<NowTag /></>} value={loading ? "—" : data.occupancyTotals.committed.toLocaleString("en-IN")} helper="Current occupancy window; not hotel availability" Icon={CalendarRange} tone="sky" />
+        <HotelMetric label={`Net earning · ${periodLabel}`} value={loading ? "—" : money(data.earnings?.netEarning, earningCurrency)} helper={`${money(data?.earnings?.pendingBalance, earningCurrency)} pending settlement`} Icon={Coins} tone="violet" />
       </div>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-5">
@@ -177,6 +186,23 @@ export default function HotelMarketplaceDashboard({ pendingBookings = 0, openNom
           </ConsolePanel>
         </div>
       </div>
+
+      {data?.pulse && (
+        <ConsolePanel title={`Demand · ${periodLabel}`}
+          description="Booking requests raised by tenants over the selected period.">
+          <div className="grid gap-4 p-5 sm:grid-cols-2">
+            <HotelMetric label="Requests raised" value={data.pulse.hotelBookingRequests ?? 0}
+              helper="Submitted in this period" Icon={ClipboardCheck} tone="sky" />
+            {/* Cohort: of the requests raised then, this many are confirmed today. There is no
+                confirmedAt to range on, so "confirmed during the period" is not answerable. */}
+            <HotelMetric label="…of those, confirmed" value={data.pulse.hotelBookingsConfirmed ?? 0}
+              helper={data.pulse.hotelBookingRequests > 0
+                ? `${Math.round((data.pulse.hotelBookingsConfirmed / data.pulse.hotelBookingRequests) * 100)}% confirmed so far`
+                : "Nothing raised in this period"}
+              Icon={Handshake} tone="emerald" />
+          </div>
+        </ConsolePanel>
+      )}
 
       <ConsolePanel title="Recent hotel booking activity" description="Latest cross-tenant marketplace requests"
         action={<SmallLink to="/console/hotel-requests">Open booking queue</SmallLink>}>
