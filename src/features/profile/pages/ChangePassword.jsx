@@ -18,8 +18,9 @@ import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { Key as FiKey, Eye as FiEye, EyeOff as FiEyeOff, CircleCheck as FiCheckCircle, CircleX as FiXCircle, CircleAlert as FiAlertCircle, Shield as FiShield, Info as FiInfo, ArrowLeft as FiArrowLeft, X as FiX } from "lucide-react";
 
-// ── Uncomment when backend is ready ──────────────────────────
-// import authService from "../services/authService";
+import { getErrorMessage, isAlreadyReported } from "@shared/api/apiError";
+
+import accountService from "../api/accountService";
 
 /* ─── PASSWORD RULES ─────────────────────────────────────────── */
 const RULES = [
@@ -157,18 +158,32 @@ export default function ChangePassword() {
     }
     setSaving(true);
     try {
-      // BACKEND: await authService.changePassword({ currentPassword: current, newPassword: newPass });
-      await new Promise(r => setTimeout(r, 1200)); // mock
+      await accountService.changePassword(current, newPass);
 
-      showToast("Password changed successfully! You have been logged out of all other sessions. ✅");
+      /* No claim about other sessions. The backend re-hashes the password and saves the user
+         (AuthServiceImpl.changePassword) — it does not revoke anything, and every JWT already
+         issued stays valid until it expires. The old copy of this page promised "you have been
+         logged out of all other sessions", which was untrue even once the call was real. */
+      showToast("Password changed. Use the new one next time you sign in.");
       setCurrent(""); setNewPass(""); setConfirm("");
       setErrors({});
-      setTimeout(() => navigate("/CompanySettings"), 2000);
+
+      /* /my-profile, not /CompanySettings. That route is Guarded on SETTINGS_MANAGE, so for
+         anyone who is not an admin the old redirect bounced straight back to "/" — a success
+         message followed by being thrown to the dashboard. */
+      setTimeout(() => navigate("/my-profile"), 1600);
     } catch (err) {
-      showToast(
-        err?.response?.data?.message || "Failed to change password. Please try again.",
-        "error"
-      );
+      /* 400 is SILENT by contract (shared/api/authRealm.js): the interceptor deliberately does
+         not toast it, because it is about the data just typed. Both of the messages this
+         endpoint answers with are written for the user, so they are shown as-is. */
+      if (!isAlreadyReported(err)) {
+        const msg = getErrorMessage(err, "Could not change the password. Please try again.");
+        showToast(msg, "error");
+        // Put the wrong-password case on the field it belongs to, not only in a toast that
+        // disappears after four seconds.
+        if (/current password/i.test(msg)) setErrors((prev) => ({ ...prev, current: msg }));
+        else if (/new password/i.test(msg)) setErrors((prev) => ({ ...prev, newPass: msg }));
+      }
     } finally {
       setSaving(false);
     }

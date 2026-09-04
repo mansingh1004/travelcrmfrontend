@@ -41,6 +41,7 @@ import {
 } from "../components/fleetUi";
 import { Field as KitField, fieldCls } from "../components/fleetFormKit";
 import AttachmentsDialog from "../components/AttachmentsDialog";
+import FleetMoneyTabs from "../components/FleetMoneyTabs";
 
 /** Category tone — same vocabulary as the Bookings status palette so colour means one thing. */
 const TYPE_TONE = {
@@ -371,6 +372,8 @@ export default function FleetExpenses() {
           <RotateCcw className="h-4 w-4" /> Refresh
         </button>
       </PageHeader>
+
+      <FleetMoneyTabs />
 
       <StatCardRow className="lg:grid-cols-4 xl:grid-cols-4">
         <StatCard label="On this page" value={pageTotal} icon={<IndianRupee />} tone="blue" money />

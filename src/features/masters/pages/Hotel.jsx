@@ -4,6 +4,8 @@
 // import { geographyService } from "@shared/api/geographyService";
 // import { getErrorMessage } from "@shared/api/apiError";
 // import { toast } from "@shared/ui/toast";
+import { hasPermission, hasModule, P } from "@shared/lib/access";
+import NominateHotelDialog from "../components/NominateHotelDialog";
 
 // /* ─── CONSTANTS ──────────────────────────────────────────── */
 // const AMENITIES = [
@@ -1325,7 +1327,7 @@
 
 
 import { useState, useMemo, useEffect, useCallback } from "react";
-import { Search, Plus, ChevronDown, ChevronUp, X, Star, MapPin, Phone, Globe, Upload, Hotel, Building2, Utensils, Wifi, Car, Dumbbell, Waves, ConciergeBell, PlaneTakeoff, Edit2, Trash2, Check, AlertCircle, Home, ChevronRight, ShieldCheck } from "lucide-react";
+import { Search, Plus, ChevronDown, ChevronUp, X, Star, MapPin, Phone, Globe, Upload, Hotel, Building2, Utensils, Wifi, Car, Dumbbell, Waves, ConciergeBell, PlaneTakeoff, Edit2, Trash2, Check, AlertCircle, Home, ChevronRight, ShieldCheck, Send } from "lucide-react";
 import { hotelService, transformHotelResponse, uploadHotelImageToCloudinary } from "../api/HotelService";
 import { geographyService } from "@shared/api/geographyService";
 import { getErrorMessage } from "@shared/api/apiError";
@@ -1615,6 +1617,13 @@ export default function HotelMaster() {
   }, [filterDest]);
 
   // Group THIS PAGE's hotels under their destination for the existing grouped layout.
+  /* The hotel being suggested to the platform, or null. Gated on the marketplace add-on rather
+     than on MASTER_*: nominating is a marketplace act, and a tenant who never bought the
+     marketplace must not be offered a button whose endpoint answers 403. The backend guards the
+     same key (HotelNominationController: HOTEL_MARKETPLACE_VIEW). */
+  const [nominating, setNominating] = useState(null);
+  const canNominate = hasPermission(P.HOTEL_MARKETPLACE_VIEW) && hasModule("HOTEL_MARKETPLACE");
+
   const filtered = useMemo(() => {
     const nameById = new Map((destinations || []).map(d => [String(d.id), d.name]));
     const grouped  = new Map();
@@ -2175,6 +2184,17 @@ console.log("✅ New Hotel Created! Backend assigned ID:", savedHotel.id || save
                                       text-rose-500 text-xs font-bold border border-rose-200 hover:border-rose-300 transition-all">
                                     <Trash2 size={12} /> {hotel.platformOwned ? "Remove" : "Delete"}
                                   </button>
+                                  {/* Only on the tenant's OWN rows. A PLATFORM_SYNC projection is
+                                      already in the catalog, so suggesting it would be a button
+                                      that can only fail. */}
+                                  {canNominate && !hotel.platformOwned && hotel.publicId && (
+                                    <button onClick={() => setNominating(hotel)}
+                                      title="Suggest this hotel to the platform catalog"
+                                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-violet-50 hover:bg-violet-100
+                                        text-violet-600 text-xs font-bold border border-violet-200 hover:border-violet-300 transition-all">
+                                      <Send size={12} /> Suggest
+                                    </button>
+                                  )}
                                 </div>
                               </div>
                             </div>
@@ -2186,6 +2206,13 @@ console.log("✅ New Hotel Created! Backend assigned ID:", savedHotel.id || save
                 </div>
               );
             })}
+
+            {nominating && (
+              <NominateHotelDialog
+                hotel={nominating}
+                onClose={() => setNominating(null)}
+              />
+            )}
 
             <Pager
               page={page}

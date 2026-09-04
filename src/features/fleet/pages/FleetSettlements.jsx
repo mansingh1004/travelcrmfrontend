@@ -31,6 +31,7 @@ import {
 import { Field, fieldCls } from "../components/fleetFormKit";
 import AttachmentsDialog from "../components/AttachmentsDialog";
 import { openBlob, hydrateBlobError } from "@shared/lib/download";
+import FleetMoneyTabs from "../components/FleetMoneyTabs";
 
 /** Sticky across saves — a clerk works one driver, or one departure, at a time. */
 const blankCash = (sticky = {}) => ({
@@ -215,6 +216,8 @@ export default function FleetSettlements() {
           <RotateCcw className="h-4 w-4" /> Refresh
         </button>
       </PageHeader>
+
+      <FleetMoneyTabs />
 
       <StatCardRow className="lg:grid-cols-4 xl:grid-cols-4">
         <StatCard label="Cash with drivers" value={cashOut} icon={<HandCoins />} tone="amber" money />

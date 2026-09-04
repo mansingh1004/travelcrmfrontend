@@ -81,6 +81,16 @@ export const P = {
   TRANSPORT_MARKETPLACE_SYNC_MASTER: "TRANSPORT_MARKETPLACE_SYNC_MASTER",
   TRANSPORT_MARKETPLACE_BOOK: "TRANSPORT_MARKETPLACE_BOOK",
   TRANSPORT_MARKETPLACE_CANCEL: "TRANSPORT_MARKETPLACE_CANCEL",
+  // Packages. ONE family for both sides, unlike the two above, because this catalog is two-sided:
+  // an agency browses it and also writes its own packages into it. That is one screen and one
+  // purchase to the person using it, so the entitlement is one module key and the split between
+  // buying and authoring is these permissions.
+  //
+  // No _BOOK / _CANCEL yet: the order lifecycle is Phase 3, and a key that gates no endpoint is a
+  // checkbox in the role editor that silently does nothing. Mirrors Permission.java.
+  PACKAGE_MARKETPLACE_VIEW: "PACKAGE_MARKETPLACE_VIEW",
+  PACKAGE_MARKETPLACE_QUOTE: "PACKAGE_MARKETPLACE_QUOTE",
+  PACKAGE_MARKETPLACE_AUTHOR: "PACKAGE_MARKETPLACE_AUTHOR",
   // The SUPPLY side, held by a transport operator on the FLEET plan rather than by a buying agency.
   // Same tenant world, opposite end of the trade.
   TRANSPORT_SUPPLIER_LISTING_MANAGE: "TRANSPORT_SUPPLIER_LISTING_MANAGE",
@@ -167,6 +177,9 @@ const ROLE_PERMISSIONS = {
     // Transport mirrors hotel exactly — same four verbs, same audience. Permission.java:379-380.
     P.TRANSPORT_MARKETPLACE_VIEW, P.TRANSPORT_MARKETPLACE_SYNC_MASTER,
     P.TRANSPORT_MARKETPLACE_BOOK, P.TRANSPORT_MARKETPLACE_CANCEL,
+    // Packages: all three, including authoring — what the agency publishes under its own name to
+    // other agencies is a manager's call, not an agent's. Mirrors Permission.defaultsFor(MANAGER).
+    P.PACKAGE_MARKETPLACE_VIEW, P.PACKAGE_MARKETPLACE_QUOTE, P.PACKAGE_MARKETPLACE_AUTHOR,
     // Mirrors Permission.defaultsFor(MANAGER) exactly — sees fleet money, does NOT settle it.
     P.FLEET_READ, P.FLEET_CREATE, P.FLEET_UPDATE, P.FLEET_DELETE, P.FLEET_MONEY_READ,
     P.ACCOUNTING_INVOICE_READ, P.ACCOUNTING_TDS_READ,
@@ -202,6 +215,9 @@ const ROLE_PERMISSIONS = {
     // No SYNC_MASTER, exactly as with hotels: a sales role books, it does not curate masters.
     // Permission.java:423.
     P.TRANSPORT_MARKETPLACE_VIEW, P.TRANSPORT_MARKETPLACE_BOOK, P.TRANSPORT_MARKETPLACE_CANCEL,
+    // Packages: browse and quote, but NOT author — same split, same reason as SYNC_MASTER above.
+    // _AUTHOR is granted per user, like BOOKING_REFUND. Mirrors Permission.defaultsFor(TRAVEL_AGENT).
+    P.PACKAGE_MARKETPLACE_VIEW, P.PACKAGE_MARKETPLACE_QUOTE,
     P.MARKETPLACE_PAYABLE_READ,
     // Deliberately NO FLEET_MONEY_*: a sales role plans and runs trips, but tenant-wide driver cash
     // positions, vendor rates and cost structure are not its business. Mirrors the backend.

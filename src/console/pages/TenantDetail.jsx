@@ -13,6 +13,7 @@ import {
   Phone,
   ScrollText,
   ShieldCheck,
+  LogIn,
 } from "lucide-react";
 import { useToast } from "@shared/ui/toast";
 import { useStepUp } from "../components/useStepUp";
@@ -22,6 +23,8 @@ import { billingService } from "../api/billingService";
 import { featureFlagService } from "../api/featureFlagService";
 import { tenantService } from "../api/tenantService";
 import { usageService } from "../api/usageService";
+import { startImpersonation } from "../lib/impersonate";
+import TenantNotes from "../components/TenantNotes";
 import { userService } from "../api/userService";
 import {
   ConsoleErrorState,
@@ -122,6 +125,23 @@ export default function TenantDetail() {
     description: `${tenant.organizationName} loses access immediately. Their data is untouched and reactivating restores it — this is reversible.`,
     confirmLabel: "Suspend tenant",
     run: async (mfaCode) => { await tenantService.suspend(publicId, mfaCode); await load(); },
+  });
+  /**
+   * Open a tenant session as one of their users.
+   *
+   * <p>Here rather than only on the users list because this is the page you are already on when an
+   * agency phones to say something is broken. Seeing their screen in five seconds instead of asking
+   * for twenty minutes of screenshots is the whole value, and it is lost if the operator has to go
+   * find the right row on another page first.</p>
+   *
+   * <p>Step-up gated and audit-logged server-side (IMPERSONATION_START), and the tenant app shows a
+   * persistent banner for as long as the session is open.</p>
+   */
+  const askImpersonate = (user) => stepUp.request({
+    title: `Open a session as ${user.name || user.email}`,
+    description: `A new tab opens signed in as this user, with their permissions — not yours. The action is recorded in the audit log and a banner stays visible for the whole session. Nothing you do will be attributable to you afterwards, so treat it as acting as them.`,
+    confirmLabel: "Open session",
+    run: async (mfaCode) => { await startImpersonation(user, mfaCode); },
   });
   const askReactivate = () => stepUp.request({
     title: "Reactivate tenant",
@@ -313,6 +333,17 @@ export default function TenantDetail() {
                   </span>
                   <div className="min-w-0 flex-1"><div className="truncate text-sm font-semibold text-heading">{user.name || "Unnamed user"}</div><div className="truncate text-xs text-muted">{user.email}</div></div>
                   <div className="text-right"><div className="font-mono text-[10px] font-semibold text-body">{user.role}</div><div className={`text-[10px] ${user.locked || !user.active ? "text-hue-rose" : "text-hue-emerald"}`}>{user.locked ? "Locked" : user.active ? "Active" : "Inactive"}</div></div>
+                  {/* Offered only for a user who could actually sign in. Opening a session as a
+                      locked or inactive account would either fail at the server or hand back a
+                      session the real user does not have — neither is what "see their screen"
+                      means. */}
+                  {!user.locked && user.active && (
+                    <button type="button" onClick={() => askImpersonate(user)}
+                      className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-border px-2 py-1 text-[11px] font-semibold text-body hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                      title="Open a session as this user">
+                      <LogIn size={12} /> Open as
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
@@ -379,6 +410,8 @@ export default function TenantDetail() {
             </div>
           )}
         </ConsolePanel>
+        <TenantNotes tenantPublicId={publicId} />
+
         <ConsolePanel title="Recent account activity" description="Tenant-scoped SuperAdmin audit entries"
           action={<PanelLink to="/console/audit">Audit log</PanelLink>}>
           {activity.length === 0 ? <div className="px-5 py-10 text-center text-sm text-muted"><ScrollText size={22} className="mx-auto mb-2 opacity-50" />No recent entries.</div> : (

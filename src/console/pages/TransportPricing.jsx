@@ -109,7 +109,7 @@ const labelOf = (opts, value) =>
 const serviceLabel = (value) =>
   SERVICE_TYPES.find(([v]) => v === value)?.[1] || human(value) || "Any journey type";
 
-export default function TransportPricing() {
+export default function TransportPricing({ embedded = false }) {
   const [rows, setRows] = useState(null);
   const [total, setTotal] = useState(0);
   const [options, setOptions] = useState({ commercialModels: [], calculationTypes: [] });
@@ -188,24 +188,44 @@ export default function TransportPricing() {
 
   return (
     <div className="space-y-6">
-      <ConsolePageHeader
-        eyebrow="Transport marketplace"
-        title="Transport pricing"
-        description="What the platform adds on top of, or takes out of, an operator's rate. A rule is scoped to a vehicle, to a journey type, to both, or to neither — and exactly one of them prices any given order."
-        actions={
-          <>
-            <button type="button" onClick={load} disabled={loading}
-              className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-semibold text-body hover:bg-surface-hover disabled:opacity-60">
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-              Refresh
-            </button>
-            <button type="button" onClick={() => setEditing({ ...BLANK })}
-              className="inline-flex items-center gap-2 rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover">
-              <Plus className="h-4 w-4" /> New rule
-            </button>
-          </>
-        }
-      />
+      {/* Embedded, this is a section of the one Pricing rules screen and that page owns the
+          title — but ConsolePageHeader always renders an <h1>, so passing it a null title would
+          leave an empty heading. The actions are rendered on their own instead, because New rule
+          and Refresh are the whole point of the section. */}
+      {embedded ? (
+        <div className="flex flex-wrap justify-end gap-2">
+            <>
+              <button type="button" onClick={load} disabled={loading}
+                className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-semibold text-body hover:bg-surface-hover disabled:opacity-60">
+                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                Refresh
+              </button>
+              <button type="button" onClick={() => setEditing({ ...BLANK })}
+                className="inline-flex items-center gap-2 rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover">
+                <Plus className="h-4 w-4" /> New rule
+              </button>
+            </>
+        </div>
+      ) : (
+        <ConsolePageHeader
+          eyebrow="Transport marketplace"
+          title="Transport pricing"
+          description="What the platform adds on top of, or takes out of, an operator's rate. A rule is scoped to a vehicle, to a journey type, to both, or to neither — and exactly one of them prices any given order."
+          actions={
+            <>
+              <button type="button" onClick={load} disabled={loading}
+                className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-semibold text-body hover:bg-surface-hover disabled:opacity-60">
+                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                Refresh
+              </button>
+              <button type="button" onClick={() => setEditing({ ...BLANK })}
+                className="inline-flex items-center gap-2 rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-accent-text hover:bg-accent-hover">
+                <Plus className="h-4 w-4" /> New rule
+              </button>
+            </>
+          }
+        />
+      )}
 
       <PrecedenceNote />
 

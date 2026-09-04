@@ -527,8 +527,9 @@ export default function CreateBooking() {
     if (customerMode === "new" && !form.customerName.trim()) next.customerName = "Customer name is required";
     if (form.customerEmail && !emailPattern.test(form.customerEmail)) next.customerEmail = "Enter a valid email";
     if (!form.destination.trim()) next.destination = "Destination is required";
+    // Travel date is required but may be in the past — bookings are routinely recorded after the
+    // trip started or finished. The backend's @FutureOrPresent was dropped to match.
     if (!form.travelDate) next.travelDate = "Travel date is required";
-    else if (form.travelDate < today()) next.travelDate = "Travel date cannot be in the past";
     if (!(Number(form.customerAmount) > 0)) next.customerAmount = "Amount must be greater than 0";
     if (form.vendorCost !== "" && Number(form.vendorCost) < 0) next.vendorCost = "Vendor cost cannot be negative";
     if (Number(form.paidAmount) < 0) next.paidAmount = "Advance cannot be negative";

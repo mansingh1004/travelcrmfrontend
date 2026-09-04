@@ -9,6 +9,24 @@
 // noise. Hairline borders, a single accent, and generous use of monospace-ish alignment keep the
 // structure legible — the Notion/Linear register this product's newer screens aim for.
 //
+// VISIBILITY PASS, 2026-09-04 — restraint had been taken too far and the screen was hard to read:
+//
+//   * The rule NAME input had `border-transparent`, so the primary field on every rule looked like
+//     a label until you hovered it. It now carries a real border like every other input.
+//   * slate-300/400 were doing the work of content and of ACTIONS — the and/or joiner, the delete
+//     buttons, "+ condition", and the failed-condition ✗ in the trace. On white those are 1.9:1 and
+//     2.9:1, under both the 4.5:1 text minimum and the 3:1 graphical one. Anything a reader has to
+//     read or click is now slate-500 or darker; slate-300 survives only as a decorative divider.
+//   * The failed ✗ was slate-300 while the passing ✓ was emerald-600 — in a trace whose whole job is
+//     answering "why is this NOT hot?", the failures were the invisible half. They are rose now.
+//   * A disabled rule was tinted `bg-slate-50/60`, a 4% wash nobody sees. It now reads as disabled.
+//   * The file had ZERO responsive rules in 753 lines. The condition row — a fixed 3rem logic gutter
+//     plus three controls and a value box — could only wrap into a ladder below about 900px. It now
+//     stacks deliberately on narrow screens instead.
+//
+// Density itself was NOT the problem and has been kept: this is still a compact 12px builder, not a
+// settings form with 44px rows.
+//
 // EVERYTHING the builder offers comes from GET /leads/scoring/fields. No field key, operator list or
 // enum value is hardcoded here. That is the whole point of the registry: adding a scoring field is
 // one backend entry and zero frontend changes, and nothing can drift the way the hardcoded
@@ -246,7 +264,7 @@ export default function LeadScoringRules() {
         <section>
           <div className="flex items-baseline justify-between mb-2">
             <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Rules</h2>
-            <span className="text-xs text-slate-400">Evaluated top to bottom</span>
+            <span className="text-xs text-slate-500">Evaluated top to bottom</span>
           </div>
 
           {typeof fieldErrors.rules === "string" && (
@@ -257,7 +275,7 @@ export default function LeadScoringRules() {
 
           <div className="border border-slate-200 rounded divide-y divide-slate-200">
             {(doc.rules || []).length === 0 && (
-              <p className="px-4 py-6 text-sm text-slate-400 text-center">
+              <p className="px-4 py-6 text-sm text-slate-500 text-center">
                 No rules yet — every contacted lead will get the default below.
               </p>
             )}
@@ -327,30 +345,35 @@ function RuleRow({
   const err = (suffix = "") => errors[base + suffix];
 
   return (
-    <div className={`px-4 py-3 ${rule.enabled ? "" : "bg-slate-50/60"}`}>
+    <div className={`px-4 py-3 ${rule.enabled ? "" : "bg-slate-100 opacity-70"}`}>
       <div className="flex items-center gap-2">
         {/* Disabled rules are dimmed rather than hidden — an author toggling one off wants to see it
-            still sitting in its priority slot. */}
+            still sitting in its priority slot. The old tint was `bg-slate-50/60`, a 4% wash that
+            nobody could see; slate-100 plus the opacity actually reads as "off". */}
         <input type="checkbox" checked={rule.enabled !== false}
           onChange={(e) => onPatch({ enabled: e.target.checked })}
           className="w-3.5 h-3.5 accent-blue-600" aria-label="Rule enabled" />
 
+        {/* w-16, not w-14: the number spinner eats ~16px of a 56px box and left three digits with
+            nowhere to go. */}
         <input value={rule.priority ?? 0} type="number"
           onChange={(e) => onPatch({ priority: Number(e.target.value) })}
-          title="Lower runs first"
-          className={`w-14 px-1.5 py-1 text-xs text-center rounded border tabular-nums ${err(".priority") ? "border-red-300 bg-red-50" : "border-slate-200"}`} />
+          title="Lower runs first" aria-label="Priority — lower runs first"
+          className={`w-16 px-1.5 py-1 text-xs text-center rounded border tabular-nums ${err(".priority") ? "border-red-300 bg-red-50" : "border-slate-200"}`} />
 
+        {/* A real border. `border-transparent` made the primary field on every rule read as a label
+            until hover, which is why unnamed rules stayed unnamed. */}
         <input value={rule.name || ""} onChange={(e) => onPatch({ name: e.target.value })}
-          placeholder="Name this rule"
-          className="flex-1 px-2 py-1 text-sm rounded border border-transparent hover:border-slate-200 focus:border-blue-400 outline-none font-medium" />
+          placeholder="Name this rule" aria-label="Rule name"
+          className="flex-1 min-w-0 px-2 py-1 text-sm rounded border border-slate-200 hover:border-slate-300 focus:border-blue-400 focus:ring-2 focus:ring-blue-50 outline-none font-medium" />
 
-        <span className="text-xs text-slate-400">then</span>
+        <span className="text-xs text-slate-500">then</span>
         <select value={rule.outcome || "Warm"} onChange={(e) => onPatch({ outcome: e.target.value })}
           className={`text-xs font-semibold px-2 py-1 rounded border ${tone(rule.outcome)} ${err(".outcome") ? "ring-1 ring-red-300" : ""}`}>
           {OUTCOMES.map((o) => <option key={o} value={o}>{o}</option>)}
         </select>
 
-        <button onClick={onRemove} className="p-1 rounded text-slate-300 hover:text-red-600 hover:bg-red-50"
+        <button onClick={onRemove} className="p-1 rounded text-slate-500 hover:text-red-600 hover:bg-red-50"
           aria-label="Delete rule">
           <Trash2 className="w-3.5 h-3.5" />
         </button>
@@ -378,7 +401,7 @@ function RuleRow({
           />
         ))}
         <button onClick={onAddCondition}
-          className="text-xs text-slate-400 hover:text-blue-600 flex items-center gap-1">
+          className="text-xs font-medium text-blue-600 hover:text-blue-700 flex items-center gap-1">
           <Plus className="w-3 h-3" /> condition
         </button>
       </div>
@@ -404,17 +427,19 @@ function ConditionRow({
   };
 
   return (
-    <div className="flex items-start gap-1.5 text-xs">
-      {/* The ALL/ANY joiner sits on the first row so the rule reads as a sentence. */}
-      <div className="w-12 shrink-0 pt-1.5">
+    <div className="flex flex-col gap-1.5 text-xs sm:flex-row sm:items-start">
+      {/* The ALL/ANY joiner sits on the first row so the rule reads as a sentence. It is the rule's
+          logic, so it is readable slate — at slate-300 nobody could tell an ALL rule from an ANY. */}
+      <div className="shrink-0 sm:w-12 sm:pt-1.5">
         {isFirst ? (
           <select value={logic || "All"} onChange={(e) => onLogicChange(e.target.value)}
-            className="text-xs font-semibold text-slate-500 bg-transparent outline-none cursor-pointer">
+            aria-label="Match all or any condition"
+            className="text-xs font-semibold text-slate-600 bg-transparent outline-none cursor-pointer">
             <option value="All">All</option>
             <option value="Any">Any</option>
           </select>
         ) : (
-          <span className="text-slate-300 pl-1">{logic === "Any" ? "or" : "and"}</span>
+          <span className="font-medium text-slate-500 sm:pl-1">{logic === "Any" ? "or" : "and"}</span>
         )}
       </div>
 
@@ -461,7 +486,7 @@ function ConditionRow({
             <>
               <input value={values[0] || ""} onChange={(e) => setValue(0, e.target.value)} placeholder="from"
                 className={`w-20 px-2 py-1 rounded border tabular-nums ${err(".values[0]") ? "border-red-300 bg-red-50" : "border-slate-200"}`} />
-              <span className="text-slate-400">and</span>
+              <span className="text-slate-500">and</span>
               <input value={values[1] || ""} onChange={(e) => setValue(1, e.target.value)} placeholder="to"
                 className={`w-20 px-2 py-1 rounded border tabular-nums ${err(".values[1]") ? "border-red-300 bg-red-50" : "border-slate-200"}`} />
             </>
@@ -476,7 +501,7 @@ function ConditionRow({
           )
         )}
 
-        <button onClick={onRemove} className="p-0.5 rounded text-slate-300 hover:text-red-600" aria-label="Remove condition">
+        <button onClick={onRemove} className="p-0.5 rounded text-slate-500 hover:text-red-600" aria-label="Remove condition">
           <X className="w-3 h-3" />
         </button>
       </div>
@@ -548,7 +573,7 @@ function Simulator({ doc, fieldByKey, showToast }) {
       <div className="px-4 py-3">
         <div className="flex gap-2">
           <div className="relative flex-1">
-            <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
             <input value={query} onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && search()}
               placeholder="Search a lead by name, phone or code…"
@@ -567,7 +592,7 @@ function Simulator({ doc, fieldByKey, showToast }) {
                 <button onClick={() => { setLead(o); setOptions([]); run(o); }}
                   className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50 flex items-center gap-2">
                   <span className="flex-1 truncate">{o.customerName}</span>
-                  <span className="text-xs text-slate-400">{o.leadCode}</span>
+                  <span className="text-xs text-slate-500">{o.leadCode}</span>
                   <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${tone(o.leadType)}`}>
                     {o.leadType}
                   </span>
@@ -581,9 +606,9 @@ function Simulator({ doc, fieldByKey, showToast }) {
           <div className="mt-3">
             <div className="flex items-center gap-2 mb-3">
               <span className="text-sm font-medium">{lead.customerName}</span>
-              <span className="text-xs text-slate-400">{lead.leadCode}</span>
+              <span className="text-xs text-slate-500">{lead.leadCode}</span>
               <button onClick={() => { setLead(null); setResult(null); setSnapshot(null); }}
-                className="ml-auto text-xs text-slate-400 hover:text-slate-600 flex items-center gap-1">
+                className="ml-auto text-xs font-medium text-blue-600 hover:text-blue-700 flex items-center gap-1">
                 <RotateCcw className="w-3 h-3" /> change
               </button>
             </div>
@@ -607,7 +632,7 @@ function TraceView({ result, snapshot, fieldByKey }) {
         </span>
         <span className="text-xs text-slate-500">{result.summary}</span>
         {typeof result.score === "number" && (
-          <span className="text-xs text-slate-400 tabular-nums ml-auto">score {result.score}</span>
+          <span className="text-xs text-slate-600 tabular-nums ml-auto">score {result.score}</span>
         )}
       </div>
 
@@ -620,7 +645,7 @@ function TraceView({ result, snapshot, fieldByKey }) {
                 ? <Check className="w-3.5 h-3.5 text-blue-600 shrink-0" />
                 : <span className="w-3.5 h-3.5 shrink-0" />}
               <span className="font-medium flex-1 truncate">{r.ruleName || `Rule ${r.priority}`}</span>
-              <span className="text-slate-400">{r.logic}</span>
+              <span className="text-slate-500">{r.logic}</span>
               <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${tone(r.outcome)}`}>
                 {r.outcome}
               </span>
@@ -629,21 +654,23 @@ function TraceView({ result, snapshot, fieldByKey }) {
             {/* Short-circuited rules carry no conditions — nothing was evaluated, and pretending
                 otherwise would be a fabricated trace. */}
             {r.shortCircuited ? (
-              <p className="mt-1 ml-5 text-[11px] text-slate-400">a higher rule already matched</p>
+              <p className="mt-1 ml-5 text-[11px] text-slate-500">a higher rule already matched</p>
             ) : (
               <ul className="mt-1 ml-5 space-y-0.5">
                 {(r.conditions || []).map((c, ci) => (
                   <li key={ci} className="text-[11px] flex items-start gap-1.5">
-                    <span className={c.passed ? "text-emerald-600" : "text-slate-300"}>
+                    {/* The failed mark used to be slate-300 against an emerald tick — in a trace
+                        whose job is answering "why is this NOT hot?", the failures were invisible. */}
+                    <span className={`font-bold ${c.passed ? "text-emerald-600" : "text-rose-500"}`}>
                       {c.passed ? "✓" : "✗"}
                     </span>
                     <span className="text-slate-600">
-                      {c.fieldLabel || c.field} <span className="text-slate-400">{c.operator}</span>{" "}
+                      {c.fieldLabel || c.field} <span className="text-slate-500">{c.operator}</span>{" "}
                       {(c.expected || []).join(" and ")}
                       {/* The whole reason a trace beats a verdict: it names the value it saw. */}
                       {c.nullShortCircuited
                         ? <em className="text-amber-600"> — not recorded for this lead</em>
-                        : c.actualValue != null && <span className="text-slate-400"> (is {c.actualValue})</span>}
+                        : c.actualValue != null && <span className="font-medium text-slate-700"> (is {c.actualValue})</span>}
                       {c.error && <em className="text-red-600"> — {c.error}</em>}
                     </span>
                   </li>
@@ -680,7 +707,7 @@ function SnapshotPanel({ snapshot, fieldByKey }) {
           {entries.map(([k, v]) => (
             <div key={k} className="flex justify-between gap-2 border-b border-slate-50 py-0.5">
               <dt className="text-slate-500 truncate">{fieldByKey[k]?.label || k}</dt>
-              <dd className={v === null || v === undefined ? "text-slate-300 italic" : "text-slate-700 tabular-nums"}>
+              <dd className={v === null || v === undefined ? "text-slate-500 italic" : "text-slate-700 tabular-nums"}>
                 {v === null || v === undefined ? "not known" : String(v)}
               </dd>
             </div>
@@ -719,7 +746,7 @@ function VersionDrawer({ versions, onClose, onRestore }) {
                   )}
                 </div>
                 {v.note && <p className="text-xs text-slate-500 mt-0.5">{v.note}</p>}
-                <p className="text-[11px] text-slate-400 mt-0.5">
+                <p className="text-[11px] text-slate-500 mt-0.5">
                   {v.createdBy || "system"}
                   {v.createdAt ? ` · ${new Date(v.createdAt).toLocaleDateString()}` : ""}
                 </p>

@@ -1795,17 +1795,15 @@ extraBeds:
     customerName: (f, mode) => (!editing && mode === "new" && !String(f.customerName || "").trim() ? "Customer name is required" : ""),
     customerEmail: (f) => (!editing && f.customerEmail && !emailPattern.test(f.customerEmail) ? "Enter a valid email" : ""),
     destination: (f) => (!String(f.destination || "").trim() ? "Destination is required" : ""),
-    /* "Not in the past" is a rule about SCHEDULING a trip, so it applies to the date the clerk
-       picks — not to the one the form loaded. A booking spends most of its life with its travel date
-       behind it (mid-trip, or travelled and awaiting settlement), and because the edit form
-       round-trips every field, this rule used to make a booking permanently uneditable the day the
-       trip started: no amount correction, no assignee change, no services. The backend's matching
-       @FutureOrPresent has been dropped from UpdateBookingRequestDTO for the same reason. */
-    travelDate: (f) => {
-      if (!f.travelDate) return "Travel date is required";
-      if (editing && f.travelDate === loadedRef.current.travelDate) return "";
-      return f.travelDate < today() ? "Travel date cannot be in the past" : "";
-    },
+    /* Travel date is REQUIRED but may be in the past.
+       The old rule read "you cannot schedule a trip into the past", which is true of scheduling and
+       false of recording: bookings are routinely keyed in after the trip started or finished — a
+       phone booking entered days later, a spreadsheet backlog being migrated, a walk-in settled once
+       the party is back. Refusing those dates did not prevent a mistake, it made the correct record
+       impossible to enter and pushed the work into fixing a wrong date afterwards. It also made an
+       edited booking uneditable the day its trip began. Both @FutureOrPresent constraints on the
+       backend (CreateBookingRequestDTO, LeadConversionRequestDTO) were dropped to match. */
+    travelDate: (f) => (!f.travelDate ? "Travel date is required" : ""),
     customerAmount: (f) => (!(Number(f.customerAmount) > 0) ? "Amount must be greater than 0" : ""),
     // Vendor cost is now REQUIRED ONLY WHEN A VENDOR IS CHOSEN, mirroring the relaxed backend
     // contract (optional, inclusive @DecimalMin(0)). Naming a supplier and then leaving the amount
