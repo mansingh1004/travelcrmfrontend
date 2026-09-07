@@ -23,11 +23,17 @@ import {
  *   2. The contact facts, which scroll away — they are reference, not action.
  *
  * The page-level actions (New booking, Edit, the overflow menu) come in as `children` because they
- * own state and refs that belong to the page. The three CONTACT actions are rendered here: they are
- * plain `<a href>` links with no state, and they are the reason the band exists.
+ * own state and refs that belong to the page. The three CONTACT actions are rendered here, and they
+ * are the reason the band exists.
+ *
+ * Call stays a `tel:` link — the phone takes over and there is nothing to record. WhatsApp and
+ * Email raise `onMessage(channel)` instead, so the page can open the shared conversation drawer on
+ * the thread the Communication Center already keeps. `onMessage` is optional: without it both fall
+ * back to `wa.me`/`mailto:`, which is what they were before and what a consumer that has not wired
+ * the drawer still gets.
  */
 
-export function CommandBar({ summary, onBack, children }) {
+export function CommandBar({ summary, onBack, onMessage, children }) {
   const typeKey = keyOf(summary.type) || "INDIVIDUAL";
   const tierKey = keyOf(summary.tier) || "BRONZE";
   const statusKey = keyOf(summary.status) || "INACTIVE";
@@ -78,14 +84,30 @@ export function CommandBar({ summary, onBack, children }) {
               <Phone className="h-4 w-4" />
             </ContactAction>
           )}
+          {/* WhatsApp and Email open the conversation drawer when the page supplies onMessage —
+              the same drawer the customers list and the leads list open, on the same thread the
+              Communication Center shows. They fall back to wa.me/mailto: only when it is absent,
+              so a consumer that has not wired the drawer still renders something that works.
+
+              The deep link is not merely a worse UI: it hands the message to the operator's own
+              WhatsApp or mail client, and the CRM never learns the customer was contacted. The
+              drawer still offers that as one of its send modes — and records it. */}
           {phoneDigits && (
-            <ContactAction href={`https://wa.me/${phoneDigits}`} label="WhatsApp" external
+            <ContactAction
+              {...(onMessage
+                ? { onClick: () => onMessage("WHATSAPP") }
+                : { href: `https://wa.me/${phoneDigits}`, external: true })}
+              label="WhatsApp"
               tone="bg-emerald-600 text-white hover:bg-emerald-700">
               <WhatsAppIcon className="h-4 w-4" />
             </ContactAction>
           )}
           {summary.email && (
-            <ContactAction href={`mailto:${summary.email}`} label="Email"
+            <ContactAction
+              {...(onMessage
+                ? { onClick: () => onMessage("EMAIL") }
+                : { href: `mailto:${summary.email}` })}
+              label="Email"
               tone="border border-slate-200 bg-white text-slate-700 hover:bg-slate-50">
               <Mail className="h-4 w-4" />
             </ContactAction>
@@ -100,16 +122,38 @@ export function CommandBar({ summary, onBack, children }) {
   );
 }
 
-function ContactAction({ href, label, tone, external, children }) {
+/**
+ * A contact action — a link when it leaves the app, a button when it opens the drawer.
+ *
+ * Both shapes exist because the two are genuinely different acts. `tel:` hands the job to the
+ * phone and there is nothing for the CRM to record. Messaging is the opposite: it belongs in the
+ * conversation the Communication Center already keeps, so it opens a drawer instead of leaving.
+ */
+function ContactAction({ href, onClick, label, tone, external, children }) {
+  const className = `inline-flex h-10 items-center gap-2 rounded-xl px-3 text-sm font-bold sm:px-3.5 ${tone} ${FOCUS_RING}`;
+  const body = (
+    <>
+      {children}
+      <span className="hidden lg:inline">{label}</span>
+    </>
+  );
+
+  if (onClick) {
+    return (
+      <button type="button" onClick={onClick} aria-label={label} className={className}>
+        {body}
+      </button>
+    );
+  }
+
   return (
     <a
       href={href}
       {...(external ? { target: "_blank", rel: "noreferrer" } : {})}
       aria-label={label}
-      className={`inline-flex h-10 items-center gap-2 rounded-xl px-3 text-sm font-bold sm:px-3.5 ${tone} ${FOCUS_RING}`}
+      className={className}
     >
-      {children}
-      <span className="hidden lg:inline">{label}</span>
+      {body}
     </a>
   );
 }

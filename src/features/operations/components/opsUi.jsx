@@ -331,6 +331,10 @@ export function ReadinessList({ readiness = {} }) {
 export function DimensionCell({ status, count }) {
   const total = count?.total ?? 0;
   const confirmed = count?.confirmed ?? 0;
+  // Server-derived: the earliest unfinished line in this dimension, by name. Null once the
+  // dimension is settled, so this never contradicts the count above it.
+  const blockerTitle = count?.blockerTitle || null;
+  const blockerCount = count?.blockerCount ?? 0;
 
   const style =
     status === "READY"       ? { chip: "bg-emerald-50 text-emerald-700 ring-emerald-200", label: "CONFIRMED" }
@@ -353,6 +357,19 @@ export function DimensionCell({ status, count }) {
       {total > 0 && (
         <span className="text-[10px] font-bold text-slate-400 tabular-nums">
           {confirmed} of {total}
+        </span>
+      )}
+      {/* Which one is holding this up. "1 of 3" says there is work left; the name says who to ring,
+          which is the actual question at 6pm the day before a departure. Only shown when something
+          is genuinely outstanding, and truncated rather than wrapped so the row height stays fixed —
+          the full text is on the title attribute, and the expanded row lists every line. */}
+      {blockerTitle && (
+        <span
+          title={blockerCount > 1 ? `${blockerTitle} + ${blockerCount - 1} more pending` : blockerTitle}
+          className="max-w-[120px] truncate text-[10px] font-bold text-slate-500"
+        >
+          {blockerTitle}
+          {blockerCount > 1 && <span className="text-slate-400"> +{blockerCount - 1}</span>}
         </span>
       )}
     </div>

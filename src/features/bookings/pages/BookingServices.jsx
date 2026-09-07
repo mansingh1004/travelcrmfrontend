@@ -35,6 +35,7 @@ import { useToast } from "@shared/ui/toast";
 import { getErrorMessage, isAlreadyReported } from "@shared/api/apiError";
 import { downloadBlob, hydrateBlobError } from "@shared/lib/download";
 import { hasPermission, P } from "@shared/lib/access";
+import { VendorConversationDrawer } from "@features/operations";
 import {
   FiPlus, FiX, FiArrowLeft, FiRefreshCw, FiSearch, FiPackage,
   FiEdit2, FiTrash2, FiEye, FiDownload, FiCreditCard, FiLayers,
@@ -129,6 +130,15 @@ function mapService(s, i) {
     notes: s.notes || "",
     serviceDate: s.serviceDate || null,
     endDate: s.endDate || null,
+    // Which master this line sells, when the sold quotation named one. Worth surfacing: a line with
+    // a master is the one the system can confirm per-property and pay without anyone typing a
+    // supplier, and a line without one is not broken — a flight or an add-on never has a master.
+    masterType: s.masterType || null,
+    masterPublicId: s.masterPublicId || null,
+    // What Accounting has billed against this line. null means either "no supplier yet" or "this
+    // user may not see supplier money" — in both cases the billing state is not ours to show, which
+    // is why the chip below keys off `vendorName && billedAmount != null` and never off 0 alone.
+    billedAmount: s.billedAmount == null ? null : Number(s.billedAmount),
     sequence: i + 1,
     createdAt: s.createdAt,
   };
@@ -202,7 +212,24 @@ function ServiceDetailModal({ svc, onClose }) {
             </span>
             <div className="min-w-0">
               <h3 className="text-sm font-extrabold text-slate-800 truncate">{svc.title || svc.serviceType}</h3>
-              <p className="text-[11px] font-semibold text-slate-400">{svc.serviceType}</p>
+              <p className="text-[11px] font-semibold text-slate-400">
+                {svc.serviceType}
+                {/* Says the line came off the sold quotation carrying its master, which is what lets
+                    it confirm and pay against a specific property rather than a typed name. */}
+                {svc.masterType && (
+                  <span className="ml-1.5 px-1.5 py-0.5 rounded-md bg-blue-50 text-blue-600 text-[10px] font-extrabold uppercase tracking-wide">
+                    from master
+                  </span>
+                )}
+                {/* A supplier is named but Accounting has raised nothing against this line yet.
+                    Assigning a vendor deliberately does not create a bill — this is what stops that
+                    choice from turning into spend nobody notices until a statement arrives. */}
+                {svc.vendorName && svc.billedAmount != null && svc.billedAmount <= 0 && (
+                  <span className="ml-1.5 px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-700 text-[10px] font-extrabold uppercase tracking-wide">
+                    unbilled
+                  </span>
+                )}
+              </p>
             </div>
           </div>
           <button onClick={onClose} aria-label="Close" className="shrink-0 w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center"><FiX className="w-4 h-4"/></button>
@@ -346,6 +373,14 @@ function ServiceDrawer({ booking, editSvc, onClose, onSaved, showToast }) {
       confirmationNumber: form.confirmationNumber.trim(),
       notes: form.notes.trim(),
     };
+    // On CREATE the supplier travels with the line rather than following it. Confirming needs a
+    // supplier, so a create that named none was refused with "Assign a supplier before marking
+    // this service confirmed" — and the assignment call below, which would have supplied one,
+    // never ran because the create had already failed. Edit is unchanged: there the line already
+    // exists and the dedicated endpoint below is what moves its vendor.
+    if (!isEdit && form.vendorPublicId) {
+      body.vendorPublicId = form.vendorPublicId;
+    }
     try {
       let serviceId = editSvc?.publicId;
       if (isEdit) {
@@ -354,8 +389,9 @@ function ServiceDrawer({ booking, editSvc, onClose, onSaved, showToast }) {
         const res = await bookingService.addService(booking.id, body);
         serviceId = res.data?.data?.publicId ?? res.data?.publicId;
       }
-      // Vendor assignment is its own endpoint, not part of the service body.
-      if (form.vendorPublicId && serviceId && form.vendorPublicId !== (editSvc?.vendorPublicId || "")) {
+      // Vendor assignment is its own endpoint on EDIT — the line exists, and this is what moves
+      // its supplier. Skipped on create, where the vendor went out with the line itself.
+      if (isEdit && form.vendorPublicId && serviceId && form.vendorPublicId !== (editSvc?.vendorPublicId || "")) {
         await bookingService.assignVendor(booking.id, serviceId, {
           vendorPublicId: form.vendorPublicId,
           vendorCost: Number(form.vendorCost) || 0,
@@ -577,6 +613,7 @@ export default function BookingServices() {
   const [refreshing,  setRefreshing]  = useState(false);  // background reload keeps the page up
   const [drawer,      setDrawer]      = useState(null);   // null | {mode:'new'} | {mode:'edit', svc}
   const [detailSvc,   setDetailSvc]   = useState(null);
+  const [vendorConvo, setVendorConvo] = useState(null);  // the service line whose supplier drawer is open
   const [deleting,    setDeleting]    = useState(null);
   const [bulkConfirm, setBulkConfirm] = useState(false);
   const [downloading, setDownloading] = useState(null);
@@ -783,6 +820,18 @@ export default function BookingServices() {
       `}</style>
 
       {detailSvc && <ServiceDetailModal svc={detailSvc} onClose={()=>setDetailSvc(null)}/>}
+
+      {/* The supplier conversation, on the same thread the operations board shows. Refetches on
+          send because a send moves the line PENDING → REQUESTED server-side — the row on screen
+          would otherwise still claim nobody had been contacted. */}
+      {vendorConvo && (
+        <VendorConversationDrawer
+          bookingPublicId={booking?.id}
+          line={vendorConvo}
+          onSent={()=>fetchData(true)}
+          onClose={()=>setVendorConvo(null)}
+        />
+      )}
       {drawer && canUpdate && (
         <ServiceDrawer
           booking={booking}
@@ -1046,10 +1095,16 @@ export default function BookingServices() {
                                 ? <span className="w-3 h-3 border-2 border-blue-500/40 border-t-blue-600 rounded-full animate-spin"/>
                                 : <FiDownload className="w-3 h-3"/>}
                             </button>
+                            {/* Opens the supplier conversation — the same drawer the operations
+                                board uses, on the same thread.
+
+                                This was `wa.me/?text=` with NO number: it opened WhatsApp's contact
+                                picker with a prefilled message, so the operator chose the supplier by
+                                hand, sent from their own phone, and the CRM learned nothing. The line
+                                stayed PENDING on the board after being chased. */}
                             {svc.vendorName && (
-                              <a href={`https://wa.me/?text=${encodeURIComponent(`Booking ${booking?.code} — ${svc.serviceType}: ${svc.title}`)}`}
-                                target="_blank" rel="noreferrer" title="Share on WhatsApp"
-                                className="w-7 h-7 rounded-lg bg-white hover:bg-green-50 text-green-600 flex items-center justify-center border border-green-200 transition-all"><FaWhatsapp className="w-3 h-3"/></a>
+                              <button type="button" onClick={()=>setVendorConvo(svc)} title="Message supplier"
+                                className="w-7 h-7 rounded-lg bg-white hover:bg-green-50 text-green-600 flex items-center justify-center border border-green-200 transition-all"><FaWhatsapp className="w-3 h-3"/></button>
                             )}
                             <button onClick={()=>setDetailSvc(svc)} title="View details"
                               className="w-7 h-7 rounded-lg bg-white hover:bg-slate-100 text-slate-500 flex items-center justify-center border border-slate-200 transition-all"><FiEye className="w-3 h-3"/></button>

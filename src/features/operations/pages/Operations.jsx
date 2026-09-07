@@ -21,7 +21,7 @@ import {
 } from "@tanstack/react-table";
 import {
   Radar, RefreshCw, Search, ChevronLeft, ChevronRight, ChevronDown,
-  Briefcase, CircleCheck, TriangleAlert, CircleAlert, WalletCards, CalendarRange,
+  Briefcase, CircleCheck, TriangleAlert, CircleAlert, WalletCards, CalendarRange, UserRound,
 } from "lucide-react";
 
 import { usePagedList } from "@shared/api/usePagedList";
@@ -77,6 +77,20 @@ export default function Operations() {
   const [tab, setTab] = useState("ALL");            // ALL | ACTION_NEEDED
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
+
+  /* ── "Mine" ───────────────────────────────────────────────────────────────
+     Narrows to the bookings this user is the OPS OWNER of — the person chasing
+     the arrangements, which on most bookings is not the salesperson.
+
+     A filter rather than a tab, deliberately: as a tab it would force a choice
+     between seeing your own work and seeing what needs attention. Here it
+     composes with whichever tab is open, and the cards and badges follow it, so
+     "Action needed: 3" means three of MINE while it is on.
+
+     The board already carried `ops.opsOwnerName` on every row and had nothing to
+     filter on, so an executive could see every departure in the agency and still
+     not answer "which of these are mine". */
+  const [mine, setMine] = useState(false);
 
   const [summary, setSummary] = useState(null);
   const [summaryLoading, setSummaryLoading] = useState(true);
@@ -143,8 +157,8 @@ export default function Operations() {
   } = usePagedList(fetcher, {
     size: 10,
     filters: useMemo(
-      () => ({ tab, from, to, search: search || undefined }),
-      [tab, from, to, search],
+      () => ({ tab, from, to, search: search || undefined, mine: mine || undefined }),
+      [tab, from, to, search, mine],
     ),
   });
 
@@ -157,7 +171,7 @@ export default function Operations() {
     if (!allowed) return;
     setSummaryLoading(true);
     try {
-      const params = { from, to, search: search || undefined };
+      const params = { from, to, search: search || undefined, mine: mine || undefined };
       // Both describe the same window; fetching them together keeps the cards and the tab
       // chips from ever showing counts taken a moment apart.
       const [figures, counts] = await Promise.all([
@@ -277,6 +291,20 @@ export default function Operations() {
             </p>
           </div>
         );
+      },
+    },
+    {
+      id: "opsOwner",
+      header: "Ops Owner",
+      // The name has ridden on every board row since the checkpoint model shipped and was rendered
+      // nowhere, so the board could not answer "who is chasing this" — the question a morning
+      // stand-up is made of. Unowned is called out rather than left blank: a booking nobody has
+      // picked up is an exception in itself, and `findUnownedBefore` exists to sweep for exactly it.
+      cell: ({ row }) => {
+        const name = row.original.ops?.opsOwnerName;
+        return name
+          ? <span className="text-sm text-slate-700 truncate">{name}</span>
+          : <span className="text-[11px] font-bold text-amber-600">Unowned</span>;
       },
     },
     ...COLUMN_DIMENSIONS.map((dim) => ({
@@ -531,17 +559,35 @@ export default function Operations() {
 
         </div>
 
-        {/* ── Search ───────────────────────────────────────────────────────── */}
-        <div className="relative max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-          <input
-            ref={searchRef}
-            value={searchInput}
-            onChange={(e) => { setSearchInput(e.target.value); setPage(0); }}
-            placeholder="Search by customer name or booking ref…    /"
-            aria-label="Search by customer name or booking reference"
-            className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-700 font-medium placeholder-slate-400 focus:border-blue-400 focus:ring-2 focus:ring-blue-50 outline-none"
-          />
+        {/* ── Search, and whose work this is ───────────────────────────────── */}
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="relative flex-1 min-w-[220px] max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input
+              ref={searchRef}
+              value={searchInput}
+              onChange={(e) => { setSearchInput(e.target.value); setPage(0); }}
+              placeholder="Search by customer name or booking ref…    /"
+              aria-label="Search by customer name or booking reference"
+              className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-700 font-medium placeholder-slate-400 focus:border-blue-400 focus:ring-2 focus:ring-blue-50 outline-none"
+            />
+          </div>
+
+          {/* Composes with the active tab rather than replacing it — see the `mine` state. */}
+          <button
+            type="button"
+            onClick={() => { setMine((m) => !m); setPage(0); }}
+            aria-pressed={mine}
+            title="Only bookings you are the operations owner of"
+            className={`shrink-0 inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-sm font-bold border transition-colors ${
+              mine
+                ? "bg-blue-600 border-blue-600 text-white shadow-sm"
+                : "bg-white border-slate-200 text-slate-600 hover:border-blue-300"
+            }`}
+          >
+            <UserRound className="w-4 h-4" />
+            Mine
+          </button>
         </div>
 
         {/* ── The five figures, and the filter ──────────────────────────────

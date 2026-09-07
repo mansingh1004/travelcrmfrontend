@@ -1589,6 +1589,8 @@ const createEmptyExpense = (booking) => {
     // master vendor is chosen the two hold the same string — keeping them separate is what lets
     // "Other" show a blank box instead of inheriting the last selection.
     vendorPick: "",
+    /* The chosen vendor's publicId, when one was chosen. Free-typed payees leave it blank. */
+    vendorPublicId: "",
     vendorName: "",
     amount: "",
     paymentStatus: "CREDIT",
@@ -1753,10 +1755,14 @@ export default function BookingExpenseModal({
       .then((res) => {
         if (cancelled) return;
         const rows = res?.data?.data ?? res?.data ?? [];
-        const names = (Array.isArray(rows) ? rows : [])
-          .map((v) => v?.vendorName)
-          .filter(Boolean);
-        setVendors([...new Set(names)].sort((a, b) => a.localeCompare(b)));
+        // Objects now, not bare names: the expense row carries the vendor's publicId so "what have
+        // we spent with this supplier" can be asked across bookings. The NAME is still what the
+        // ledger prints, and still all a free-typed payee leaves behind.
+        const options = (Array.isArray(rows) ? rows : [])
+          .filter((v) => v?.publicId && v?.vendorName)
+          .map((v) => ({ publicId: v.publicId, vendorName: v.vendorName }))
+          .sort((a, b) => a.vendorName.localeCompare(b.vendorName));
+        setVendors(options);
       })
       .catch(() => {
         if (!cancelled) setVendors([]);
@@ -1809,11 +1815,15 @@ export default function BookingExpenseModal({
         if (field === "costType") {
           updated.costTypeTouched = true;
         }
-        // Picking a master vendor IS picking the name — the payload carries no vendor id. "Other"
-        // clears the name so the free-text box opens empty rather than pre-filled with the vendor
-        // the user just rejected.
+        // The select now carries the vendor's publicId, so picking one sets BOTH the link and the
+        // name the ledger prints. "Other" clears both: a free-typed payee has no master row, and
+        // leaving the previous id attached would name one party while pointing at another.
         if (field === "vendorPick") {
-          updated.vendorName = value === OTHER_VENDOR ? "" : value;
+          const picked = value === OTHER_VENDOR
+            ? null
+            : vendors.find((v) => v.publicId === value) || null;
+          updated.vendorPublicId = picked?.publicId || "";
+          updated.vendorName = picked?.vendorName || "";
         }
         return updated;
       })
@@ -1904,6 +1914,8 @@ export default function BookingExpenseModal({
         costType: expense.costType || "VENDOR",
         description: expense.description.trim(),
         vendorName: expense.vendorName.trim() || null,
+        // Only when a master vendor was actually picked; a typed name sends no link.
+        vendorPublicId: expense.vendorPublicId || undefined,
         amount,
         paymentStatus: expense.paymentStatus,
         paymentMode: isCredit ? null : expense.paymentMode || null,
@@ -2259,9 +2271,9 @@ export default function BookingExpenseModal({
                             className="eb-field"
                           >
                             <option value="">Select vendor…</option>
-                            {vendors.map((name) => (
-                              <option key={name} value={name}>
-                                {name}
+                            {vendors.map((v) => (
+                              <option key={v.publicId} value={v.publicId}>
+                                {v.vendorName}
                               </option>
                             ))}
                             <option value={OTHER_VENDOR}>Other (type a name)</option>

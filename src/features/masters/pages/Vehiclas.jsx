@@ -3,6 +3,8 @@ import { Search, Plus, Eye, Edit, Trash2, Car, UploadCloud, Image as ImageIcon, 
 import { Link } from 'react-router-dom';
 import { vehicleService, normalizeVehicleList, transformVehicleResponse, uploadImageToCloudinary } from "../api/VehicleService";
 import { getErrorMessage, isCanceled } from "@shared/api/apiError";
+import SupplierPicker from "../components/SupplierPicker";
+import { vendorService } from "@features/vendors";
 
 /* ─────────────────────────────────────────────
    🌟 CUSTOM TAILWIND TOAST SYSTEM
@@ -40,7 +42,9 @@ function ToastContainer() {
 // "Mercedes S-Class" — indistinguishable from real records, quotable into a real quotation.
 // A failure now shows a failure, and an empty tenant shows an empty state.
 
-const EMPTY_FORM = { name: '', type: '', capacity: '', image: null, imagePreview: null, imagePath: null, description: '' };
+const EMPTY_FORM = { name: '', type: '', capacity: '', image: null, imagePreview: null, imagePath: null, description: '',
+  /* Blank = the vehicle is its own supplier; the backend mints that vendor when a cost first needs a payee. */
+  vendorPublicId: '', clearVendorLink: false, vendorLabel: '' };
 
 // =========================================================================
 // MAIN COMPONENT
@@ -177,6 +181,21 @@ export default function VehicleMaster() {
       setEditingVehicle(vehicle);
       // transformVehicleResponse converts backend fields → formData shape
       setFormData(transformVehicleResponse(vehicle));
+
+      // The supplier link lives on the vendor side, one row per form open — see SupplierPicker.
+      // A failed lookup leaves the picker blank, and a blank picker never sends clearVendorLink,
+      // so it cannot unlink the vehicle by accident.
+      const vehicleId = vehicle?.id ?? vehicle?.vehicleId;
+      if (vehicleId) {
+        vendorService.linkOf("VEHICLE", vehicleId)
+          .then((linked) => setFormData(prev => ({
+            ...prev,
+            vendorPublicId: linked?.publicId || "",
+            vendorLabel:    linked?.vendorName || "",
+            clearVendorLink: false,
+          })))
+          .catch(() => {});
+      }
     } else {
       setEditingVehicle(null);
       setFormData({ ...EMPTY_FORM });
@@ -329,6 +348,7 @@ export default function VehicleMaster() {
                   <th className="px-6 py-4 text-left">Vehicle Name</th>
                   <th className="px-6 py-4 text-left">Vehicle Type</th>
                   <th className="px-6 py-4 text-left">Capacity</th>
+                  <th className="px-6 py-4 text-left">Supplier</th>
                   <th className="px-6 py-4 text-left">Created At</th>
                   <th className="px-6 py-4 text-center">Actions</th>
                 </tr>
@@ -338,7 +358,7 @@ export default function VehicleMaster() {
                   // Loading skeleton rows
                   [1,2,3].map(i => (
                     <tr key={i}>
-                      {[1,2,3,4,5,6,7].map(j => (
+                      {[1,2,3,4,5,6,7,8].map(j => (
                         <td key={j} className="px-6 py-4">
                           <div className="h-4 bg-slate-100 rounded animate-pulse" />
                         </td>
@@ -347,7 +367,7 @@ export default function VehicleMaster() {
                   ))
                 ) : loadError ? (
                   <tr>
-                    <td colSpan="7" className="text-center py-16">
+                    <td colSpan="8" className="text-center py-16">
                       <div className="flex flex-col items-center justify-center">
                         <div className="w-16 h-16 bg-red-50 border border-red-100 rounded-2xl flex items-center justify-center mb-4 shadow-sm">
                           <AlertTriangle size={28} className="text-red-400" />
@@ -366,7 +386,7 @@ export default function VehicleMaster() {
                   </tr>
                 ) : filteredVehicles.length === 0 ? (
                   <tr>
-                    <td colSpan="7" className="text-center py-16">
+                    <td colSpan="8" className="text-center py-16">
                       <div className="flex flex-col items-center justify-center">
                         <div className="w-16 h-16 bg-slate-50 border border-slate-100 rounded-2xl flex items-center justify-center mb-4 shadow-sm">
                           <Car size={28} className="text-slate-300" />
@@ -401,6 +421,12 @@ export default function VehicleMaster() {
                       </td>
                       <td className="px-6 py-4 font-medium text-slate-700">
                         {vehicle.capacity ? `${vehicle.capacity} Persons` : '-'}
+                      </td>
+                      {/* Who this vehicle is hired from. Blank on one the agency owns outright, and
+                          on one nobody has linked a supplier to — minting is lazy, so an empty cell
+                          is an ordinary state, not a missing value. */}
+                      <td className="px-6 py-4 font-medium text-slate-600">
+                        {vehicle.vendorName || <span className="text-slate-300">—</span>}
                       </td>
                       <td className="px-6 py-4 text-slate-500 font-medium">{vehicle.createdAt}</td>
                       <td className="px-6 py-4">
@@ -554,6 +580,23 @@ export default function VehicleMaster() {
                     <label className="block text-sm font-bold text-slate-700 mb-2 group-focus-within:text-blue-600 transition-colors">Description</label>
                     <textarea name="description" rows="5" placeholder="Brief description about the vehicle's features..." value={formData.description} onChange={handleInputChange}
                       className="w-full px-4 py-3 bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-200 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all resize-none shadow-sm"
+                    />
+                  </div>
+
+                  {/* Who the vehicle is hired from. A marketplace row is maintained by the platform
+                      and paid to the platform, so the picker is closed there like every other field. */}
+                  <div className="group mt-5">
+                    <SupplierPicker
+                      value={formData.vendorPublicId}
+                      linkedLabel={formData.vendorLabel}
+                      disabled={Boolean(editingVehicle?.platformOwned)}
+                      label="Supplier (Vendor)"
+                      hint="Leave blank for your own vehicle — a supplier record is created when a cost first needs a payee."
+                      onChange={(publicId) => setFormData(prev => ({
+                        ...prev,
+                        vendorPublicId: publicId,
+                        clearVendorLink: !publicId && Boolean(prev.vendorLabel || prev.vendorPublicId),
+                      }))}
                     />
                   </div>
                 </div>

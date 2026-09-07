@@ -38,6 +38,19 @@ const accountingService = {
   payVendorBill:  (publicId, data) => API.post(`/accounting/vendor-bills/${publicId}/payments`, data),
   cancelVendorBill:(publicId, reason) => API.post(`/accounting/vendor-bills/${publicId}/cancel`, { reason }),
   getTdsSummary:  (params) => API.get("/accounting/vendor-bills/tds-summary", { params }),
+
+  /* Service lines that name a supplier and have no bill against them.
+     Assigning a vendor deliberately raises no payable — this is the list that keeps that choice
+     from becoming spend nobody notices until a statement arrives. */
+  getUnbilledLines: (params = {}) =>
+    API.get("/accounting/vendor-bills/exceptions/unbilled-lines", { params })
+      .then((res) => res?.data?.data ?? []),
+
+  /* Bills still owing on bookings that were cancelled. Nothing is auto-cancelled — whether the
+     supplier keeps a retention is a conversation, and this is the list of conversations owed. */
+  getCancelledBookingPayables: (params = {}) =>
+    API.get("/accounting/vendor-bills/exceptions/cancelled-bookings", { params })
+      .then((res) => res?.data?.data ?? []),
 };
 
 export default accountingService;

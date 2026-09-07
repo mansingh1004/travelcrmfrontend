@@ -108,7 +108,6 @@ const Calendar = lazyPage(() => import("@features/calendar"), "Calendar");
 const AllTasks = lazyPage(() => import("@features/calendar"), "AllTasks");
 const Operations = lazyPage(() => import("@features/operations"), "Operations");
 const OperationsDetail = lazyPage(() => import("@features/operations"), "OperationsDetail");
-
 // ── Platform SuperAdmin Console — SEPARATE realm (own token "sa_token", violet/dark theme) ──
 const consoleFeature = () => import("@/console");
 const ConsoleLogin = lazyPage(consoleFeature, "ConsoleLogin");

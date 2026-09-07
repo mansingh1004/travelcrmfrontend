@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
-import { ReceiptText, Plus, Eye, Ban, Wallet, RefreshCw, Landmark } from "lucide-react";
+import { ReceiptText, Plus, Eye, Ban, Wallet, RefreshCw, Landmark, AlertTriangle } from "lucide-react";
 import { useToast } from "@shared/ui/toast";
 import { isAlreadyReported, getErrorMessage } from "@shared/api/apiError";
 import { hasPermission, P } from "@shared/lib/access";
-import vendorService from "@features/vendors/api/vendorService";
+// Through the barrel, not the file: nothing outside a feature may reach into its api/ (the deep
+// import here predates the rule and resolved only by luck of the alias).
+import { vendorService } from "@features/vendors";
 import {
   Page, Hero, Panel, PanelHead, Badge, Btn, IconBtn, Modal, Field, Select, Pager, KV,
   theadCls, Th, EmptyRow, SkeletonRows, Loading, inputCls,
@@ -32,15 +34,28 @@ export default function VendorBills() {
   const [loading, setLoading] = useState(true);
   const [raiseOpen, setRaiseOpen] = useState(false);
   const [detailId, setDetailId] = useState(null);
+  /* The two exception lists. They are the reason nothing here auto-raises a draft bill: the gap is
+     shown to the person whose job it is to close it, rather than half-filled bills being created by
+     whoever assigned the supplier. */
+  const [unbilled, setUnbilled] = useState([]);
+  const [cancelledOpen, setCancelledOpen] = useState([]);
+  /* When set, the raise modal is filing a bill against this specific service line. */
+  const [raiseFor, setRaiseFor] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const fy = resolveRange("this-fy");
-      const [billsRes, tdsRes] = await Promise.all([
+      const [billsRes, tdsRes, unbilledRows, cancelledRows] = await Promise.all([
         accountingService.getVendorBills(page, 20),
         accountingService.getTdsSummary(fy),
+        // Both degrade to empty rather than failing the page: an exception list that cannot load is
+        // a missing prompt, not a reason to hide the payables ledger behind an error.
+        accountingService.getUnbilledLines({ limit: 50 }).catch(() => []),
+        accountingService.getCancelledBookingPayables({ limit: 50 }).catch(() => []),
       ]);
+      setUnbilled(Array.isArray(unbilledRows) ? unbilledRows : []);
+      setCancelledOpen(Array.isArray(cancelledRows) ? cancelledRows : []);
       const body = billsRes.data;
       setRows(Array.isArray(body?.data) ? body.data : []);
       const pg = body?.pagination;
@@ -110,16 +125,104 @@ export default function VendorBills() {
         <Pager page={meta.page} totalPages={meta.totalPages} total={meta.total} from={meta.from} to={meta.to} onPage={setPage} />
       </Panel>
 
+      {/* ── Exceptions ─────────────────────────────────────────────────────────
+          Two lists, both read-only prompts. Neither creates anything: a bill still comes from an
+          accountant who knows the section and the invoice number, and a cancelled booking's payable
+          is still settled by talking to that supplier. */}
+      {unbilled.length > 0 && (
+        <Panel className="overflow-hidden">
+          <PanelHead icon={AlertTriangle} title="Services with a supplier but no bill" count={unbilled.length} />
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[900px]">
+              <thead className={theadCls}>
+                <tr>
+                  <Th>Booking</Th><Th>Service</Th><Th>Date</Th><Th>Supplier</Th>
+                  <Th right>Expected cost</Th><Th right>Actions</Th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {unbilled.map((r, idx) => (
+                  <tr key={r.serviceItemPublicId} className="hover:bg-amber-50/40 transition-colors acc-fade" style={{ animationDelay: `${idx * 25}ms` }}>
+                    <td className="px-3 py-3.5 text-sm font-bold text-slate-800">{r.bookingCode || "—"}</td>
+                    <td className="px-3 py-3.5 text-sm text-slate-600">
+                      {r.title || "—"}
+                      {r.serviceType && <span className="ml-1.5 text-[11px] font-bold text-slate-400">{r.serviceType}</span>}
+                    </td>
+                    <td className="px-3 py-3.5 text-sm text-slate-600">{fmtDate(r.serviceDate)}</td>
+                    <td className="px-3 py-3.5 text-sm text-slate-600">{r.vendorName || "—"}</td>
+                    {/* The operator's figure, not a bill — it seeds the form and nothing else. */}
+                    <td className="px-3 py-3.5 text-right text-sm text-slate-600">{r.vendorCost != null ? inr(r.vendorCost) : "—"}</td>
+                    <td className="px-3 py-3.5">
+                      <div className="flex items-center justify-end">
+                        {canManage && (
+                          <Btn variant="outline" size="sm" onClick={() => setRaiseFor(r)}>
+                            <Plus className="w-3.5 h-3.5" /> Raise bill
+                          </Btn>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Panel>
+      )}
+
+      {cancelledOpen.length > 0 && (
+        <Panel className="overflow-hidden">
+          <PanelHead icon={AlertTriangle} title="Open payables on cancelled bookings" count={cancelledOpen.length} />
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[900px]">
+              <thead className={theadCls}>
+                <tr>
+                  <Th>Vendor</Th><Th>Booking</Th><Th>Bill #</Th><Th>Date</Th>
+                  <Th right>Balance</Th><Th>Status</Th><Th right>Actions</Th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {cancelledOpen.map((r, idx) => (
+                  <tr key={r.publicId} className="hover:bg-rose-50/40 transition-colors acc-fade" style={{ animationDelay: `${idx * 25}ms` }}>
+                    <td className="px-3 py-3.5 text-sm font-bold text-slate-800">{r.vendorName || "—"}</td>
+                    <td className="px-3 py-3.5 text-sm text-slate-600">{r.bookingCode || "—"}</td>
+                    <td className="px-3 py-3.5 text-sm text-slate-600">{r.billNumber || "—"}</td>
+                    <td className="px-3 py-3.5 text-sm text-slate-600">{fmtDate(r.billDate)}</td>
+                    <td className="px-3 py-3.5 text-right text-sm font-extrabold text-slate-800">{inr(r.balancePayable)}</td>
+                    <td className="px-3 py-3.5"><Badge tone={STATUS_TONE[r.status] || "slate"}>{r.status?.replace("_", " ")}</Badge></td>
+                    <td className="px-3 py-3.5"><div className="flex items-center justify-end"><IconBtn tone="blue" title="Details" onClick={() => setDetailId(r.publicId)}><Eye className="w-3.5 h-3.5" /></IconBtn></div></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Panel>
+      )}
+
       {raiseOpen && <RaiseBillModal onClose={() => setRaiseOpen(false)} onDone={() => { setRaiseOpen(false); setPage(0); load(); }} />}
+      {raiseFor && <RaiseBillModal prefill={raiseFor} onClose={() => setRaiseFor(null)} onDone={() => { setRaiseFor(null); setPage(0); load(); }} />}
       {detailId && <BillDetailModal publicId={detailId} canManage={canManage} onClose={() => setDetailId(null)} onChanged={load} />}
     </Page>
   );
 }
 
-function RaiseBillModal({ onClose, onDone }) {
+/**
+ * @param prefill optional line this bill is being raised for — {@link UnbilledLineResponse} shaped.
+ *        When present the bill is filed against that booking AND that service line, which is what
+ *        makes "is this hotel billed yet" answerable at all: the API has always accepted the link,
+ *        and this modal was the only reason nothing ever sent it.
+ */
+function RaiseBillModal({ onClose, onDone, prefill = null }) {
   const { showToast } = useToast();
   const [vendors, setVendors] = useState([]);
-  const [form, setForm] = useState({ vendorPublicId: "", billNumber: "", billDate: "", description: "", grossAmount: "", gstInput: "", tdsBase: "", tdsSection: "" });
+  const [form, setForm] = useState({
+    vendorPublicId: prefill?.vendorPublicId || "",
+    billNumber: "", billDate: "",
+    description: prefill ? [prefill.bookingCode, prefill.title].filter(Boolean).join(" · ") : "",
+    // The operator's expected cost is a starting figure, never the bill — the accountant still
+    // types what the vendor actually invoiced.
+    grossAmount: prefill?.vendorCost != null ? String(prefill.vendorCost) : "",
+    gstInput: "", tdsBase: "", tdsSection: "",
+  });
   const [saving, setSaving] = useState(false);
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -139,6 +242,10 @@ function RaiseBillModal({ onClose, onDone }) {
     try {
       const res = await accountingService.raiseVendorBill({
         vendorPublicId: form.vendorPublicId, billNumber: form.billNumber || null, billDate: form.billDate || null,
+        // Only sent when the bill is being raised against a specific line; a booking-level bill
+        // leaves both null, which the API already treats as "not linked".
+        bookingPublicId: prefill?.bookingPublicId || null,
+        serviceItemPublicId: prefill?.serviceItemPublicId || null,
         description: form.description || null, grossAmount: Number(form.grossAmount),
         gstInput: form.gstInput === "" ? null : Number(form.gstInput),
         tdsBase: form.tdsBase === "" ? null : Number(form.tdsBase), tdsSection: form.tdsSection || null,
@@ -151,7 +258,11 @@ function RaiseBillModal({ onClose, onDone }) {
   };
 
   return (
-    <Modal icon={ReceiptText} title="Raise Vendor Bill" subtitle="TDS is computed from the section and the vendor's PAN (206AA 20% if no PAN)" onClose={onClose}
+    <Modal icon={ReceiptText} title="Raise Vendor Bill"
+      subtitle={prefill
+        ? `Against ${prefill.title || "this service"}${prefill.bookingCode ? ` on ${prefill.bookingCode}` : ""} — TDS from the section and the vendor's PAN`
+        : "TDS is computed from the section and the vendor's PAN (206AA 20% if no PAN)"}
+      onClose={onClose}
       footer={<>
         <Btn variant="ghost" onClick={onClose} disabled={saving}>Cancel</Btn>
         <Btn variant="primary" onClick={submit} disabled={saving}>{saving ? "Raising…" : "Raise Bill"}</Btn>

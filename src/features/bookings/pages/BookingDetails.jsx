@@ -28,6 +28,8 @@ import BookingActivityTimeline from "../components/BookingActivityTimeline";
 import { quotationService } from "@features/quotation";
 import { bookingReminderService } from "@features/reminders";
 import { customerService } from "@features/customers";
+import { ConversationDrawer } from "@features/whatsapp";
+import { WhatsAppIcon } from "@shared/ui/WhatsAppIcon";
 import {
   FiArrowLeft, FiEdit2, FiTrash2, FiCheck, FiX, FiAlertCircle,
   FiPlus, FiExternalLink, FiRefreshCw, FiCreditCard, FiUser,
@@ -585,6 +587,9 @@ export default function BookingDetails() {
   const [reminders,   setReminders]   = useState([]);
   const [sendingRem,  setSendingRem]  = useState(null);
   const [customer,    setCustomer]    = useState(null);
+  /* Which channel the conversation drawer is open on, or null when closed. Only the channel is
+     held — the record is built from the booking, which already carries the customer's publicId. */
+  const [convo,       setConvo]       = useState(null);
   const [cancelSummary, setCancelSummary] = useState(null);
   const [timeline, setTimeline] = useState([]);
   const [sectionLoading, setSectionLoading] = useState(null);
@@ -1617,16 +1622,37 @@ export default function BookingDetails() {
                 {/* Live contact detail — from the customer profile (the booking payload only
                     carries the name snapshot). */}
                 {(customer?.phone || b.customerPhone) && (
-                  <a href={`tel:${customer?.phone || b.customerPhone}`}
-                    className="flex items-center gap-2 text-xs text-teal-700 hover:text-teal-800 font-semibold">
-                    <FiPhone className="w-3.5 h-3.5"/> {customer?.phone || b.customerPhone}
-                  </a>
+                  <div className="flex items-center gap-2">
+                    {/* Calling stays a tel: link — the phone takes over and there is nothing for
+                        the CRM to record. Messaging is the opposite, so it opens the drawer. */}
+                    <a href={`tel:${customer?.phone || b.customerPhone}`}
+                      className="flex items-center gap-2 text-xs text-teal-700 hover:text-teal-800 font-semibold">
+                      <FiPhone className="w-3.5 h-3.5"/> {customer?.phone || b.customerPhone}
+                    </a>
+                    {b.customerId && (
+                      <button type="button" onClick={() => setConvo("WHATSAPP")}
+                        title="WhatsApp this customer"
+                        className="w-6 h-6 flex-shrink-0 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-600 flex items-center justify-center transition-all">
+                        <WhatsAppIcon className="w-3.5 h-3.5"/>
+                      </button>
+                    )}
+                  </div>
                 )}
                 {customer?.email && (
-                  <a href={`mailto:${customer.email}`}
-                    className="flex items-center gap-2 text-xs text-teal-700 hover:text-teal-800 font-semibold break-all">
-                    <FiMail className="w-3.5 h-3.5 flex-shrink-0"/> {customer.email}
-                  </a>
+                  /* The address opens the same drawer on its Email tab. A mailto: here would hand
+                     the message to the operator's own mail client and the CRM would never learn the
+                     customer was written to — the drawer still offers that, and records it. */
+                  b.customerId ? (
+                    <button type="button" onClick={() => setConvo("EMAIL")}
+                      className="flex items-center gap-2 text-xs text-teal-700 hover:text-teal-800 font-semibold break-all text-left">
+                      <FiMail className="w-3.5 h-3.5 flex-shrink-0"/> {customer.email}
+                    </button>
+                  ) : (
+                    <a href={`mailto:${customer.email}`}
+                      className="flex items-center gap-2 text-xs text-teal-700 hover:text-teal-800 font-semibold break-all">
+                      <FiMail className="w-3.5 h-3.5 flex-shrink-0"/> {customer.email}
+                    </a>
+                  )
                 )}
 
                 <div className="pt-2 space-y-2 border-t border-slate-100">
@@ -2738,6 +2764,22 @@ export default function BookingDetails() {
           </div>
         </div>
       </div>
+
+      {/* The same drawer the customers and leads lists open. The record is assembled from the
+          booking rather than from the `customer` fetch, because `b.customerId` IS the customer's
+          publicId and is present even when the profile call has not landed yet. */}
+      {convo && b.customerId && (
+        <ConversationDrawer
+          customer={{
+            publicId: b.customerId,
+            name:     customer?.name || b.customer,
+            phone:    customer?.phone || b.customerPhone,
+            email:    customer?.email,
+          }}
+          initialChannel={convo}
+          onClose={() => setConvo(null)}
+        />
+      )}
     </div>
   );
 }

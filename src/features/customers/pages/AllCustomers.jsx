@@ -1577,10 +1577,24 @@ export default function Customers() {
                           <FaEdit className="w-[18px] h-[18px]"/>
                         </button>
                       )}
-                      <a href={`https://wa.me/${(c.phone || "").replace(/\D/g, "")}`} target="_blank" rel="noreferrer"
-                        className="h-10 rounded-xl bg-green-50 hover:bg-green-100 text-green-600 border border-green-100 flex items-center justify-center transition-all">
-                        <FaWhatsapp className="w-[18px] h-[18px]"/>
-                      </a>
+                      {/* Same drawer the desktop row opens. This was a bare wa.me link, so the
+                          identical action behaved differently depending on screen width: on a
+                          phone it handed the message to the operator's own WhatsApp and the CRM
+                          never learned the customer had been contacted. */}
+                      {canMessage && (
+                        <button type="button" onClick={() => setConvo({ customer: c, channel: "WHATSAPP" })}
+                          title="WhatsApp"
+                          className="h-10 rounded-xl bg-green-50 hover:bg-green-100 text-green-600 border border-green-100 flex items-center justify-center transition-all">
+                          <FaWhatsapp className="w-[18px] h-[18px]"/>
+                        </button>
+                      )}
+                      {canMessage && c.email && (
+                        <button type="button" onClick={() => setConvo({ customer: c, channel: "EMAIL" })}
+                          title={`Email ${c.email}`}
+                          className="h-10 rounded-xl bg-sky-50 hover:bg-sky-100 text-sky-600 border border-sky-100 flex items-center justify-center transition-all">
+                          <FaEnvelope className="w-[18px] h-[18px]"/>
+                        </button>
+                      )}
                       {canDeleteCustomer && (
                         <button onClick={() => setDelTarget(c)} className="h-10 rounded-xl bg-red-50 hover:bg-red-100 text-red-500 border border-red-100 flex items-center justify-center transition-all">
                           <FaTrash className="w-[18px] h-[18px]"/>

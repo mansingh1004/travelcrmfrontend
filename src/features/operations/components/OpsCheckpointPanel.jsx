@@ -45,6 +45,42 @@ const STATUSES = [
   { value: "NOT_APPLICABLE", label: "Not applicable" },
 ];
 
+/**
+ * Where the work is being arranged from — the field that made CONFIRMED unreachable.
+ *
+ * A checkpoint provisioned NOT_SOURCED cannot be confirmed (OpsCheckpointTransitions.confirmBlocker,
+ * and ck_ops_checkpoint_confirmed_has_source in the database), and the planner provisions TRANSPORT,
+ * SIGHTSEEING and DRIVER as NOT_SOURCED unconditionally. The API has always accepted `source`; no
+ * screen ever sent it. So the dropdown offered "Confirmed", the server refused with
+ * "Choose where transport is being arranged from before confirming it", and there was nowhere in
+ * the product to choose it. This select is that missing control.
+ *
+ * The list of choices comes from the server, per checkpoint, as `allowedSources` — a hotel cannot be
+ * arranged from the fleet and a voucher run cannot come from a vendor, and `OpsCheckpoint` owns that
+ * rule. Hardcoding it here would put a second copy of it in the client: wrong for some kinds
+ * immediately, and for more of them later.
+ */
+
+/**
+ * Sources the marketplace flow owns. Filtered out of the picker because choosing one by hand only
+ * swaps this dead end for another: they need a marketplace order, which no operations screen can
+ * create, and the database CHECK forbids naming a vendor alongside them. An already-set platform
+ * source still renders as a read-only badge.
+ */
+const PLATFORM_SOURCES = new Set(["PLATFORM_HOTEL", "PLATFORM_VEHICLE"]);
+
+/**
+ * What a chosen source must still name before the server will accept CONFIRMED.
+ *
+ * Mirrors OpsCheckpointTransitions.confirmBlocker: a vendor-payable source needs a supplier, an
+ * own-fleet one needs a vehicle or a driver. Everything else needs nothing.
+ */
+const needsFor = (source) => {
+  if (source === "EXTERNAL_VENDOR" || PLATFORM_SOURCES.has(source)) return "vendor";
+  if (source === "OWN_FLEET") return "fleet";
+  return null;
+};
+
 const STATUS_TONE = {
   CONFIRMED: "bg-emerald-50 text-emerald-700 border-emerald-200",
   REQUESTED: "bg-sky-50 text-sky-700 border-sky-200",
@@ -98,6 +134,39 @@ export default function OpsCheckpointPanel({ bookingPublicId, onChanged, onRecor
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState(null);
 
+  /**
+   * Options for the two sources that demand evidence, fetched once and only when something on this
+   * record actually asks for them.
+   *
+   * Both endpoints sit behind a permission an operations user may not hold — VENDOR_READ and
+   * FLEET_READ. A 403 leaves the list empty, which renders as "no options" beside the source rather
+   * than an error: the operator can still pick a source that needs no evidence, and the panel is not
+   * broken just because they cannot see the vendor master.
+   */
+  const [vendorOptions, setVendorOptions] = useState([]);
+  const [vehicleOptions, setVehicleOptions] = useState([]);
+  const [driverOptions, setDriverOptions] = useState([]);
+  const loadedNeeds = useRef({ vendor: false, fleet: false });
+
+  const ensureOptions = useCallback(async (needs) => {
+    if (!needs || loadedNeeds.current[needs]) return;
+    loadedNeeds.current[needs] = true;
+    try {
+      if (needs === "vendor") {
+        setVendorOptions(await operationsService.searchVendors(""));
+      } else {
+        const [vehicles, drivers] = await Promise.all([
+          operationsService.fleetVehicleOptions(),
+          operationsService.fleetDriverOptions(),
+        ]);
+        setVehicleOptions(vehicles);
+        setDriverOptions(drivers);
+      }
+    } catch {
+      // Permission or network. Silent by design — see above.
+    }
+  }, []);
+
   // Held in a ref so `load` does not depend on it. An inline arrow from the host would give
   // this a new identity every render, and a load() that changed identity every render would
   // re-fetch every render.
@@ -123,6 +192,13 @@ export default function OpsCheckpointPanel({ bookingPublicId, onChanged, onRecor
   }, [bookingPublicId]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Pre-load the pickers for sources already in use on this record, so a checkpoint that is
+  // ALREADY OWN_FLEET shows its vehicle list without the operator first having to re-pick the
+  // source they had chosen last week.
+  useEffect(() => {
+    (record?.checkpoints ?? []).forEach((c) => ensureOptions(needsFor(c.source)));
+  }, [record, ensureOptions]);
 
   /**
    * Move one checkpoint.
@@ -237,10 +313,98 @@ export default function OpsCheckpointPanel({ bookingPublicId, onChanged, onRecor
 
               {busy && <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-400" />}
 
-              {/* Who is on the hook, if anybody has been named. `sourceLabel` is the
-                  evidentiary standard — a platform confirmation and a phone call are not
-                  the same green dot, and this is where that difference is legible. */}
-              {c.sourceLabel && <Badge tone="slate">{c.sourceLabel}</Badge>}
+              {/* Who is on the hook. `sourceLabel` is the evidentiary standard — a platform
+                  confirmation and a phone call are not the same green dot, and this is where
+                  that difference is legible.
+
+                  Editable now, because until it was, CONFIRMED was unreachable for TRANSPORT,
+                  SIGHTSEEING and DRIVER: the planner leaves them NOT_SOURCED and the server
+                  refuses to confirm one. A platform source stays a read-only badge — it is set
+                  by the marketplace flow and cannot honestly be typed here. */}
+              {(() => {
+                const options = (c.allowedSources ?? []).filter(
+                  (s) => !PLATFORM_SOURCES.has(s.value)
+                );
+                // Read-only when the operator cannot write, when the marketplace owns this source,
+                // or when the server offers nothing to choose from.
+                if (!canWrite || PLATFORM_SOURCES.has(c.source) || options.length === 0) {
+                  return c.sourceLabel ? <Badge tone="slate">{c.sourceLabel}</Badge> : null;
+                }
+                return (
+                  <select
+                    value={options.some((s) => s.value === c.source) ? c.source : ""}
+                    disabled={busy}
+                    onChange={(e) => {
+                      const next = e.target.value || null;
+                      if (!next) return;   // NOT_SOURCED is the state to leave, not one to choose
+                      ensureOptions(needsFor(next));
+                      // Only the source is sent. applySource on the server already clears evidence
+                      // that belonged to the old one — it has to, because
+                      // ck_ops_checkpoint_target_matches_source rejects a vendor on an OWN_FLEET row
+                      // and a fleet id on an EXTERNAL_VENDOR one. Sending nulls here would do
+                      // nothing anyway: the update treats every null field as "leave unchanged".
+                      patch(c, { source: next });
+                    }}
+                    className="text-[11px] font-bold px-2 py-1 rounded-lg border border-slate-200 bg-white text-slate-700 outline-none disabled:opacity-60"
+                  >
+                    <option value="">Not sourced</option>
+                    {options.map((s) => (
+                      <option key={s.value} value={s.value}>{s.label}</option>
+                    ))}
+                  </select>
+                );
+              })()}
+
+              {/* The evidence the chosen source demands. Without it the server still refuses
+                  CONFIRMED — "Name the supplier…" / "Pick the vehicle or driver…" — so these are
+                  the other half of the same fix, not a nicety. */}
+              {canWrite && needsFor(c.source) === "vendor" && (
+                <select
+                  value={c.vendorPublicId ?? ""}
+                  disabled={busy}
+                  onChange={(e) => patch(c, { vendorPublicId: e.target.value || null })}
+                  className="text-[11px] font-bold px-2 py-1 rounded-lg border border-slate-200 bg-white text-slate-700 outline-none disabled:opacity-60 max-w-[180px]"
+                >
+                  <option value="">
+                    {vendorOptions.length ? "Pick supplier" : "No vendor access"}
+                  </option>
+                  {vendorOptions.map((v) => (
+                    <option key={v.publicId} value={v.publicId}>{v.vendorName}</option>
+                  ))}
+                </select>
+              )}
+
+              {canWrite && needsFor(c.source) === "fleet" && (
+                <>
+                  <select
+                    value={c.fleetVehiclePublicId ?? ""}
+                    disabled={busy}
+                    onChange={(e) => patch(c, { fleetVehiclePublicId: e.target.value || null })}
+                    className="text-[11px] font-bold px-2 py-1 rounded-lg border border-slate-200 bg-white text-slate-700 outline-none disabled:opacity-60 max-w-[150px]"
+                  >
+                    <option value="">
+                      {vehicleOptions.length ? "Pick vehicle" : "No fleet access"}
+                    </option>
+                    {vehicleOptions.map((v) => (
+                      <option key={v.publicId} value={v.publicId}>{v.label}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={c.fleetDriverPublicId ?? ""}
+                    disabled={busy}
+                    onChange={(e) => patch(c, { fleetDriverPublicId: e.target.value || null })}
+                    className="text-[11px] font-bold px-2 py-1 rounded-lg border border-slate-200 bg-white text-slate-700 outline-none disabled:opacity-60 max-w-[150px]"
+                  >
+                    <option value="">
+                      {driverOptions.length ? "Pick driver" : "No fleet access"}
+                    </option>
+                    {driverOptions.map((d) => (
+                      <option key={d.publicId} value={d.publicId}>{d.label}</option>
+                    ))}
+                  </select>
+                </>
+              )}
+
               {c.vendorName && (
                 <span className="text-[11px] font-bold text-slate-600 truncate max-w-[160px]">
                   {c.vendorName}

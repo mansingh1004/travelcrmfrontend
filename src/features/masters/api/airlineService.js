@@ -59,6 +59,11 @@ function transformAirlineData(formData) {
     status: formData.status?.toUpperCase() || "ACTIVE",
 
     logoUrl: formData.logoUrl || null,
+
+    // Supplier link — usually the consolidator the agency actually buys tickets through, rarely the
+    // carrier itself. Absence never clears one; removing sends clearVendorLink.
+    vendorPublicId: formData.vendorPublicId || undefined,
+    clearVendorLink: formData.clearVendorLink || undefined,
   };
 }
 
@@ -101,6 +106,10 @@ export function transformAirlineResponse(backendData, index = 0) {
     country:
       backendData.country ??
       "",
+
+    // The supplier tickets are bought through, resolved server-side. Kept on the row so the list
+    // card can name it without a second call.
+    vendorName: backendData.vendorName ?? null,
 
     fleet:
       backendData.fleetSize ??

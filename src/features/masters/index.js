@@ -14,3 +14,9 @@ export { default as Testimonials } from "./pages/Testimonials";
 export { hotelService, uploadHotelImageToCloudinary } from "./api/HotelService";
 export { sightseeingService } from "./api/SightseeingService";
 export { vehicleService } from "./api/VehicleService";
+// The quotation builder picks cruises and airlines from the master the same way it already picks
+// hotels and vehicles — and it must reach them through this index, never by deep-importing api/.
+// Both carry vendorName, which is how "who are we buying this from" reaches the builder and,
+// through the sold line, the operations board.
+export { cruiseService, normalizeCruiseList, transformCruiseResponse } from "./api/CruiseService";
+export { airlineService, normalizeAirlineList, transformAirlineResponse } from "./api/airlineService";

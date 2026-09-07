@@ -113,6 +113,10 @@ export function buildQuotationPayload({
       amount   : Number(flightAmount) || 0,
       journey,
       segments : segments.map(seg => ({
+        // Which airline master was picked, when one was. Null on a hand-typed segment — the same
+        // shape hotelMasterPublicId uses above, and what lets the sold booking line resolve a
+        // supplier instead of showing a permanent red "no supplier" on the ops board.
+        airlineMasterPublicId : seg.airlineMasterPublicId || null,
         airline    : seg.airline   || "",
         flightNo   : seg.flightNo  || "",
         class      : seg.class     || "",
@@ -207,6 +211,8 @@ export function buildQuotationPayload({
       title    : cruiseTitle,
       amount   : Number(cruiseAmount) || 0,
       cruises  : cruises.map(c => ({
+        // Which cruise master was picked. Null on a hand-typed sailing, which stays supported.
+        cruiseMasterPublicId : c.cruiseMasterPublicId || null,
         name    : c.name    || "",
         type    : c.type    || "",
         depPort : c.depPort || "",

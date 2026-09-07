@@ -266,6 +266,11 @@ function transformHotelData(frontendData) {
     // ── IMAGE — Cloudinary secure_url (YEH NAYA ADD KIYA) ──
     imagePath:     frontendData.imagePath || null,
 
+    // Supplier link — the vendor this hotel is bought from. Sent only when the form named one;
+    // clearing is explicit, because a missing field must never wipe a supplier somebody chose.
+    vendorPublicId:   frontendData.vendorPublicId || undefined,
+    clearVendorLink:  frontendData.clearVendorLink || undefined,
+
     // Room Types array
     roomTypes: (frontendData.roomTypes ?? []).map((room) => ({
       name:      room.name,
