@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import bookingService                from "../api/bookingService";
 import CancelBookingModal            from "../components/CancelBookingModal";
 import BookingExpenseModal           from "../components/BookingExpenseModal"
-import { hasPermission, P }          from "@shared/lib/access";
+import { hasPermission, isTenantAdmin, P } from "@shared/lib/access";
 import { useToast }                  from "@shared/ui/toast";
 import { getErrorMessage, isAlreadyReported } from "@shared/api/apiError";
 import { downloadBlob, hydrateBlobError }     from "@shared/lib/download";
@@ -182,6 +182,12 @@ function BookingModal({ booking, onClose, onEdit, onCancel, onRefresh }) {
     booking.status!=="Completed" && booking.status!=="Cancelled";
   const canRead   = hasPermission(P.BOOKING_READ);
   const canUpdate = hasPermission(P.BOOKING_UPDATE);
+  // Terminal statuses. COMPLETED is the one that reopens, and only for a tenant admin — the backend
+  // allows exactly that, and it is the only way out of a booking marked complete by mistake, since
+  // delete and cancel both refuse a completed one. CANCELLED and REFUNDED never reopen: each leaves
+  // a credit note or a refund payout behind that a status flip would orphan.
+  const canReopen    = booking.status==="Completed" && isTenantAdmin();
+  const statusLocked = ["Completed","Cancelled","Refunded"].includes(booking.status) && !canReopen;
   const payPct = booking.totalPayable>0 ? Math.round(booking.paid/booking.totalPayable*100) : 0;
 
   const runDownload = async kind => {
@@ -242,7 +248,12 @@ function BookingModal({ booking, onClose, onEdit, onCancel, onRefresh }) {
               <div className="ml-auto flex items-center gap-1.5">
                 <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wide">Set status</span>
                 <div className="relative">
-                  <select value={statusVal} disabled={statusSaving}
+                  <select value={statusVal} disabled={statusSaving || statusLocked}
+                    title={statusLocked
+                      ? `A ${booking.status} booking is locked; its status can no longer be changed.`
+                      : canReopen
+                        ? "Reopening a completed booking — set it back to Confirmed or Pending."
+                        : undefined}
                     onChange={e=>handleStatusChange(e.target.value)}
                     className="pl-3 pr-8 py-1.5 rounded-lg border border-blue-200 bg-white text-xs font-bold text-blue-700
                       focus:border-blue-400 focus:ring-2 focus:ring-blue-100 outline-none appearance-none cursor-pointer
