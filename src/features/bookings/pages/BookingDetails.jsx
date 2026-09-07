@@ -15,7 +15,7 @@ import bookingService from "../api/bookingService";
 import { useToast } from "@shared/ui/toast";
 import { getErrorMessage, isAlreadyReported } from "@shared/api/apiError";
 import { downloadBlob, hydrateBlobError } from "@shared/lib/download";
-import { hasPermission, P } from "@shared/lib/access";
+import { hasPermission, isTenantAdmin, P } from "@shared/lib/access";
 import RefundBookingModal from "../components/RefundBookingModal";
 import BookingInvoiceModal from "../components/BookingInvoiceModal";
 import CancelBookingModal from "../components/CancelBookingModal";
@@ -1541,6 +1541,19 @@ export default function BookingDetails() {
                   <button onClick={()=>handleStatusChange("COMPLETED")}
                     className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-sm font-bold transition-all">
                     <FiCheck className="w-4 h-4"/> Mark Completed
+                  </button>
+                )}
+                {/* The way back out of the button directly above. Marking a booking complete is one
+                    click with no confirmation, and COMPLETED used to be a one-way door: delete
+                    refused it, cancel refused it, and the status could not be moved back — the
+                    booking was stranded. The backend now lets a tenant admin, and only a tenant
+                    admin, reopen it. canUpdate rather than canEditBooking, because that one is
+                    false for every terminal status by definition. */}
+                {canUpdate && b.status === "COMPLETED" && isTenantAdmin() && (
+                  <button onClick={()=>handleStatusChange("CONFIRMED")}
+                    title="Move this booking back to Confirmed so it can be edited, cancelled or deleted."
+                    className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 text-sm font-bold transition-all">
+                    <FiCornerUpLeft className="w-4 h-4"/> Reopen Booking
                   </button>
                 )}
                 {canCancel && !isTerminal && (

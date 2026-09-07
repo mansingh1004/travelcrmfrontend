@@ -110,9 +110,39 @@ const operationsService = {
    * caller is expected to treat a 403 as "no picker", not as a broken panel. Kept small
    * (20 rows) because a Vendor loads two secondary tables per row.
    */
+  /**
+   * Suppliers for the board's assign picker.
+   *
+   * <p><b>includeAuto is on, and the master forms' picker is the one that should keep it off.</b>
+   * The backend hides system-minted self-vendors by default so an agency with 200 hotels and 3 real
+   * suppliers opens Vendors and sees 3 — right for a list somebody browses. This picker asks a
+   * different question: who do we pay for THIS line. The self-vendor minted from the very hotel
+   * being arranged is the correct answer to that, and without this flag it was the one supplier the
+   * operator could never find — every master-derived hotel, vehicle, cruise and airline was
+   * invisible here, so a line could only be assigned to a hand-built vendor.
+   */
   searchVendors: async (q) => {
     const res = await API.get("/vendors", {
-      params: { q: q || undefined, size: 20, sortBy: "vendorName", sortDir: "asc" },
+      params: { q: q || undefined, size: 20, sortBy: "vendorName", sortDir: "asc", includeAuto: true },
+    });
+    return res?.data?.data ?? [];
+  },
+
+  /**
+   * Master rows this line could be bought from — the picker's other half.
+   *
+   * <p>A hotel that has never been sold has no vendor, so it can never appear in the supplier
+   * search however it is filtered. This asks the masters directly. Picking one sends the master
+   * reference on the assign call and the server resolves or mints its supplier there; nothing is
+   * created by opening the picker or typing in it.
+   *
+   * @param type one of HOTEL | VEHICLE | CRUISE | AIRLINE; callers pass null for a line whose
+   *             kind has no master behind it, and should skip the call entirely
+   */
+  searchMasterSuppliers: async (type, q) => {
+    if (!type) return [];
+    const res = await API.get("/vendors/master-options", {
+      params: { type, q: q || undefined, limit: 20 },
     });
     return res?.data?.data ?? [];
   },
