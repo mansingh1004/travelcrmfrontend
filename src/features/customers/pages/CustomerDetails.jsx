@@ -9,6 +9,7 @@ import { useToast } from "@shared/ui/toast";
 import Tabs from "@shared/ui/Tabs";
 import { getErrorMessage } from "@shared/api/apiError";
 import { hasPermission, P } from "@shared/lib/access";
+import { ConversationDrawer } from "@features/whatsapp";
 
 import customerService from "../api/customerService";
 import { FONT } from "../components/profile/profileUi";
@@ -91,6 +92,9 @@ export default function CustomerDetails() {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [summary, setSummary] = useState(null);
+  /* Which channel the conversation drawer is open on, or null when it is closed. Only the channel
+     is held: the record is `summary`, which this page already has. */
+  const [convo, setConvo] = useState(null);
   const [loading, setLoading] = useState(Boolean(id));
   const [loadError, setLoadError] = useState(id ? "" : "Customer link is invalid.");
   const [notFound, setNotFound] = useState(false);
@@ -209,7 +213,11 @@ export default function CustomerDetails() {
 
   return (
     <div className="min-h-screen bg-slate-50" style={{ fontFamily: FONT }}>
-      <CommandBar summary={summary} onBack={() => navigate("/AllCustomers")}>
+      <CommandBar
+        summary={summary}
+        onBack={() => navigate("/AllCustomers")}
+        onMessage={(channel) => setConvo(channel)}
+      >
         <ProfileActions
           customerId={id}
           summary={summary}
@@ -300,6 +308,17 @@ export default function CustomerDetails() {
           <MarketingTab state={sections.marketing} />
         </Panel>
       </main>
+
+      {/* The same drawer the customers list and the leads list open, on the same thread the
+          Communication Center shows. Mounted outside <main> so it overlays the whole page rather
+          than scrolling with the tab content. */}
+      {convo && (
+        <ConversationDrawer
+          customer={summary}
+          initialChannel={convo}
+          onClose={() => setConvo(null)}
+        />
+      )}
     </div>
   );
 }

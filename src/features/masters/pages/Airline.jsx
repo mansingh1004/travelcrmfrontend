@@ -5,6 +5,9 @@ import {
   useEffect,
 } from "react";
 
+import SupplierPicker from "../components/SupplierPicker";
+import { vendorService } from "@features/vendors";
+
 
 import { useNavigate } from "react-router-dom";
 import { Plane, Plus, Search, Edit2, Trash2, Eye, X, Upload, CheckCircle2, AlertCircle, Clock, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Globe, Tag } from "lucide-react";
@@ -50,6 +53,8 @@ const EMPTY_FORM = {
   logoFile: null,
   logoUrl: null,
   preview: null,
+  /* Blank = the carrier is its own supplier; a vendor is minted when a ticket cost needs a payee. */
+  vendorPublicId: "", clearVendorLink: false, vendorLabel: "",
 };
 
 function formatDate(str) {
@@ -121,6 +126,11 @@ function AirlineCard({ airline, theme, onView, onEdit, onDelete }) {
                    {airline.country || "Unknown"}
                 </span>
               </div>
+              {/* The consolidator tickets are actually bought through — rarely the carrier itself,
+                  and the one thing this card could never tell you. Absent until one is linked. */}
+              {airline.vendorName && (
+                <p className="mt-1 text-[11px] font-semibold text-white/70">via {airline.vendorName}</p>
+              )}
             </div>
           </div>
           <StatusBadge status={airline.status} />
@@ -436,7 +446,22 @@ useEffect(() => {
     logoFile: null,
     logoUrl: airline.logo ?? null,
     preview: airline.logo ?? null,
+    vendorPublicId: "", clearVendorLink: false, vendorLabel: "",
   });
+
+  // One row, when the form opens — the airline DTO deliberately does not carry the link. A failed
+  // lookup leaves the picker blank, and a blank picker never sends clearVendorLink, so it cannot
+  // unlink the carrier by accident.
+  const airlineId = airline?.id ?? airline?.airlineId;
+  if (airlineId) {
+    vendorService.linkOf("AIRLINE", airlineId)
+      .then((linked) => setForm(f => ({
+        ...f,
+        vendorPublicId: linked?.publicId || "",
+        vendorLabel:    linked?.vendorName || "",
+      })))
+      .catch(() => {});
+  }
 
   setErrors({});
   setEditing(airline);
@@ -1012,6 +1037,20 @@ const closeFormModal = () => {
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">Country</label>
               <input value={form.country} onChange={e => setForm(f => ({ ...f, country: e.target.value }))} placeholder="e.g. India" className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition bg-white" />
+            </div>
+            {/* Most agencies pay a consolidator, not the carrier — this is where that is recorded,
+                so every ticket cost lands on the party that actually invoices them. */}
+            <div className="sm:col-span-2">
+              <SupplierPicker
+                value={form.vendorPublicId}
+                linkedLabel={form.vendorLabel}
+                hint="Usually your consolidator. Leave blank to treat the carrier as its own supplier."
+                onChange={(publicId) => setForm(f => ({
+                  ...f,
+                  vendorPublicId: publicId,
+                  clearVendorLink: !publicId && Boolean(f.vendorLabel || f.vendorPublicId),
+                }))}
+              />
             </div>
             <div>
           <label className="block text-sm font-semibold text-gray-700 mb-1.5">

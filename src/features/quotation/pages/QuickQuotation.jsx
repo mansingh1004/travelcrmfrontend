@@ -867,6 +867,10 @@ const hotelStayPatch = (stay, hotel) => {
     stars: asNumber(hotel.stars),
     imagePath: hotelImage || roomLines.find((line) => line.imagePath)?.imagePath || "",
     hotelMasterPublicId: hotel.publicId || null,
+    // Who the agency buys this property through. Display only — the sold line resolves its own
+    // supplier from hotelMasterPublicId — but it answers "whose hotel is this" here, where the
+    // decision is being made, instead of on the operations board a week later.
+    vendorName: hotel.vendorName || null,
     platformHotelPublicId: hotel.platformHotelPublicId || null,
     hotelOrigin: hotel.origin || (hotel.platformOwned ? "PLATFORM_SYNC" : "TENANT"),
     platformOwned: hotel.platformOwned === true || hotel.origin === "PLATFORM_SYNC",
@@ -1421,7 +1425,14 @@ function QuickHotelStays({ data, setData, loadHotels }) {
                   <p className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-slate-500">
                     <MapPin className="h-3.5 w-3.5 text-rose-400" /> {stay.city || "City not specified"}
                   </p>
-                  <p className="mt-2 text-[11px] font-bold text-violet-600">Selected from Hotel Master</p>
+                  <p className="mt-2 text-[11px] font-bold text-violet-600">
+                    Selected from Hotel Master
+                    {/* A platform property is paid to the platform, not to the hotel, so a tenant
+                        vendor there would name the wrong payee — hence own-master rows only. */}
+                    {!stay.platformOwned && stay.vendorName && (
+                      <span className="ml-2 font-bold text-slate-600">· via {stay.vendorName}</span>
+                    )}
+                  </p>
                 </div>
                 <div className="min-w-64 border-t border-violet-100 bg-white/80 p-4 sm:border-l sm:border-t-0">
                   <span className="text-[10px] font-extrabold uppercase tracking-wide text-slate-400">Room-wise Master rates</span>

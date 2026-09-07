@@ -23,7 +23,8 @@
 // enormously better than a chase that exists only in one person's phone.
 // ─────────────────────────────────────────────────────────────────────────────
 import { useEffect, useState } from "react";
-import { ExternalLink, Loader2, MessageCircle, Send, X } from "lucide-react";
+import { Link } from "react-router-dom";
+import { AlertTriangle, ExternalLink, Loader2, MessageCircle, Send, Settings, X } from "lucide-react";
 
 import { getErrorMessage, isAlreadyReported } from "@shared/api/apiError";
 import { toast } from "@shared/ui/toast";
@@ -155,6 +156,27 @@ export default function VendorWhatsAppModal({ bookingPublicId, line, onSent, onC
         ) : (
           <>
             <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+              {/* Why "Send from CRM" is missing, said FIRST and in a tone that reads as a state
+                  rather than a footnote — the same notice the lead drawer opens with, and for the
+                  same reason: an operator who cannot see why the button is absent assumes the
+                  panel is broken. It carries the same Connect link, because the fix is a setting
+                  and not something they can do from here. */}
+              {!apiReady && !draft?.apiAvailable && (
+                <div className="flex items-start gap-2 rounded-lg bg-rose-50 ring-1 ring-rose-200 px-2.5 py-2">
+                  <AlertTriangle className="w-3.5 h-3.5 text-rose-600 flex-shrink-0 mt-px" />
+                  <p className="flex-1 text-[11px] font-semibold text-rose-700 leading-snug">
+                    WhatsApp Business is not connected — you can still send from your own WhatsApp
+                    below, and the CRM will record it.
+                  </p>
+                  <Link
+                    to="/WhatsAppConfiguration"
+                    className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-700 underline flex-shrink-0"
+                  >
+                    <Settings className="w-3 h-3" /> Connect
+                  </Link>
+                </div>
+              )}
+
               {/* What has already been said, above the box that adds to it. Absent entirely on a
                   first message rather than showing an empty chat frame — a thread that does not
                   exist yet should not look like one that does and is empty. */}
@@ -207,11 +229,14 @@ export default function VendorWhatsAppModal({ bookingPublicId, line, onSent, onC
                 />
               </div>
 
-              {!apiReady && (
+              {/* The "connected but no template" half stays here as a quiet footnote. The other
+                  half — not connected at all — is raised to the top of the panel instead, because
+                  it is the state an operator is most likely to hit and least likely to explain to
+                  themselves. */}
+              {!apiReady && draft?.apiAvailable && (
                 <p className="text-[10px] text-slate-500 bg-slate-50 ring-1 ring-slate-200 rounded-lg px-2.5 py-2">
-                  {draft?.apiAvailable
-                    ? "WhatsApp Business is connected but no approved template is set, so this has to go from your own WhatsApp."
-                    : "WhatsApp Business is not connected for this agency, so this goes from your own WhatsApp — the CRM will still record it."}
+                  WhatsApp Business is connected but no approved template is set, so this has to go
+                  from your own WhatsApp.
                 </p>
               )}
               {apiReady && !draft?.freeTextAllowed && (

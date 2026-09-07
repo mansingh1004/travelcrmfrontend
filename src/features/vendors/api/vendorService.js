@@ -33,7 +33,7 @@ const vendorService = {
      query that pages. Drive this through `usePagedList`.
   ──────────────────────────────────────────────────────────── */
   list: ({ page = 0, size = 25, sortBy = "vendorName", sortDir = "asc",
-           q, status, type, payStatus } = {}) =>
+           q, status, type, payStatus, includeAuto = false } = {}) =>
     API.get("/vendors", {
       params: {
         page, size,
@@ -43,6 +43,9 @@ const vendorService = {
         status: status || undefined,
         type: type || undefined,
         payStatus: payStatus || undefined,
+        // Off by default, matching the server: a self-vendor minted from a hotel or a vehicle is
+        // bookkeeping plumbing, not a supplier relationship somebody built. The list has a toggle.
+        includeAuto,
       },
     }),
 
@@ -52,6 +55,30 @@ const vendorService = {
   ──────────────────────────────────────────────────────────── */
   getAll: (params = {}) =>
     vendorService.list({ size: 200, ...params }),
+
+  /* ── SUPPLIER PICKER OPTIONS ────────────────────────────────
+     GET /api/vendors/options?q=&includeAuto=
+     Response: ApiResponse<[{ publicId, vendorName, vendorType, autoCreated }]>
+
+     For the master forms (hotel / vehicle / airline), which link a supplier by publicId — NOT the
+     paged list: this returns ACTIVE vendors only and leaves out the self-vendors the system mints
+     from master rows, so the dropdown offers the parties an agency actually buys from.
+  ──────────────────────────────────────────────────────────── */
+  options: ({ q, includeAuto = false } = {}) =>
+    API.get("/vendors/options", { params: { q: q || undefined, includeAuto } })
+      .then((res) => res?.data?.data ?? []),
+
+  /* ── CURRENT SUPPLIER LINK OF A MASTER ROW ──────────────────
+     GET /api/vendors/link?type=HOTEL&masterId=123
+     Response: ApiResponse<{ publicId, vendorName, vendorType, autoCreated } | null>
+
+     One row, fetched when a master form opens, so the picker can show what is saved. The master
+     DTOs deliberately do not carry this — resolving it for every row of every list is the N+1 this
+     avoids. `null` data means the row is not linked yet.
+  ──────────────────────────────────────────────────────────── */
+  linkOf: (type, masterId) =>
+    API.get("/vendors/link", { params: { type, masterId } })
+      .then((res) => res?.data?.data ?? null),
 
   /* ── GET VENDOR BY ID ───────────────────────────────────────
      GET /api/vendors/:id

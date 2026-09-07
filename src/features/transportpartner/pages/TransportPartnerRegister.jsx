@@ -218,6 +218,15 @@ function toForm(dto) {
     about: dto?.about ?? "",
     cancellationPolicy: dto?.cancellationPolicy ?? "",
     noticeHours: dto?.noticeHours ?? "",
+    payee: {
+      bankName: dto?.payee?.bankName ?? "",
+      accountName: dto?.payee?.accountName ?? "",
+      accountNumber: dto?.payee?.accountNumber ?? "",
+      ifscCode: dto?.payee?.ifscCode ?? "",
+      upiId: dto?.payee?.upiId ?? "",
+      panNumber: dto?.payee?.panNumber ?? "",
+      gstNumber: dto?.payee?.gstNumber ?? "",
+    },
     vehicles: (dto?.vehicles ?? []).map((v) => ({
       _key: newKey(),
       name: v.name ?? "",
@@ -567,6 +576,8 @@ function TransportPartnerRegisterContent() {
   }, [editable, saveState]);
 
   const patch = (changes) => setForm((f) => ({ ...f, ...changes }));
+  /* Nested block, so it patches through its own helper; toPayload spreads the whole form. */
+  const patchPayee = (changes) => setForm((f) => ({ ...f, payee: { ...f.payee, ...changes } }));
 
   /* ── vehicles ──────────────────────────────────────────────── */
   const toggleVehicle = (key) =>
@@ -1080,6 +1091,46 @@ function TransportPartnerRegisterContent() {
                     onChange={(e) => patch({ cancellationPolicy: e.target.value })}
                     placeholder={t("cancellationPlaceholder")} />
                 </Field>
+              </Group>
+
+              {/* How the platform pays this operator once approved. All optional — most of this
+                  trade is proprietors with no GST registration, and plenty settle by UPI alone.
+                  A required field here would reject a real operator at the end of a long form. */}
+              <Group title="Payment details"
+                hint="How we pay you after a trip. Bank account or UPI — whichever you use.">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field label="Bank name">
+                    <input className={inputCls} value={form.payee.bankName} disabled={ro}
+                      onChange={(e) => patchPayee({ bankName: e.target.value })} placeholder="HDFC Bank" />
+                  </Field>
+                  <Field label="Account holder name">
+                    <input className={inputCls} value={form.payee.accountName} disabled={ro}
+                      onChange={(e) => patchPayee({ accountName: e.target.value })}
+                      placeholder="As printed on the passbook" />
+                  </Field>
+                  <Field label="Account number">
+                    <input className={inputCls} value={form.payee.accountNumber} disabled={ro}
+                      inputMode="numeric"
+                      onChange={(e) => patchPayee({ accountNumber: e.target.value })} />
+                  </Field>
+                  <Field label="IFSC code">
+                    <input className={inputCls} value={form.payee.ifscCode} disabled={ro}
+                      onChange={(e) => patchPayee({ ifscCode: e.target.value })} placeholder="HDFC0001234" />
+                  </Field>
+                  <Field label="UPI ID">
+                    <input className={inputCls} value={form.payee.upiId} disabled={ro}
+                      onChange={(e) => patchPayee({ upiId: e.target.value })} placeholder="name@bank" />
+                  </Field>
+                  <Field label="PAN">
+                    <input className={inputCls} value={form.payee.panNumber} disabled={ro}
+                      onChange={(e) => patchPayee({ panNumber: e.target.value })} placeholder="ABCDE1234F" />
+                  </Field>
+                  <Field label="GSTIN">
+                    <input className={inputCls} value={form.payee.gstNumber} disabled={ro}
+                      onChange={(e) => patchPayee({ gstNumber: e.target.value })}
+                      placeholder="Leave blank if not registered" />
+                  </Field>
+                </div>
               </Group>
             </div>
           </Card>

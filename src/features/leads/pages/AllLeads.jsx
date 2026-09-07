@@ -14,6 +14,11 @@ import AccessDenied from "../components/AccessDenied";
 // duplicate AddLeadLog / LeadLogs pages, which had drifted out of sync with these.
 import { AddLogModal, LogsModal } from "../components/LeadLogModals";
 import { formatToWhatsAppLink } from "../lib/whatsapp";
+/* The claim queue's source palette, reused rather than re-declared. One source coloured two
+   different ways on two screens is exactly what a colour code exists to prevent, and this list is
+   already the single place that map lives. It keys on the ENUM NAME (`sourceKey`), never the display
+   name — see LeadResponseDto#sourceKey. */
+import { sourceStyle } from "../lib/leadAlertConstants";
 import PdfDownloadLoader from '@/shared/ui/PdfDownloadLoader';
 import { usePdfDownload } from '@shared/hooks/usePdfDownload';
 // The record-side conversation drawer, from the whatsapp feature's barrel. It talks to the
@@ -316,7 +321,15 @@ function nextAction(lead, now = Date.now()) {
     ? daysBetween(today, new Date(created.getFullYear(), created.getMonth(), created.getDate()))
     : 0;
   if (!everContacted && ageDays >= 1) {
-    return { tone: ageDays >= 3 ? 'late' : 'due', label: `Never contacted · ${ageDays}d` };
+    /* Name the ACTION when we already know what it is.
+       A lead that arrived from the phone system was created because somebody rang and nobody in the
+       agency has since recorded contact — "never contacted" is true but says the wrong thing, since
+       the next move is not "reach out somehow", it is "ring this number back". Urgency is unchanged;
+       only the verb is. Deliberately limited to the telephony channel: PHONE_MANUAL and DIRECT_CALL
+       are rows a human typed up AFTER speaking to the customer, so telling them to call back would
+       be wrong. */
+    const verb = lead.sourceKey === 'IVR_CALL' ? 'Call back' : 'Never contacted';
+    return { tone: ageDays >= 3 ? 'late' : 'due', label: `${verb} · ${ageDays}d` };
   }
 
   /* 5. Contacted once, then went quiet. The natural continuation of rule 4: that one answers "has
@@ -899,6 +912,18 @@ function LeadRow({
   // which is the common case, so the badge stays off rather than rendering "1".
   const repeatEnquiries = Number(lead.repeatEnquiryCount) || 0;
   const totalEnquiries = repeatEnquiries + 1;
+
+  /* Source dot + label — INTEGRATION-ORIGIN ROWS ONLY.
+     `origin` is the gate, and it is the whole reason this addition is safe to ship: an agency that
+     has connected nothing has no INTEGRATION leads, so this grid looks exactly as it did. On a row a
+     person typed, the source is whatever they picked from a dropdown — restating it under their own
+     name is noise. On a row a machine opened, it is the one thing the grid never said.
+     `sourceKey` is the enum constant the colour map keys on; `leadSource` is the display name and
+     rides along as the fallback LABEL for a source the map has no entry for — a correct unstyled
+     name beats colouring an unknown source as "Other". */
+  const source = lead.origin === 'INTEGRATION' && (lead.sourceKey || lead.leadSource)
+    ? sourceStyle(lead.sourceKey, lead.leadSource)
+    : null;
   const webLink = q?.publicId ? `${window.location.origin}/q/${q.publicId}` : null;
 
   // Always show the lead's real stage/type even if it's outside the manually-selectable set.
@@ -984,6 +1009,21 @@ function LeadRow({
                 className="text-[11px] text-slate-400 hover:text-blue-600 truncate max-w-full inline-flex items-center gap-1 transition-colors">
                 <Mail size={10} className="flex-shrink-0" /> <span className="truncate">{lead.email}</span>
               </button>
+            )}
+            {/* Where this lead came from.
+                This grid did not say, anywhere: sixteen columns and not one of them told you whether
+                a row was typed in by a person or arrived from JustDial, a website form or a phone
+                call. It goes on the identity block rather than into a column of its own because it
+                is a property of the CONTACT, and because a seventeenth column on a table that
+                already scrolls sideways would be paid for by every screen.
+                Muted by design — every row has a source, so it is context, not an alert. */}
+            {source && (
+              <div className="flex items-center gap-1.5 text-[11px] text-slate-400 max-w-full"
+                   title={`Lead source: ${source.label}`}>
+                <span className="w-[7px] h-[7px] rounded-full flex-shrink-0"
+                      style={{ background: source.color }} />
+                <span className="truncate font-medium">{source.label}</span>
+              </div>
             )}
           </div>
         </div>

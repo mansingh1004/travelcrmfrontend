@@ -69,6 +69,9 @@ export default function AccountingSettings() {
         gstInclusiveOnBookings: settings.gstInclusiveOnBookings,
         tcsApplicability: settings.tcsApplicability,
         bookingTcsRatePct: num(settings.bookingTcsRatePct),
+        // Blank stays blank: null means "charge nothing", and the server leaves the stored value
+        // alone rather than clearing it, so an untouched field cannot wipe a rate someone set.
+        ownFleetDayRate: num(settings.ownFleetDayRate),
       });
       showToast("Settings saved.", "success");
       load();
@@ -145,6 +148,20 @@ export default function AccountingSettings() {
                       value={settings.bookingTcsRatePct ?? ""}
                       disabled={!canManage || settings.tcsApplicability === "NEVER"}
                       onChange={(e) => set("bookingTcsRatePct", e.target.value)}
+                    />
+                  </Field>
+
+                  {/* Not a tax — it is what stops an own-fleet booking reporting full margin on a
+                      trip the agency paid fuel and driver bata for. Blank means charge nothing,
+                      which is how every booking behaved before this existed. */}
+                  <Field label="Own-fleet day rate ₹"
+                    hint="Charged to a booking's margin per day one of your own vehicles serves it. A vehicle can override it.">
+                    <input
+                      type="number" min="0" step="0.01" className={inputCls}
+                      value={settings.ownFleetDayRate ?? ""}
+                      disabled={!canManage}
+                      onChange={(e) => set("ownFleetDayRate", e.target.value)}
+                      placeholder="Leave blank to charge nothing"
                     />
                   </Field>
                 </div>
@@ -232,6 +249,7 @@ function RateModal({ row, onClose, onDone }) {
     code: row?.code ?? "", description: row?.description ?? "", category: row?.category ?? "",
     gstRatePct: row?.gstRatePct ?? "5", cessPct: row?.cessPct ?? "0",
     itcEligible: row?.itcEligible ?? false, isDefault: row?.isDefault ?? false, active: row?.active ?? true,
+    serviceType: row?.serviceType ?? "",
   });
   const [saving, setSaving] = useState(false);
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
@@ -244,6 +262,8 @@ function RateModal({ row, onClose, onDone }) {
         code: form.code.trim(), description: form.description || null, category: form.category || null,
         gstRatePct: Number(form.gstRatePct), cessPct: Number(form.cessPct || 0),
         itcEligible: form.itcEligible, isDefault: form.isDefault, active: form.active,
+        // "" is meaningful here: it is how a user UNTAGS a code. The server trims it to null.
+        serviceType: form.serviceType.trim(),
       };
       if (isEdit) await accountingService.updateHsnRate(row.publicId, payload);
       else await accountingService.createHsnRate(payload);
@@ -264,6 +284,15 @@ function RateModal({ row, onClose, onDone }) {
         <Field label="Category"><input className={inputCls} value={form.category} onChange={(e) => set("category", e.target.value)} placeholder="Tour operator" /></Field>
         <Field label="GST Rate %" required><input type="number" min="0" max="100" step="0.01" className={inputCls} value={form.gstRatePct} onChange={(e) => set("gstRatePct", e.target.value)} /></Field>
         <Field label="Cess %"><input type="number" min="0" max="100" step="0.01" className={inputCls} value={form.cessPct} onChange={(e) => set("cessPct", e.target.value)} /></Field>
+        {/* Tagging a code to a service type is what stops a hotel line, a flight line and a guide
+            line on one invoice all carrying the same SAC. Untagged codes behave exactly as before —
+            the tenant default — so nothing moves until an agency chooses to tag one. */}
+        <Field label="Applies to service type"
+          hint="Optional. Booking lines of this type take this code instead of the default. Blank = no rule.">
+          <input className={inputCls} value={form.serviceType} maxLength={60}
+            onChange={(e) => set("serviceType", e.target.value)}
+            placeholder="Hotel / Flight / Transport / Visa" />
+        </Field>
       </div>
       <Field label="Description"><input className={inputCls} value={form.description} onChange={(e) => set("description", e.target.value)} placeholder="Tour operator services" /></Field>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">

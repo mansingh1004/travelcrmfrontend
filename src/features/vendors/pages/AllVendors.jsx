@@ -468,6 +468,10 @@ export default function Vendors() {
   const [fStatus,  setFStatus]  = useState("All Status");
   const [fType,    setFType]    = useState("All Types");
   const [fPay,     setFPay]     = useState("All Pay Status");
+  /* Self-vendors — the supplier rows the system mints from a hotel, vehicle, cruise or airline so a
+     cost on that master has a payee. Hidden by default on both sides: an agency with 200 hotels and
+     3 real suppliers should open this screen and see 3. */
+  const [includeAuto, setIncludeAuto] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);   // collapsed by default, like All Bookings
   const [sortKey,  setSortKey]  = useState("vendorName");
   const [sortDir,  setSortDir]  = useState("asc");
@@ -503,6 +507,7 @@ export default function Vendors() {
       status:    fStatus === "All Status"     ? undefined : fStatus,
       type:      fType   === "All Types"      ? undefined : fType,
       payStatus: fPay    === "All Pay Status" ? undefined : fPay,
+      includeAuto,
     },
   });
 
@@ -554,9 +559,9 @@ export default function Vendors() {
   // There is no client-side `filtered` any more: the server does the narrowing, so the rows in
   // hand ARE the result. `pageData` is what the table renders; `total` is the tenant-wide count.
   const anyFilter = search || fStatus !== "All Status" || fType !== "All Types"
-                    || fPay !== "All Pay Status";
+                    || fPay !== "All Pay Status" || includeAuto;
   const activeFilterCount = [search, fStatus !== "All Status", fType !== "All Types",
-    fPay !== "All Pay Status"].filter(Boolean).length;
+    fPay !== "All Pay Status", includeAuto].filter(Boolean).length;
 
   const handleSort = key => {
     if (sortKey === key) setSortDir(d => d==="asc"?"desc":"asc");
@@ -571,6 +576,7 @@ export default function Vendors() {
   // No setPage here: usePagedList resets to page 0 itself whenever the query narrows or widens.
   const resetFilters = () => {
     setSearch(""); setFStatus("All Status"); setFType("All Types"); setFPay("All Pay Status");
+    setIncludeAuto(false);
   };
 
   /* ── Navigate to edit page ── */
@@ -979,7 +985,22 @@ export default function Vendors() {
                   <Sel val={fPay} onChange={setFPay}
                     opts={["All Pay Status", ...PAY_STATUSES]} fmt={enumLabel} className="w-full"/>
                 </div>
-                <div className="flex items-end gap-3 lg:col-span-3">
+                <div>
+                  <label className="block text-xs font-extrabold text-slate-500 uppercase tracking-wide mb-1.5">
+                    Auto-created
+                  </label>
+                  {/* Suppliers the system minted from a hotel/vehicle/cruise/airline so its cost has
+                      a payee. Off by default — the server hides them too, this only asks for them. */}
+                  <button type="button" onClick={() => { setIncludeAuto(v => !v); setPage(0); }}
+                    aria-pressed={includeAuto}
+                    className={`w-full h-[42px] px-4 rounded-xl border-2 text-sm font-bold transition-all
+                      ${includeAuto
+                        ? "border-blue-500 bg-blue-50 text-blue-700"
+                        : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"}`}>
+                    {includeAuto ? "Showing master suppliers" : "Hide master suppliers"}
+                  </button>
+                </div>
+                <div className="flex items-end gap-3 lg:col-span-2">
                   <button onClick={reload}
                     className="flex items-center gap-2 px-5 py-2.5 rounded-xl border-2 border-slate-200 hover:border-slate-300
                       bg-white hover:bg-slate-50 text-slate-600 text-sm font-bold transition-all h-[42px]">
@@ -1066,6 +1087,14 @@ export default function Vendors() {
                               <div className="flex items-center gap-1.5">
                                 <p className="text-sm font-bold text-slate-800 leading-tight">{v.name}</p>
                                 {v.verified && <MdVerified className="w-3.5 h-3.5 text-blue-500 flex-shrink-0"/>}
+                                {/* Minted from a master row, not typed by anyone — worth saying so,
+                                    because its contact details are only as good as that row's. */}
+                                {v.autoCreated && (
+                                  <span className="px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-500
+                                    text-[10px] font-extrabold uppercase tracking-wide flex-shrink-0">
+                                    from master
+                                  </span>
+                                )}
                               </div>
                               <p className="text-xs font-bold text-blue-600">{v.code}</p>
                             </div>

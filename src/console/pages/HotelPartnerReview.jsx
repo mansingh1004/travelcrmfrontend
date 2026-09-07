@@ -277,6 +277,33 @@ export default function HotelPartnerReview() {
               : null}
           />
         </Card>
+        {/* WHO WE PAY, AND WHETHER WE CAN. Approving this row means the platform starts owing this
+            property money; until this block existed there was no bank account or tax id anywhere on
+            it. `payable` is server-computed — a bank triplet or a UPI id — so this panel and any
+            future payout run cannot disagree about what "payable" means. Never leaves the platform:
+            these columns are on the registration only, so no catalog row a tenant reads can carry
+            them. */}
+        <Card title="Payment details">
+          <KV k="Bank" v={reg.payee?.bankName} />
+          <KV k="Account name" v={reg.payee?.accountName} />
+          <KV k="Account number" v={reg.payee?.accountNumber} />
+          <KV k="IFSC" v={reg.payee?.ifscCode} />
+          <KV k="UPI" v={reg.payee?.upiId} />
+          <KV k="PAN" v={reg.payee?.panNumber} />
+          <KV k="GSTIN" v={reg.payee?.gstNumber} />
+          {!reg.payee?.payable && (
+            <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-[12px] font-medium text-amber-700">
+              No usable payment route yet — needs an account number with IFSC, or a UPI ID. Approving
+              is still fine; somebody has to collect this before the first payout.
+            </p>
+          )}
+          {reg.payee?.payable && !reg.payee?.panNumber && (
+            <p className="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-[12px] font-medium text-slate-600">
+              No PAN on file — TDS would be withheld at the s.206AA rate, not the section rate.
+            </p>
+          )}
+        </Card>
+
         <Card title="Contact & timings">
           <KV k="Phone" v={reg.phone} />
           <KV k="Email" v={reg.email} href={reg.email ? `mailto:${reg.email}` : null} />

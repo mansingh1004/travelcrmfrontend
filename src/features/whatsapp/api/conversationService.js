@@ -39,6 +39,35 @@ const conversationService = {
     unwrap(await API.get(`${BASE}/customers/${customerPublicId}/conversations`)),
 
   /**
+   * A supplier's threads, across every booking — newest first, PAGED.
+   *
+   * Deliberately a different shape from the two above, because a vendor is a different kind of
+   * contact. A lead or a customer has ONE WhatsApp thread and ONE email thread, so the drawer gets
+   * a pair. A supplier has one thread per service line it was chased about, across every booking,
+   * so the honest answer is a list. Returns { items, pagination }.
+   *
+   * READ ONLY, and this is the reason there is no `sendToVendor` beside it: a supplier message
+   * moves the service line PENDING → REQUESTED, can write a release date, and needs the WhatsApp
+   * window's device-link fallback. That path lives on the booking's service line, and the
+   * Communication Center is read-only on VENDOR threads for the same reason. A second, statusless
+   * send would leave the operations board calling lines never-contacted that had been chased twice.
+   *
+   * It lives in THIS feature rather than features/communication on purpose: that feature is routed
+   * and lazily chunked, so importing its barrel from a record page drags the whole Communication
+   * Center into that page's bundle. This one is not routed, which is why leads and customers
+   * already import it freely.
+   */
+  forVendor: async (vendorPublicId, { page = 0, size = 25 } = {}) => {
+    const res = await API.get(`${BASE}/vendors/${vendorPublicId}/conversations`, {
+      params: { page, size },
+    });
+    return {
+      items: res?.data?.data ?? [],
+      pagination: res?.data?.pagination ?? null,
+    };
+  },
+
+  /**
    * Approved templates for a channel, most-used first.
    *
    * `arity` is the number of {{n}} placeholders the approved template declares, and

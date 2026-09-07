@@ -34,6 +34,9 @@ import {
 import { WhatsAppIcon as FaWhatsapp } from "@shared/ui/WhatsAppIcon";
 
 import vendorService from "../api/vendorService";
+// Through the barrel. features/whatsapp rather than features/communication: that one is routed and
+// lazily chunked, so importing it here would drag the whole Communication Center into this page.
+import { conversationService } from "@features/whatsapp";
 
 const FONT = "'Plus Jakarta Sans', system-ui, sans-serif";
 
@@ -185,8 +188,10 @@ export default function VendorDetails() {
 
   const [vendor, setVendor]       = useState(null);
   const [bookings, setBookings]   = useState([]);
+  const [threads, setThreads]     = useState([]);
   const [loading, setLoading]     = useState(true);
   const [loadingBk, setLoadingBk] = useState(true);
+  const [loadingTh, setLoadingTh] = useState(true);
   const [notFound, setNotFound]   = useState(false);
   const [toast, setToast]         = useState(null);
 
@@ -238,6 +243,30 @@ export default function VendorDetails() {
       .catch(() => setBookings([]))   // bookings API optional — fail silently
       .finally(() => setLoadingBk(false));
   }, [id, showToast]);
+
+  /* ── Load conversations ──────────────────────────────────────
+     Keyed on the vendor's publicId, not the route's numeric id: the conversations
+     endpoint is keyed by publicId and we only have it once the vendor has loaded.
+     A separate effect rather than a chained .then() so a slow vendor fetch does not
+     also delay the bookings table below.
+
+     Fails silently, like bookings. A vendor with no COMMUNICATION module, or a user
+     without COMM_READ, gets a 403 here — and an empty card is the honest answer for
+     them, not a toast about a feature they do not have. */
+  const vendorPublicId = vendor?.publicId;
+  useEffect(() => {
+    if (!vendorPublicId) return;
+    let cancelled = false;
+
+    setLoadingTh(true);
+    conversationService
+      .forVendor(vendorPublicId, { size: 25 })
+      .then(({ items }) => { if (!cancelled) setThreads(Array.isArray(items) ? items : []); })
+      .catch(() => { if (!cancelled) setThreads([]); })
+      .finally(() => { if (!cancelled) setLoadingTh(false); });
+
+    return () => { cancelled = true; };
+  }, [vendorPublicId]);
 
   /* ── Normalize booking fields (backend DTO safe) ────────── */
   const normBookings = useMemo(() => bookings.map((b) => ({
@@ -674,6 +703,93 @@ export default function VendorDetails() {
                         <p className="text-sm font-extrabold text-slate-700">{val}</p>
                       </div>
                     ))}
+                  </div>
+                )}
+              </div>
+
+              {/* ── CONVERSATIONS CARD ──
+                  Every thread with this supplier, across every booking. Read-only on purpose:
+                  replying goes through the service line on the booking, which is what moves that
+                  line to REQUESTED. A "reply" button here would send without moving anything and
+                  leave the operations board calling the line never-contacted. */}
+              <div className="bg-white/80 backdrop-blur-md rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden fade-up"
+                style={{ animationDelay:"120ms" }}>
+
+                <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-3 flex-wrap">
+                  <h2 className="text-base font-extrabold text-slate-700 flex items-center gap-2">
+                    <FaCommentDots className="w-4 h-4 text-blue-500"/> Conversations
+                  </h2>
+                  {!loadingTh && threads.length > 0 && (
+                    <span className="text-xs bg-blue-100 text-blue-700 font-bold px-2.5 py-1 rounded-full">
+                      {threads.length} {threads.length === 1 ? "thread" : "threads"}
+                    </span>
+                  )}
+                </div>
+
+                {loadingTh ? (
+                  <div className="p-5 space-y-3">
+                    {[...Array(2)].map((_, i) => (
+                      <div key={i} className="h-12 rounded-xl bg-slate-100 animate-pulse"/>
+                    ))}
+                  </div>
+
+                ) : threads.length === 0 ? (
+                  <div className="text-center py-14 px-6">
+                    <div className="text-5xl mb-3">💬</div>
+                    <p className="text-base font-extrabold text-slate-600 mb-1">Nothing Sent Yet</p>
+                    <p className="text-sm text-slate-400">
+                      Email and WhatsApp sent to this supplier from a booking&rsquo;s services
+                      will appear here.
+                    </p>
+                  </div>
+
+                ) : (
+                  <div className="divide-y divide-slate-50">
+                    {threads.map((t, idx) => {
+                      const isWa = String(t.channel).toUpperCase() === "WHATSAPP";
+                      return (
+                        <button
+                          key={t.publicId || idx}
+                          type="button"
+                          /* ?c= opens the Communication Center on this exact thread — the same
+                             deep link the record drawers use. */
+                          onClick={() => navigate(`/communication?c=${t.publicId}`)}
+                          className="w-full text-left px-5 py-3.5 hover:bg-slate-50/70 transition-colors
+                            flex items-start gap-3 group">
+                          <span className={`w-8 h-8 rounded-xl flex-shrink-0 flex items-center justify-center border
+                            ${isWa ? "bg-emerald-50 border-emerald-100" : "bg-blue-50 border-blue-100"}`}>
+                            {isWa
+                              ? <FaWhatsapp className="w-4 h-4 text-emerald-600"/>
+                              : <FaEnvelope className="w-4 h-4 text-blue-600"/>}
+                          </span>
+
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              {/* The subject is "BKD-0012 — Stay in Calangute", so the row already
+                                  says which booking and which line without another lookup. */}
+                              <p className="text-sm font-bold text-slate-800 truncate group-hover:text-blue-700">
+                                {t.subject || t.contactName || (isWa ? "WhatsApp" : "Email")}
+                              </p>
+                              {t.unreadCount > 0 && (
+                                <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded-full
+                                  bg-rose-100 text-rose-600 flex-shrink-0">
+                                  {t.unreadCount}
+                                </span>
+                              )}
+                            </div>
+                            {t.lastMessagePreview && (
+                              <p className="text-[11.5px] text-slate-400 truncate mt-0.5">
+                                {t.lastMessagePreview}
+                              </p>
+                            )}
+                          </div>
+
+                          <span className="text-[11px] font-semibold text-slate-400 flex-shrink-0 pt-0.5">
+                            {fmtDate(t.lastMessageAt)}
+                          </span>
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
               </div>

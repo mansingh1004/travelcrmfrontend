@@ -46,6 +46,11 @@ const communicationService = {
     };
   },
 
+  /* A supplier's threads live on conversationService.forVendor in features/whatsapp, NOT here.
+     This feature is routed and lazily chunked, so a record page importing this barrel for one
+     call would pull the whole Communication Center into that page's bundle. The whatsapp feature
+     is not routed, which is why leads and customers already import it freely. */
+
   /** One thread's header — contact, links, unread, and whether free text is legal right now. */
   conversation: async (publicId) => {
     const res = await API.get(`${BASE}/conversations/${publicId}`);

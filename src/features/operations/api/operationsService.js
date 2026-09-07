@@ -339,6 +339,29 @@ const operationsService = {
   },
 
   /**
+   * The fleet's vehicles and drivers as pickable options — {publicId, label, status}.
+   *
+   * Needed because a checkpoint sourced OWN_FLEET cannot be confirmed until it names a vehicle or a
+   * driver (OpsCheckpointTransitions.confirmBlocker), and until now nothing in the product could
+   * put one there: the API accepted fleetVehiclePublicId/fleetDriverPublicId and no screen ever
+   * sent them.
+   *
+   * Read over HTTP rather than joined server-side, and that is forced rather than chosen —
+   * FleetBoundaryArchTest forbids any CRM module depending on fleet internals, so the browser is
+   * the legal seam. Behind FLEET_READ, which an operations user may not hold: treat a 403 as "no
+   * picker", exactly as searchVendors does, never as a broken panel.
+   */
+  fleetVehicleOptions: async () => {
+    const res = await API.get("/fleet/vehicles/options");
+    return res?.data?.data ?? [];
+  },
+
+  fleetDriverOptions: async () => {
+    const res = await API.get("/fleet/drivers/options");
+    return res?.data?.data ?? [];
+  },
+
+  /**
    * One fleet trip's legs — who was on which vehicle across which half-open window.
    *
    * The trip's own vehicle and driver always point at the CURRENT leg; these rows are the only

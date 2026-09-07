@@ -1,5 +1,9 @@
 import { useState, useEffect, useRef } from "react";
 import { safeHtml } from "@shared/lib/safeHtml";
+import { cruiseService, normalizeCruiseList, transformCruiseResponse } from "../api/CruiseService";
+import { getErrorMessage, isCanceled } from "@shared/api/apiError";
+import SupplierPicker from "../components/SupplierPicker";
+import { vendorService } from "@features/vendors";
 
 /* ─────────────────────────────────────────────
    TOAST SYSTEM (Converted to Tailwind)
@@ -34,7 +38,12 @@ function ToastContainer() {
 }
 
 /* ─────────────────────────────────────────────
-   SEED DATA
+   SEED DATA — NO LONGER USED. The page reads /api/cruises now.
+
+   Kept, not deleted, so the shape the UI was written against stays readable. It must never be
+   rendered again: these two cruises looked exactly like real records and were quotable into a real
+   trip, which is the same trap Vehiclas.jsx removed. A failure now shows a failure and an empty
+   tenant shows an empty state.
 ───────────────────────────────────────────── */
 const SEED = [
   {
@@ -236,9 +245,32 @@ function CruiseModal({ cruise, onSave, onClose }) {
   const isEdit = !!cruise?.id;
   const [form, setForm] = useState(
     isEdit
-      ? { name: cruise.name, description: cruise.description, image: cruise.image, imagePreview: cruise.imagePreview }
-      : { ...EMPTY_FORM }
+      ? {
+          name: cruise.name, description: cruise.description,
+          image: cruise.image, imagePreview: cruise.imagePreview,
+          // Filled from the vendor side on open — see the effect below. Never seeded from `cruise`,
+          // because the list row carries only a vendorName, not the id the picker needs.
+          vendorPublicId: "", clearVendorLink: false, vendorLabel: "",
+        }
+      : { ...EMPTY_FORM, vendorPublicId: "", clearVendorLink: false, vendorLabel: "" }
   );
+
+  // The supplier link lives on the vendor side, one lookup per form open — same as Hotel and
+  // Vehicle. A failed lookup leaves the picker blank, and a blank picker never sends
+  // clearVendorLink, so it can never unlink the cruise by accident.
+  useEffect(() => {
+    if (!isEdit || !cruise?.id) return;
+    let alive = true;
+    vendorService.linkOf("CRUISE", cruise.id)
+      .then((linked) => { if (alive) setForm(prev => ({
+        ...prev,
+        vendorPublicId: linked?.publicId || "",
+        vendorLabel:    linked?.vendorName || "",
+        clearVendorLink: false,
+      })); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [isEdit, cruise?.id]);
   const [roomTypes, setRoomTypes] = useState(isEdit ? cruise.roomTypes : []);
   const [errs, setErrs] = useState({});
   const [showRoomModal, setShowRoomModal] = useState(false);
@@ -293,6 +325,10 @@ function CruiseModal({ cruise, onSave, onClose }) {
       image: form.image,
       imagePreview: form.imagePreview,
       roomTypes,
+      // Who the agency buys this sailing through. CruiseService only sends these when they carry a
+      // value, so a form that never touched the picker leaves an existing link exactly as it was.
+      vendorPublicId: form.vendorPublicId,
+      clearVendorLink: form.clearVendorLink,
       created: isEdit ? cruise.created : today(),
     });
     setLoading(false);
@@ -341,6 +377,30 @@ function CruiseModal({ cruise, onSave, onClose }) {
                 placeholder="Describe this cruise experience…"
                 rows={4}
               />
+
+              {/* Who the agency buys this sailing through. Optional by design: leave it blank and a
+                  self-vendor is minted the first time the cruise actually needs a payee — which is
+                  what stops an agency's Vendors screen filling with a row per cruise they ever
+                  typed. Once set, the name rides onto the sold booking line and answers "who are we
+                  buying this from" on the operations board. */}
+              <div className="mb-4">
+                <SupplierPicker
+                  value={form.vendorPublicId}
+                  linkedLabel={form.vendorLabel}
+                  hint="Leave blank if you buy directly from the cruise line — a supplier record is created when it is first needed."
+                  onChange={(publicId) => setForm(prev => ({
+                    ...prev,
+                    vendorPublicId: publicId,
+                    // Only an explicit clear of an EXISTING link unlinks. A blank picker on a cruise
+                    // that never had one must not send a clear it has nothing to clear.
+                    clearVendorLink: !publicId && Boolean(prev.vendorLabel || prev.vendorPublicId),
+                    // vendorLabel is deliberately NOT rewritten here. SupplierPicker's onChange
+                    // passes only the value — there is no label argument — so taking a second
+                    // parameter would silently blank it and lose the "currently linked" hint that
+                    // the clear-detection above depends on.
+                  }))}
+                />
+              </div>
 
               <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">Cruise Image</label>
               <div className="border-2 border-dashed border-slate-400 rounded-xl p-6 text-center cursor-pointer mb-4 bg-slate-100 transition-all hover:bg-slate-200" onClick={() => fileRef.current?.click()}>
@@ -440,7 +500,12 @@ function CruiseModal({ cruise, onSave, onClose }) {
    MAIN COMPONENT
 ───────────────────────────────────────────── */
 export default function CruiseMaster() {
-  const [cruises,       setCruises]      = useState(SEED);
+  // Real records now. This page used to open on SEED — two invented cruises that looked exactly
+  // like real ones and could be quoted into a real trip. Same precedent as Vehiclas.jsx: a failure
+  // shows a failure, an empty tenant shows an empty state, and nothing is ever invented.
+  const [cruises,       setCruises]      = useState([]);
+  const [loading,       setLoading]      = useState(false);
+  const [loadError,     setLoadError]    = useState(null);
   const [search,        setSearch]       = useState("");
   const [showCreate,    setShowCreate]   = useState(false);
   const [editingCruise, setEditingCruise]= useState(null);
@@ -449,30 +514,59 @@ export default function CruiseMaster() {
   const [hoveredRow,    setHoveredRow]   = useState(null);
 
   const [cruiseStatsOpen, setCruiseStatsOpen] = useState(false);
-  const nextId = useRef(SEED.length + 1);
+
+  const fetchCruises = async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const res = await cruiseService.getAllCruises();
+      const raw = res.data?.data ?? res.data;
+      setCruises(normalizeCruiseList(raw).map(transformCruiseResponse).filter(Boolean));
+    } catch (err) {
+      if (isCanceled(err)) return;      // unmounted — leave state alone
+      setCruises([]);
+      setLoadError(getErrorMessage(err, "Couldn't load cruises."));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchCruises(); }, []);
 
   const filtered = cruises.filter(
     (c) =>
-      c.name.toLowerCase().includes(search.toLowerCase()) ||
-      c.description.toLowerCase().includes(search.toLowerCase())
+      (c.name || "").toLowerCase().includes(search.toLowerCase()) ||
+      (c.description || "").toLowerCase().includes(search.toLowerCase())
   );
 
-  const saveCruise = (data) => {
-    if (data.id) {
-      setCruises((p) => p.map((c) => (c.id === data.id ? data : c)));
-      toast.success("Cruise updated successfully!");
-    } else {
-      setCruises((p) => [...p, { ...data, id: nextId.current++ }]);
-      toast.success("Cruise created successfully!");
+  const saveCruise = async (data) => {
+    try {
+      if (data.id) {
+        await cruiseService.updateCruise(data.id, data);
+        toast.success("Cruise updated successfully!");
+      } else {
+        await cruiseService.createCruise(data);
+        toast.success("Cruise created successfully!");
+      }
+      setShowCreate(false);
+      setEditingCruise(null);
+      // Re-read rather than splice: room types come back with server ids, and the supplier name is
+      // resolved server-side — a locally patched row would carry neither.
+      await fetchCruises();
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Couldn't save the cruise."));
     }
-    setShowCreate(false);
-    setEditingCruise(null);
   };
 
-  const confirmDelete = () => {
-    setCruises((p) => p.filter((c) => c.id !== deletingCruise.id));
-    toast.success(`"${deletingCruise.name}" deleted.`);
-    setDeletingCruise(null);
+  const confirmDelete = async () => {
+    try {
+      await cruiseService.deleteCruise(deletingCruise.id);
+      toast.success(`"${deletingCruise.name}" deleted.`);
+      setDeletingCruise(null);
+      await fetchCruises();
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Couldn't delete the cruise."));
+    }
   };
 
   const totalRooms = cruises.reduce((a, c) => a + c.roomTypes.length, 0);
@@ -694,7 +788,17 @@ export default function CruiseMaster() {
                           <div className="w-[60px] h-[42px] rounded-lg bg-slate-100 flex items-center justify-center text-[22px] border border-slate-200 shadow-inner">🛳️</div>
                         )}
                       </td>
-                      <td className="px-4 py-3.5 text-sm align-middle border-b border-slate-200 font-bold text-[#0a1628]">{c.name}</td>
+                      <td className="px-4 py-3.5 text-sm align-middle border-b border-slate-200 font-bold text-[#0a1628]">
+                        {c.name}
+                        {/* The supplier, on the list rather than only inside the edit form — the
+                            same question the Hotel and Vehicle masters answer here. Absent until a
+                            supplier is linked or one is minted on first use, which is ordinary. */}
+                        {c.vendorName && (
+                          <span className="block mt-0.5 text-[11px] font-semibold text-slate-500">
+                            via {c.vendorName}
+                          </span>
+                        )}
+                      </td>
                       <td className="px-4 py-3.5 text-sm align-middle border-b border-slate-200 max-w-[200px]">
                         <div
                           className="overflow-hidden text-ellipsis whitespace-nowrap text-slate-600 text-[13px]"

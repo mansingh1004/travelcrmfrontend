@@ -806,9 +806,20 @@ function LineRow({
       <SupplierContact line={line} canWrite={canWrite}
                        onEmail={onEmail} onWhatsApp={onWhatsApp} onCall={onCall} />
 
-      {/* The hold's expiry. Shown while a line is out with a supplier, or whenever a date was
-          recorded — a lapsed hold on a line somebody later confirmed is still worth seeing. */}
-      {canWrite && (requested || line.releaseDate) && editor?.mode !== "release" && (
+      {/* The hold's expiry.
+
+          Offered on a PENDING line too, not only a REQUESTED one. The gate used to be
+          `requested || line.releaseDate`, which locked out the commonest real sequence there is:
+          the hotel says on the phone "we'll hold it until Friday" BEFORE any formal request has
+          gone out. With nowhere to put that date, the operator's only route to the field was to
+          press "Ask" — recording that a request was sent when none was — and the board's whole
+          claim is that a status means what it says. The cut-off is also exactly what the
+          HOLD_EXPIRING tab is made of, so the state it could least afford to miss was the one
+          state it refused to record.
+
+          Still shown on a confirmed line whenever a date exists: a lapsed hold on something
+          somebody later confirmed is history worth seeing. */}
+      {canWrite && line.status !== "CANCELLED" && editor?.mode !== "release" && (
         <button
           onClick={onEditRelease}
           className={`mt-1 inline-flex items-center gap-1 text-[10px] font-bold rounded px-1.5 py-0.5 ring-1 ${releaseTone(line.releaseDate)}`}
