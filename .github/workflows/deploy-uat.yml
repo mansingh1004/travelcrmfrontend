@@ -1,0 +1,203 @@
+# ===================================================================
+# UAT deploy — pushes to `uat` land on test.mytripsafar.com.
+#
+# Differences from deploy-hostinger.yml, all deliberate:
+#   - VITE_API_URL points at the UAT API. This is COMPILED INTO the bundle, so
+#     it is the single most important line here: get it wrong and the UAT site
+#     silently drives production data.
+#   - Image is tagged uat-<sha> and no :latest is pushed. Prod's compose resolves
+#     :latest, so a UAT build claiming it would be production's next pull.
+#   - No hardcoded host fallback. deploy-hostinger.yml defaults HOSTINGER_HOST to
+#     a literal IP; if that IP is ever stale, a missing secret deploys to
+#     whatever now answers at that address instead of failing.
+# ===================================================================
+name: Deploy Frontend to Hostinger VPS - UAT
+
+on:
+  push:
+    branches:
+      - uat
+  workflow_dispatch:
+
+env:
+  IMAGE_NAME: travelcrm-frontend
+  HOSTINGER_PORT: ${{ secrets.HOSTINGER_PORT || vars.HOSTINGER_PORT || '22' }}
+  HOSTINGER_APP_DIR: ${{ vars.HOSTINGER_FE_UAT_APP_DIR || '/opt/travelcrm-frontend-uat' }}
+  VITE_API_URL: ${{ vars.VITE_API_URL_UAT || 'https://api-test.mytripsafar.com/api' }}
+
+jobs:
+  build:
+    name: Build frontend bundle
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Lint
+        # Advisory only — a lint rule should not be able to block a UAT deploy.
+        continue-on-error: true
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      - name: Verify the UAT API URL was compiled in
+        shell: bash
+        run: |
+          if ! grep -R --fixed-strings "$VITE_API_URL" dist >/dev/null; then
+            echo "::error::VITE_API_URL ($VITE_API_URL) was not found in the built bundle." >&2
+            exit 1
+          fi
+          if grep -R --fixed-strings "localhost:8080" dist >/dev/null; then
+            echo "::error::Built bundle still contains localhost:8080 — VITE_API_URL did not take effect." >&2
+            exit 1
+          fi
+          # The check production's workflow does not do, and the one that matters
+          # most here: a UAT bundle must not carry the production API origin.
+          # Without this, a stale .env.production or a bad build-arg produces a
+          # UAT site that reads and WRITES real customer data, and every page
+          # looks completely normal while it happens.
+          if grep -R --fixed-strings "https://api.mytripsafar.com" dist >/dev/null; then
+            echo "::error::UAT bundle contains the PRODUCTION API origin (https://api.mytripsafar.com)." >&2
+            echo "::error::Refusing to deploy — this build would point UAT at production data." >&2
+            exit 1
+          fi
+          echo "Bundle verified against $VITE_API_URL"
+
+  build-and-push:
+    name: Build and push Docker image
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set image tags
+        id: image
+        shell: bash
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        run: |
+          dockerhub_username="$(printf '%s' "$DOCKERHUB_USERNAME" | tr -d '[:space:]')"
+          if [ -z "$dockerhub_username" ]; then
+            echo "::error::Missing DOCKERHUB_USERNAME secret"
+            exit 1
+          fi
+          image_uri="docker.io/${dockerhub_username}/${IMAGE_NAME}:uat-${GITHUB_SHA}"
+          printf 'image_uri=%s\n' "$image_uri" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        shell: bash
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          dockerhub_username="$(printf '%s' "$DOCKERHUB_USERNAME" | tr -d '[:space:]')"
+          dockerhub_token="$(printf '%s' "$DOCKERHUB_TOKEN" | tr -d '\r\n')"
+          if [ -z "$dockerhub_username" ] || [ -z "$dockerhub_token" ]; then
+            echo "::error::Missing Docker Hub credentials"
+            exit 1
+          fi
+          printf '%s' "$dockerhub_token" | docker login docker.io -u "$dockerhub_username" --password-stdin
+
+      - name: Build and push UAT image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          build-args: |
+            VITE_API_URL=${{ env.VITE_API_URL }}
+          tags: |
+            ${{ steps.image.outputs.image_uri }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy UAT on Hostinger VPS
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    environment: uat
+
+    steps:
+      - name: Checkout deploy files
+        uses: actions/checkout@v4
+
+      - name: Configure SSH
+        shell: bash
+        env:
+          HOSTINGER_HOST: ${{ secrets.HOSTINGER_HOST || vars.HOSTINGER_HOST }}
+          HOSTINGER_USER: ${{ secrets.HOSTINGER_USER || vars.HOSTINGER_USER }}
+          HOSTINGER_SSH_KEY: ${{ secrets.HOSTINGER_SSH_KEY }}
+          HOSTINGER_KNOWN_HOSTS: ${{ secrets.HOSTINGER_KNOWN_HOSTS || vars.HOSTINGER_KNOWN_HOSTS }}
+        run: |
+          : "${HOSTINGER_HOST:?Missing HOSTINGER_HOST secret or variable}"
+          : "${HOSTINGER_USER:?Missing HOSTINGER_USER secret or variable}"
+          : "${HOSTINGER_SSH_KEY:?Missing HOSTINGER_SSH_KEY secret}"
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$HOSTINGER_SSH_KEY" > ~/.ssh/hostinger_key
+          chmod 600 ~/.ssh/hostinger_key
+          if [ -n "${HOSTINGER_KNOWN_HOSTS:-}" ]; then
+            printf '%s\n' "$HOSTINGER_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          else
+            ssh-keyscan -p "$HOSTINGER_PORT" "$HOSTINGER_HOST" >> ~/.ssh/known_hosts
+          fi
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Upload UAT compose files
+        shell: bash
+        env:
+          HOSTINGER_HOST: ${{ secrets.HOSTINGER_HOST || vars.HOSTINGER_HOST }}
+          HOSTINGER_USER: ${{ secrets.HOSTINGER_USER || vars.HOSTINGER_USER }}
+        run: |
+          remote="${HOSTINGER_USER}@${HOSTINGER_HOST}"
+          ssh_opts=(-i ~/.ssh/hostinger_key -p "$HOSTINGER_PORT" -o StrictHostKeyChecking=yes)
+          scp_opts=(-i ~/.ssh/hostinger_key -P "$HOSTINGER_PORT" -o StrictHostKeyChecking=yes)
+          ssh "${ssh_opts[@]}" "$remote" "mkdir -p '$HOSTINGER_APP_DIR'"
+          scp "${scp_opts[@]}" \
+            deploy/docker-compose.hostinger-uat.yml \
+            deploy/deploy-hostinger-uat.sh \
+            "$remote:$HOSTINGER_APP_DIR/"
+
+      - name: Run UAT remote deployment
+        shell: bash
+        env:
+          HOSTINGER_HOST: ${{ secrets.HOSTINGER_HOST || vars.HOSTINGER_HOST }}
+          HOSTINGER_USER: ${{ secrets.HOSTINGER_USER || vars.HOSTINGER_USER }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          remote="${HOSTINGER_USER}@${HOSTINGER_HOST}"
+          ssh_opts=(-i ~/.ssh/hostinger_key -p "$HOSTINGER_PORT" -o StrictHostKeyChecking=yes)
+          dockerhub_username="$(printf '%s' "$DOCKERHUB_USERNAME" | tr -d '[:space:]')"
+          dockerhub_token="$(printf '%s' "$DOCKERHUB_TOKEN" | tr -d '\r\n')"
+          if [ -z "$dockerhub_username" ] || [ -z "$dockerhub_token" ]; then
+            echo "::error::Missing Docker Hub credentials"
+            exit 1
+          fi
+          travelcrm_frontend_image="docker.io/${dockerhub_username}/${IMAGE_NAME}:uat-${GITHUB_SHA}"
+          app_dir_q="$(printf '%q' "$HOSTINGER_APP_DIR")"
+          image_q="$(printf '%q' "$travelcrm_frontend_image")"
+          docker_user_q="$(printf '%q' "$dockerhub_username")"
+          docker_token_q="$(printf '%q' "$dockerhub_token")"
+          ssh "${ssh_opts[@]}" "$remote" \
+            "APP_DIR=$app_dir_q TRAVELCRM_FRONTEND_IMAGE=$image_q DOCKERHUB_USERNAME=$docker_user_q DOCKERHUB_TOKEN=$docker_token_q bash -s" <<'REMOTE_DEPLOY'
+          set -euo pipefail
+          cd "$APP_DIR"
+          chmod +x deploy-hostinger-uat.sh
+          ./deploy-hostinger-uat.sh
+          REMOTE_DEPLOY
