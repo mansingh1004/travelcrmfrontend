@@ -245,7 +245,13 @@ function transformFormData(formData, services = [], itinerary = []) {
 )
       .map((row) => ({
         vehicleType: row.vehicleType || null,
-        vehicleId:  toMasterId(row.vehicleId),
+        /* The Vehicle Master publicId (a UUID), passed straight through.
+           This used to run through toMasterId, which coerces anything non-numeric to null. That
+           was right when the backend column was a bigint; it has not been right since the vehicle
+           master started exposing only publicId, and the effect was silent — every vehicle a clerk
+           picked was dropped on save with no error, so the lead looked like it stored one.
+           destinationId/cityId above are still real Longs and still need toMasterId. */
+        vehicleId:   row.vehicleId   || null,
         model:       row.model       || null,
         capacity:    row.capacity === "" || row.capacity == null ? null : Number(row.capacity),
         quantity:    Number(row.quantity) || 1,
