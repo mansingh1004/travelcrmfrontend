@@ -751,6 +751,16 @@ export const NAV_SECTIONS = [
             keywords: "hot warm cold scoring temperature rules engine priority",
             can: () => hasPermission(P.LEAD_SCORING_CONFIGURE),
           },
+          {
+            // Monitoring rather than reporting, which is why it sits here and not under Reports:
+            // the detail view carries masked request and response bodies for every call this
+            // workspace's staff made. Gated on the same key as the page and the API.
+            id: "settings.requestLogs",
+            label: "Request logs",
+            path: "/RequestLogs",
+            keywords: "http api requests errors latency slow trace debugging monitoring audit",
+            can: () => hasPermission(P.SETTINGS_MANAGE),
+          },
         ],
       },
       {

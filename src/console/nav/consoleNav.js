@@ -12,6 +12,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import {
+  Activity,
   ArrowUpCircle,
   BedDouble,
   Building2,
@@ -413,6 +414,16 @@ export const CONSOLE_NAV_SECTIONS = [
             path: "/console/audit",
             Icon: ScrollText,
             keywords: "security history trail",
+          },
+          {
+            // Beside the audit log, and distinct from it: that one records what the PLATFORM did
+            // (logins, impersonation, tenant lifecycle), this one every HTTP request every tenant
+            // made. Someone looking for "why did this 500" wants this row, not that one.
+            id: "console.requestLogs",
+            label: "Request Logs",
+            path: "/console/request-logs",
+            Icon: Activity,
+            keywords: "http api requests errors latency slow trace 500 debugging monitoring",
           },
           {
             id: "console.announcements",
