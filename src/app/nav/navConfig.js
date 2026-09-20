@@ -573,7 +573,7 @@ export const NAV_SECTIONS = [
           "/InternationalDomestic",
         ],
         keywords:
-          "analytics insights performance activity geographic distribution follow-up booking revenue travel dates international domestic",
+          "analytics insights performance activity request logs api errors latency trace geographic distribution follow-up booking revenue travel dates international domestic",
         can: () => hasPermission(P.REPORT_VIEW) && hasModule("REPORTS"),
       },
     ],
@@ -750,16 +750,6 @@ export const NAV_SECTIONS = [
             path: "/LeadScoringRules",
             keywords: "hot warm cold scoring temperature rules engine priority",
             can: () => hasPermission(P.LEAD_SCORING_CONFIGURE),
-          },
-          {
-            // Monitoring rather than reporting, which is why it sits here and not under Reports:
-            // the detail view carries masked request and response bodies for every call this
-            // workspace's staff made. Gated on the same key as the page and the API.
-            id: "settings.requestLogs",
-            label: "Request logs",
-            path: "/RequestLogs",
-            keywords: "http api requests errors latency slow trace debugging monitoring audit",
-            can: () => hasPermission(P.SETTINGS_MANAGE),
           },
         ],
       },

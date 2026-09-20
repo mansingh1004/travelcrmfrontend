@@ -705,6 +705,8 @@ import { Activity as FiActivity, Filter as FiFilter, RefreshCw as FiRefreshCw, D
 
 import activityReportsService from "../api/activityReportsService";
 import { DEFAULT_START, DEFAULT_END } from "../dateDefaults";
+import RequestLogsPanel from "../components/RequestLogsPanel";
+import { hasPermission, P } from "@shared/lib/access";
 
 const ACTION_TYPES = ["All Actions","Login","Logout","Create","Update","Delete","Settings","Export"];
 const USER_TYPES   = ["All Types","Admin","User","Manager","Staff"];
@@ -931,6 +933,12 @@ export default function ActivityReports() {
   const [loading, setLoading] = useState(true);
   const [page,    setPage]    = useState(1);
   const [toast,   setToast]   = useState(null);
+  // Two views of the same question behind one heading: the activity log is what people DID,
+  // Request Logs is what the browser actually CALLED to do it. Local state, not a route — the
+  // tab is a lens on this page, not a separate destination in the nav.
+  const [view, setView] = useState("activity");
+  const canSeeRequestLogs = hasPermission(P.REQUEST_LOG_VIEW);
+
   const [detail,  setDetail]  = useState(null);
 
   const showToast = useCallback((msg,type="success")=>setToast({msg,type}),[]);
@@ -1074,7 +1082,57 @@ export default function ActivityReports() {
         </div>
       </div>
 
-      <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 py-6 space-y-5">
+      {/* ── TABS ──
+          Rendered only when there is a second tab to switch to. A lone disabled tab would
+          advertise a screen the viewer cannot open, which is worse than not mentioning it. */}
+      {canSeeRequestLogs && (
+        <div className="bg-white/70 backdrop-blur-md border-b border-slate-100">
+          <div className="max-w-screen-2xl mx-auto px-4 sm:px-6">
+            <div className="flex gap-1" role="tablist" aria-label="Activity views">
+              {[
+                { id: "activity", label: "Activity Log" },
+                { id: "requests", label: "Request Logs" },
+              ].map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  role="tab"
+                  id={`activity-tab-${t.id}`}
+                  aria-selected={view === t.id}
+                  aria-controls={`activity-panel-${t.id}`}
+                  onClick={() => setView(t.id)}
+                  className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors ${
+                    view === t.id
+                      ? "border-blue-600 text-blue-600"
+                      : "border-transparent text-slate-500 hover:text-slate-700"
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {canSeeRequestLogs && view === "requests" && (
+        <div
+          className="max-w-screen-2xl mx-auto px-4 sm:px-6 py-6"
+          role="tabpanel"
+          id="activity-panel-requests"
+          aria-labelledby="activity-tab-requests"
+        >
+          <RequestLogsPanel />
+        </div>
+      )}
+
+      <div
+        className="max-w-screen-2xl mx-auto px-4 sm:px-6 py-6 space-y-5"
+        role="tabpanel"
+        id="activity-panel-activity"
+        aria-labelledby="activity-tab-activity"
+        hidden={canSeeRequestLogs && view !== "activity"}
+      >
 
         {/* ── COLLAPSIBLE ACTIVITY ANALYTICS ── */}
         <div className="bg-white/80 backdrop-blur-md rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden fade-up">

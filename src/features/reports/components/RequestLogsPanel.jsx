@@ -40,14 +40,19 @@ const methodTone = (m) => ({
 }[m] || "text-slate-500");
 
 /**
- * Request logs for this workspace.
+ * The Request Logs tab of Activity Reports.
+ *
+ * <p>A panel, not a page: it renders inside the Activity Reports shell and therefore sets no
+ * background, no page width and no heading of its own. The two tabs are one subject at two
+ * heights — the activity log is what people DID, this is what the browser actually CALLED to do
+ * it — so they belong behind one heading rather than as two entries in the nav.
  *
  * <p><b>No tenant selector, by design.</b> The tenant is whoever is signed in, and the server
- * decides it — this page has no control that could change it and no parameter it could send that
+ * decides it — there is no control here that could change it and no parameter it could send that
  * the backend would honour. See spec §6 and RequestLogQueryService#resolveScope.
  */
-export default function RequestLogs() {
-  const allowed = hasPermission(P.SETTINGS_MANAGE);
+export default function RequestLogsPanel() {
+  const allowed = hasPermission(P.REQUEST_LOG_VIEW);
 
   const [rows, setRows] = useState([]);
   const [pagination, setPagination] = useState({});
@@ -91,29 +96,25 @@ export default function RequestLogs() {
 
   if (!allowed) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-100 p-6" style={FONT}>
-        <div className={`${cardCls} mx-auto max-w-md p-8 text-center`}>
-          <h1 className="text-lg font-extrabold text-slate-800">Access denied</h1>
-          <p className="mt-2 text-sm text-slate-600">
-            Request logs are available to workspace administrators.
-          </p>
-        </div>
+      <div className={`${cardCls} mx-auto max-w-md p-8 text-center`}>
+        <h2 className="text-lg font-extrabold text-slate-800">Access denied</h2>
+        <p className="mt-2 text-sm text-slate-600">
+          Ask a workspace administrator to grant you <strong>View request logs</strong> under
+          Reports in Access Management.
+        </p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-100" style={FONT}>
-      <div className="mx-auto max-w-7xl px-4 py-6" style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+    <div style={FONT}>
+      <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
 
-        <div>
-          <h1 className="text-2xl font-extrabold text-slate-800">Request Logs</h1>
-          <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-600">
-            <Building2 size={14} className="text-blue-600" />
-            {/* Stated, not selectable — this is the workspace you signed into. */}
-            Your workspace only · newest first
-          </p>
-        </div>
+        <p className="flex items-center gap-1.5 text-sm text-slate-500">
+          <Building2 size={14} className="text-blue-600" />
+          {/* Stated, not selectable — this is the workspace you signed into. */}
+          Your workspace only · newest first
+        </p>
 
         <SummaryCards summary={summary} loading={loading} />
 

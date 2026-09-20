@@ -4,7 +4,6 @@
 
 export { default as ReportsDashboard } from "./pages/ReportsDashboard";
 export { default as ActivityReports } from "./pages/ActivityReports";
-export { default as RequestLogs } from "./pages/RequestLogs";
 export { default as GeographicDistribution } from "./pages/GeographicDistribution";
 export { default as FollowupReports } from "./pages/FollowupReports";
 export { default as BookingRevenueAnalysis } from "./pages/BookingRevenueAnalysis";

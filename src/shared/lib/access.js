@@ -102,6 +102,9 @@ export const P = {
   MARKETPLACE_PAYABLE_READ: "MARKETPLACE_PAYABLE_READ",
   USER_READ: "USER_READ", USER_CREATE: "USER_CREATE", USER_UPDATE: "USER_UPDATE", USER_DELETE: "USER_DELETE",
   REPORT_VIEW: "REPORT_VIEW",
+  // The Request Logs tab on Activity Reports. Separate from REPORT_VIEW because that one
+  // grants aggregated business data and this one grants raw traffic with masked payloads.
+  REQUEST_LOG_VIEW: "REQUEST_LOG_VIEW",
   SETTINGS_MANAGE: "SETTINGS_MANAGE",
   // Communication. COMM_READ also gates the in-app Mailbox (features/mailbox) — reading the
   // agency's own inbox is the same authority as reading its conversations, so it deliberately

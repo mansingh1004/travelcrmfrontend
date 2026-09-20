@@ -88,7 +88,6 @@ const CompanyProfile = lazyPage(profile, "CompanyProfile");
 const reports = () => import("@features/reports");
 const ReportsDashboard = lazyPage(reports, "ReportsDashboard");
 const ActivityReports = lazyPage(reports, "ActivityReports");
-const RequestLogs = lazyPage(reports, "RequestLogs");
 const GeographicDistribution = lazyPage(reports, "GeographicDistribution");
 const FollowupReports = lazyPage(reports, "FollowupReports");
 const BookingRevenueAnalysis = lazyPage(reports, "BookingRevenueAnalysis");
@@ -582,10 +581,6 @@ const AppRouter = () => {
               <Route path="CreatePermissionTemplate" element={<Guard allow={hasPermission(P.USER_UPDATE)}><CreatePermissionTemplate /></Guard>} />
               <Route path="ReportsDashboard" element={<ReportsDashboard />} />
               <Route path="ActivityReports" element={<ActivityReports />} />
-              {/* Guarded at the route as well as inside the page: request details carry masked
-                  request and response bodies, so this is administrative visibility, not a report.
-                  The backend @PreAuthorize is still the real gate. */}
-              <Route path="RequestLogs" element={<Guard allow={hasPermission(P.SETTINGS_MANAGE)}><RequestLogs /></Guard>} />
               <Route path="GeographicDistribution" element={<GeographicDistribution />} />
               <Route path="FollowupReports" element={<FollowupReports />} />
               <Route path="BookingRevenueAnalysis" element={<BookingRevenueAnalysis />} />
