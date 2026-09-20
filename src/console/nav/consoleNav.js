@@ -426,6 +426,16 @@ export const CONSOLE_NAV_SECTIONS = [
             keywords: "http api requests errors latency slow trace 500 debugging monitoring",
           },
           {
+            // The third of the three log screens, and the only one showing what TENANTS did.
+            // Audit Log is what the platform did to them; Request Logs is the HTTP traffic
+            // underneath; this is their staff's own actions, across every tenant.
+            id: "console.tenantActivity",
+            label: "Tenant Activity",
+            path: "/console/tenant-activity",
+            Icon: Activity,
+            keywords: "tenant staff actions login create update delete export history activity",
+          },
+          {
             id: "console.announcements",
             label: "Announcements",
             path: "/console/announcements",

@@ -129,6 +129,7 @@ const ConsolePlatformEmail = lazyPage(consoleFeature, "ConsolePlatformEmail");
 const ConsolePlatformHealth = lazyPage(consoleFeature, "ConsolePlatformHealth");
 const ConsoleAuditLog = lazyPage(consoleFeature, "ConsoleAuditLog");
 const ConsoleRequestLogs = lazyPage(consoleFeature, "ConsoleRequestLogs");
+const ConsoleTenantActivity = lazyPage(consoleFeature, "ConsoleTenantActivity");
 const ConsoleAnnouncements = lazyPage(consoleFeature, "ConsoleAnnouncements");
 const ConsoleOps = lazyPage(consoleFeature, "ConsoleOps");
 const ConsoleSuperAdmins = lazyPage(consoleFeature, "ConsoleSuperAdmins");
@@ -356,6 +357,7 @@ const AppRouter = () => {
               <Route path="platform-health" element={<ConsolePlatformHealth />} />
               <Route path="audit" element={<ConsoleAuditLog />} />
               <Route path="request-logs" element={<ConsoleRequestLogs />} />
+              <Route path="tenant-activity" element={<ConsoleTenantActivity />} />
               <Route path="announcements" element={<ConsoleAnnouncements />} />
               <Route path="ops" element={<ConsoleOps />} />
               <Route path="superadmins" element={<ConsoleSuperAdmins />} />

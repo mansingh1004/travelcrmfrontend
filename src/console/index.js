@@ -21,6 +21,7 @@ export { default as ConsolePlatformEmail } from "./pages/PlatformEmail";
 export { default as ConsolePlatformHealth } from "./pages/PlatformHealth";
 export { default as ConsoleAuditLog } from "./pages/AuditLog";
 export { default as ConsoleRequestLogs } from "./pages/RequestLogs";
+export { default as ConsoleTenantActivity } from "./pages/TenantActivity";
 export { default as ConsoleAnnouncements } from "./pages/Announcements";
 export { default as ConsoleOps } from "./pages/Ops";
 export { default as ConsolePlatformHotels } from "./pages/PlatformHotels";
