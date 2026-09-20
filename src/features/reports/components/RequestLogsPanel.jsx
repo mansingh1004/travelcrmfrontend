@@ -343,6 +343,46 @@ function DetailModal({ publicId, onClose }) {
 
         {row && (
           <div className="space-y-4">
+            {/* ERROR FIRST. Anyone opening the eye on a red row came for this, and putting it
+                under four collapsed sections of metadata makes them scroll past everything to
+                find the one thing they wanted. A green row never renders this block. */}
+            {row.outcome === "ERROR" && (
+              <div className="rounded-xl border border-rose-200 bg-rose-50/50 p-4">
+                <h3 className="mb-2 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-rose-700">
+                  <AlertTriangle size={13} /> Error · HTTP {row.httpStatus}
+                </h3>
+                <dl className="mb-3 grid gap-x-4 gap-y-1.5 sm:grid-cols-2">
+                  <KV k="Code" v={row.errorCode || "—"} mono />
+                  <KV k="Exception" v={row.exceptionClass || "—"} mono />
+                </dl>
+                {row.errorMessage && (
+                  <p className="mb-3 rounded-lg bg-white/70 p-3 text-xs font-medium text-rose-900">
+                    {row.errorMessage}
+                  </p>
+                )}
+                {row.stackTrace ? (
+                  <>
+                    <h4 className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-rose-700">
+                      Stack trace
+                    </h4>
+                    {/* Open, not behind a toggle: this is the reason the panel exists. */}
+                    <pre className="max-h-96 overflow-auto whitespace-pre rounded-lg bg-slate-900 p-3 font-mono text-[11px] leading-relaxed text-slate-100">
+                      {row.stackTrace}
+                    </pre>
+                  </>
+                ) : (
+                  <p className="text-[11px] text-rose-700/80">
+                    No stack trace — this status was returned deliberately (a validation failure or
+                    a permission check), not thrown. Stack traces are captured for unhandled
+                    exceptions only.
+                  </p>
+                )}
+              </div>
+            )}
+
+            <Payload title="Request body" body={row.requestBody} open />
+            <Payload title="Response body" body={row.responseBody} open />
+
             <Section title="Request">
               <KV k="Trace ID" v={row.traceId} mono />
               <KV k="Status" v={`${row.outcome} · ${row.httpStatus}`} />
@@ -361,16 +401,9 @@ function DetailModal({ publicId, onClose }) {
               <KV k="User agent" v={row.userAgent || "—"} />
             </Section>
 
+            {/* Headers last and collapsed. Twenty of them are Accept-Encoding and sec-ch-ua, and
+                the two that matter (content type, trace id) are already above. */}
             <Payload title="Request headers" body={row.requestHeaders} />
-            <Payload title="Request body" body={row.requestBody} />
-            <Payload title="Response body" body={row.responseBody} />
-
-            {(row.errorCode || row.errorMessage) && (
-              <Section title="Error" tone="error">
-                <KV k="Code" v={row.errorCode || "—"} mono />
-                <KV k="Message" v={row.errorMessage || "—"} />
-              </Section>
-            )}
 
             <p className="text-[11px] text-slate-400">
               Passwords, tokens and MFA codes are removed before a row is written — a masked value
@@ -401,7 +434,12 @@ function KV({ k, v, mono }) {
   );
 }
 
-function Payload({ title, body }) {
+/**
+ * A stored payload. `open` shows it expanded; everything else starts collapsed behind a summary,
+ * because headers are mostly noise and a detail view that opens with forty of them buries the
+ * request and response somebody actually came to read.
+ */
+function Payload({ title, body, open = false }) {
   if (!body) return null;
   let text = body;
   try {
@@ -409,12 +447,25 @@ function Payload({ title, body }) {
   } catch {
     // Plain text, truncated, or a "not stored" marker — shown as-is.
   }
+  const pre = (
+    <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-slate-50 p-3 font-mono text-[11px] leading-relaxed text-slate-700">
+      {text}
+    </pre>
+  );
+  if (open) {
+    return (
+      <div className="rounded-xl border border-slate-200 p-4">
+        <h3 className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-500">{title}</h3>
+        {pre}
+      </div>
+    );
+  }
   return (
-    <div className="rounded-xl border border-slate-200 p-4">
-      <h3 className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-500">{title}</h3>
-      <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-slate-50 p-3 font-mono text-[11px] leading-relaxed text-slate-700">
-        {text}
-      </pre>
-    </div>
+    <details className="rounded-xl border border-slate-200 p-4">
+      <summary className="cursor-pointer text-[11px] font-bold uppercase tracking-wide text-slate-500 hover:text-slate-700">
+        {title}
+      </summary>
+      <div className="mt-2">{pre}</div>
+    </details>
   );
 }

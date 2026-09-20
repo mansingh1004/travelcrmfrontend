@@ -347,6 +347,41 @@ function DetailDrawer({ publicId, onClose }) {
 
         {row && (
           <div className="space-y-4">
+            {/* ERROR FIRST — see the tenant panel for why. A green row never renders this. */}
+            {row.outcome === "ERROR" && (
+              <div className="rounded-xl border border-hue-rose/40 bg-surface p-4">
+                <h3 className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-hue-rose">
+                  <AlertTriangle size={13} /> Error · HTTP {row.httpStatus}
+                </h3>
+                <dl className="mb-3 grid gap-x-4 gap-y-1.5 sm:grid-cols-2">
+                  <KV k="Code" v={row.errorCode || "—"} mono />
+                  <KV k="Exception" v={row.exceptionClass || "—"} mono />
+                </dl>
+                {row.errorMessage && (
+                  <p className="mb-3 rounded-lg bg-page p-3 text-xs text-body">{row.errorMessage}</p>
+                )}
+                {row.stackTrace ? (
+                  <>
+                    <h4 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-hue-rose">
+                      Stack trace
+                    </h4>
+                    <pre className="max-h-96 overflow-auto whitespace-pre rounded-lg bg-slate-900 p-3 font-mono text-[11px] leading-relaxed text-slate-100">
+                      {row.stackTrace}
+                    </pre>
+                  </>
+                ) : (
+                  <p className="text-[11px] text-muted">
+                    No stack trace — this status was returned deliberately (a validation failure or
+                    a permission check), not thrown. Stack traces are captured for unhandled
+                    exceptions only.
+                  </p>
+                )}
+              </div>
+            )}
+
+            <Payload title="Request body" body={row.requestBody} open />
+            <Payload title="Response body" body={row.responseBody} open />
+
             <Section title="Request">
               <KV k="Tenant" v={row.tenantCode || "—"} />
               <KV k="Tenant ID" v={row.tenantId ?? "—"} mono />
@@ -372,19 +407,10 @@ function DetailDrawer({ publicId, onClose }) {
               <KV k="User agent" v={row.userAgent || "—"} />
             </Section>
 
+            {/* Headers last and collapsed — mostly Accept-Encoding and sec-ch-ua, and the two
+                that matter are already above. */}
             <Payload title="Request headers" body={row.requestHeaders} />
-            <Payload title="Request body" body={row.requestBody} />
             <Payload title="Response headers" body={row.responseHeaders} />
-            <Payload title="Response body" body={row.responseBody} />
-
-            {(row.errorCode || row.errorMessage || row.stackTrace) && (
-              <Section title="Error" tone="error">
-                <KV k="Code" v={row.errorCode || "—"} mono />
-                <KV k="Message" v={row.errorMessage || "—"} />
-                <KV k="Exception" v={row.exceptionClass || "—"} mono />
-              </Section>
-            )}
-            {row.stackTrace && <Payload title="Stack trace" body={row.stackTrace} />}
 
             <p className="text-[11px] text-muted">
               Passwords, tokens, MFA codes and the lead-ingest webhook credential are removed before
@@ -416,7 +442,8 @@ function KV({ k, v, mono }) {
 }
 
 /** Payloads can be long and are not always JSON, so they scroll in their own box. */
-function Payload({ title, body }) {
+/** `open` expands; anything else starts collapsed, so headers do not bury the payloads. */
+function Payload({ title, body, open = false }) {
   if (!body) return null;
   let text = body;
   try {
@@ -424,12 +451,25 @@ function Payload({ title, body }) {
   } catch {
     // Already plain text, truncated mid-object, or a "not stored" marker — show it as it is.
   }
+  const pre = (
+    <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-page p-3 font-mono text-[11px] leading-relaxed text-body">
+      {text}
+    </pre>
+  );
+  if (open) {
+    return (
+      <div className="rounded-xl border border-border bg-surface p-4">
+        <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted">{title}</h3>
+        {pre}
+      </div>
+    );
+  }
   return (
-    <div className="rounded-xl border border-border bg-surface p-4">
-      <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted">{title}</h3>
-      <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-page p-3 font-mono text-[11px] leading-relaxed text-body">
-        {text}
-      </pre>
-    </div>
+    <details className="rounded-xl border border-border bg-surface p-4">
+      <summary className="cursor-pointer text-[11px] font-semibold uppercase tracking-wide text-muted hover:text-body">
+        {title}
+      </summary>
+      <div className="mt-2">{pre}</div>
+    </details>
   );
 }
