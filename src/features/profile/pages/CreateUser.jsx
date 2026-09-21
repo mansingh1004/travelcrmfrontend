@@ -347,7 +347,14 @@ export default function CreateUser() {
                         onChange={e => set("confirmPassword", e.target.value)}
                         show={showConf}
                         onToggle={() => setShowConf(v=>!v)}
-                        error={errs.confirmPassword}
+                        // error={errs.confirmPassword}
+error={
+  errs.confirmPassword ||
+  (form.confirmPassword && form.password !== form.confirmPassword
+    ? "Passwords do not match"
+    : "")
+}
+
                         placeholder="Confirm password"
                       />
 

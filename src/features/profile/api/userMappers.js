@@ -52,7 +52,9 @@ export function mapUserFromApi(d) {
   return {
     id:          d.publicId,
     publicId:    d.publicId,
-    username:    (d.email || "").split("@")[0],
+    // username:    (d.email || "").split("@")[0],
+username: d.username || (d.email || "").split("@")[0],
+
     fullName:    d.name,
     name:        d.name,
     email:       d.email,
