@@ -14,6 +14,11 @@ import AccessDenied from "../components/AccessDenied";
 // duplicate AddLeadLog / LeadLogs pages, which had drifted out of sync with these.
 import { AddLogModal, LogsModal } from "../components/LeadLogModals";
 import { formatToWhatsAppLink } from "../lib/whatsapp";
+/* The claim queue's source palette, reused rather than re-declared. One source coloured two
+   different ways on two screens is exactly what a colour code exists to prevent, and this list is
+   already the single place that map lives. It keys on the ENUM NAME (`sourceKey`), never the display
+   name — see LeadResponseDto#sourceKey. */
+import { sourceStyle } from "../lib/leadAlertConstants";
 import PdfDownloadLoader from '@/shared/ui/PdfDownloadLoader';
 import { usePdfDownload } from '@shared/hooks/usePdfDownload';
 // The record-side conversation drawer, from the whatsapp feature's barrel. It talks to the
@@ -27,7 +32,10 @@ import {
   Eye, Pencil, Trash2, X, Mail, Phone, MapPin, Briefcase, CheckCircle, Copy,
   BarChart3, ArrowRightLeft, MessageCircle,
   DollarSign, Sparkles,
-  Building2, Plane, Ship, Car, Camera,  Bell, AlertCircle, BookOpen, Shield, ExternalLink
+  Building2, Plane, Ship, Car, Camera,  Bell, AlertCircle, BookOpen, Shield, ExternalLink,
+  // Temperature override: the pin marks a lead whose Type was set by hand and so outranks the
+  // scoring rules; RotateCcw is the revert-to-automatic action beside it.
+  Pin, RotateCcw
 } from 'lucide-react';
 import { WhatsAppIcon as FaWhatsapp } from "@shared/ui/WhatsAppIcon";
 import { Link } from 'react-router-dom';
@@ -96,6 +104,46 @@ const typePill = (type) => TYPE_PILL[type] || 'bg-slate-100 text-slate-700 borde
 
 /* Selectable lead types for the Type dropdown — keys match TYPE_PILL. */
 const LEAD_TYPES = ['Fresh', 'Hot', 'Warm', 'Cold'];
+
+/* ─── TEMPERATURE OVERRIDE ─────────────────────────────────
+   leadType is the RESOLVED temperature: COALESCE(manualTemperature, autoTemperature), with the
+   Fresh gate ahead of both. The two halves come down beside it so the row can say which one it is
+   looking at.  */
+
+/** Whole days between an ISO timestamp and now, floored. Null-safe — returns null on bad input. */
+const daysAgo = (iso) => {
+  if (!iso) return null;
+  const then = new Date(iso);
+  if (Number.isNaN(then.getTime())) return null;
+  return Math.max(0, Math.floor((Date.now() - then.getTime()) / 86400000));
+};
+
+/**
+ * The sentence shown on the pill and the pin.
+ *
+ * Reads "Set to Hot by asha, 3 days ago. Rules say Warm." — the second half is the whole point:
+ * surfacing the disagreement is what lets an agent notice their override has gone stale, which is
+ * the honest alternative to expiring overrides on a TTL behind their back.
+ *
+ * Falls back gracefully at every step: no actor name yet (the list mapper does not resolve user ids
+ * per row, to avoid an N+1), no timestamp, or no engine verdict all degrade to a shorter sentence
+ * rather than rendering "undefined".
+ */
+function temperatureTooltip(lead) {
+  if (!lead?.manualTemperature) {
+    if (lead?.leadType === 'Fresh') return 'Nobody has contacted this lead yet.';
+    return lead?.temperatureReason || 'Set automatically by the scoring rules.';
+  }
+  const who = lead.manualTemperatureBy ? ` by ${lead.manualTemperatureBy}` : '';
+  const days = daysAgo(lead.manualTemperatureAt);
+  const when = days === null ? '' : days === 0 ? ', today' : days === 1 ? ', 1 day ago' : `, ${days} days ago`;
+  let text = `Set to ${lead.manualTemperature}${who}${when}.`;
+  if (lead.autoTemperature && lead.autoTemperature !== lead.manualTemperature) {
+    text += ` Rules say ${lead.autoTemperature}.`;
+  }
+  if (lead.manualTemperatureReason) text += ` "${lead.manualTemperatureReason}"`;
+  return text;
+}
 
 /* A lead's services are stored as the lowercase ids the form emits — "hotel", "vehicle" —
    see leads/components/ServicesSection.jsx. Both maps below are keyed that way, and every
@@ -273,7 +321,15 @@ function nextAction(lead, now = Date.now()) {
     ? daysBetween(today, new Date(created.getFullYear(), created.getMonth(), created.getDate()))
     : 0;
   if (!everContacted && ageDays >= 1) {
-    return { tone: ageDays >= 3 ? 'late' : 'due', label: `Never contacted · ${ageDays}d` };
+    /* Name the ACTION when we already know what it is.
+       A lead that arrived from the phone system was created because somebody rang and nobody in the
+       agency has since recorded contact — "never contacted" is true but says the wrong thing, since
+       the next move is not "reach out somehow", it is "ring this number back". Urgency is unchanged;
+       only the verb is. Deliberately limited to the telephony channel: PHONE_MANUAL and DIRECT_CALL
+       are rows a human typed up AFTER speaking to the customer, so telling them to call back would
+       be wrong. */
+    const verb = lead.sourceKey === 'IVR_CALL' ? 'Call back' : 'Never contacted';
+    return { tone: ageDays >= 3 ? 'late' : 'due', label: `${verb} · ${ageDays}d` };
   }
 
   /* 5. Contacted once, then went quiet. The natural continuation of rule 4: that one answers "has
@@ -797,7 +853,7 @@ function LeadRow({
   lead, index, selected, onToggleSelect,
   onView, onEditNavigate, onDelete, onStageChange, onTypeChange,
   onViewQuotations, onSuggestPackages, onConvert, onAddLog, onViewLogs,
-  onWeblinkStats, onWeblinkView, onWhatsApp,
+  onWeblinkStats, onWeblinkView, onWhatsApp, onRevertTemperature,
   canEdit, canDelete, canConvert, canCreateQuotation, dense,
 }) {
   // Shadows the module-level TD for this row only — density is a row-height setting.
@@ -856,11 +912,25 @@ function LeadRow({
   // which is the common case, so the badge stays off rather than rendering "1".
   const repeatEnquiries = Number(lead.repeatEnquiryCount) || 0;
   const totalEnquiries = repeatEnquiries + 1;
+
+  /* Source dot + label — INTEGRATION-ORIGIN ROWS ONLY.
+     `origin` is the gate, and it is the whole reason this addition is safe to ship: an agency that
+     has connected nothing has no INTEGRATION leads, so this grid looks exactly as it did. On a row a
+     person typed, the source is whatever they picked from a dropdown — restating it under their own
+     name is noise. On a row a machine opened, it is the one thing the grid never said.
+     `sourceKey` is the enum constant the colour map keys on; `leadSource` is the display name and
+     rides along as the fallback LABEL for a source the map has no entry for — a correct unstyled
+     name beats colouring an unknown source as "Other". */
+  const source = lead.origin === 'INTEGRATION' && (lead.sourceKey || lead.leadSource)
+    ? sourceStyle(lead.sourceKey, lead.leadSource)
+    : null;
   const webLink = q?.publicId ? `${window.location.origin}/q/${q.publicId}` : null;
 
   // Always show the lead's real stage/type even if it's outside the manually-selectable set.
   const stageOptions = STAGES.includes(lead.leadStage) ? STAGES : [lead.leadStage, ...STAGES].filter(Boolean);
   const typeOptions = LEAD_TYPES.includes(lead.leadType) ? LEAD_TYPES : [lead.leadType, ...LEAD_TYPES].filter(Boolean);
+  // A manual override is in force — the pin and the revert action render only for these rows.
+  const isPinned = Boolean(lead.manualTemperature);
 
   // Quick share — pure client-side, no API call. The full "email the PDF from the server"
   // flow still lives in QuotationsModal.
@@ -939,6 +1009,21 @@ function LeadRow({
                 className="text-[11px] text-slate-400 hover:text-blue-600 truncate max-w-full inline-flex items-center gap-1 transition-colors">
                 <Mail size={10} className="flex-shrink-0" /> <span className="truncate">{lead.email}</span>
               </button>
+            )}
+            {/* Where this lead came from.
+                This grid did not say, anywhere: sixteen columns and not one of them told you whether
+                a row was typed in by a person or arrived from JustDial, a website form or a phone
+                call. It goes on the identity block rather than into a column of its own because it
+                is a property of the CONTACT, and because a seventeenth column on a table that
+                already scrolls sideways would be paid for by every screen.
+                Muted by design — every row has a source, so it is context, not an alert. */}
+            {source && (
+              <div className="flex items-center gap-1.5 text-[11px] text-slate-400 max-w-full"
+                   title={`Lead source: ${source.label}`}>
+                <span className="w-[7px] h-[7px] rounded-full flex-shrink-0"
+                      style={{ background: source.color }} />
+                <span className="truncate font-medium">{source.label}</span>
+              </div>
             )}
           </div>
         </div>
@@ -1137,12 +1222,34 @@ function LeadRow({
         <span className={`text-sm font-bold tabular-nums ${marginStr ? 'text-emerald-700' : 'text-slate-300'}`}>{marginStr || '—'}</span>
       </td>
 
-      {/* ── Type ── */}
+      {/* ── Type (temperature) ──
+          The select is still the pill. What is new is the pin: a lead whose temperature was set by
+          hand outranks the scoring engine until someone reverts it, and without a marker there is
+          no way to tell "the rules decided this" from "a colleague decided this three days ago".
+          The revert button only renders when an override actually exists — see isPinned. */}
       <td className={`${TD} text-center`}>
-        <select value={lead.leadType || 'Fresh'} onChange={e => onTypeChange(lead, e.target.value)} disabled={!canEdit}
-          className={`text-[11px] font-bold px-2 py-1 rounded-full border outline-none appearance-none text-center transition-all max-w-full truncate ${canEdit ? 'cursor-pointer' : 'opacity-60 cursor-not-allowed'} ${typePill(lead.leadType)}`}>
-          {typeOptions.map(t => <option key={t} value={t}>{t}</option>)}
-        </select>
+        <div className="flex items-center justify-center gap-1">
+          <select value={lead.leadType || 'Fresh'} onChange={e => onTypeChange(lead, e.target.value)} disabled={!canEdit}
+            title={temperatureTooltip(lead)}
+            className={`text-[11px] font-bold px-2 py-1 rounded-full border outline-none appearance-none text-center transition-all max-w-full truncate ${canEdit ? 'cursor-pointer' : 'opacity-60 cursor-not-allowed'} ${typePill(lead.leadType)}`}>
+            {typeOptions.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+          {isPinned && (
+            <button
+              type="button"
+              onClick={() => onRevertTemperature?.(lead)}
+              disabled={!canEdit}
+              title={temperatureTooltip(lead)}
+              aria-label="Revert to the automatic temperature"
+              className={`group shrink-0 rounded-full p-0.5 text-slate-400 transition-colors ${canEdit ? 'hover:text-blue-600 cursor-pointer' : 'opacity-60 cursor-not-allowed'}`}
+            >
+              {/* Swaps to the revert glyph on hover, so one 128px-wide cell carries both the
+                  "this is pinned" state and the way out of it without a second control. */}
+              <Pin className="w-3 h-3 group-hover:hidden" fill="currentColor" />
+              <RotateCcw className="w-3 h-3 hidden group-hover:block" />
+            </button>
+          )}
+        </div>
       </td>
 
       {/* ── Stage ── */}
@@ -1884,28 +1991,62 @@ const Leads = () => {
     }
   };
 
-  // Same "send the complete payload" pattern as the stage change — the Type column is a dropdown.
+  // Setting the Type by hand is a MANUAL OVERRIDE of the scoring engine, so it goes through the
+  // dedicated PATCH rather than the full-entity PUT the stage change uses.
+  //
+  // The old full-payload approach was actively wrong here: transformFormData whitelists fields, so
+  // the override's provenance (who, when, why) never reached the server, and re-submitting the whole
+  // lead to change one pill meant every other field was rewritten from whatever the client last
+  // rendered. The endpoint also carries its own permission, which a blanket PUT cannot express.
   const handleTypeChange = async (leadToUpdate, newType) => {
     try {
-      const safeAssignedUserId =
-        leadToUpdate.assignedUserId ||
-        leadToUpdate.assignedUser?.publicId ||
-        leadToUpdate.assignedUser?.id ||
-        null;
+      const res = await leadService.overrideTemperature(
+        leadToUpdate.publicId || leadToUpdate.id, newType);
 
-      await leadService.updateLead(
-        leadToUpdate.publicId || leadToUpdate.id,
-        { ...leadToUpdate, leadType: newType, assignedUserId: safeAssignedUserId },
-        leadToUpdate.services || [],
-        leadToUpdate.itinerary || []
-      );
-
-      setLeads(prev => prev.map(l => l.id === leadToUpdate.id ? { ...l, leadType: newType } : l));
+      // Patch the row from the SERVER's answer, not from newType: the response carries the
+      // provenance the pin and its tooltip read, and inventing it locally would show "just now" on a
+      // row the server may have recorded differently.
+      const updated = res?.data?.data ?? res?.data ?? null;
+      setLeads(prev => prev.map(l => l.id === leadToUpdate.id
+        ? {
+            ...l,
+            leadType: updated?.leadType ?? newType,
+            autoTemperature: updated?.autoTemperature ?? l.autoTemperature,
+            manualTemperature: updated?.manualTemperature ?? newType,
+            manualTemperatureAt: updated?.manualTemperatureAt ?? new Date().toISOString(),
+            manualTemperatureBy: updated?.manualTemperatureBy ?? l.manualTemperatureBy,
+            manualTemperatureReason: updated?.manualTemperatureReason ?? null,
+          }
+        : l));
       fetchStats();   // the Fresh badge is a server count now
       showToast(`Lead #${leadToUpdate.id} set to ${newType}!`);
     } catch (err) {
       if (isAlreadyReported(err)) return;   // <ToastHost/> already showed it
       showToast(getErrorMessage(err, 'Error updating lead type. Please try again.'), 'error');
+    }
+  };
+
+  // Clear the pin and hand the lead back to the rules. Only reachable from a row that HAS an
+  // override — the button does not render otherwise, so there is no "nothing to revert" path here.
+  const handleRevertTemperature = async (leadToUpdate) => {
+    try {
+      const res = await leadService.revertTemperature(leadToUpdate.publicId || leadToUpdate.id);
+      const updated = res?.data?.data ?? res?.data ?? null;
+      setLeads(prev => prev.map(l => l.id === leadToUpdate.id
+        ? {
+            ...l,
+            leadType: updated?.leadType ?? l.autoTemperature ?? l.leadType,
+            manualTemperature: null,
+            manualTemperatureAt: null,
+            manualTemperatureBy: null,
+            manualTemperatureReason: null,
+          }
+        : l));
+      fetchStats();
+      showToast('Back to the automatic temperature.');
+    } catch (err) {
+      if (isAlreadyReported(err)) return;
+      showToast(getErrorMessage(err, 'Could not revert the temperature. Please try again.'), 'error');
     }
   };
 
@@ -2509,6 +2650,7 @@ const Leads = () => {
                         onDelete={setDeleteTarget}
                         onStageChange={handleStageChange}
                         onTypeChange={handleTypeChange}
+                        onRevertTemperature={handleRevertTemperature}
                         onViewQuotations={setQuotationsLead}
                         onSuggestPackages={setSuggestLead}
                         onConvert={handleConvertNavigate}

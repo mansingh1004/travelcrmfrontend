@@ -6,37 +6,96 @@ import { WhatsAppIcon as FaWhatsapp } from "@shared/ui/WhatsAppIcon";
 
 import whatsAppConfigService from "../api/whatsAppConfigService";
 
-/* ─── SETUP GUIDE STEPS ──────────────────────────────────────── */
-const SETUP_STEPS = [
+/* ─── PROVIDERS ──────────────────────────────────────────────────
+   Two ways the same WhatsApp number can be reached, and they are onboarded
+   completely differently — so every label, hint and link on this page is
+   provider-specific rather than one set of Interakt wording with extra
+   fields bolted on. A tenant on Meta who reads "find this in your Interakt
+   dashboard" has been sent to an account they do not have.
+
+   The key names match the backend vocabulary (tenant_settings.wa_provider).
+──────────────────────────────────────────────────────────────── */
+const INTERAKT = "INTERAKT";
+const META_CLOUD = "META_CLOUD";
+
+const PROVIDERS = [
   {
-    step: 1,
-    title: "Create Interakt Account",
-    desc: "Sign up at interakt.shop and complete business verification.",
-    icon: <FaGlobe className="w-4 h-4"/>,
-    color: "from-blue-500 to-blue-600",
+    key: INTERAKT,
+    name: "Interakt",
+    tag: "Easiest to start",
+    blurb: "A WhatsApp partner (BSP). One API key, set up in a day.",
   },
   {
-    step: 2,
-    title: "Get API Key",
-    desc: "Go to Developer Settings in your Interakt dashboard.",
-    icon: <FaKey className="w-4 h-4"/>,
-    color: "from-purple-500 to-purple-600",
-  },
-  {
-    step: 3,
-    title: "Create Template",
-    desc: "Create a WhatsApp-approved message template for quotations.",
-    icon: <FaFileAlt className="w-4 h-4"/>,
-    color: "from-amber-500 to-amber-600",
-  },
-  {
-    step: 4,
-    title: "Save & Test",
-    desc: "Enter your settings below, save, and send a test message.",
-    icon: <FaCheckCircle className="w-4 h-4"/>,
-    color: "from-green-500 to-green-600",
+    key: META_CLOUD,
+    name: "Meta Cloud API",
+    tag: "Direct, no middleman",
+    blurb: "Talk to Meta directly. Cheaper per message and supports free-text replies, but needs your own Meta app.",
   },
 ];
+
+/* ─── SETUP GUIDE STEPS ──────────────────────────────────────── */
+const SETUP_STEPS = {
+  [INTERAKT]: [
+    {
+      step: 1,
+      title: "Create Interakt Account",
+      desc: "Sign up at interakt.shop and complete business verification.",
+      icon: <FaGlobe className="w-4 h-4"/>,
+      color: "from-blue-500 to-blue-600",
+    },
+    {
+      step: 2,
+      title: "Get API Key",
+      desc: "Go to Developer Settings in your Interakt dashboard.",
+      icon: <FaKey className="w-4 h-4"/>,
+      color: "from-purple-500 to-purple-600",
+    },
+    {
+      step: 3,
+      title: "Create Template",
+      desc: "Create a WhatsApp-approved message template for quotations.",
+      icon: <FaFileAlt className="w-4 h-4"/>,
+      color: "from-amber-500 to-amber-600",
+    },
+    {
+      step: 4,
+      title: "Save & Test",
+      desc: "Enter your settings below, save, and send a test message.",
+      icon: <FaCheckCircle className="w-4 h-4"/>,
+      color: "from-green-500 to-green-600",
+    },
+  ],
+  [META_CLOUD]: [
+    {
+      step: 1,
+      title: "Verify Your Business",
+      desc: "In Meta Business Manager, complete Business Verification (GST certificate + address proof).",
+      icon: <FaGlobe className="w-4 h-4"/>,
+      color: "from-blue-500 to-blue-600",
+    },
+    {
+      step: 2,
+      title: "Add WhatsApp to a Meta App",
+      desc: "Create a Business-type app, add the WhatsApp product, and register your number.",
+      icon: <MdOutlineIntegrationInstructions className="w-4 h-4"/>,
+      color: "from-indigo-500 to-indigo-600",
+    },
+    {
+      step: 3,
+      title: "Create a Permanent Token",
+      desc: "Add a System User with the WhatsApp permissions, then generate a token that does not expire.",
+      icon: <FaKey className="w-4 h-4"/>,
+      color: "from-purple-500 to-purple-600",
+    },
+    {
+      step: 4,
+      title: "Copy the Three Values",
+      desc: "Access token, Phone Number ID and WABA ID — all on the API Setup screen. Paste them below and test.",
+      icon: <FaCheckCircle className="w-4 h-4"/>,
+      color: "from-green-500 to-green-600",
+    },
+  ],
+};
 
 const LANG_OPTIONS = [
   { code: "en", label: "English (en)" },
@@ -97,11 +156,16 @@ export default function WhatsAppConfiguration() {
 
   /* form state */
   const [form, setForm] = useState({
-    apiKey:           "",
-    templateName:     "",
-    templateLanguage: "en",
-    headerImageUrl:   "",
+    // One credential slot for both providers: the Interakt API key, or the Meta access token.
+    apiKey:            "",
+    templateName:      "",
+    templateLanguage:  "en",
+    headerImageUrl:    "",
+    provider:          INTERAKT,
+    phoneNumberId:     "",
+    businessAccountId: "",
   });
+  const isMeta = form.provider === META_CLOUD;
   const [showApiKey,  setShowApiKey]  = useState(false);
   const [errs,        setErrs]        = useState({});
   const [saving,      setSaving]      = useState(false);
@@ -130,10 +194,15 @@ export default function WhatsAppConfiguration() {
         if (!d) return;
         setForm(p => ({
           ...p,
-          apiKey:           d.apiKeySet ? "••••••••" : "",
-          templateName:     d.templateName     || "",
-          templateLanguage: d.templateLanguage || "en",
-          headerImageUrl:   d.headerImageUrl   || "",
+          apiKey:            d.apiKeySet ? "••••••••" : "",
+          templateName:      d.templateName     || "",
+          templateLanguage:  d.templateLanguage || "en",
+          headerImageUrl:    d.headerImageUrl   || "",
+          // The backend answers with the provider actually IN EFFECT — a tenant who never chose one
+          // is on the server default, so this is never blank and the toggle always shows the truth.
+          provider:          d.provider === META_CLOUD ? META_CLOUD : INTERAKT,
+          phoneNumberId:     d.phoneNumberId     || "",
+          businessAccountId: d.businessAccountId || "",
         }));
       })
       .catch(() => {});
@@ -145,18 +214,38 @@ export default function WhatsAppConfiguration() {
     setErrs(p => ({ ...p, [k]: "" }));
   };
 
+  /* where this provider's credentials actually live */
+  const credentialUrl = isMeta
+    ? "https://business.facebook.com/wa/manage/home/"
+    : "https://app.interakt.ai/settings/developer-settings";
+
   /* copy API key hint URL */
   const handleCopyHintUrl = () => {
-    navigator.clipboard.writeText("https://app.interakt.ai/settings/developer-settings").catch(() => {});
+    navigator.clipboard.writeText(credentialUrl).catch(() => {});
     showToast("Dashboard URL copied to clipboard.", "info");
+  };
+
+  /* switching provider clears the stored secret from the box, deliberately.
+     An Interakt API key left sitting in the field while "Meta Cloud API" is selected would be saved
+     as a Meta access token and fail on the first send with an authentication error that points
+     nowhere near the real cause. */
+  const switchProvider = (key) => {
+    if (key === form.provider) return;
+    setForm(p => ({ ...p, provider: key, apiKey: "" }));
+    setErrs({});
   };
 
   /* validation */
   const validate = () => {
     const e = {};
-    if (!form.apiKey.trim())           e.apiKey           = "API Key is required";
+    if (!form.apiKey.trim())           e.apiKey           = isMeta ? "Access Token is required" : "API Key is required";
     if (!form.templateName.trim())     e.templateName     = "Template Name is required";
     if (!form.templateLanguage.trim()) e.templateLanguage = "Template Language is required";
+    // Caught here rather than at send time on purpose: without it the first failure is a Graph 400
+    // on a real customer message, which reads as "WhatsApp is broken" instead of "one field is blank".
+    if (isMeta && !form.phoneNumberId.trim()) {
+      e.phoneNumberId = "Phone Number ID is required for Meta Cloud API";
+    }
     return e;
   };
 
@@ -210,7 +299,12 @@ export default function WhatsAppConfiguration() {
        ? "border-red-300 focus:border-red-400 focus:ring-red-50"
        : "border-slate-200 focus:border-green-400 focus:ring-green-50 hover:border-slate-300"}`;
 
-  const isConfigured = form.apiKey.trim().length > 0 && form.templateName.trim().length > 0;
+  const steps = SETUP_STEPS[form.provider] || SETUP_STEPS[INTERAKT];
+
+  const isConfigured = form.apiKey.trim().length > 0
+    && form.templateName.trim().length > 0
+    // On Meta the token alone cannot send anything — the Phone Number ID is half the address.
+    && (!isMeta || form.phoneNumberId.trim().length > 0);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-green-50/20 to-slate-100"
@@ -243,7 +337,7 @@ export default function WhatsAppConfiguration() {
                   WhatsApp Configuration
                 </h1>
                 <p className="text-sm text-slate-400 mt-0.5">
-                  Interakt Business API Integration
+                  {isMeta ? "Meta Cloud API Integration" : "Interakt Business API Integration"}
                   <span className="hidden sm:inline ml-3 text-slate-300">|</span>
                   <span className="hidden sm:inline ml-3 text-xs">
                     <span className="hover:text-blue-600 cursor-pointer transition-colors" onClick={() => navigate("/")}>Home</span>
@@ -285,7 +379,9 @@ export default function WhatsAppConfiguration() {
                     </div>
                     <div>
                       <h2 className="text-base font-extrabold text-white">WhatsApp Integration Settings</h2>
-                      <p className="text-white/70 text-xs mt-0.5">Powered by Interakt Business API</p>
+                      <p className="text-white/70 text-xs mt-0.5">
+                        {isMeta ? "Direct on Meta WhatsApp Cloud API" : "Powered by Interakt Business API"}
+                      </p>
                     </div>
                   </div>
                   {/* Status badge */}
@@ -298,28 +394,77 @@ export default function WhatsAppConfiguration() {
 
                 <div className="p-6 space-y-5">
 
-                  {/* Interakt banner */}
+                  {/* ── PROVIDER CHOICE ──
+                      First, because everything below it changes meaning depending on the answer. */}
+                  <div>
+                    <FieldLabel
+                      label="How do you connect to WhatsApp?"
+                      required
+                      hint="Both send from the same WhatsApp number. The difference is who you get your credentials from."
+                    />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {PROVIDERS.map(p => {
+                        const active = form.provider === p.key;
+                        return (
+                          <button
+                            key={p.key}
+                            type="button"
+                            onClick={() => switchProvider(p.key)}
+                            className={`text-left p-4 rounded-2xl border-2 transition-all
+                              ${active
+                                ? "border-green-500 bg-green-50 shadow-sm"
+                                : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"}`}>
+                            <div className="flex items-center gap-2">
+                              <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0
+                                ${active ? "border-green-500" : "border-slate-300"}`}>
+                                {active && <div className="w-2 h-2 rounded-full bg-green-500"/>}
+                              </div>
+                              <span className={`text-sm font-extrabold ${active ? "text-green-800" : "text-slate-700"}`}>
+                                {p.name}
+                              </span>
+                              <span className={`ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full
+                                ${active ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-500"}`}>
+                                {p.tag}
+                              </span>
+                            </div>
+                            <p className={`text-xs mt-1.5 leading-relaxed ${active ? "text-green-700" : "text-slate-400"}`}>
+                              {p.blurb}
+                            </p>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Provider banner */}
                   <div className="flex items-start gap-3 p-4 bg-green-50 border border-green-200 rounded-2xl">
                     <FaWhatsapp className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5"/>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-extrabold text-green-800">WhatsApp Integration Settings (Interakt)</p>
+                      <p className="text-sm font-extrabold text-green-800">
+                        {isMeta ? "WhatsApp Integration Settings (Meta Cloud API)"
+                                : "WhatsApp Integration Settings (Interakt)"}
+                      </p>
                       <p className="text-xs text-green-600 mt-0.5">
-                        Connect your Interakt account to send quotations, confirmations, and updates via WhatsApp Business API.
+                        {isMeta
+                          ? "Send quotations, confirmations and updates straight from Meta — no partner in between. You will need your own Meta app and a verified business."
+                          : "Connect your Interakt account to send quotations, confirmations, and updates via WhatsApp Business API."}
                       </p>
                     </div>
                     <button type="button"
-                      onClick={() => window.open("https://interakt.shop", "_blank")}
+                      onClick={() => window.open(isMeta ? "https://business.facebook.com/wa/manage/home/" : "https://interakt.shop", "_blank")}
                       className="flex items-center gap-1 text-xs font-bold text-green-700 hover:underline flex-shrink-0">
                       Visit <FiExternalLink className="w-3 h-3"/>
                     </button>
                   </div>
 
-                  {/* API Key */}
+                  {/* API Key / Access Token — one stored credential, named for the provider in use */}
                   <div>
                     <FieldLabel
-                      label="API Key"
+                      label={isMeta ? "Access Token" : "API Key"}
                       required
-                      hint="You can find this in your Interakt Dashboard under Developer Settings"
+                      hint={isMeta
+                        ? "The permanent System User token from your Meta app. A temporary token from the API Setup screen expires in 24 hours and will stop your messages overnight."
+                        : "You can find this in your Interakt Dashboard under Developer Settings"}
                     />
                     <div className="relative">
                       <FaKey className="absolute left-4 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400"/>
@@ -327,13 +472,13 @@ export default function WhatsAppConfiguration() {
                         type={showApiKey ? "text" : "password"}
                         value={form.apiKey}
                         onChange={e => set("apiKey", e.target.value)}
-                        placeholder="Enter your Interakt API key"
+                        placeholder={isMeta ? "Paste your permanent access token" : "Enter your Interakt API key"}
                         className={inputCls(errs.apiKey) + " pl-10 pr-20"}
                       />
                       <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
                         {/* Copy hint URL */}
                         <button type="button" onClick={handleCopyHintUrl}
-                          title="Copy Interakt Dashboard URL"
+                          title={isMeta ? "Copy WhatsApp Manager URL" : "Copy Interakt Dashboard URL"}
                           className="p-1.5 rounded-lg text-slate-400 hover:text-green-600 hover:bg-green-50 transition-all">
                           <FaCopy className="w-3.5 h-3.5"/>
                         </button>
@@ -346,11 +491,54 @@ export default function WhatsAppConfiguration() {
                     </div>
                     <FieldError msg={errs.apiKey}/>
                     <button type="button"
-                      onClick={() => window.open("https://app.interakt.ai/settings/developer-settings", "_blank")}
+                      onClick={() => window.open(credentialUrl, "_blank")}
                       className="mt-1.5 text-xs text-green-600 font-semibold hover:underline flex items-center gap-1">
-                      Open Interakt Developer Settings <FiExternalLink className="w-3 h-3"/>
+                      {isMeta ? "Open Meta WhatsApp Manager" : "Open Interakt Developer Settings"} <FiExternalLink className="w-3 h-3"/>
                     </button>
                   </div>
+
+                  {/* ── META-ONLY IDENTIFIERS ──
+                      Hidden on the Interakt path rather than disabled: they mean nothing there, and a
+                      greyed-out box still reads as "something I have not filled in". */}
+                  {isMeta && (
+                    <>
+                      <div>
+                        <FieldLabel
+                          label="Phone Number ID"
+                          required
+                          hint="NOT your phone number — the numeric id shown next to it on Meta's API Setup screen."
+                        />
+                        <div className="relative">
+                          <FaPhone className="absolute left-4 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400"/>
+                          <input
+                            type="text"
+                            value={form.phoneNumberId}
+                            onChange={e => set("phoneNumberId", e.target.value)}
+                            placeholder="e.g., 109876543210987"
+                            className={inputCls(errs.phoneNumberId) + " pl-10"}
+                          />
+                        </div>
+                        <FieldError msg={errs.phoneNumberId}/>
+                      </div>
+
+                      <div>
+                        <FieldLabel
+                          label="WhatsApp Business Account ID"
+                          hint="Your WABA id, on the same screen. Not needed to send — it is used for managing templates later."
+                        />
+                        <div className="relative">
+                          <FaListUl className="absolute left-4 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400"/>
+                          <input
+                            type="text"
+                            value={form.businessAccountId}
+                            onChange={e => set("businessAccountId", e.target.value)}
+                            placeholder="e.g., 102938475610293"
+                            className={inputCls(false) + " pl-10"}
+                          />
+                        </div>
+                      </div>
+                    </>
+                  )}
 
                   {/* Template Name */}
                   <div>
@@ -569,7 +757,7 @@ export default function WhatsAppConfiguration() {
                 <h3 className="text-sm font-extrabold text-white">Setup Guide</h3>
               </div>
               <div className="p-5 space-y-4">
-                {SETUP_STEPS.map((s, i) => (
+                {steps.map((s, i) => (
                   <div key={s.step}
                     className="flex items-start gap-3 group"
                     style={{ animation: "fadeUp .4s ease both", animationDelay: `${i * 70 + 150}ms` }}>
@@ -589,7 +777,7 @@ export default function WhatsAppConfiguration() {
                       <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">{s.desc}</p>
                     </div>
                     {/* connector line (except last) */}
-                    {i < SETUP_STEPS.length - 1 && (
+                    {i < steps.length - 1 && (
                       <div className="absolute ml-4 mt-9 w-px h-3 bg-slate-200"/>
                     )}
                   </div>
@@ -598,12 +786,14 @@ export default function WhatsAppConfiguration() {
                 <div className="pt-2 border-t border-slate-100">
                   <button
                     type="button"
-                    onClick={() => window.open("https://interakt.shop", "_blank")}
+                    onClick={() => window.open(
+                      isMeta ? "https://developers.facebook.com/docs/whatsapp/cloud-api/get-started"
+                             : "https://interakt.shop", "_blank")}
                     className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl
                       bg-gradient-to-r from-indigo-600 to-purple-600
                       text-white text-xs font-bold transition-all hover:opacity-90">
                     <FaWhatsapp className="w-3.5 h-3.5"/>
-                    Get Started with Interakt
+                    {isMeta ? "Get Started with Meta Cloud API" : "Get Started with Interakt"}
                     <FiExternalLink className="w-3 h-3"/>
                   </button>
                 </div>

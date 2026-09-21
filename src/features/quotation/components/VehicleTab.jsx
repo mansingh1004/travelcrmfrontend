@@ -194,6 +194,22 @@ import { transportMarketplaceService } from "@features/marketplace";
   const modelsForType = (type) =>
     masterList.filter(v => (v.type || "").trim() === (type || "").trim());
 
+  /**
+   * Who the agency buys this vehicle through — looked up, not stored on the row.
+   *
+   * Derived rather than saved because a re-opened quotation carries vehicleMasterPublicId but no
+   * vendorName: the quotation DTO has no such field and should not, since a master's supplier can
+   * be changed after the quote was written. Storing it would make an edited quote silently report
+   * the supplier as of the day it was first saved.
+   *
+   * Null for a platform pick on purpose — that line is paid to the platform, not to the operator, so
+   * naming a tenant vendor there would name the wrong payee.
+   */
+  const supplierForVehicle = (v) => {
+    if (!v.vehicleMasterPublicId || v.platformTransportProductPublicId) return null;
+    return masterList.find(m => m.publicId === v.vehicleMasterPublicId)?.vendorName ?? null;
+  };
+
   return (
     <div className="space-y-4 sm:space-y-5">
 
@@ -258,7 +274,12 @@ import { transportMarketplaceService } from "@features/marketplace";
                       </option>
                       {models.map(m => (
                         <option key={m.publicId || m.id} value={m.name}>
-                          {m.name}{m.capacity ? ` (${m.capacity} seats)` : ""}{m._platform ? " · Platform" : ""}
+                          {/* The supplier is on the option itself: "whose car is this" is the
+                              question an agent has AT the moment of choosing, and it used to be
+                              answerable only by opening the Vehicle Master in another tab. Absent
+                              on an owned vehicle and on one nobody has linked a supplier to. */}
+                          {m.name}{m.capacity ? ` (${m.capacity} seats)` : ""}
+                          {m.vendorName ? ` · ${m.vendorName}` : ""}{m._platform ? " · Platform" : ""}
                         </option>
                       ))}
                     </select>
@@ -289,6 +310,15 @@ import { transportMarketplaceService } from "@features/marketplace";
                         <span className="inline-block text-[10px] font-bold text-orange-600 bg-orange-100 px-2 py-0.5 rounded-full">
                           ✓ From Vehicle Master
                         </span>
+                        {/* The supplier, kept visible AFTER the pick and not only inside the open
+                            dropdown. Once the list closes the option text is gone, and "whose car
+                            did I just put on this quote" is exactly the question that then goes
+                            unanswered until the booking reaches the operations board. */}
+                        {supplierForVehicle(v) && (
+                          <span className="inline-block text-[10px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full">
+                            via {supplierForVehicle(v)}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -299,6 +329,11 @@ import { transportMarketplaceService } from "@features/marketplace";
                   <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-500">
                     <ImageIcon size={13} className="text-slate-400" />
                     No image for this model in Vehicle Master.
+                    {/* Same reasoning as the preview card above — this is the branch a model with no
+                        image falls into, and the supplier must not disappear with the picture. */}
+                    {supplierForVehicle(v) && (
+                      <span className="ml-auto font-bold text-slate-600">via {supplierForVehicle(v)}</span>
+                    )}
                   </div>
                 )}
 

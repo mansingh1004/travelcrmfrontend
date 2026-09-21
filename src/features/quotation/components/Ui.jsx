@@ -30,7 +30,13 @@ export function Select({ options = [], placeholder = "Select...", className = ""
         {...props}
       >
         <option value="">{placeholder}</option>
-        {options.map(o => <option key={o} value={o}>{o}</option>)}
+        {/* Two option shapes, and the string form is the one every existing caller uses — it must
+            keep behaving byte-for-byte. The {value,label} form was added for master-backed pickers
+            (cruise, airline), where the value is a publicId the user must never see and the label
+            carries the supplier: "Royal Caribbean Explorer — via Seaways DMC". */}
+        {options.map(o => (typeof o === "object" && o !== null)
+          ? <option key={o.value} value={o.value}>{o.label}</option>
+          : <option key={o} value={o}>{o}</option>)}
       </select>
       <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
     </div>

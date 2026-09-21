@@ -56,7 +56,7 @@ function dayMeta(isoDate) {
   };
 }
 
-export default function MarketplaceOccupancy() {
+export default function MarketplaceOccupancy({ embedded = false }) {
   const { showToast } = useToast();
 
   const today = useMemo(() => iso(new Date()), []);
@@ -159,24 +159,29 @@ export default function MarketplaceOccupancy() {
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold text-heading">Stay calendar</h1>
-          <p className="mt-1 max-w-2xl text-sm text-muted">
-            Rooms the platform has committed to each property, night by night. This is what has been
-            sold — not what is available: no hotel has given the platform an allotment.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={load}
-          disabled={loading}
-          className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-semibold text-body hover:bg-surface-hover disabled:opacity-60"
-        >
-          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-          Refresh
-        </button>
-      </header>
+      {/* Mounted as a view of Hotel booking requests, that page owns the title and Refresh.
+          Standalone (the old /console/hotel-occupancy, which still redirects here) it keeps its
+          own, so a bookmark does not open a headless page. */}
+      {!embedded && (
+        <header className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h1 className="text-xl font-bold text-heading">Stay calendar</h1>
+            <p className="mt-1 max-w-2xl text-sm text-muted">
+              Rooms the platform has committed to each property, night by night. This is what has been
+              sold — not what is available: no hotel has given the platform an allotment.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={load}
+            disabled={loading}
+            className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-semibold text-body hover:bg-surface-hover disabled:opacity-60"
+          >
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            Refresh
+          </button>
+        </header>
+      )}
 
       {/* ── Window picker ─────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-end gap-3 rounded-xl border border-border bg-surface p-4">

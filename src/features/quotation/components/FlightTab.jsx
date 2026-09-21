@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Plane, Plus, IndianRupee, Users } from "lucide-react";
 import { Label, Input, Select, SectionCard, AddBtn, RemoveBtn, IncludeToggle, FieldGrid } from "./Ui";
 import { AIRLINES, CLASSES, AIRPORTS, JOURNEY_TYPES } from "../Constants";
+import { airlineService, normalizeAirlineList, transformAirlineResponse } from "@features/masters";
 
 function PriceBox({ label, value, highlight = false }) {
   return (
@@ -62,6 +63,9 @@ export default function FlightTab({ onDataChange, paxInfo = {}, defaultIncluded 
   function newSegment() {
     return {
       id: Date.now() + Math.random(),
+      // Which airline master was picked, when one was. Null on a segment chosen from the hardcoded
+      // AIRLINES list or typed — both stay supported, and both simply carry no supplier.
+      airlineMasterPublicId: null,
       airline: "", flightNo: "", class: "", from: "", to: "",
       depDate: "", depTime: "", arrDate: "", arrTime: "",
       duration: "", cabin: "", checkin: "",
@@ -77,6 +81,53 @@ export default function FlightTab({ onDataChange, paxInfo = {}, defaultIncluded 
       depDate: "", depTime: "", arrDate: "", arrTime: "",
     };
   }
+
+  // The airline master list. A tenant that keeps none simply carries on with the hardcoded AIRLINES
+  // list below — which is what every tenant does today, and it must keep working untouched.
+  const [airlineMasters, setAirlineMasters] = useState([]);
+
+  const loadAirlineMasters = useCallback(async () => {
+    try {
+      const res = await airlineService.getAllAirlines();
+      setAirlineMasters(
+        normalizeAirlineList(res?.data).map((a, i) => transformAirlineResponse(a, i)).filter(Boolean)
+      );
+    } catch {
+      // A master list that will not load must never block quoting.
+      setAirlineMasters([]);
+    }
+  }, []);
+
+  useEffect(() => { loadAirlineMasters(); }, [loadAirlineMasters]);
+
+  /**
+   * Pick an airline master, or clear back to the plain name.
+   *
+   * The name is copied down as a snapshot rather than linked — an issued quotation must keep reading
+   * the same if the master is renamed. The id is what buys the supplier: it rides onto the sold
+   * booking line, which is the only reason a flight can name a vendor on the operations board.
+   */
+  const pickAirlineMaster = (segId, publicId) => {
+    const m = airlineMasters.find(x => x.publicId === publicId);
+    setSegments(p => p.map(s => s.id !== segId ? s : ({
+      ...s,
+      airlineMasterPublicId: m ? m.publicId : null,
+      airline: m ? (m.name || s.airline) : s.airline,
+    })));
+  };
+
+  /**
+   * The supplier for a segment, looked up rather than stored.
+   *
+   * A saved quotation comes back carrying airlineMasterPublicId but no vendorName — the quotation
+   * DTO has no such field and should not, since a master's supplier can change after the quote was
+   * written. Storing it would make re-opening an edited quote report "no supplier linked yet" about
+   * an airline that has one.
+   */
+  const supplierForSeg = (seg) =>
+    seg.airlineMasterPublicId
+      ? (airlineMasters.find(m => m.publicId === seg.airlineMasterPublicId)?.vendorName ?? null)
+      : null;
 
   // ── Auto price calculation ────────────────────────────────
   const segmentTotals = segments.map(s => Number(s.pricePerPax) * Number(s.pax) || 0);
@@ -146,6 +197,36 @@ export default function FlightTab({ onDataChange, paxInfo = {}, defaultIncluded 
         <SectionCard key={seg.id} title={`Segment ${si + 1}`} icon={Plane}
           headerRight={segments.length > 1 && <RemoveBtn onClick={() => removeSeg(seg.id)} />}>
           <div className="space-y-4">
+
+            {airlineMasters.length > 0 && (
+              <FieldGrid cols={2}>
+                <div>
+                  <Label>Pick from Airline Master</Label>
+                  <Select
+                    options={airlineMasters.map(m => ({
+                      value: m.publicId,
+                      label: m.vendorName ? `${m.name} — via ${m.vendorName}` : m.name,
+                    }))}
+                    value={seg.airlineMasterPublicId || ""}
+                    onChange={e => pickAirlineMaster(seg.id, e.target.value || null)}
+                    placeholder="Choose from the list below instead"
+                  />
+                </div>
+                <div className="flex items-end pb-1">
+                  {seg.airlineMasterPublicId ? (
+                    <span className={`text-xs font-bold ${supplierForSeg(seg) ? "text-slate-600" : "text-amber-600"}`}>
+                      {supplierForSeg(seg)
+                        ? `Supplier: ${supplierForSeg(seg)}`
+                        : "No supplier linked yet — one is created when this quote is sold"}
+                    </span>
+                  ) : (
+                    <span className="text-xs font-medium text-slate-400">
+                      Airlines chosen from the plain list carry no supplier
+                    </span>
+                  )}
+                </div>
+              </FieldGrid>
+            )}
 
             <FieldGrid cols={3}>
               <div><Label required>Airline</Label><Select options={AIRLINES} value={seg.airline} onChange={e => updateSeg(seg.id, "airline", e.target.value)} placeholder="Select airline" /></div>

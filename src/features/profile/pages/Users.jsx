@@ -732,10 +732,12 @@ import { useState, useMemo, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { UserPlus as FiUserPlus, Search as FiSearch, Pen as FiEdit2, Trash2 as FiTrash2, ChevronLeft as FiChevronLeft, ChevronRight as FiChevronRight, Shield as FiShield, Users as FaUsers, UserCheck as FaUserCheck, UserX as FaUserTimes, ShieldUser as FaUserShield, ChevronsLeft as FaAngleDoubleLeft, ChevronsRight as FaAngleDoubleRight, ChevronDown as FiChevronDown,
-ChevronUp as FiChevronUp } from "lucide-react";
+ChevronUp as FiChevronUp, CalendarOff as FiCalendarOff, ArrowLeftRight as FiHandover } from "lucide-react";
 
 
 import userService from "../api/profileUserService";
+// Cross-feature, so it goes through the barrel — never @features/leads/api/... directly.
+import { leadAlertService } from "@features/leads";
 import { hasPermission, P } from "@shared/lib/access";
 
 /* Users are loaded from the API — see profileUserService.getAll(). */
@@ -856,6 +858,292 @@ function DeleteConfirm({ user, onClose, onConfirm }) {
   );
 }
 
+/* ─── LEAVE MODAL — kept inline, same as DeleteConfirm ───────── */
+/* Sets or clears a user's leave window. The ONLY server-side effect is that auto-assignment stops
+   picking them while the window is open — login, permissions and the leads they already own are
+   untouched. Moving their pipeline is the separate hand-over action, on purpose: filling in a leave
+   form should never silently reassign someone's book of work. */
+function LeaveModal({ user, onClose, onSave, onClear }) {
+  const [from, setFrom]   = useState(user?.onLeaveFrom || "");
+  const [to,   setTo]     = useState(user?.onLeaveTo   || "");
+  const [busy, setBusy]   = useState(false);
+  const [error, setError] = useState("");
+
+  const alreadyOnLeave = !!(user?.onLeaveFrom && user?.onLeaveTo);
+
+  const submit = async () => {
+    if (!from || !to)  { setError("Pick both a start and an end date."); return; }
+    // Mirrors users_leave_window_check server-side. Checked here too so the common typo is caught
+    // before a round trip, not because the client is trusted.
+    if (to < from)     { setError("End date cannot be before the start date."); return; }
+    setError("");
+    setBusy(true);
+    try { await onSave(from, to); } finally { setBusy(false); }
+  };
+
+  const clear = async () => {
+    setBusy(true);
+    try { await onClear(); } finally { setBusy(false); }
+  };
+
+  const inputCls = "w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-sm " +
+    "text-slate-700 font-medium focus:border-blue-400 focus:ring-2 focus:ring-blue-50 outline-none";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose}/>
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md z-10 p-6"
+        style={{animation:"popIn .25s ease both"}}>
+
+        <div className="flex items-center gap-3 mb-1">
+          <div className="w-11 h-11 rounded-xl bg-amber-100 flex items-center justify-center flex-shrink-0">
+            <FiCalendarOff className="w-5 h-5 text-amber-600"/>
+          </div>
+          <div className="min-w-0">
+            <h3 className="text-lg font-extrabold text-slate-800 leading-tight">Mark on leave</h3>
+            <p className="text-xs text-slate-500 font-medium truncate">{user?.fullName}</p>
+          </div>
+        </div>
+
+        <p className="text-xs text-slate-500 mb-5 mt-3 leading-relaxed">
+          While this window is open, new leads will not be auto-assigned to{" "}
+          <span className="font-bold text-slate-700">{user?.fullName}</span>. They can still log in,
+          and the leads they already own stay theirs — use <span className="font-bold text-slate-700">Hand over leads</span>{" "}
+          to move those.
+        </p>
+
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          <div>
+            <label className="block text-xs font-bold text-slate-600 mb-1.5">From</label>
+            <input type="date" value={from} onChange={e=>setFrom(e.target.value)} className={inputCls}/>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-slate-600 mb-1.5">To</label>
+            <input type="date" value={to} onChange={e=>setTo(e.target.value)} className={inputCls}/>
+          </div>
+        </div>
+
+        {error && (
+          <p className="text-xs font-bold text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2 mb-4">
+            {error}
+          </p>
+        )}
+
+        <div className="flex gap-3 flex-wrap sm:flex-nowrap">
+          <button onClick={onClose} disabled={busy}
+            className="flex-1 py-2.5 rounded-xl border-2 border-slate-200 text-slate-600 font-bold text-sm hover:bg-slate-50 transition-all disabled:opacity-50 w-full sm:w-auto">
+            Cancel
+          </button>
+          {/* Only rendered when there is something to clear — an early return from leave. */}
+          {alreadyOnLeave && (
+            <button onClick={clear} disabled={busy}
+              className="flex-1 py-2.5 rounded-xl border-2 border-amber-200 text-amber-700 font-bold text-sm hover:bg-amber-50 transition-all disabled:opacity-50 w-full sm:w-auto">
+              Clear leave
+            </button>
+          )}
+          <button onClick={submit} disabled={busy}
+            className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm shadow-md shadow-blue-200 transition-all disabled:opacity-50 w-full sm:w-auto">
+            {busy ? "Saving…" : "Save"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── HAND-OVER MODAL — bulk lead reassignment ───────────────── */
+/* Moves every still-open lead from one user to another in one call. The lead SET is chosen by the
+   server from the outgoing owner, never by this component: a client-assembled id list is only as
+   complete as the page the user happened to be looking at. Converted/Lost leads are never moved. */
+function HandoverModal({ user, candidates, onClose, onConfirm }) {
+  const [toUserId, setToUserId] = useState("");
+  const [note,     setNote]     = useState("");
+  const [mode,     setMode]     = useState("DUE_IN_WINDOW");
+  // Prefilled from the user's leave window so the manager never types the same dates twice.
+  const [from,     setFrom]     = useState(user?.onLeaveFrom || "");
+  const [to,       setTo]       = useState(user?.onLeaveTo   || "");
+  const [busy,     setBusy]     = useState(false);
+  const [error,    setError]    = useState("");
+  const [preview,  setPreview]  = useState(null);
+  const [previewing, setPreviewing] = useState(false);
+
+  const needsWindow = mode === "DUE_IN_WINDOW";
+  const windowReady = !needsWindow || (from && to);
+
+  // Re-previewed on every change to the selection — the count is the point of the screen, so it
+  // must never lag behind the mode the user is looking at. The recipient is deliberately NOT in the
+  // dependency list: it does not affect which leads are selected.
+  useEffect(() => {
+    if (!windowReady) { setPreview(null); return; }
+    let cancelled = false;
+    setPreviewing(true);
+    leadAlertService
+      .previewReassignBulk({
+        fromUserId: user.id,
+        mode,
+        windowFrom: needsWindow ? from : null,
+        windowTo:   needsWindow ? to   : null,
+      })
+      .then(p => { if (!cancelled) setPreview(p); })
+      // A failed preview must not block the action — it is information, not a gate.
+      .catch(() => { if (!cancelled) setPreview(null); })
+      .finally(() => { if (!cancelled) setPreviewing(false); });
+    return () => { cancelled = true; };
+  }, [user.id, mode, from, to, needsWindow, windowReady]);
+
+  const submit = async () => {
+    if (!toUserId) { setError("Pick who should receive these leads."); return; }
+    if (needsWindow && (!from || !to)) { setError("Pick the date range to cover."); return; }
+    if (needsWindow && to < from)      { setError("End date cannot be before the start date."); return; }
+    setError("");
+    setBusy(true);
+    try {
+      await onConfirm({
+        fromUserId: user.id,
+        toUserId,
+        mode,
+        windowFrom: needsWindow ? from : null,
+        windowTo:   needsWindow ? to   : null,
+        note,
+      });
+    } finally { setBusy(false); }
+  };
+
+  const ctrlCls = "w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white text-sm " +
+    "text-slate-700 font-medium focus:border-blue-400 focus:ring-2 focus:ring-blue-50 outline-none";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose}/>
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md z-10 p-6"
+        style={{animation:"popIn .25s ease both"}}>
+
+        <div className="flex items-center gap-3 mb-1">
+          <div className="w-11 h-11 rounded-xl bg-indigo-100 flex items-center justify-center flex-shrink-0">
+            <FiHandover className="w-5 h-5 text-indigo-600"/>
+          </div>
+          <div className="min-w-0">
+            <h3 className="text-lg font-extrabold text-slate-800 leading-tight">Hand over leads</h3>
+            <p className="text-xs text-slate-500 font-medium truncate">from {user?.fullName}</p>
+          </div>
+        </div>
+
+        <p className="text-xs text-slate-500 mb-4 mt-3 leading-relaxed">
+          Converted and Lost leads are never moved, and leads still in the{" "}
+          <span className="font-bold text-slate-700">claim pool</span> are left there — the whole
+          team can already take those. The receiver gets one notification, not one per lead.
+        </p>
+
+        {/* Which leads. Two choices, not a filter builder — the real question is "are they coming
+            back?", and everything finer belongs to the single-lead reassign. */}
+        <div className="mb-4 space-y-2">
+          <label className="block text-xs font-bold text-slate-600">Which leads</label>
+          {[
+            { v: "DUE_IN_WINDOW", t: "Only what needs action while away",
+              d: "Follow-up or travel date inside the dates below" },
+            { v: "ALL_OPEN", t: "Every open lead",
+              d: "For a permanent move, not ordinary leave" },
+          ].map(o => (
+            <label key={o.v}
+              className={`flex items-start gap-2.5 p-2.5 rounded-xl border cursor-pointer transition-all ${
+                mode === o.v ? "border-indigo-300 bg-indigo-50/60" : "border-slate-200 hover:bg-slate-50"}`}>
+              <input type="radio" name="handover-mode" value={o.v} checked={mode === o.v}
+                onChange={()=>setMode(o.v)} className="mt-0.5 accent-indigo-600"/>
+              <span className="min-w-0">
+                <span className="block text-xs font-bold text-slate-700">{o.t}</span>
+                <span className="block text-[11px] text-slate-500">{o.d}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+
+        {needsWindow && (
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-600 mb-1.5">From</label>
+              <input type="date" value={from} onChange={e=>setFrom(e.target.value)} className={ctrlCls}/>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-600 mb-1.5">To</label>
+              <input type="date" value={to} onChange={e=>setTo(e.target.value)} className={ctrlCls}/>
+            </div>
+          </div>
+        )}
+
+        {/* The count. One click here can move forty leads; before this there was no number on the
+            screen at all. */}
+        <div className="mb-4 rounded-xl bg-slate-50 border border-slate-200 px-3.5 py-3">
+          {previewing ? (
+            <p className="text-xs font-bold text-slate-400">Counting…</p>
+          ) : !windowReady ? (
+            <p className="text-xs font-medium text-slate-500">Pick a date range to see how many leads move.</p>
+          ) : !preview ? (
+            <p className="text-xs font-medium text-slate-500">Count unavailable — the hand-over will still work.</p>
+          ) : (
+            <>
+              <p className="text-sm font-extrabold text-slate-800">
+                {preview.total} lead{preview.total === 1 ? "" : "s"} will move
+              </p>
+              {preview.byStage?.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {preview.byStage.map(s => (
+                    <span key={s.stage}
+                      className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-white border border-slate-200 text-slate-600">
+                      {s.stage} · {s.count}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {preview.skippedClaimable > 0 && (
+                <p className="text-[11px] text-slate-500 mt-2">
+                  {preview.skippedClaimable} left in the claim pool for the team.
+                </p>
+              )}
+            </>
+          )}
+        </div>
+
+        <div className="mb-4">
+          <label className="block text-xs font-bold text-slate-600 mb-1.5">Hand over to</label>
+          <select value={toUserId} onChange={e=>setToUserId(e.target.value)} className={ctrlCls}>
+            <option value="">Select a user…</option>
+            {candidates.map(c => (
+              <option key={c.id} value={c.id}>{c.fullName} — {c.role}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="mb-4">
+          <label className="block text-xs font-bold text-slate-600 mb-1.5">
+            Reason <span className="font-medium text-slate-400">(optional, saved on every lead's history)</span>
+          </label>
+          <textarea rows={2} value={note} onChange={e=>setNote(e.target.value)}
+            placeholder="e.g. Priya on leave 12–20 Sep" className={ctrlCls}/>
+        </div>
+
+        {error && (
+          <p className="text-xs font-bold text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2 mb-4">
+            {error}
+          </p>
+        )}
+
+        <div className="flex gap-3 flex-wrap sm:flex-nowrap">
+          <button onClick={onClose} disabled={busy}
+            className="flex-1 py-2.5 rounded-xl border-2 border-slate-200 text-slate-600 font-bold text-sm hover:bg-slate-50 transition-all disabled:opacity-50 w-full sm:w-auto">
+            Cancel
+          </button>
+          <button onClick={submit} disabled={busy}
+            className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm shadow-md shadow-indigo-200 transition-all disabled:opacity-50 w-full sm:w-auto">
+            {busy ? "Moving…" : "Hand over"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 
 /* ─── MAIN PAGE ──────────────────────────────────────────────── */
 export default function Users() {
@@ -874,6 +1162,10 @@ export default function Users() {
 
   // Only delete + reset modals remain inline
   const [deleteUser, setDeleteUser] = useState(null);
+  const [leaveUser,    setLeaveUser]    = useState(null);
+  const [handoverUser, setHandoverUser] = useState(null);
+  // The last hand-over this session, kept only so its Undo stays reachable after the toast fades.
+  const [lastHandover, setLastHandover] = useState(null);
 
   const showToast = useCallback((msg, type="success")=>setToast({msg,type}),[]);
 
@@ -944,6 +1236,78 @@ export default function Users() {
   }
 };
 
+  /* leave handlers — replace the row in place so the chip and the modal's prefill both refresh
+     without a full reload. The server returns the saved user, so we never guess the new state. */
+  const applyUser = (saved) =>
+    setUsers(prev => prev.map(u => (u.id === saved.id ? { ...u, ...saved } : u)));
+
+  const handleSetLeave = async (from, to) => {
+    try {
+      const { data } = await userService.setLeave(leaveUser.id, from, to);
+      applyUser(data);
+      showToast(`${leaveUser.fullName} marked on leave.`);
+      setLeaveUser(null);
+    } catch (err) {
+      showToast(err?.response?.data?.message || "Failed to save leave.", "error");
+    }
+  };
+
+  const handleClearLeave = async () => {
+    try {
+      const { data } = await userService.clearLeave(leaveUser.id);
+      applyUser(data);
+      showToast(`Leave cleared for ${leaveUser.fullName}.`);
+      setLeaveUser(null);
+    } catch (err) {
+      showToast(err?.response?.data?.message || "Failed to clear leave.", "error");
+    }
+  };
+
+  /* hand-over — the count comes back from the server, so the toast reports what actually moved
+     rather than what was requested. Zero is a legitimate outcome, not a failure. */
+  const handleHandover = async (payload) => {
+    try {
+      const result = await leadAlertService.reassignBulk(payload);
+      const moved = result?.movedCount ?? 0;
+      showToast(
+        moved === 0
+          ? `${handoverUser.fullName} had no matching leads to hand over.`
+          : `${moved} lead${moved === 1 ? "" : "s"} moved to ${result?.toUserName || "the new owner"}.`,
+        moved === 0 ? "error" : "success"
+      );
+      // Held in state, not just announced in a toast: the undo is needed when the owner RETURNS,
+      // which is days later — but offering it now costs nothing and a toast is gone in seconds.
+      if (result?.batchId) setLastHandover(result);
+      setHandoverUser(null);
+    } catch (err) {
+      showToast(err?.response?.data?.message || "Failed to hand over leads.", "error");
+    }
+  };
+
+  const handleUndoHandover = async () => {
+    try {
+      const result = await leadAlertService.undoReassignBulk(lastHandover.batchId);
+      const moved = result?.movedCount ?? 0;
+      showToast(
+        moved === 0
+          ? "Nothing came back — those leads have since moved on or closed."
+          : `${moved} lead${moved === 1 ? "" : "s"} returned to ${result?.toUserName || "the original owner"}.`,
+        moved === 0 ? "error" : "success"
+      );
+      setLastHandover(null);
+    } catch (err) {
+      showToast(err?.response?.data?.message || "Failed to undo the hand-over.", "error");
+    }
+  };
+
+  /* Who can receive a hand-over: anyone active except the outgoing owner. The server re-checks
+     assignability (sub-agents and users without LEAD_READ are refused there), so this list is a
+     convenience filter, not the security boundary. */
+  const handoverCandidates = useMemo(
+    () => users.filter(u => u.isActive && u.id !== handoverUser?.id),
+    [users, handoverUser]
+  );
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-100"
       style={{fontFamily:"'Plus Jakarta Sans', system-ui, sans-serif"}}>
@@ -961,6 +1325,36 @@ export default function Users() {
 
       {toast      && <Toast msg={toast.msg} type={toast.type} onClose={()=>setToast(null)}/>}
       {deleteUser && <DeleteConfirm user={deleteUser} onClose={()=>setDeleteUser(null)} onConfirm={handleDelete}/>}
+      {leaveUser && (
+        <LeaveModal user={leaveUser} onClose={()=>setLeaveUser(null)}
+          onSave={handleSetLeave} onClear={handleClearLeave}/>
+      )}
+      {handoverUser && (
+        <HandoverModal user={handoverUser} candidates={handoverCandidates}
+          onClose={()=>setHandoverUser(null)} onConfirm={handleHandover}/>
+      )}
+
+      {/* Undo strip — survives the toast, because the moment you want it is when the owner comes
+          back. Dismissing it only hides the shortcut; the hand-over itself is unaffected. */}
+      {lastHandover && (
+        <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 pt-4">
+          <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-indigo-200 bg-indigo-50/70 px-4 py-3">
+            <FiHandover className="w-4 h-4 text-indigo-600 flex-shrink-0"/>
+            <p className="text-xs font-bold text-slate-700 flex-1 min-w-[200px]">
+              {lastHandover.movedCount} lead{lastHandover.movedCount === 1 ? "" : "s"} moved from{" "}
+              {lastHandover.fromUserName} to {lastHandover.toUserName}.
+            </p>
+            <button onClick={handleUndoHandover}
+              className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-all shadow-sm">
+              Undo
+            </button>
+            <button onClick={()=>setLastHandover(null)}
+              className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-slate-500 text-xs font-bold hover:bg-slate-50 transition-all">
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── PAGE HEADER ── */}
       <div className="bg-white/70 backdrop-blur-md border-b border-slate-100">
@@ -1195,10 +1589,21 @@ export default function Users() {
 
                         {/* Status */}
                         <td className="px-4 py-3.5">
-                          <span className={`inline-flex items-center gap-1.5 text-xs font-bold px-2.5 py-1.5 rounded-full ${sc.bg} ${sc.text} whitespace-nowrap`}>
-                            <span className={`w-1.5 h-1.5 rounded-full ${sc.dot}`}/>
-                            {u.status}
-                          </span>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className={`inline-flex items-center gap-1.5 text-xs font-bold px-2.5 py-1.5 rounded-full ${sc.bg} ${sc.text} whitespace-nowrap`}>
+                              <span className={`w-1.5 h-1.5 rounded-full ${sc.dot}`}/>
+                              {u.status}
+                            </span>
+                            {/* A SECOND chip, not a replacement for Active/Inactive — leave is a
+                                different axis: an agent on leave is still an active user. */}
+                            {u.onLeave && (
+                              <span title={`On leave ${u.onLeaveFrom} → ${u.onLeaveTo}`}
+                                className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1.5 rounded-full bg-amber-100 text-amber-700 whitespace-nowrap">
+                                <FiCalendarOff className="w-3 h-3"/>
+                                On leave
+                              </span>
+                            )}
+                          </div>
                         </td>
 
                         {/* Last Login */}
@@ -1237,6 +1642,25 @@ export default function Users() {
                             title="Manage Permissions"
                               className="w-8 h-8 rounded-lg bg-teal-500 hover:bg-teal-600 text-white flex items-center justify-center transition-all text-sm shadow-sm">
                               <FiShield className="w-3.5 h-3.5"/>
+                            </button>
+                            )}
+
+                            {/* LEAVE → inline modal. Same permission as any other user edit. */}
+                            {hasPermission(P.USER_UPDATE) && (
+                            <button onClick={()=>setLeaveUser(u)}
+                              title={u.onLeave ? `On leave ${u.onLeaveFrom} → ${u.onLeaveTo}` : "Mark on leave"}
+                              className={`w-8 h-8 rounded-lg text-white flex items-center justify-center transition-all text-sm shadow-sm ${
+                                u.onLeave ? "bg-amber-600 hover:bg-amber-700" : "bg-amber-500 hover:bg-amber-600"}`}>
+                              <FiCalendarOff className="w-3.5 h-3.5"/>
+                            </button>
+                            )}
+
+                            {/* HAND OVER LEADS → bulk reassign. Gated on the LEAD permission, not a
+                                USER one: this moves leads, and the backend gates it the same way. */}
+                            {hasPermission(P.LEAD_REASSIGN_LOCKED) && (
+                            <button onClick={()=>setHandoverUser(u)} title="Hand over their leads"
+                              className="w-8 h-8 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white flex items-center justify-center transition-all text-sm shadow-sm">
+                              <FiHandover className="w-3.5 h-3.5"/>
                             </button>
                             )}
                           </div>
@@ -1294,9 +1718,17 @@ export default function Users() {
                           <p className="text-xs text-slate-400 truncate" title={u.id}>#{String(u.id).slice(0,8)}</p>
                         </div>
                       </div>
-                      <span className={`inline-flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-full ${sc.bg} ${sc.text} flex-shrink-0`}>
-                        <span className={`w-1.5 h-1.5 rounded-full ${sc.dot}`}/>{u.status}
-                      </span>
+                      <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                        <span className={`inline-flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-full ${sc.bg} ${sc.text}`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${sc.dot}`}/>{u.status}
+                        </span>
+                        {u.onLeave && (
+                          <span title={`On leave ${u.onLeaveFrom} → ${u.onLeaveTo}`}
+                            className="inline-flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-full bg-amber-100 text-amber-700">
+                            <FiCalendarOff className="w-3 h-3"/> On leave
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                     {/* Details Grid */}
@@ -1333,6 +1765,20 @@ export default function Users() {
                       <button onClick={()=>navigate(`/UserPermissions/${u.id}`)}
                         className="flex-1 min-w-[70px] py-2 rounded-xl bg-teal-500 hover:bg-teal-600 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-sm">
                         <FiShield className="w-3.5 h-3.5"/> <span className="hidden sm:inline">Permissions</span>
+                      </button>
+                      )}
+                      {hasPermission(P.USER_UPDATE) && (
+                      <button onClick={()=>setLeaveUser(u)}
+                        className={`flex-1 min-w-[70px] py-2 rounded-xl text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-sm ${
+                          u.onLeave ? "bg-amber-600 hover:bg-amber-700" : "bg-amber-500 hover:bg-amber-600"}`}>
+                        <FiCalendarOff className="w-3.5 h-3.5"/>
+                        <span className="hidden sm:inline">{u.onLeave ? "On leave" : "Leave"}</span>
+                      </button>
+                      )}
+                      {hasPermission(P.LEAD_REASSIGN_LOCKED) && (
+                      <button onClick={()=>setHandoverUser(u)}
+                        className="flex-1 min-w-[70px] py-2 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-sm">
+                        <FiHandover className="w-3.5 h-3.5"/> <span className="hidden sm:inline">Hand over</span>
                       </button>
                       )}
                       {hasPermission(P.USER_DELETE) && (

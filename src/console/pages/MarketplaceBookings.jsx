@@ -31,6 +31,8 @@ import {
 import SuperAdminMfaActionModal from "../components/SuperAdminMfaActionModal";
 import { marketplaceBookingService as svc } from "../api/marketplaceBookingService";
 import { getErrorMessage } from "@shared/api/apiError";
+import { useSearchParams } from "react-router-dom";
+import MarketplaceOccupancy from "./MarketplaceOccupancy";
 
 const PAGE_SIZE = 25;
 
@@ -62,6 +64,15 @@ const VOUCHER = {
 
 // CANCEL_REQUESTED sits next to the other queues the platform owes an answer to, not with the
 // terminal states: the room is still held with the supplier until an operator settles the charge.
+/* Two questions about the same committed nights: what is waiting on a decision, and what the
+   platform already holds. The calendar used to be its own console row, and an operator deciding
+   a request had to leave the queue to answer "how many of this property's rooms do I already
+   hold that week" — the one question the decision turns on. */
+const VIEWS = [
+  { key: "queue", label: "Request queue" },
+  { key: "calendar", label: "Stay calendar" },
+];
+
 const TABS = [
   { value: "REQUESTED",        label: "New" },
   { value: "UNDER_REVIEW",     label: "Under review" },
@@ -142,6 +153,14 @@ export default function MarketplaceBookings() {
   const [pagination, setPagination] = useState(null);
   const [page, setPage] = useState(0);
   const [status, setStatus] = useState("REQUESTED");
+  /* In the URL so /console/hotel-occupancy can redirect straight to the calendar half. */
+  const [params, setParams] = useSearchParams();
+  const view = params.get("view") === "calendar" ? "calendar" : "queue";
+  const setView = (next) => {
+    const p = new URLSearchParams(params);
+    if (next === "queue") p.delete("view"); else p.set("view", next);
+    setParams(p, { replace: true });
+  };
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -156,6 +175,9 @@ export default function MarketplaceBookings() {
   const [panelError, setPanelError] = useState("");
 
   const load = useCallback(async () => {
+    /* The calendar fetches its own data. Without this, opening it still pulled a page of
+       requests nobody was looking at, and Refresh reloaded the wrong half. */
+    if (view !== "queue") return;
     setLoading(true);
     setError("");
     try {
@@ -168,7 +190,7 @@ export default function MarketplaceBookings() {
     } finally {
       setLoading(false);
     }
-  }, [page, status]);
+  }, [page, status, view]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -296,6 +318,30 @@ export default function MarketplaceBookings() {
         </button>
       </div>
 
+      {/* Which question. A segmented control above the status tabs, not another tab in them:
+          the strip below filters the queue, and the calendar is not a queue state. */}
+      <div className="mb-4 flex flex-wrap gap-1 rounded-xl border border-border bg-surface p-1">
+        {VIEWS.map((v) => (
+          <button
+            key={v.key}
+            type="button"
+            onClick={() => setView(v.key)}
+            aria-pressed={view === v.key}
+            className={`rounded-lg px-3.5 py-2 text-sm font-semibold transition ${
+              view === v.key ? "bg-accent-soft text-accent-soft-text" : "text-muted hover:text-heading"
+            }`}
+          >
+            {v.label}
+          </button>
+        ))}
+      </div>
+
+      {/* What the platform already holds, night by night — the number an operator needs WHILE
+          deciding a request, which is why it stopped being a separate console row. */}
+      {view === "calendar" && <MarketplaceOccupancy embedded />}
+
+      {view === "queue" && (
+        <>
       {/* Filter tabs hit the server's own `status` param, so they narrow the real dataset. */}
       <div className="mb-4 flex flex-wrap items-center gap-1 border-b border-border">
         {TABS.map((t) => {
@@ -385,6 +431,8 @@ export default function MarketplaceBookings() {
           </div>
         )}
       </div>
+        </>
+      )}
 
       {selected && (
         <DecisionPanel

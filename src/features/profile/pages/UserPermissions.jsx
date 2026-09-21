@@ -67,6 +67,10 @@ const PERMISSION_GROUPS = [
       ]},
       { id: "reports", label: "Reports", pages: [
         { id: "REPORT_VIEW", label: "View Reports", path: "REPORT_VIEW" },
+        // The Request Logs tab on Activity Reports. Separate from REPORT_VIEW: that grants the
+        // tenant's aggregated business data, this grants the raw API traffic underneath it with
+        // masked request and response bodies attached.
+        { id: "REQUEST_LOG_VIEW", label: "View Request Logs", path: "REQUEST_LOG_VIEW" },
       ]},
     ],
   },

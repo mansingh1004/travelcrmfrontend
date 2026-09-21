@@ -181,6 +181,14 @@ function HotelSearchDropdown({ value, onSelect, allHotels, loading, onAdd, onEdi
                       <span className="truncate">{city}</span>
                     </div>
                   )}
+                  {/* Who the agency buys this property through. Asked AT the moment of choosing —
+                      until now the only way to answer it was to open the Hotel Master. Absent until
+                      a supplier is linked, which is ordinary: minting is lazy. */}
+                  {h.vendorName && (
+                    <div className="truncate text-[11px] font-semibold text-slate-500 mt-0.5">
+                      via {h.vendorName}
+                    </div>
+                  )}
                 </div>
                 {h.stars > 0 && (
                   <span className="flex items-center gap-0.5 flex-shrink-0">

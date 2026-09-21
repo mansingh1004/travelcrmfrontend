@@ -33,6 +33,12 @@ export const P = {
   // Claim window: take a new lead off whoever the auto-assignment gave it to (open leads only),
   // and — separately, manager-only — move or reopen one AFTER first contact locked it.
   LEAD_CLAIM: "LEAD_CLAIM", LEAD_REASSIGN_LOCKED: "LEAD_REASSIGN_LOCKED",
+  // Lead temperature engine. CONFIGURE edits the tenant-wide Hot/Warm/Cold rules and is
+  // TENANT_ADMIN-only by default (like ACCOUNTING_SETTINGS_MANAGE); OVERRIDE pins one lead's
+  // temperature and goes to every role that can already edit a lead, because the grid's Type
+  // dropdown has always allowed exactly that.
+  LEAD_SCORING_CONFIGURE: "LEAD_SCORING_CONFIGURE",
+  LEAD_TEMPERATURE_OVERRIDE: "LEAD_TEMPERATURE_OVERRIDE",
   BOOKING_READ: "BOOKING_READ", BOOKING_CREATE: "BOOKING_CREATE", BOOKING_UPDATE: "BOOKING_UPDATE", BOOKING_CANCEL: "BOOKING_CANCEL", BOOKING_DELETE: "BOOKING_DELETE",
   BOOKING_PROFIT_READ: "BOOKING_PROFIT_READ",
   // High-privilege: override/waive a cancellation charge and disburse refunds. TENANT_ADMIN-only
@@ -75,6 +81,16 @@ export const P = {
   TRANSPORT_MARKETPLACE_SYNC_MASTER: "TRANSPORT_MARKETPLACE_SYNC_MASTER",
   TRANSPORT_MARKETPLACE_BOOK: "TRANSPORT_MARKETPLACE_BOOK",
   TRANSPORT_MARKETPLACE_CANCEL: "TRANSPORT_MARKETPLACE_CANCEL",
+  // Packages. ONE family for both sides, unlike the two above, because this catalog is two-sided:
+  // an agency browses it and also writes its own packages into it. That is one screen and one
+  // purchase to the person using it, so the entitlement is one module key and the split between
+  // buying and authoring is these permissions.
+  //
+  // No _BOOK / _CANCEL yet: the order lifecycle is Phase 3, and a key that gates no endpoint is a
+  // checkbox in the role editor that silently does nothing. Mirrors Permission.java.
+  PACKAGE_MARKETPLACE_VIEW: "PACKAGE_MARKETPLACE_VIEW",
+  PACKAGE_MARKETPLACE_QUOTE: "PACKAGE_MARKETPLACE_QUOTE",
+  PACKAGE_MARKETPLACE_AUTHOR: "PACKAGE_MARKETPLACE_AUTHOR",
   // The SUPPLY side, held by a transport operator on the FLEET plan rather than by a buying agency.
   // Same tenant world, opposite end of the trade.
   TRANSPORT_SUPPLIER_LISTING_MANAGE: "TRANSPORT_SUPPLIER_LISTING_MANAGE",
@@ -86,6 +102,9 @@ export const P = {
   MARKETPLACE_PAYABLE_READ: "MARKETPLACE_PAYABLE_READ",
   USER_READ: "USER_READ", USER_CREATE: "USER_CREATE", USER_UPDATE: "USER_UPDATE", USER_DELETE: "USER_DELETE",
   REPORT_VIEW: "REPORT_VIEW",
+  // The Request Logs tab on Activity Reports. Separate from REPORT_VIEW because that one
+  // grants aggregated business data and this one grants raw traffic with masked payloads.
+  REQUEST_LOG_VIEW: "REQUEST_LOG_VIEW",
   SETTINGS_MANAGE: "SETTINGS_MANAGE",
   // Communication. COMM_READ also gates the in-app Mailbox (features/mailbox) — reading the
   // agency's own inbox is the same authority as reading its conversations, so it deliberately
@@ -142,6 +161,9 @@ const ROLE_PERMISSIONS = {
     // Works the pipeline AND supervises it. Mirrors Permission.defaultsFor(MANAGER) and the
     // V2 PART 18 backfill's MANAGER branch.
     P.LEAD_CLAIM, P.LEAD_REASSIGN_LOCKED,
+    // Pins a lead's temperature over the scoring engine. Mirrors defaultsFor(MANAGER) and the
+    // V23 backfill. NOT LEAD_SCORING_CONFIGURE — editing the rules re-scores the whole agency.
+    P.LEAD_TEMPERATURE_OVERRIDE,
     P.BOOKING_READ, P.BOOKING_CREATE, P.BOOKING_UPDATE, P.BOOKING_CANCEL, P.BOOKING_DELETE, P.BOOKING_PROFIT_READ,
     // Runs the operations board. Mirrors defaultsFor(MANAGER) and the V29 backfill.
     P.OPS_MANAGE,
@@ -158,6 +180,9 @@ const ROLE_PERMISSIONS = {
     // Transport mirrors hotel exactly — same four verbs, same audience. Permission.java:379-380.
     P.TRANSPORT_MARKETPLACE_VIEW, P.TRANSPORT_MARKETPLACE_SYNC_MASTER,
     P.TRANSPORT_MARKETPLACE_BOOK, P.TRANSPORT_MARKETPLACE_CANCEL,
+    // Packages: all three, including authoring — what the agency publishes under its own name to
+    // other agencies is a manager's call, not an agent's. Mirrors Permission.defaultsFor(MANAGER).
+    P.PACKAGE_MARKETPLACE_VIEW, P.PACKAGE_MARKETPLACE_QUOTE, P.PACKAGE_MARKETPLACE_AUTHOR,
     // Mirrors Permission.defaultsFor(MANAGER) exactly — sees fleet money, does NOT settle it.
     P.FLEET_READ, P.FLEET_CREATE, P.FLEET_UPDATE, P.FLEET_DELETE, P.FLEET_MONEY_READ,
     P.ACCOUNTING_INVOICE_READ, P.ACCOUNTING_TDS_READ,
@@ -170,6 +195,9 @@ const ROLE_PERMISSIONS = {
     // Claims open leads; deliberately NOT LEAD_REASSIGN_LOCKED — once a colleague has spoken to
     // the customer, taking the lead is a manager's call. Mirrors defaultsFor(TRAVEL_AGENT).
     P.LEAD_CLAIM,
+    // The role that actually talks to the customer, so the role best placed to say "this one is
+    // hot, whatever the rules think". Mirrors defaultsFor(TRAVEL_AGENT).
+    P.LEAD_TEMPERATURE_OVERRIDE,
     P.BOOKING_READ, P.BOOKING_CREATE, P.BOOKING_UPDATE,
     // Agents deliver the trips they sell — chasing a hotel is the job, not a privilege.
     P.OPS_MANAGE,
@@ -190,6 +218,9 @@ const ROLE_PERMISSIONS = {
     // No SYNC_MASTER, exactly as with hotels: a sales role books, it does not curate masters.
     // Permission.java:423.
     P.TRANSPORT_MARKETPLACE_VIEW, P.TRANSPORT_MARKETPLACE_BOOK, P.TRANSPORT_MARKETPLACE_CANCEL,
+    // Packages: browse and quote, but NOT author — same split, same reason as SYNC_MASTER above.
+    // _AUTHOR is granted per user, like BOOKING_REFUND. Mirrors Permission.defaultsFor(TRAVEL_AGENT).
+    P.PACKAGE_MARKETPLACE_VIEW, P.PACKAGE_MARKETPLACE_QUOTE,
     P.MARKETPLACE_PAYABLE_READ,
     // Deliberately NO FLEET_MONEY_*: a sales role plans and runs trips, but tenant-wide driver cash
     // positions, vendor rates and cost structure are not its business. Mirrors the backend.
@@ -217,6 +248,8 @@ const ROLE_PERMISSIONS = {
   // effective keys come from /permissions/me.
   [ROLES.SUB_AGENT]: [
     P.LEAD_READ, P.LEAD_CREATE, P.LEAD_UPDATE, P.LEAD_DELETE,
+    // Its own leads only (row-scope OWN), and it already edits the Type pill on them today.
+    P.LEAD_TEMPERATURE_OVERRIDE,
     P.QUOTATION_READ, P.QUOTATION_CREATE, P.QUOTATION_UPDATE, P.QUOTATION_DELETE,
     P.BOOKING_READ, P.BOOKING_CREATE, P.BOOKING_UPDATE,
     // Its OWN bookings only — the board already row-scopes a sub-agent's rows, so this

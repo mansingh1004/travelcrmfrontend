@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import bookingService                from "../api/bookingService";
 import CancelBookingModal            from "../components/CancelBookingModal";
 import BookingExpenseModal           from "../components/BookingExpenseModal"
-import { hasPermission, P }          from "@shared/lib/access";
+import { hasPermission, isTenantAdmin, P } from "@shared/lib/access";
 import { useToast }                  from "@shared/ui/toast";
 import { getErrorMessage, isAlreadyReported } from "@shared/api/apiError";
 import { downloadBlob, hydrateBlobError }     from "@shared/lib/download";
@@ -92,6 +92,10 @@ function normalizeBooking(b={}) {
     id:             b.publicId,
     code:           b.bookingCode,
     customer:       b.customerNameSnapshot,
+    /* The customer's LIVE number, read off the customer master by the server — not a snapshot.
+       A phone exists to be dialled, and the number that was right at booking time reaches
+       somebody else today. Null when the customer has none on file or has been deleted. */
+    customerPhone:  b.customerPhone || "",
     createdBy:      b.createdBy,
     destination:    b.destinationSnapshot,
     services:       Array.isArray(b.services) ? b.services : [],
@@ -178,6 +182,12 @@ function BookingModal({ booking, onClose, onEdit, onCancel, onRefresh }) {
     booking.status!=="Completed" && booking.status!=="Cancelled";
   const canRead   = hasPermission(P.BOOKING_READ);
   const canUpdate = hasPermission(P.BOOKING_UPDATE);
+  // Terminal statuses. COMPLETED is the one that reopens, and only for a tenant admin — the backend
+  // allows exactly that, and it is the only way out of a booking marked complete by mistake, since
+  // delete and cancel both refuse a completed one. CANCELLED and REFUNDED never reopen: each leaves
+  // a credit note or a refund payout behind that a status flip would orphan.
+  const canReopen    = booking.status==="Completed" && isTenantAdmin();
+  const statusLocked = ["Completed","Cancelled","Refunded"].includes(booking.status) && !canReopen;
   const payPct = booking.totalPayable>0 ? Math.round(booking.paid/booking.totalPayable*100) : 0;
 
   const runDownload = async kind => {
@@ -238,7 +248,12 @@ function BookingModal({ booking, onClose, onEdit, onCancel, onRefresh }) {
               <div className="ml-auto flex items-center gap-1.5">
                 <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wide">Set status</span>
                 <div className="relative">
-                  <select value={statusVal} disabled={statusSaving}
+                  <select value={statusVal} disabled={statusSaving || statusLocked}
+                    title={statusLocked
+                      ? `A ${booking.status} booking is locked; its status can no longer be changed.`
+                      : canReopen
+                        ? "Reopening a completed booking — set it back to Confirmed or Pending."
+                        : undefined}
                     onChange={e=>handleStatusChange(e.target.value)}
                     className="pl-3 pr-8 py-1.5 rounded-lg border border-blue-200 bg-white text-xs font-bold text-blue-700
                       focus:border-blue-400 focus:ring-2 focus:ring-blue-100 outline-none appearance-none cursor-pointer
@@ -378,6 +393,16 @@ function MobileBookingCard({ b, onView, onEdit, onCancel, onDelete, onInvoice, d
             <span className="mx-1 text-slate-300">·</span>
             📍 {b.destination}
           </p>
+          {/* On a phone this is the one line that matters most — the operator IS holding the
+              device that can dial it. stopPropagation so tapping the number rings instead of
+              opening the booking. */}
+          {b.customerPhone && (
+            <a href={`tel:${b.customerPhone}`}
+              onClick={(e)=>e.stopPropagation()}
+              className="text-[11px] font-semibold text-blue-600 tabular-nums mt-0.5 inline-block">
+              📞 {b.customerPhone}
+            </a>
+          )}
         </div>
         <div className="text-right flex-shrink-0">
           <p className="text-base font-extrabold text-slate-800">{fmtINR(b.totalPayable)}</p>
@@ -637,7 +662,9 @@ export default function BookingsPage({
   const clientFiltered = useMemo(()=>{
     let out=[...bookings];
     const q=search.toLowerCase();
-    if(q) out=out.filter(b=>(b.code||"").toLowerCase().includes(q)||(b.customer||"").toLowerCase().includes(q)||(b.destination||"").toLowerCase().includes(q));
+    // Phone is matched on digits only, so "98765 43210", "+91 9876543210" and "9876543210" all
+    // find the same booking — the number is rarely stored the way the operator types it.
+    if(q) { const qd=q.replace(/\D/g,""); out=out.filter(b=>(b.code||"").toLowerCase().includes(q)||(b.customer||"").toLowerCase().includes(q)||(b.destination||"").toLowerCase().includes(q)||(qd.length>=4&&(b.customerPhone||"").replace(/\D/g,"").includes(qd))); }
     if(filterStatus!=="All Status")         out=out.filter(b=>b.status===filterStatus);
     if(filterPay!=="All Payment Status")    out=out.filter(b=>b.payStatus===filterPay);
     if(filterMonth!=="All Booking Months"){ const mi=MONTHS.indexOf(filterMonth)+1; out=out.filter(b=>new Date(b.bookingDate).getMonth()+1===mi); }
@@ -1011,7 +1038,7 @@ const saveBookingExpenses = async (expenses) => {
                   <div className="relative">
                     <FiSearch className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"/>
                     <input type="text" value={search} onChange={e=>{setSearch(e.target.value);setPage(1);}}
-                      placeholder="Booking code, customer, destination…"
+                      placeholder="Booking code, customer, phone, destination…"
                       className={inputCls+" pl-10"}/>
                   </div>
                 </div>
@@ -1139,7 +1166,21 @@ const saveBookingExpenses = async (expenses) => {
                         {/* customer */}
                         <td className="px-3 py-3.5">
                           <p className="text-sm font-bold text-slate-800">{b.customer}</p>
-                          <p className="text-[11px] text-slate-400 mt-0.5">{b.createdBy}</p>
+                          {/* The number sits under the name because that is what an operator opens
+                              this list to do: find the party leaving on Tuesday and ring them. It
+                              takes the line createdBy had — who raised the booking is reference, a
+                              phone number is an action, and only one of the two is worth a row of
+                              vertical space on the busiest screen in the product. tel: rather than
+                              the conversation drawer: this is a call, and the phone takes over. */}
+                          {b.customerPhone ? (
+                            <a href={`tel:${b.customerPhone}`}
+                              onClick={(e)=>e.stopPropagation()}
+                              className="text-[11px] font-semibold text-slate-500 hover:text-blue-600 mt-0.5 inline-block tabular-nums">
+                              {b.customerPhone}
+                            </a>
+                          ) : (
+                            <p className="text-[11px] text-slate-400 mt-0.5">{b.createdBy}</p>
+                          )}
                         </td>
                         {/* destination */}
                         <td className="px-3 py-3.5">

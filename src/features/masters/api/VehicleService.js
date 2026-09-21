@@ -36,6 +36,10 @@ function transformVehicleData(formData) {
     description : formData.description?.trim() || "",
     // imagePath = Cloudinary secure_url (already uploaded)
     imagePath   : formData.imagePath || null,
+    // Supplier link — the operator this vehicle is hired from. Absence never clears one; removing
+    // a supplier sends clearVendorLink, which is what the backend requires.
+    vendorPublicId  : formData.vendorPublicId || undefined,
+    clearVendorLink : formData.clearVendorLink || undefined,
   };
 }
 

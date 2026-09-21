@@ -110,6 +110,37 @@ const CARDS = [
     route:    "/CompanyProfile",
     delay:    200,
   },
+  {
+    id:       "scoring",
+    icon:     <FiZap className="w-6 h-6"/>,
+    title:    "Lead Temperature Rules",
+    subtitle: "Hot / Warm / Cold Logic",
+    headerGradient: "from-orange-500 via-red-500 to-rose-500",
+    glowColor: "shadow-orange-100",
+    accentBorder: "border-orange-500",
+    btnGradient: "from-orange-500 to-red-500",
+    btnShadow:   "shadow-orange-200",
+    ringColor:   "ring-orange-100",
+    badgeBg:     "bg-orange-100",
+    badgeText:   "text-orange-700",
+    statusColor: "text-orange-600",
+    badgeLabel:  "Active",
+    badgeIcon:   "🔥",
+    description: "Decide what makes a lead Hot, Warm or Cold. Priority-ordered rules over quotation engagement, replies and travel dates — with a live preview against a real lead.",
+    features: [
+      { icon:<FiZap    className="w-3.5 h-3.5"/>, label:"Rule builder"        },
+      { icon:<FaFlask  className="w-3.5 h-3.5"/>, label:"Live simulator"      },
+      { icon:<FiShield className="w-3.5 h-3.5"/>, label:"Version history"     },
+    ],
+    quickStats: [
+      { label:"Mode",     value:"Rules" },
+      { label:"Recompute",value:"Nightly" },
+    ],
+    btnLabel: "Edit Rules",
+    btnIcon:  <FiZap className="w-3.5 h-3.5"/>,
+    route:    "/LeadScoringRules",
+    delay:    300,
+  },
 ];
 
 /* ─── STAT PILL COMPONENT ────────────────────────────────────── */

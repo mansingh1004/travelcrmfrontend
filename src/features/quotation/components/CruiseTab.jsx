@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Anchor, Plus, IndianRupee } from "lucide-react";
 import { Label, Input, Select, SectionCard, RemoveBtn, IncludeToggle, EmptyState, FieldGrid } from "./Ui";
 import { CRUISE_TYPES, CABIN_CATS } from "../Constants";
+import { cruiseService, normalizeCruiseList, transformCruiseResponse } from "@features/masters";
 
 // export default function CruiseTab({ onDataChange }) {
 //   const [included, setIncluded] = useState(false);
@@ -14,9 +15,59 @@ import { CRUISE_TYPES, CABIN_CATS } from "../Constants";
   const hydratedRef = useRef(false);
   const includeTouchedRef = useRef(false);
 
+  // The cruise master list, for picking rather than typing. Empty is an ordinary state — a tenant
+  // that keeps no cruise master simply types, exactly as before this existed.
+  const [masters, setMasters] = useState([]);
+
+  const loadMasters = useCallback(async () => {
+    try {
+      const res = await cruiseService.getAllCruises();
+      setMasters(normalizeCruiseList(res?.data).map(transformCruiseResponse).filter(Boolean));
+    } catch {
+      // A master list that will not load must never block quoting. Typing still works, and the line
+      // simply carries no supplier — the same outcome as a deliberately hand-typed sailing.
+      setMasters([]);
+    }
+  }, []);
+
+  useEffect(() => { loadMasters(); }, [loadMasters]);
+
   function newCruise() {
-    return { id: Date.now() + Math.random(), name: "", type: "", depPort: "", arrPort: "", depDate: "", nights: 0, cabin: "", pricePerPax: 0, pax: 1 };
+    return { id: Date.now() + Math.random(), cruiseMasterPublicId: null, name: "", type: "", depPort: "", arrPort: "", depDate: "", nights: 0, cabin: "", pricePerPax: 0, pax: 1 };
   }
+
+  /**
+   * Pick a master, or clear back to free text.
+   *
+   * <p>The name is copied down as a snapshot, not linked: an issued quotation must keep reading the
+   * same even if the master is renamed later. What the id buys is the supplier — it is carried onto
+   * the sold booking line, and that is the only reason a cruise can show a vendor on the ops board.
+   */
+  const pickMaster = (rowId, publicId) => {
+    const m = masters.find(x => x.publicId === publicId);
+    setCruises(p => p.map(c => c.id !== rowId ? c : ({
+      ...c,
+      cruiseMasterPublicId: m ? m.publicId : null,
+      // Clearing the picker leaves the typed name alone — the agent may have edited it.
+      name: m ? (m.name || c.name) : c.name,
+    })));
+  };
+
+  /**
+   * The supplier for a row, looked up rather than stored.
+   *
+   * <p>Storing it on the row would be wrong on the path that matters most: a saved quotation comes
+   * back carrying cruiseMasterPublicId but no vendorName — the quotation DTO has no such field and
+   * should not, since the supplier can change after the quote was written. Re-opening the quote
+   * would then read "no supplier linked yet" about a cruise that has one.
+   *
+   * <p>Deriving also keeps it honest live: link a supplier in the master, reload, and the answer
+   * here changes with it.
+   */
+  const supplierFor = (row) =>
+    row.cruiseMasterPublicId
+      ? (masters.find(m => m.publicId === row.cruiseMasterPublicId)?.vendorName ?? null)
+      : null;
 
   // ── EDIT MODE PREFILL — saved quotation se state seed karo (ek hi baar) ──
   useEffect(() => {
@@ -68,6 +119,35 @@ import { CRUISE_TYPES, CABIN_CATS } from "../Constants";
             <SectionCard key={c.id} title={`Cruise ${ci + 1}`} icon={Anchor}
               headerRight={cruises.length > 1 && <RemoveBtn onClick={() => remove(c.id)} />}>
               <div className="space-y-4">
+                {masters.length > 0 && (
+                  <FieldGrid cols={2}>
+                    <div>
+                      <Label>Pick from Cruise Master</Label>
+                      <Select
+                        options={masters.map(m => ({
+                          value: m.publicId,
+                          label: m.vendorName ? `${m.name} — via ${m.vendorName}` : m.name,
+                        }))}
+                        value={c.cruiseMasterPublicId || ""}
+                        onChange={e => pickMaster(c.id, e.target.value || null)}
+                        placeholder="Type below instead"
+                      />
+                    </div>
+                    <div className="flex items-end pb-1">
+                      {c.cruiseMasterPublicId ? (
+                        <span className={`text-xs font-bold ${supplierFor(c) ? "text-slate-600" : "text-amber-600"}`}>
+                          {supplierFor(c)
+                            ? `Supplier: ${supplierFor(c)}`
+                            : "No supplier linked yet — one is created when this quote is sold"}
+                        </span>
+                      ) : (
+                        <span className="text-xs font-medium text-slate-400">
+                          Typed sailings carry no supplier
+                        </span>
+                      )}
+                    </div>
+                  </FieldGrid>
+                )}
                 <FieldGrid cols={2}>
                   <div><Label required>Cruise Name</Label><Input value={c.name} onChange={e => update(c.id, "name", e.target.value)} placeholder="e.g. Royal Caribbean Explorer" /></div>
                   <div><Label>Cruise Type</Label><Select options={CRUISE_TYPES} value={c.type} onChange={e => update(c.id, "type", e.target.value)} /></div>

@@ -20,9 +20,21 @@ export { default as ConsoleGlobalConfig } from "./pages/GlobalConfig";
 export { default as ConsolePlatformEmail } from "./pages/PlatformEmail";
 export { default as ConsolePlatformHealth } from "./pages/PlatformHealth";
 export { default as ConsoleAuditLog } from "./pages/AuditLog";
+export { default as ConsoleRequestLogs } from "./pages/RequestLogs";
+export { default as ConsoleTenantActivity } from "./pages/TenantActivity";
 export { default as ConsoleAnnouncements } from "./pages/Announcements";
 export { default as ConsoleOps } from "./pages/Ops";
 export { default as ConsolePlatformHotels } from "./pages/PlatformHotels";
+// Packages — the third platform catalog, and the first agencies also write into. One page: the
+// catalog and the agency review queue are two tabs on it.
+export { default as ConsolePlatformPackages } from "./pages/PlatformPackages";
+export { default as ConsolePlatformPackageEditor } from "./pages/PlatformPackageEditor";
+// The 360: everything about one package on one screen, including the cost and margin the tenant
+// DTO cannot carry. Read-only apart from the four lifecycle actions — editing stays in the editor.
+export { default as ConsolePlatformPackageDetail } from "./pages/PlatformPackageDetail";
+// The platform half of mix-and-match. Without it, enquiries about PLATFORM packages have nobody
+// to answer them - the seller is the platform, which has no tenant queue.
+export { default as ConsolePlatformPackageMix } from "./pages/PlatformPackageMix";
 export { default as ConsoleHotelPartners } from "./pages/HotelPartners";
 export { default as ConsoleHotelPartnerReview } from "./pages/HotelPartnerReview";
 export { default as ConsoleHotelNominations } from "./pages/HotelNominations";
@@ -36,6 +48,7 @@ export { default as ConsoleMarketplaceBookings } from "./pages/MarketplaceBookin
 export { default as ConsoleTransportRequests } from "./pages/TransportRequests";
 export { default as ConsolePlatformVehicles } from "./pages/PlatformVehicles";
 export { default as ConsolePlatformVehicleEditor } from "./pages/PlatformVehicleEditor";
+export { default as ConsolePlatformVehicleDetail } from "./pages/PlatformVehicleDetail";
 export { default as ConsoleTransportCommissions } from "./pages/TransportCommissions";
 export { default as ConsoleTransportPartners } from "./pages/TransportPartners";
 export { default as ConsoleTransportPartnerReview } from "./pages/TransportPartnerReview";
@@ -47,4 +60,6 @@ export { default as ConsoleTransportPricing } from "./pages/TransportPricing";
 export { default as ConsoleMarketplaceCommissions } from "./pages/MarketplaceCommissions";
 export { default as ConsoleMarketplaceOccupancy } from "./pages/MarketplaceOccupancy";
 export { default as ConsoleCommercialRules } from "./pages/CommercialRules";
+export { default as ConsolePricingRules } from "./pages/PricingRules";
+export { default as ConsolePackagePricing } from "./pages/PackagePricing";
 export { default as ConsoleMarketplaceCredit } from "./pages/MarketplaceCredit";

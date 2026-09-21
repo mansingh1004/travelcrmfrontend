@@ -16,6 +16,13 @@ dist-ssr
 .env
 .env.*
 !.env.example
+# ...except the two build-target files, which are tracked ON PURPOSE.
+# They hold only VITE_API_URL — a public origin that is compiled into the
+# bundle and served to every browser, so it is not a secret. Tracking them is
+# what stops a deploy from silently building against the localhost fallback.
+# .env.production was already tracked; this just makes that intentional.
+!.env.production
+!.env.uat
 .Dockerfile
 
 # Editor directories and files

@@ -53,6 +53,8 @@ const BLANK = {
   vehicleNumber: "", type: "", make: "", model: "", year: "", seatingCapacity: "",
   ownerType: "OWN", vendorPublicId: "",
   insuranceExpiry: "", rcExpiry: "", permitExpiry: "", pucExpiry: "", notes: "",
+  /* Blank = use the agency default from Accounting settings; with neither set nothing is charged. */
+  internalDayRate: "",
 };
 
 /**
@@ -162,6 +164,7 @@ export default function FleetVehicleForm() {
           permitExpiry: toDateInput(v.permitExpiry),
           pucExpiry: toDateInput(v.pucExpiry),
           notes: v.notes ?? "",
+          internalDayRate: v.internalDayRate ?? "",
         });
       })
       .catch((e) => showToast(errMsg(e, "Failed to load vehicle."), "error"))
@@ -221,6 +224,10 @@ export default function FleetVehicleForm() {
       permitExpiry: data.permitExpiry || null,
       pucExpiry: data.pucExpiry || null,
       notes: data.notes?.trim() || null,
+      // Only an owned vehicle carries one; a hired vehicle is paid through its vendor bill, and a
+      // notional rate on top of that would charge the same trip twice.
+      internalDayRate: !needsVendor && data.internalDayRate !== "" && data.internalDayRate != null
+        ? Number(data.internalDayRate) : null,
     };
     try {
       if (isEdit) {
@@ -441,6 +448,19 @@ export default function FleetVehicleForm() {
                   onChange={(val) => setValue("vendorPublicId", val, { shouldDirty: true })}
                   placeholder="Search vendors…"
                 />
+              </Field>
+            )}
+
+            {/* Only for a vehicle the agency owns. A hired one is paid for through its vendor's
+                bill, and charging a notional rate on top would count that money twice. */}
+            {!needsVendor && (
+              <Field
+                label="Internal day rate (₹)"
+                note="Charged to a booking's margin per day this vehicle is used. Blank uses the agency default from Accounting settings."
+              >
+                <input id="internalDayRate" type="number" inputMode="decimal" min="0" step="0.01"
+                       className={fieldCls} placeholder="3500"
+                       {...register("internalDayRate")} />
               </Field>
             )}
 

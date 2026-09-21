@@ -736,6 +736,7 @@ import { getErrorMessage } from "@shared/api/apiError";
 import ModernWebView from "../components/ModernWebView";
 import PremiumWebView from "../components/PremiumWebView";
 import LuxuryWebView from "../components/LuxuryWebView";
+import ComparisonWebView from "../components/ComparisonWebView";
 const API = import.meta.env.VITE_API_URL || "http://localhost:8080/api";
 
 const inr = (v) => (v == null ? "—" : `₹${Number(v).toLocaleString("en-IN")}`);
@@ -853,6 +854,10 @@ export default function QuotationWebView({ publicId, styleOverride }) {
   if (style === "MODERN")  return <ModernWebView  data={q} pdfUrl={`${API}/public/quotations/${publicId}/pdf`} />;
   if (style === "PREMIUM") return <PremiumWebView data={q} pdfUrl={`${API}/public/quotations/${publicId}/pdf`} />;
 if (style === "LUXURY")  return  <LuxuryWebView data={q} pdfUrl={`${API}/public/quotations/${publicId}/pdf`}/>;
+  /* Before the Classic fall-through below, not after: without this a COMPARISON quotation renders
+     as the inline single-package view — no crash, and no comparison either, which is the failure
+     nobody reports because nothing looks broken. */
+  if (style === "COMPARISON") return <ComparisonWebView data={q} pdfUrl={`${API}/public/quotations/${publicId}/pdf`} />;
 
 
 

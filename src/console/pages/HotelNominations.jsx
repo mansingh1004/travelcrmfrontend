@@ -55,7 +55,7 @@ const TABS = [
   { key: "",             label: "All" },
 ];
 
-export default function HotelNominations() {
+export default function HotelNominations({ embedded = false }) {
   const [tab, setTab] = useState("PENDING");
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -78,19 +78,25 @@ export default function HotelNominations() {
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-wrap items-center gap-3">
-        <div className="flex-1">
-          <h1 className="text-xl font-extrabold text-heading">Hotel nominations</h1>
-          <p className="mt-0.5 text-sm text-body">
-            Properties your tenants want in the catalog. Accepting one invites the hotel to register
-            itself — it does not add a hotel on their behalf.
-          </p>
-        </div>
-        <button onClick={load}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-semibold text-body hover:bg-surface-hover">
-          <RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Refresh
-        </button>
-      </header>
+      {/* Mounted as a tab of Hotel partners, the page title and Refresh belong to that page —
+          two headers stacked is how a merged screen announces that it was two screens. Standalone
+          (a bookmark on the old /console/hotel-nominations, which still redirects here) it keeps
+          its own. */}
+      {!embedded && (
+        <header className="flex flex-wrap items-center gap-3">
+          <div className="flex-1">
+            <h1 className="text-xl font-extrabold text-heading">Hotel nominations</h1>
+            <p className="mt-0.5 text-sm text-body">
+              Properties your tenants want in the catalog. Accepting one invites the hotel to register
+              itself — it does not add a hotel on their behalf.
+            </p>
+          </div>
+          <button onClick={load}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-semibold text-body hover:bg-surface-hover">
+            <RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Refresh
+          </button>
+        </header>
+      )}
 
       <section className="rounded-2xl border border-border bg-surface shadow-[var(--sa-card-shadow)]">
         <div className="flex flex-wrap gap-1 border-b border-border px-3 pt-3">

@@ -4,6 +4,8 @@
 // import { geographyService } from "@shared/api/geographyService";
 // import { getErrorMessage } from "@shared/api/apiError";
 // import { toast } from "@shared/ui/toast";
+import { hasPermission, hasModule, P } from "@shared/lib/access";
+import NominateHotelDialog from "../components/NominateHotelDialog";
 
 // /* ─── CONSTANTS ──────────────────────────────────────────── */
 // const AMENITIES = [
@@ -1325,13 +1327,15 @@
 
 
 import { useState, useMemo, useEffect, useCallback } from "react";
-import { Search, Plus, ChevronDown, ChevronUp, X, Star, MapPin, Phone, Globe, Upload, Hotel, Building2, Utensils, Wifi, Car, Dumbbell, Waves, ConciergeBell, PlaneTakeoff, Edit2, Trash2, Check, AlertCircle, Home, ChevronRight, ShieldCheck } from "lucide-react";
+import { Search, Plus, ChevronDown, ChevronUp, X, Star, MapPin, Phone, Globe, Upload, Hotel, Building2, Utensils, Wifi, Car, Dumbbell, Waves, ConciergeBell, PlaneTakeoff, Edit2, Trash2, Check, AlertCircle, Home, ChevronRight, ShieldCheck, Send } from "lucide-react";
 import { hotelService, transformHotelResponse, uploadHotelImageToCloudinary } from "../api/HotelService";
 import { geographyService } from "@shared/api/geographyService";
 import { getErrorMessage } from "@shared/api/apiError";
 import { usePagedList } from "@shared/api/usePagedList";
 import { Pager } from "@shared/ui/Pager";
 import { toast } from "@shared/ui/toast";
+import SupplierPicker from "../components/SupplierPicker";
+import { vendorService } from "@features/vendors";
 
 /* ─── CONSTANTS ──────────────────────────────────────────── */
 const AMENITIES = [
@@ -1354,6 +1358,9 @@ const emptyHotel = {
   mapUrl: "", lat: "", lng: "", overview: "",
   amenities: [], isDefault: false, roomTypes: [], mealPlans: [],
   imagePath: "",   // ← IMAGE URL (Cloudinary se)
+  // Supplier link. Blank means "this hotel is its own supplier" — the backend mints that vendor
+  // lazily. clearVendorLink is what makes removing one explicit; absence never unlinks.
+  vendorPublicId: "", clearVendorLink: false, vendorLabel: "",
 };
 const emptyRoom = { name: "", size: "", occupancy: "", bedType: "King", baseRate: "", description: "" };
 const emptyMeal = { name: "", price: "", description: "" };
@@ -1615,6 +1622,13 @@ export default function HotelMaster() {
   }, [filterDest]);
 
   // Group THIS PAGE's hotels under their destination for the existing grouped layout.
+  /* The hotel being suggested to the platform, or null. Gated on the marketplace add-on rather
+     than on MASTER_*: nominating is a marketplace act, and a tenant who never bought the
+     marketplace must not be offered a button whose endpoint answers 403. The backend guards the
+     same key (HotelNominationController: HOTEL_MARKETPLACE_VIEW). */
+  const [nominating, setNominating] = useState(null);
+  const canNominate = hasPermission(P.HOTEL_MARKETPLACE_VIEW) && hasModule("HOTEL_MARKETPLACE");
+
   const filtered = useMemo(() => {
     const nameById = new Map((destinations || []).map(d => [String(d.id), d.name]));
     const grouped  = new Map();
@@ -1722,6 +1736,21 @@ export default function HotelMaster() {
     prefillCascade(destId);
     setMobileTab("info");
     setShowModal(true);
+
+    // The supplier link is not on HotelDto — it is one row, fetched when the form opens, so no list
+    // has to resolve it per row. A failure leaves the picker blank, and because a blank picker never
+    // sends clearVendorLink, a save in that state cannot silently unlink the hotel.
+    const hotelId = hotel?.hotelId ?? hotel?.id;
+    if (hotelId) {
+      vendorService.linkOf("HOTEL", hotelId)
+        .then((linked) => setForm(f => ({
+          ...f,
+          vendorPublicId: linked?.publicId || "",
+          vendorLabel:    linked?.vendorName || "",
+          clearVendorLink: false,
+        })))
+        .catch(() => {});
+    }
   };
 
   const closeModal = () => { setShowModal(false); setEditingHotel(null); setHotelImageFile(null); };
@@ -2142,6 +2171,14 @@ console.log("✅ New Hotel Created! Backend assigned ID:", savedHotel.id || save
                                           <Phone size={10} className="text-emerald-400" />{hotel.phone}
                                         </span>
                                       )}
+                                      {/* Who the agency buys this property through. Absent until a
+                                          supplier is linked or a self-vendor is minted — lazy by
+                                          design, so an empty row is ordinary, not missing data. */}
+                                      {hotel.vendorName && (
+                                        <span className="text-xs font-semibold text-slate-500">
+                                          via {hotel.vendorName}
+                                        </span>
+                                      )}
                                       <StarRow count={hotel.stars} />
                                     </div>
                                     {hotel.amenities?.length > 0 && (
@@ -2175,6 +2212,17 @@ console.log("✅ New Hotel Created! Backend assigned ID:", savedHotel.id || save
                                       text-rose-500 text-xs font-bold border border-rose-200 hover:border-rose-300 transition-all">
                                     <Trash2 size={12} /> {hotel.platformOwned ? "Remove" : "Delete"}
                                   </button>
+                                  {/* Only on the tenant's OWN rows. A PLATFORM_SYNC projection is
+                                      already in the catalog, so suggesting it would be a button
+                                      that can only fail. */}
+                                  {canNominate && !hotel.platformOwned && hotel.publicId && (
+                                    <button onClick={() => setNominating(hotel)}
+                                      title="Suggest this hotel to the platform catalog"
+                                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-violet-50 hover:bg-violet-100
+                                        text-violet-600 text-xs font-bold border border-violet-200 hover:border-violet-300 transition-all">
+                                      <Send size={12} /> Suggest
+                                    </button>
+                                  )}
                                 </div>
                               </div>
                             </div>
@@ -2186,6 +2234,13 @@ console.log("✅ New Hotel Created! Backend assigned ID:", savedHotel.id || save
                 </div>
               );
             })}
+
+            {nominating && (
+              <NominateHotelDialog
+                hotel={nominating}
+                onClose={() => setNominating(null)}
+              />
+            )}
 
             <Pager
               page={page}
@@ -2414,6 +2469,21 @@ console.log("✅ New Hotel Created! Backend assigned ID:", savedHotel.id || save
                     <FInput label="Website" placeholder="www.example.com"
                       disabled={form.platformOwned}
                       value={form.website} onChange={e => setForm(f => ({ ...f, website: e.target.value }))} />
+                    {/* Who the agency actually pays for rooms here. A platform-synced hotel is
+                        maintained by the marketplace, and its payee is the platform, so the picker
+                        is closed on those rows for the same reason every other field is. */}
+                    <SupplierPicker
+                      value={form.vendorPublicId}
+                      linkedLabel={form.vendorLabel}
+                      disabled={form.platformOwned}
+                      onChange={(publicId) => setForm(f => ({
+                        ...f,
+                        vendorPublicId: publicId,
+                        // Emptying the picker is a deliberate unlink — but only when there was
+                        // something to unlink, so a blank form never sends the flag.
+                        clearVendorLink: !publicId && Boolean(f.vendorLabel || f.vendorPublicId),
+                      }))}
+                    />
                   </div>
                 </SectionCard>
 

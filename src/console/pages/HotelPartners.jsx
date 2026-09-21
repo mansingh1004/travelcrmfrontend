@@ -2,11 +2,12 @@ import { useCallback, useEffect, useState } from "react";
 import {
   Copy, Loader2, Mail, MapPin, Plus, RefreshCw, Send, Star, Trash2, X,
 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "@shared/ui/toast";
 import { getErrorMessage } from "@shared/api/apiError";
 import { COUNTRY_OPTIONS, countryNameFromCode } from "@shared/lib/countries";
 import { hotelPartnerService, INVITE_STATUS, REG_STATUS } from "../api/hotelPartnerService";
+import HotelNominations from "./HotelNominations";
 
 /**
  * Hotel partner onboarding — invite a hotel owner, then review what they submit.
@@ -27,6 +28,15 @@ function Chip({ map, value }) {
   );
 }
 
+/* The two halves of hotel supply onboarding, in the order the flow runs: a tenant nominates a
+   property, the platform invites it, the property registers, an operator approves. Nominations
+   used to be a separate console row; it is the step BEFORE everything on this page, and filing
+   it elsewhere meant the queue that starts the funnel lived away from the one that finishes it. */
+const VIEWS = [
+  { key: "registrations", label: "Registrations & invites" },
+  { key: "nominations", label: "Nominations" },
+];
+
 const TABS = [
   { key: "SUBMITTED", label: "Awaiting review" },
   { key: "CHANGES_REQUESTED", label: "Sent back" },
@@ -37,6 +47,16 @@ const TABS = [
 
 export default function HotelPartners() {
   const navigate = useNavigate();
+  /* In the URL, not component state: /console/hotel-nominations redirects to ?view=nominations,
+     so the old bookmark lands on the right half rather than on the page's default. */
+  const [params, setParams] = useSearchParams();
+  const view = params.get("view") === "nominations" ? "nominations" : "registrations";
+  const setView = (next) => {
+    const p = new URLSearchParams(params);
+    if (next === "registrations") p.delete("view"); else p.set("view", next);
+    setParams(p, { replace: true });
+  };
+
   const [tab, setTab] = useState("SUBMITTED");
   const [regs, setRegs] = useState([]);
   const [invites, setInvites] = useState([]);
@@ -47,6 +67,9 @@ export default function HotelPartners() {
   const [timelineFor, setTimelineFor] = useState(null);
 
   const load = useCallback(async () => {
+    /* The nominations half fetches its own rows. Without this, switching to it still fired two
+       registration requests, and Refresh on this page reloaded a list nobody was looking at. */
+    if (view !== "registrations") return;
     setLoading(true);
     try {
       const [r, i] = await Promise.all([
@@ -60,7 +83,7 @@ export default function HotelPartners() {
     } finally {
       setLoading(false);
     }
-  }, [tab]);
+  }, [tab, view]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -82,12 +105,14 @@ export default function HotelPartners() {
         <div className="flex-1">
           <h1 className="text-xl font-extrabold text-heading">Hotel partners</h1>
           <p className="mt-0.5 text-sm text-body">
-            Invite a hotel to register itself, then review and approve what they send.
+            Nominations from your tenants, invitations you send, and the registrations that come
+            back — the supply funnel end to end.
           </p>
         </div>
         <button type="button" onClick={copyPublicRegistrationLink}
-          className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 py-2 text-sm font-bold text-white hover:bg-blue-700">
-          <Copy size={15} /> Copy Public Registration Link
+          title="Permanent self-registration link — no invite needed"
+          className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-semibold text-body hover:bg-surface-hover">
+          <Copy size={15} /> Public link
         </button>
         <button onClick={load}
           className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-semibold text-body hover:bg-surface-hover">
@@ -99,6 +124,32 @@ export default function HotelPartners() {
         </button>
       </header>
 
+      {/* Which half of the funnel. A segmented control rather than a fifth tab strip: the status
+          tabs below belong to registrations only, and nesting one tab bar inside another makes
+          "which of these two rows is selected" a question the reader has to work out. */}
+      <div className="flex flex-wrap gap-1 rounded-xl border border-border bg-surface p-1">
+        {VIEWS.map((v) => (
+          <button
+            key={v.key}
+            type="button"
+            onClick={() => setView(v.key)}
+            aria-pressed={view === v.key}
+            className={`focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus rounded-lg px-3.5 py-2 text-sm font-semibold transition ${
+              view === v.key ? "bg-accent-soft text-accent-soft-text" : "text-muted hover:text-heading"
+            }`}
+          >
+            {v.label}
+          </button>
+        ))}
+      </div>
+
+      {/* The step BEFORE this page: a tenant proposing a property. Accepting one sends an invite,
+          which is what the other half of this screen then tracks. It keeps its own status tabs and
+          its own fetch; only its page header is suppressed, because this page already has one. */}
+      {view === "nominations" && <HotelNominations embedded />}
+
+      {view === "registrations" && (
+        <>
       {/* ── Submissions ─────────────────────────────────────────── */}
       <section className="rounded-2xl border border-border bg-surface shadow-[var(--sa-card-shadow)]">
         <div className="flex flex-wrap gap-1 border-b border-border px-3 pt-3">
@@ -178,6 +229,8 @@ export default function HotelPartners() {
           </ul>
         )}
       </section>
+        </>
+      )}
 
       {inviting && <InviteDialog onClose={() => setInviting(false)} onDone={load} />}
       {timelineFor && (

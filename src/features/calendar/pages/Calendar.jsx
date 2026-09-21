@@ -565,8 +565,9 @@ import {
   BedDouble, Stamp, Users, TrendingUp, LayoutGrid, List as ListIcon, CalendarDays, BarChart3,
   Check, Clock,
 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { toast } from "@shared/ui/toast";
-import { isSubAgent, isTenantAdmin, isManager } from "@shared/lib/access";
+import { isSubAgent, isTenantAdmin, isManager, hasPermission, P } from "@shared/lib/access";
 import calendarService from "../api/calendarService";
 import taskService from "../api/taskService";
 import AddEventModal from "../components/AddEventModal";
@@ -580,8 +581,13 @@ import {
 
 function EventChip({ ev, onClick }) {
   const meta = metaFor(ev);
-  const clickable = ev.source === "TASK";
-  
+  // The backend already answers this: `editable` is true for the first-class rows (tasks AND
+  // reminders) and false for everything derived from a booking. Hardcoding source === "TASK" here
+  // made every reminder chip inert even though the flag said otherwise — and a reminder is exactly
+  // the chip a user tries to click. Reminders only reach the feed at all when the caller holds
+  // REMINDER_READ (CalendarServiceImpl gates the source), so no extra gate is needed here.
+  const clickable = Boolean(ev.editable);
+
   return (
     <div className="group relative w-full">
       {/* The main visible calendar chip */}
@@ -751,8 +757,14 @@ function WorkloadView({ reloadKey }) {
 /* ── Main page ───────────────────────────────────────────────────────────────── */
 
 export default function Calendar() {
+  const navigate = useNavigate();
   const subAgent = isSubAgent();
   const canSeeWorkload = isTenantAdmin() || isManager();
+  // Everything this page writes is a TASK — the Add Event modal creates one, the day "+" opens the
+  // same modal, and the My Tasks tick PATCHes /complete. The backend gates all three with
+  // TASK_CREATE / TASK_UPDATE, so an ungated button here is just a 403 waiting to happen.
+  const canCreateTask = hasPermission(P.TASK_CREATE);
+  const canUpdateTask = hasPermission(P.TASK_UPDATE);
   const [view, setView] = useState("month");
   const [cursor, setCursor] = useState(() => new Date());
   const [selectedDay, setSelectedDay] = useState(() => new Date());
@@ -830,6 +842,16 @@ export default function Calendar() {
 
   const openNew = (date) => { setEditingTask(null); setDefaultDate(date || selectedDay); setModalOpen(true); };
   const openEdit = async (ev) => {
+    // Two different entities land here now that reminder chips are clickable, and they are NOT
+    // interchangeable: a reminder's referencePublicId is a reminder id, so taskService.getById
+    // would 404 on it. The calendar has no reminder editor of its own — the Reminders screen is
+    // the only place one can be worked — so route there instead of opening the task modal.
+    // The id rides in router state, the same hand-off ReminderPopupCenter uses for focusLeadId;
+    // Reminders.jsx does not read focusReminderId yet, so today this lands on the plain list.
+    if (ev.referenceType === "REMINDER" || ev.source === "REMINDER") {
+      navigate("/Reminders", { state: { focusReminderId: ev.referencePublicId } });
+      return;
+    }
     try {
       const task = await taskService.getById(ev.referencePublicId);
       setEditingTask(task); setDefaultDate(null); setModalOpen(true);
@@ -891,9 +913,11 @@ export default function Calendar() {
               </button>
             ))}
           </div>
-          <button onClick={() => openNew(null)} className="w-full sm:w-auto justify-center inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2.5 sm:py-2 text-sm font-semibold text-white shadow-sm transition hover:from-blue-700 hover:to-indigo-700 hover:shadow-md">
-            <Plus size={16} />Add Event
-          </button>
+          {canCreateTask && (
+            <button onClick={() => openNew(null)} className="w-full sm:w-auto justify-center inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2.5 sm:py-2 text-sm font-semibold text-white shadow-sm transition hover:from-blue-700 hover:to-indigo-700 hover:shadow-md">
+              <Plus size={16} />Add Event
+            </button>
+          )}
         </div>
       </div>
 
@@ -976,8 +1000,11 @@ export default function Calendar() {
                         const pr = PRIORITY_META[t.priority] || PRIORITY_META.MEDIUM;
                         return (
                           <li key={t.publicId} className="flex items-center gap-2">
-                            <button onClick={() => completeMyTask(t)} title="Mark complete"
-                              className="grid h-4 w-4 shrink-0 place-items-center rounded border border-slate-300 text-transparent hover:border-emerald-500 hover:text-emerald-500">
+                            {/* Disabled, not hidden: the tick is the row's leading column, and
+                                dropping it for some users would ragged-edge the whole list. */}
+                            <button onClick={() => completeMyTask(t)} disabled={!canUpdateTask}
+                              title={canUpdateTask ? "Mark complete" : "You don't have permission to complete tasks"}
+                              className={`grid h-4 w-4 shrink-0 place-items-center rounded border border-slate-300 text-transparent ${canUpdateTask ? "hover:border-emerald-500 hover:text-emerald-500" : "cursor-not-allowed opacity-50"}`}>
                               <Check size={11} />
                             </button>
                             <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-slate-700">{t.title}</span>
@@ -996,7 +1023,7 @@ export default function Calendar() {
               {view === "agenda"
                 ? <AgendaView eventsByDay={eventsByDay} cursor={cursor} onEdit={openEdit} onAddDay={openNew} />
                 : <MonthGrid cursor={cursor} today={today} selectedDay={selectedDay} eventsByDay={eventsByDay}
-                    onEdit={openEdit} onPickDay={(d) => setSelectedDay(d)} onAddDay={openNew} />}
+                    onEdit={openEdit} onPickDay={(d) => setSelectedDay(d)} onAddDay={openNew} canAdd={canCreateTask} />}
             </div>
           </div>
 
@@ -1043,7 +1070,7 @@ export default function Calendar() {
 
 /* ── Month grid ──────────────────────────────────────────────────────────────── */
 
-function MonthGrid({ cursor, today, selectedDay, eventsByDay, onEdit, onPickDay, onAddDay }) {
+function MonthGrid({ cursor, today, selectedDay, eventsByDay, onEdit, onPickDay, onAddDay, canAdd }) {
   const weeks = monthMatrix(cursor);
   return (
     <div className="relative flex h-full min-h-[640px] flex-col rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 overflow-hidden">
@@ -1069,8 +1096,11 @@ function MonthGrid({ cursor, today, selectedDay, eventsByDay, onEdit, onPickDay,
                   className={`group/day flex min-h-[104px] cursor-pointer flex-col border-b border-r border-slate-100 p-1.5 transition ${inMonth ? "bg-white" : "bg-slate-50/50"} ${isSel ? "ring-2 ring-inset ring-blue-400" : ""} hover:bg-blue-50/40 ${i % 7 === 6 ? "border-r-0" : ""}`}>
                   <div className="mb-1 flex shrink-0 items-center justify-between">
                     <span className={`grid h-6 w-6 place-items-center rounded-full text-xs font-semibold ${isToday ? "bg-blue-600 text-white" : inMonth ? "text-slate-600" : "text-slate-300"}`}>{date.getDate()}</span>
-                    <button onClick={(e) => { e.stopPropagation(); onAddDay(date); }}
-                      className="rounded p-0.5 text-slate-300 opacity-0 transition lg:group-hover/day:opacity-100 hover:bg-slate-100 hover:text-blue-600"><Plus size={13} /></button>
+                    {/* Same TASK_CREATE gate as the header button — this opens the same modal. */}
+                    {canAdd && (
+                      <button onClick={(e) => { e.stopPropagation(); onAddDay(date); }}
+                        className="rounded p-0.5 text-slate-300 opacity-0 transition lg:group-hover/day:opacity-100 hover:bg-slate-100 hover:text-blue-600"><Plus size={13} /></button>
+                    )}
                   </div>
                   {/* Removed overflow-hidden so the tooltip can escape */}
                   <div className="space-y-1 relative">

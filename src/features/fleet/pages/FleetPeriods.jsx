@@ -23,6 +23,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogBody, DialogFooter, Field, Textarea,
   useToast, errMsg, fmtDateTime,
 } from "../components/fleetUi";
+import FleetMoneyTabs from "../components/FleetMoneyTabs";
 
 /** Indian FY start year for a date: Apr 2026 → Mar 2027 is "2026". */
 function currentFinancialYear() {
@@ -120,6 +121,8 @@ export default function FleetPeriods() {
           ))}
         </div>
       </PageHeader>
+
+      <FleetMoneyTabs />
 
       <StatCardRow className="lg:grid-cols-3 xl:grid-cols-3">
         <StatCard label="Months closed" value={closedCount} icon={<Lock />} tone="green" />

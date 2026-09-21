@@ -40,7 +40,7 @@ const BLANK = {
   validFrom: "", validTo: "", priority: 0, active: true, notes: "",
 };
 
-export default function CommercialRules() {
+export default function CommercialRules({ embedded = false }) {
   const { showToast } = useToast();
 
   const [rows, setRows] = useState(null);
@@ -110,13 +110,18 @@ export default function CommercialRules() {
   return (
     <div className="space-y-6">
       <header className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold text-heading">Commercial rules</h1>
-          <p className="mt-1 max-w-2xl text-sm text-muted">
-            What the platform adds on top of, or takes out of, a hotel's rate. A hotel with no rule
-            of its own is priced by the global fallback.
-          </p>
-        </div>
+        {/* Mounted as a section of the one Pricing rules screen, that page owns the title. The
+            actions beside it are NOT dropped — Refresh and New rule are how this section is used,
+            and a header suppressed wholesale would take them with it. */}
+        {!embedded && (
+          <div>
+            <h1 className="text-xl font-bold text-heading">Commercial rules</h1>
+            <p className="mt-1 max-w-2xl text-sm text-muted">
+              What the platform adds on top of, or takes out of, a hotel's rate. A hotel with no rule
+              of its own is priced by the global fallback.
+            </p>
+          </div>
+        )}
         <div className="flex gap-2">
           <button type="button" onClick={load} disabled={loading}
             className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-semibold text-body hover:bg-surface-hover disabled:opacity-60">

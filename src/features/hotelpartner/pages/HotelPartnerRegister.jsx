@@ -1539,6 +1539,15 @@ function toForm(dto) {
     checkOutTime: dto?.checkOutTime ?? "",
     childPolicy: dto?.childPolicy ?? "",
     cancellationPolicy: dto?.cancellationPolicy ?? "",
+    payee: {
+      bankName: dto?.payee?.bankName ?? "",
+      accountName: dto?.payee?.accountName ?? "",
+      accountNumber: dto?.payee?.accountNumber ?? "",
+      ifscCode: dto?.payee?.ifscCode ?? "",
+      upiId: dto?.payee?.upiId ?? "",
+      panNumber: dto?.payee?.panNumber ?? "",
+      gstNumber: dto?.payee?.gstNumber ?? "",
+    },
     amenities: dto?.amenities ?? [],
     images: dto?.images ?? [],
     mealPlans: (dto?.mealPlans ?? []).map((m) => ({
@@ -1810,6 +1819,9 @@ export default function HotelPartnerRegister() {
   }, [editable, saveState]);
 
   const patch = (changes) => setForm((f) => ({ ...f, ...changes }));
+  /* The payment block is nested, so it patches through its own helper rather than flattening seven
+     keys onto the form. toPayload spreads the whole form, so it round-trips like everything else. */
+  const patchPayee = (changes) => setForm((f) => ({ ...f, payee: { ...f.payee, ...changes } }));
 
   /* ── rooms ─────────────────────────────────────────────────── */
   const toggleRoom = (key) =>
@@ -2111,7 +2123,7 @@ export default function HotelPartnerRegister() {
               <div className="rounded-xl border border-slate-200 bg-white p-3.5">
                 <div className="mb-2 flex items-center justify-between text-[12px] font-bold text-slate-600">
                   <span>Ready to submit</span>
-                  <span className="tabular-nums text-slate-400">{doneCount}/{checklist.length}</span>
+                  <span className="tabular-nums text-slate-500">{doneCount}/{checklist.length}</span>
                 </div>
                 <ProgressBar done={doneCount} total={checklist.length} />
                 <ul className="mt-3 space-y-1.5">
@@ -2334,6 +2346,46 @@ export default function HotelPartnerRegister() {
                 placeholder="Free cancellation up to 48 hours before check-in…" />
             </Row>
           </Card>
+
+          {/* How the platform pays this property once it is approved. Nothing here is required:
+              most owners in this trade are proprietors with no GST registration, and many settle by
+              UPI alone — a required field would reject a real partner at the last step. Whatever is
+              missing simply shows on the reviewer's screen. */}
+          <Card id="payment" title="Payment details"
+            hint="How we pay you after a booking. Bank account or UPI — whichever you use.">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Bank name">
+                <input className={inputCls} value={form.payee.bankName} disabled={ro}
+                  onChange={(e) => patchPayee({ bankName: e.target.value })} placeholder="HDFC Bank" />
+              </Field>
+              <Field label="Account holder name">
+                <input className={inputCls} value={form.payee.accountName} disabled={ro}
+                  onChange={(e) => patchPayee({ accountName: e.target.value })}
+                  placeholder="As printed on the passbook" />
+              </Field>
+              <Field label="Account number">
+                <input className={inputCls} value={form.payee.accountNumber} disabled={ro}
+                  onChange={(e) => patchPayee({ accountNumber: e.target.value })} inputMode="numeric" />
+              </Field>
+              <Field label="IFSC code">
+                <input className={inputCls} value={form.payee.ifscCode} disabled={ro}
+                  onChange={(e) => patchPayee({ ifscCode: e.target.value })} placeholder="HDFC0001234" />
+              </Field>
+              <Field label="UPI ID">
+                <input className={inputCls} value={form.payee.upiId} disabled={ro}
+                  onChange={(e) => patchPayee({ upiId: e.target.value })} placeholder="name@bank" />
+              </Field>
+              <Field label="PAN">
+                <input className={inputCls} value={form.payee.panNumber} disabled={ro}
+                  onChange={(e) => patchPayee({ panNumber: e.target.value })} placeholder="ABCDE1234F" />
+              </Field>
+              <Field label="GSTIN">
+                <input className={inputCls} value={form.payee.gstNumber} disabled={ro}
+                  onChange={(e) => patchPayee({ gstNumber: e.target.value })}
+                  placeholder="Leave blank if not registered" />
+              </Field>
+            </div>
+          </Card>
           </div>
 
 
@@ -2435,7 +2487,7 @@ export default function HotelPartnerRegister() {
               </span>
             )}>
             {roomCount === 0 && (
-              <p className="text-[13px] text-slate-400">No rooms yet. Add at least one to submit.</p>
+              <p className="text-[13px] text-slate-500">No rooms yet. Add at least one to submit.</p>
             )}
 
             {form.rooms.map((room, ri) => (
@@ -2483,7 +2535,7 @@ export default function HotelPartnerRegister() {
                   <ListChecks size={15} className="shrink-0 text-amber-500" />
                   <span className="truncate">
                     {outstanding.length} thing{outstanding.length === 1 ? "" : "s"} left
-                    <span className="ml-1 font-medium text-slate-400">· see what</span>
+                    <span className="ml-1 font-medium text-slate-500">· see what</span>
                   </span>
                 </button>
               )}
@@ -2764,7 +2816,7 @@ function RoomCard({
               })}
 
               {room.rates.length === 0 && (
-                <p className="text-[13px] text-slate-400">Add at least one rate.</p>
+                <p className="text-[13px] text-slate-500">Add at least one rate.</p>
               )}
             </div>
           </div>

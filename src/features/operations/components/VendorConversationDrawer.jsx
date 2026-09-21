@@ -25,6 +25,7 @@
 // really do send would imply it does.
 // ─────────────────────────────────────────────────────────────────────────────
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { Mail, MessageCircle, X } from "lucide-react";
 
 import VendorEmailModal from "./VendorEmailModal";
@@ -73,7 +74,21 @@ export default function VendorConversationDrawer({
 
   const vendorName = line?.vendorName || "Supplier";
 
-  return (
+  /*
+    PORTALLED TO document.body, and that is not tidiness — it is the only thing that makes the
+    panel full height.
+
+    `position: fixed` is resolved against the viewport ONLY while no ancestor establishes a
+    containing block. `backdrop-filter` does establish one, exactly as `transform` does, and the
+    operations board is built out of `bg-white/80 backdrop-blur-md` cards — so rendered in place
+    this drawer measured `top-0 h-full` against the blurred card it happened to sit inside and
+    opened as a short panel floating in the middle of the row, while the identical markup in the
+    leads drawer opened full height because AllLeads mounts it at the page root.
+
+    A portal makes the drawer independent of wherever it is rendered from, which now matters twice
+    over: the booking's own Services screen opens the same component from a different tree.
+  */
+  return createPortal(
     <>
       <div className="fixed inset-0 z-40 bg-slate-900/20" onClick={onClose} />
 
@@ -138,6 +153,7 @@ export default function VendorConversationDrawer({
           />
         )}
       </aside>
-    </>
+    </>,
+    document.body,
   );
 }

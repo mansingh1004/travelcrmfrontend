@@ -433,6 +433,18 @@ export default function Sidebar() {
                       <span className={`flex-1 truncate ${compact ? "md:hidden" : ""}`}>
                         {item.label}
                       </span>
+                      {/* A registry `badge` renders as a static tag, not a count. It is
+                          hidden in the icon rail, where there is no room for a word and
+                          the tooltip already carries the label. */}
+                      {item.badge && (
+                        <span
+                          className={`shrink-0 rounded border border-white/20 bg-white/10 px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide text-white/70 ${
+                            compact ? "md:hidden" : ""
+                          }`}
+                        >
+                          {item.badge}
+                        </span>
+                      )}
                     </Link>
                   )}
 

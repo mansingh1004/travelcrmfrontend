@@ -15,7 +15,7 @@ import bookingService from "../api/bookingService";
 import { useToast } from "@shared/ui/toast";
 import { getErrorMessage, isAlreadyReported } from "@shared/api/apiError";
 import { downloadBlob, hydrateBlobError } from "@shared/lib/download";
-import { hasPermission, P } from "@shared/lib/access";
+import { hasPermission, isTenantAdmin, P } from "@shared/lib/access";
 import RefundBookingModal from "../components/RefundBookingModal";
 import BookingInvoiceModal from "../components/BookingInvoiceModal";
 import CancelBookingModal from "../components/CancelBookingModal";
@@ -28,6 +28,8 @@ import BookingActivityTimeline from "../components/BookingActivityTimeline";
 import { quotationService } from "@features/quotation";
 import { bookingReminderService } from "@features/reminders";
 import { customerService } from "@features/customers";
+import { ConversationDrawer } from "@features/whatsapp";
+import { WhatsAppIcon } from "@shared/ui/WhatsAppIcon";
 import {
   FiArrowLeft, FiEdit2, FiTrash2, FiCheck, FiX, FiAlertCircle,
   FiPlus, FiExternalLink, FiRefreshCw, FiCreditCard, FiUser,
@@ -585,6 +587,9 @@ export default function BookingDetails() {
   const [reminders,   setReminders]   = useState([]);
   const [sendingRem,  setSendingRem]  = useState(null);
   const [customer,    setCustomer]    = useState(null);
+  /* Which channel the conversation drawer is open on, or null when closed. Only the channel is
+     held — the record is built from the booking, which already carries the customer's publicId. */
+  const [convo,       setConvo]       = useState(null);
   const [cancelSummary, setCancelSummary] = useState(null);
   const [timeline, setTimeline] = useState([]);
   const [sectionLoading, setSectionLoading] = useState(null);
@@ -1538,6 +1543,19 @@ export default function BookingDetails() {
                     <FiCheck className="w-4 h-4"/> Mark Completed
                   </button>
                 )}
+                {/* The way back out of the button directly above. Marking a booking complete is one
+                    click with no confirmation, and COMPLETED used to be a one-way door: delete
+                    refused it, cancel refused it, and the status could not be moved back — the
+                    booking was stranded. The backend now lets a tenant admin, and only a tenant
+                    admin, reopen it. canUpdate rather than canEditBooking, because that one is
+                    false for every terminal status by definition. */}
+                {canUpdate && b.status === "COMPLETED" && isTenantAdmin() && (
+                  <button onClick={()=>handleStatusChange("CONFIRMED")}
+                    title="Move this booking back to Confirmed so it can be edited, cancelled or deleted."
+                    className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 text-sm font-bold transition-all">
+                    <FiCornerUpLeft className="w-4 h-4"/> Reopen Booking
+                  </button>
+                )}
                 {canCancel && !isTerminal && (
                   <button onClick={()=>setShowCancel(true)}
                     className="w-full flex items-center justify-center gap-2 py-2 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 text-xs font-bold transition-all">
@@ -1617,16 +1635,37 @@ export default function BookingDetails() {
                 {/* Live contact detail — from the customer profile (the booking payload only
                     carries the name snapshot). */}
                 {(customer?.phone || b.customerPhone) && (
-                  <a href={`tel:${customer?.phone || b.customerPhone}`}
-                    className="flex items-center gap-2 text-xs text-teal-700 hover:text-teal-800 font-semibold">
-                    <FiPhone className="w-3.5 h-3.5"/> {customer?.phone || b.customerPhone}
-                  </a>
+                  <div className="flex items-center gap-2">
+                    {/* Calling stays a tel: link — the phone takes over and there is nothing for
+                        the CRM to record. Messaging is the opposite, so it opens the drawer. */}
+                    <a href={`tel:${customer?.phone || b.customerPhone}`}
+                      className="flex items-center gap-2 text-xs text-teal-700 hover:text-teal-800 font-semibold">
+                      <FiPhone className="w-3.5 h-3.5"/> {customer?.phone || b.customerPhone}
+                    </a>
+                    {b.customerId && (
+                      <button type="button" onClick={() => setConvo("WHATSAPP")}
+                        title="WhatsApp this customer"
+                        className="w-6 h-6 flex-shrink-0 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-600 flex items-center justify-center transition-all">
+                        <WhatsAppIcon className="w-3.5 h-3.5"/>
+                      </button>
+                    )}
+                  </div>
                 )}
                 {customer?.email && (
-                  <a href={`mailto:${customer.email}`}
-                    className="flex items-center gap-2 text-xs text-teal-700 hover:text-teal-800 font-semibold break-all">
-                    <FiMail className="w-3.5 h-3.5 flex-shrink-0"/> {customer.email}
-                  </a>
+                  /* The address opens the same drawer on its Email tab. A mailto: here would hand
+                     the message to the operator's own mail client and the CRM would never learn the
+                     customer was written to — the drawer still offers that, and records it. */
+                  b.customerId ? (
+                    <button type="button" onClick={() => setConvo("EMAIL")}
+                      className="flex items-center gap-2 text-xs text-teal-700 hover:text-teal-800 font-semibold break-all text-left">
+                      <FiMail className="w-3.5 h-3.5 flex-shrink-0"/> {customer.email}
+                    </button>
+                  ) : (
+                    <a href={`mailto:${customer.email}`}
+                      className="flex items-center gap-2 text-xs text-teal-700 hover:text-teal-800 font-semibold break-all">
+                      <FiMail className="w-3.5 h-3.5 flex-shrink-0"/> {customer.email}
+                    </a>
+                  )
                 )}
 
                 <div className="pt-2 space-y-2 border-t border-slate-100">
@@ -2738,6 +2777,22 @@ export default function BookingDetails() {
           </div>
         </div>
       </div>
+
+      {/* The same drawer the customers and leads lists open. The record is assembled from the
+          booking rather than from the `customer` fetch, because `b.customerId` IS the customer's
+          publicId and is present even when the profile call has not landed yet. */}
+      {convo && b.customerId && (
+        <ConversationDrawer
+          customer={{
+            publicId: b.customerId,
+            name:     customer?.name || b.customer,
+            phone:    customer?.phone || b.customerPhone,
+            email:    customer?.email,
+          }}
+          initialChannel={convo}
+          onClose={() => setConvo(null)}
+        />
+      )}
     </div>
   );
 }

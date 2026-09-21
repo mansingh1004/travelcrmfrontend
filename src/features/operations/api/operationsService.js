@@ -110,9 +110,39 @@ const operationsService = {
    * caller is expected to treat a 403 as "no picker", not as a broken panel. Kept small
    * (20 rows) because a Vendor loads two secondary tables per row.
    */
+  /**
+   * Suppliers for the board's assign picker.
+   *
+   * <p><b>includeAuto is on, and the master forms' picker is the one that should keep it off.</b>
+   * The backend hides system-minted self-vendors by default so an agency with 200 hotels and 3 real
+   * suppliers opens Vendors and sees 3 — right for a list somebody browses. This picker asks a
+   * different question: who do we pay for THIS line. The self-vendor minted from the very hotel
+   * being arranged is the correct answer to that, and without this flag it was the one supplier the
+   * operator could never find — every master-derived hotel, vehicle, cruise and airline was
+   * invisible here, so a line could only be assigned to a hand-built vendor.
+   */
   searchVendors: async (q) => {
     const res = await API.get("/vendors", {
-      params: { q: q || undefined, size: 20, sortBy: "vendorName", sortDir: "asc" },
+      params: { q: q || undefined, size: 20, sortBy: "vendorName", sortDir: "asc", includeAuto: true },
+    });
+    return res?.data?.data ?? [];
+  },
+
+  /**
+   * Master rows this line could be bought from — the picker's other half.
+   *
+   * <p>A hotel that has never been sold has no vendor, so it can never appear in the supplier
+   * search however it is filtered. This asks the masters directly. Picking one sends the master
+   * reference on the assign call and the server resolves or mints its supplier there; nothing is
+   * created by opening the picker or typing in it.
+   *
+   * @param type one of HOTEL | VEHICLE | CRUISE | AIRLINE; callers pass null for a line whose
+   *             kind has no master behind it, and should skip the call entirely
+   */
+  searchMasterSuppliers: async (type, q) => {
+    if (!type) return [];
+    const res = await API.get("/vendors/master-options", {
+      params: { type, q: q || undefined, limit: 20 },
     });
     return res?.data?.data ?? [];
   },
@@ -339,6 +369,29 @@ const operationsService = {
   },
 
   /**
+   * The fleet's vehicles and drivers as pickable options — {publicId, label, status}.
+   *
+   * Needed because a checkpoint sourced OWN_FLEET cannot be confirmed until it names a vehicle or a
+   * driver (OpsCheckpointTransitions.confirmBlocker), and until now nothing in the product could
+   * put one there: the API accepted fleetVehiclePublicId/fleetDriverPublicId and no screen ever
+   * sent them.
+   *
+   * Read over HTTP rather than joined server-side, and that is forced rather than chosen —
+   * FleetBoundaryArchTest forbids any CRM module depending on fleet internals, so the browser is
+   * the legal seam. Behind FLEET_READ, which an operations user may not hold: treat a 403 as "no
+   * picker", exactly as searchVendors does, never as a broken panel.
+   */
+  fleetVehicleOptions: async () => {
+    const res = await API.get("/fleet/vehicles/options");
+    return res?.data?.data ?? [];
+  },
+
+  fleetDriverOptions: async () => {
+    const res = await API.get("/fleet/drivers/options");
+    return res?.data?.data ?? [];
+  },
+
+  /**
    * One fleet trip's legs — who was on which vehicle across which half-open window.
    *
    * The trip's own vehicle and driver always point at the CURRENT leg; these rows are the only
@@ -379,6 +432,12 @@ const operationsService = {
    * on the server would be better and is worth adding, but this needs no backend change to be
    * useful today.
    *
+   * SUPERSEDED by {@link tasksForBooking}. That premise is no longer true — /tasks/list now takes
+   * bookingPublicId — and /tasks is now hard-capped server-side at 200 rows with only a WARN in the
+   * log, so on a busy week this silently returns a truncated day and the caller cannot tell. Kept
+   * because it is still correct for a genuine whole-window read and nothing in this project deletes
+   * a working method; new callers should use tasksForBooking.
+   *
    * Returns a BARE ARRAY — this endpoint answers with List<TaskResponse>, not the ApiResponse
    * envelope the rest of this file unwraps. Reading res.data.data here would silently yield
    * undefined and an empty panel.
@@ -386,6 +445,27 @@ const operationsService = {
   tasksBetween: async (fromIso, toIso) => {
     const res = await API.get("/tasks", { params: { from: fromIso, to: toIso } });
     return Array.isArray(res?.data) ? res.data : (res?.data?.data ?? []);
+  },
+
+  /**
+   * Open + closed tasks linked to ONE booking, resolved server-side.
+   *
+   * Replaces fetching a whole day and matching `t.bookingPublicId === id` in the browser. That join
+   * ran over /tasks, which is unpaged and now capped at 200: the truncation lands before the filter,
+   * so a trip with real outstanding work could render an empty panel and nothing would say why.
+   *
+   * Uses the PagedApiResponse envelope (data + pagination), NOT the bare array tasksBetween reads —
+   * /tasks/list is the enveloped route. It also applies the assignee row scope that /tasks does not,
+   * which is the stricter and correct behaviour for a per-trip panel.
+   *
+   * No date window is sent: "what is outstanding on this trip" is not a per-day question, and the
+   * caller still narrows to the day it is rendering.
+   */
+  tasksForBooking: async (bookingPublicId, size = 100) => {
+    const res = await API.get("/tasks/list", {
+      params: { tab: "ALL", bookingPublicId, size, sortBy: "dueDate", sortDir: "asc" },
+    });
+    return Array.isArray(res?.data?.data) ? res.data.data : [];
   },
 
   /**

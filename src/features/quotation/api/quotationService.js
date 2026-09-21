@@ -81,6 +81,19 @@ export function buildQuotationPayload({
   tax      = 0,
   markup   = 0,
 
+  // Comparison options — the 2–3 priced alternatives a Quick Quote comparison carries.
+  //
+  // It has to be destructured HERE to exist at all: this builder is a whitelist (see the note at the
+  // top), so an `options` array passed by a caller was silently dropped and never reached the server.
+  // Nothing else was wrong — the backend has accepted `options` since V19 — the field simply could
+  // not get out of the browser.
+  //
+  // Legacy Create Quotation never passes it, so it stays `null` there and the spread below omits the
+  // key entirely, which is exactly what that screen needs: the server reads an ABSENT `options` as
+  // "leave the comparison alone" and a PRESENT one as "replace it wholesale". Sending `options: null`
+  // instead of omitting it would mean the same thing today, but the omission is the contract.
+  options = null,
+
 } = {}) {  // ← default empty object — prevents crash if called with no args
   return {
     leadId,
@@ -100,6 +113,10 @@ export function buildQuotationPayload({
       amount   : Number(flightAmount) || 0,
       journey,
       segments : segments.map(seg => ({
+        // Which airline master was picked, when one was. Null on a hand-typed segment — the same
+        // shape hotelMasterPublicId uses above, and what lets the sold booking line resolve a
+        // supplier instead of showing a permanent red "no supplier" on the ops board.
+        airlineMasterPublicId : seg.airlineMasterPublicId || null,
         airline    : seg.airline   || "",
         flightNo   : seg.flightNo  || "",
         class      : seg.class     || "",
@@ -194,6 +211,8 @@ export function buildQuotationPayload({
       title    : cruiseTitle,
       amount   : Number(cruiseAmount) || 0,
       cruises  : cruises.map(c => ({
+        // Which cruise master was picked. Null on a hand-typed sailing, which stays supported.
+        cruiseMasterPublicId : c.cruiseMasterPublicId || null,
         name    : c.name    || "",
         type    : c.type    || "",
         depPort : c.depPort || "",
@@ -263,6 +282,16 @@ export function buildQuotationPayload({
       tax      : Number(tax)    || 0,
       markup   : Number(markup) || 0,
     },
+
+    // ── Comparison options ───────────────────────────────────
+    // Spread-conditional, not a plain `options,` line. Absent and empty mean DIFFERENT things to the
+    // server — absent leaves an existing comparison untouched, present replaces it — so a screen that
+    // knows nothing about options must emit no key at all rather than `options: null`. Legacy Create
+    // Quotation therefore produces a byte-identical payload to the one it produces today.
+    //
+    // An EMPTY array is deliberately still sent: `[]` is truthy, and "the agent removed the last
+    // option" is a real instruction that has to reach the server.
+    ...(options ? { options } : {}),
   };
 }
 

@@ -54,6 +54,7 @@ import {
   CircleUser,
   Radar,
   MessageCircle,
+  Package,
 } from "lucide-react";
 
 import {
@@ -165,7 +166,9 @@ export const NAV_SECTIONS = [
         Icon: BellRing,
         tone: "rose",
         keywords: "alerts notifications follow up due",
-        can: () => hasPermission(P.REMINDER_READ),
+        // REMINDERS as well as the permission — same rule the dashboard row above documents:
+        // ModuleAccessFilter maps /api/reminders to it, and ungated this showed four dead rows.
+        can: () => hasPermission(P.REMINDER_READ) && hasModule("REMINDERS"),
         children: [
           { id: "reminders.mine", label: "My Reminders", path: "/Reminders", alt: ["/CreateReminder"] },
           { id: "reminders.booking", label: "Booking Reminders", path: "/BookingReminders" },
@@ -226,26 +229,17 @@ export const NAV_SECTIONS = [
         label: "Quotations",
         Icon: FileText,
         tone: "emerald",
-        keywords: "quote proposal itinerary package pdf",
+        keywords: "quote proposal itinerary package pdf saved packages templates reuse",
+        // A GROUP OF ONE is a disclosure triangle that costs a click and says nothing: the rail
+        // opened a flyout holding a single row. The group carries that destination itself now.
+        //
+        // There is only one quotation destination, by design. No "Build a quotation" row, because
+        // the builder is always entered against a lead and opening it cold gives an empty builder
+        // with nothing selected. No standalone "Quick quote" either: pricing happens INSIDE the
+        // rapid lead form, which captures the enquiry and prices it in one pass. The rapid mode of
+        // CreateLead still hosts the builder — see quotation/index.js.
+        path: "/quotations/templates",
         can: () => hasPermission(P.QUOTATION_READ) && hasModule("QUOTATIONS"),
-        children: [
-          // No "Build a quotation" row: the builder is always entered against a
-          // lead, so it belongs in Quick Create (and ⌘K), not as a rail
-          // destination that would open an empty builder with nothing selected.
-          //
-          // The standalone "Quick quote" row is gone too, and for a related
-          // reason: pricing now happens INSIDE the rapid lead form, which
-          // captures the enquiry and prices it in one pass. A second entry point
-          // that opened the same accordion with no lead attached was a slower
-          // route to the same place. CreateLead's rapid mode still hosts the
-          // builder — see quotation/index.js.
-          {
-            id: "quotations.templates",
-            label: "Package templates",
-            path: "/quotations/templates",
-            keywords: "saved packages reuse",
-          },
-        ],
       },
       {
         id: "customers",
@@ -358,27 +352,28 @@ export const NAV_SECTIONS = [
         can: () => hasPermission(P.FLEET_READ) && hasModule("FLEET"),
         children: [
           { id: "fleet.dashboard", label: "Fleet dashboard", path: "/fleet" },
-          { id: "fleet.vehicles", label: "Vehicles", path: "/fleet/vehicles" },
+          { id: "fleet.vehicles", label: "My fleet", path: "/fleet/vehicles", keywords: "vehicles fleet cars diary" },
           { id: "fleet.drivers", label: "Drivers", path: "/fleet/drivers" },
           { id: "fleet.trips", label: "Trips", path: "/fleet/trips", keywords: "duty slips" },
-          // Money, not operations: a dispatcher runs the diary all day without ever
-          // seeing cost structure or who is holding the company's cash.
           {
+            // ONE row for fleet money, where there were three: Expenses, Driver Cash and Month
+            // Close. They are one job held by one key — every one of them was already gated on
+            // FLEET_MONEY_READ, so a dispatcher sees all three or none — and the three screens
+            // now carry a shared tab strip (fleet/components/FleetMoneyTabs) that moves between
+            // them in a click.
+            //
+            // Money, not operations: a dispatcher runs the diary all day without ever seeing cost
+            // structure or who is holding the company's cash.
+            //
+            // The id stays `fleet.expenses` — pins are stored by id, and this row still lands on
+            // that page. `alt` keeps it lit on the other two, which are still their own routes:
+            // each is a heavy screen with its own filters and header actions, and folding them
+            // into one component would have cost those.
             id: "fleet.expenses",
-            label: "Expenses",
+            label: "Money",
             path: "/fleet/expenses",
-            can: () => hasPermission(P.FLEET_MONEY_READ),
-          },
-          {
-            id: "fleet.settlements",
-            label: "Driver Cash",
-            path: "/fleet/settlements",
-            can: () => hasPermission(P.FLEET_MONEY_READ),
-          },
-          {
-            id: "fleet.periods",
-            label: "Month Close",
-            path: "/fleet/periods",
+            alt: ["/fleet/settlements", "/fleet/periods"],
+            keywords: "expenses driver cash settlements month close period fuel spend advance finance",
             can: () => hasPermission(P.FLEET_MONEY_READ),
           },
           {
@@ -387,22 +382,41 @@ export const NAV_SECTIONS = [
             path: "/fleet/compliance",
             keywords: "insurance permit fitness puc expiry",
           },
-          /* The supply side of the Transport Marketplace. Their own `can` rather than the group's:
-             an operator with FLEET has these only if they also hold TRANSPORT_SUPPLIER, and a plain
-             Vehicle Diary customer who never joined the marketplace must not see two dead links. */
+        ],
+      },
+      {
+        // SELLING, not running the diary. These two were children of Vehicle Diary, which put an
+        // operator's supply business inside the screen they use to dispatch their own vehicles —
+        // and the gate says as much: both are TRANSPORT_SUPPLIER_*, not FLEET_*, so a Vehicle
+        // Diary customer who never joined the marketplace was reading rows from a product they
+        // do not have. As a sibling group the two halves of the trade sit side by side: the
+        // Platform Hotels / Transport / Packages groups are what this agency BUYS, this is what
+        // it SELLS.
+        //
+        // The ids are unchanged on purpose. Pins and recents are stored by id, so renaming them
+        // to sell.* would silently empty the rail of every operator who had pinned one.
+        id: "sellOnPlatform",
+        label: "Sell on platform",
+        Icon: Store,
+        tone: "violet",
+        keywords: "supplier supply sell listings jobs orders transport operator marketplace",
+        // The group itself needs no key beyond the module: each child carries the narrower one,
+        // and resolveSections drops a group whose children are all gated away.
+        can: () => hasModule("TRANSPORT_SUPPLIER"),
+        children: [
           {
             id: "fleet.platformJobs",
             label: "Platform Jobs",
             path: "/fleet/platform-jobs",
             can: () => hasPermission(P.TRANSPORT_SUPPLIER_ORDER_MANAGE) && hasModule("TRANSPORT_SUPPLIER"),
-            keywords: "marketplace orders assign driver duty slip platform",
+            keywords: "marketplace orders assign driver duty slip platform fleet",
           },
           {
             id: "fleet.platformListings",
             label: "My Platform Listings",
             path: "/fleet/platform-listings",
             can: () => hasPermission(P.TRANSPORT_SUPPLIER_LISTING_MANAGE) && hasModule("TRANSPORT_SUPPLIER"),
-            keywords: "marketplace listing publish supply catalog",
+            keywords: "marketplace listing publish supply catalog fleet",
           },
         ],
       },
@@ -461,6 +475,53 @@ export const NAV_SECTIONS = [
           },
         ],
       },
+      {
+        id: "packageMarketplace",
+        label: "Platform Packages",
+        Icon: Package,
+        tone: "violet",
+        keywords: "packages tours itineraries fixed departure quick packages ready to book",
+        // ONE key for both halves. Unlike hotel and transport, this catalog is two-sided: the same
+        // agency browses packages and authors its own, which is one screen and one purchase to
+        // them. Buying vs authoring is a PERMISSION split (VIEW/QUOTE vs AUTHOR), not an
+        // entitlement one — so the group shows on VIEW and the authoring child gates itself.
+        can: () => hasPermission(P.PACKAGE_MARKETPLACE_VIEW) && hasModule("PACKAGE_MARKETPLACE"),
+        children: [
+          {
+            id: "packageMarketplace.browse",
+            label: "Browse packages",
+            path: "/marketplace/packages",
+            keywords: "search packages itineraries quote destinations",
+          },
+          {
+            id: "packageMarketplace.mine",
+            label: "My packages",
+            path: "/marketplace/packages/mine",
+            keywords: "my packages author create rates availability list for sale",
+            can: () => hasPermission(P.PACKAGE_MARKETPLACE_AUTHOR),
+          },
+          {
+            // Both directions live behind one item, matching the screen: the agency that asks for a
+            // custom price on Monday answers one on Tuesday, and two menu items would make the one
+            // you are not looking at the one with something waiting in it.
+            id: "packageMarketplace.requests",
+            label: "Custom requests",
+            path: "/marketplace/packages/requests",
+            keywords: "mix match custom package request price estimate build your own",
+          },
+          {
+            // The links this agency has already sent. Without an entry here the link only ever
+            // appears once, in the dialog that made it — and "did they open it?" has nowhere to be
+            // asked. Gated on VIEW like the browse screen, not on QUOTE: an agent who may see the
+            // catalog should see what their colleagues have already quoted, which is how a
+            // duplicate quotation gets avoided.
+            id: "packageMarketplace.quotes",
+            label: "Quotation links",
+            path: "/marketplace/packages/quotes",
+            keywords: "quotation link weblink share package quote sent customer page comparison",
+          },
+        ],
+      },
     ],
   },
 
@@ -512,7 +573,7 @@ export const NAV_SECTIONS = [
           "/InternationalDomestic",
         ],
         keywords:
-          "analytics insights performance activity geographic distribution follow-up booking revenue travel dates international domestic",
+          "analytics insights performance activity request logs api errors latency trace geographic distribution follow-up booking revenue travel dates international domestic",
         can: () => hasPermission(P.REPORT_VIEW) && hasModule("REPORTS"),
       },
     ],
@@ -597,7 +658,7 @@ export const NAV_SECTIONS = [
           { id: "masters.hotels", label: "Hotels", path: "/masters/hotels", keywords: "rooms meal plans" },
           { id: "masters.airlines", label: "Airlines", path: "/masters/airlines", keywords: "flights" },
           { id: "masters.cruises", label: "Cruises", path: "/masters/cruises", keywords: "ships cabins" },
-          { id: "masters.vehicles", label: "Vehicles", path: "/masters/vehicles", keywords: "cars coaches" },
+          { id: "masters.vehicles", label: "Vehicle types", path: "/masters/vehicles", keywords: "vehicles cars coaches master quotation" },
           { id: "masters.sightseeing", label: "Sightseeing", path: "/masters/sightseeing", keywords: "attractions activities" },
           { id: "masters.addons", label: "Add-on services", path: "/masters/add-on-services" },
           { id: "masters.testimonials", label: "Testimonials", path: "/masters/testimonials", keywords: "reviews" },
@@ -645,7 +706,9 @@ export const NAV_SECTIONS = [
         Icon: Network,
         tone: "indigo",
         keywords: "sub agents franchise b2b commission",
-        can: () => isTenantAdmin(),
+        // SUBAGENT as well as the role: ModuleAccessFilter gates /api/subagents on it, so without
+        // this every tenant admin saw two rows their plan cannot open.
+        can: () => isTenantAdmin() && hasModule("SUBAGENT"),
         children: [
           { id: "subagents.manage", label: "Manage partners", path: "/subagents" },
           {
@@ -661,7 +724,9 @@ export const NAV_SECTIONS = [
         Icon: Settings,
         tone: "slate",
         keywords: "company preferences configuration branding",
-        can: () => hasPermission(P.SETTINGS_MANAGE),
+        // The GROUP is gated on SETTINGS_MANAGE, but the scoring child carries its own key below —
+        // can() on a child is what lets one row in the group be more tightly held than the rest.
+        can: () => hasPermission(P.SETTINGS_MANAGE) || hasPermission(P.LEAD_SCORING_CONFIGURE),
         children: [
           { id: "settings.company", label: "Company settings", path: "/CompanySettings" },
           {
@@ -675,6 +740,16 @@ export const NAV_SECTIONS = [
             label: "WhatsApp configuration",
             path: "/WhatsAppConfiguration",
             keywords: "interakt templates",
+            // Its own gate, narrower than the group: ModuleAccessFilter puts /api/settings/whatsapp
+            // behind the WHATSAPP add-on, so a tenant without it saw a settings page it cannot save.
+            can: () => hasPermission(P.SETTINGS_MANAGE) && hasModule("WHATSAPP"),
+          },
+          {
+            id: "settings.scoring",
+            label: "Lead temperature rules",
+            path: "/LeadScoringRules",
+            keywords: "hot warm cold scoring temperature rules engine priority",
+            can: () => hasPermission(P.LEAD_SCORING_CONFIGURE),
           },
         ],
       },
@@ -685,7 +760,9 @@ export const NAV_SECTIONS = [
         Icon: Plug,
         tone: "emerald",
         keywords: "lead sources webhook facebook google ads justdial api",
-        can: () => hasPermission(P.SETTINGS_MANAGE),
+        // LEADS as well as the permission: ModuleAccessFilter maps /api/lead-sources to LEADS, so
+        // on a fleet-only tenant this row opened a lead screen whose every call 403s.
+        can: () => hasPermission(P.SETTINGS_MANAGE) && hasModule("LEADS"),
       },
       {
         id: "trash",

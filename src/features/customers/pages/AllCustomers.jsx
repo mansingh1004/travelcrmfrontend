@@ -6,7 +6,7 @@
 // import { GridStyles, GridHead, GridRow, Cell, Avatar, GridSkeleton, GridEmpty } from "@shared/ui/gridTable";
 
 // // Leads-directory grid columns (Customer, Contact, City, Type, Loyalty, Bookings, Spent, Status, Actions)
-// const CUST_COLS = "1.7fr 1.3fr 0.8fr 0.7fr 0.95fr 0.6fr 1fr 0.85fr 150px";
+// const CUST_COLS = "1.7fr 1.3fr 0.8fr 0.7fr 0.95fr 0.6fr 1fr 0.85fr 184px";
 
 
 // /* ─── BOOKING HISTORY MOCK (keep until backend booking history API ready) ── */
@@ -1483,14 +1483,14 @@ export default function Customers() {
                       <div className="flex items-center justify-end gap-1.5 opacity-70 group-hover:opacity-100 transition-opacity">
                         {/* Opens the full profile. This used to open a modal instead, which left
                             /CustomerDetails/:id with no entry point from its own list. */}
-                        <button onClick={() => handleNavigateView(c.id)} title="View profile" className="w-8 h-8 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 flex items-center justify-center transition-all text-sm"><FaEye/></button>
-                        {canEditCustomer && <button onClick={() => handleNavigateEdit(c.id)} title="Edit" className="w-8 h-8 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-600 flex items-center justify-center transition-all text-sm"><FaEdit/></button>}
+                        <button onClick={() => handleNavigateView(c.id)} title="View profile" className="w-7 h-7 flex-shrink-0 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-600 flex items-center justify-center transition-all"><FaEye className="w-3.5 h-3.5"/></button>
+                        {canEditCustomer && <button onClick={() => handleNavigateEdit(c.id)} title="Edit" className="w-7 h-7 flex-shrink-0 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-600 flex items-center justify-center transition-all"><FaEdit className="w-3.5 h-3.5"/></button>}
                         {/* Opens the conversation drawer, not wa.me. A deep link hands the message to
                             the operator's phone and the CRM never learns the customer was contacted —
                             the drawer still offers that as one of its send modes, and records it. */}
-                        {canMessage && <button onClick={() => setConvo({ customer: c, channel: "WHATSAPP" })} title="WhatsApp" className="w-8 h-8 rounded-lg bg-green-50 hover:bg-green-100 text-green-600 flex items-center justify-center transition-all text-sm"><FaWhatsapp/></button>}
-                        {canMessage && c.email && <button onClick={() => setConvo({ customer: c, channel: "EMAIL" })} title={`Email ${c.email}`} className="w-8 h-8 rounded-lg bg-sky-50 hover:bg-sky-100 text-sky-600 flex items-center justify-center transition-all text-sm"><FaEnvelope/></button>}
-                        {canDeleteCustomer && <button onClick={() => setDelTarget(c)} title="Delete" className="w-8 h-8 rounded-lg bg-red-50 hover:bg-red-100 text-red-400 hover:text-red-600 flex items-center justify-center transition-all text-sm"><FaTrash/></button>}
+                        {canMessage && <button onClick={() => setConvo({ customer: c, channel: "WHATSAPP" })} title="WhatsApp" className="w-7 h-7 flex-shrink-0 rounded-lg bg-green-50 hover:bg-green-100 text-green-600 flex items-center justify-center transition-all"><FaWhatsapp className="w-3.5 h-3.5"/></button>}
+                        {canMessage && c.email && <button onClick={() => setConvo({ customer: c, channel: "EMAIL" })} title={`Email ${c.email}`} className="w-7 h-7 flex-shrink-0 rounded-lg bg-sky-50 hover:bg-sky-100 text-sky-600 flex items-center justify-center transition-all"><FaEnvelope className="w-3.5 h-3.5"/></button>}
+                        {canDeleteCustomer && <button onClick={() => setDelTarget(c)} title="Delete" className="w-7 h-7 flex-shrink-0 rounded-lg bg-red-50 hover:bg-red-100 text-red-400 hover:text-red-600 flex items-center justify-center transition-all"><FaTrash className="w-3.5 h-3.5"/></button>}
                       </div>
                     </Cell>
                   </GridRow>
@@ -1577,10 +1577,24 @@ export default function Customers() {
                           <FaEdit className="w-[18px] h-[18px]"/>
                         </button>
                       )}
-                      <a href={`https://wa.me/${(c.phone || "").replace(/\D/g, "")}`} target="_blank" rel="noreferrer"
-                        className="h-10 rounded-xl bg-green-50 hover:bg-green-100 text-green-600 border border-green-100 flex items-center justify-center transition-all">
-                        <FaWhatsapp className="w-[18px] h-[18px]"/>
-                      </a>
+                      {/* Same drawer the desktop row opens. This was a bare wa.me link, so the
+                          identical action behaved differently depending on screen width: on a
+                          phone it handed the message to the operator's own WhatsApp and the CRM
+                          never learned the customer had been contacted. */}
+                      {canMessage && (
+                        <button type="button" onClick={() => setConvo({ customer: c, channel: "WHATSAPP" })}
+                          title="WhatsApp"
+                          className="h-10 rounded-xl bg-green-50 hover:bg-green-100 text-green-600 border border-green-100 flex items-center justify-center transition-all">
+                          <FaWhatsapp className="w-[18px] h-[18px]"/>
+                        </button>
+                      )}
+                      {canMessage && c.email && (
+                        <button type="button" onClick={() => setConvo({ customer: c, channel: "EMAIL" })}
+                          title={`Email ${c.email}`}
+                          className="h-10 rounded-xl bg-sky-50 hover:bg-sky-100 text-sky-600 border border-sky-100 flex items-center justify-center transition-all">
+                          <FaEnvelope className="w-[18px] h-[18px]"/>
+                        </button>
+                      )}
                       {canDeleteCustomer && (
                         <button onClick={() => setDelTarget(c)} className="h-10 rounded-xl bg-red-50 hover:bg-red-100 text-red-500 border border-red-100 flex items-center justify-center transition-all">
                           <FaTrash className="w-[18px] h-[18px]"/>

@@ -44,7 +44,7 @@ import { leadService, SearchableSelect } from "@features/leads";
 import { vendorService } from "@features/vendors";
 import { geographyService } from "@shared/api/geographyService";
 import { getErrorMessage, getFieldErrors, isAlreadyReported } from "@shared/api/apiError";
-import { buildAdultPayload, deriveAdultBreakdown, getAdultBreakdownError } from "@shared/lib/adultBreakdown";
+import { buildAdultPayload, deriveAdultBreakdown, getAdultBreakdownError, toAdultCount } from "@shared/lib/adultBreakdown";
 import { useIdempotencyKey } from "@shared/lib/idempotency";
 import { useToast } from "@shared/ui/toast";
 
@@ -1398,6 +1398,35 @@ extraBeds:
     setField("female", checked ? String(Number(form.female) || 0) : null);
   };
 
+  /* Adult Male / Adult Female ARE the editors for the adult count. Once the breakdown is open the
+     "Total Travellers" tile above them goes read-only and reads form.totalAdults — so writing only
+     the gender key left the total at whatever it was before. The tile said 2 over a breakdown
+     adding up to 1333, and the reconciliation error could never be cleared from the UI, because
+     nothing on screen edited the number it was comparing against. CreateLead's setAdultCount has
+     always done this; the booking form was passing the bare setField instead.
+
+     Both keys go in ONE setForm because the total needs the OTHER gender's current value, and it
+     has to come from the same snapshot the total is written into. */
+  const setAdultCount = useCallback((name, value) => {
+    if (name !== "male" && name !== "female") {
+      setField(name, value);
+      return;
+    }
+    const other = name === "male" ? "female" : "male";
+    setForm((current) => ({
+      ...current,
+      [name]: value,
+      totalAdults: String(toAdultCount(value) + toAdultCount(current[other])),
+    }));
+    // The breakdown error is keyed on totalAdults (see the validator map below), not on male/female.
+    setErrors((current) => {
+      if (!current.totalAdults) return current;
+      const next = { ...current };
+      delete next.totalAdults;
+      return next;
+    });
+  }, [setField]);
+
   /* No traveller badge came across with the block. Travel Details needed one because travellers
      were buried among six other bands; here the block leads with its own "Total Travellers" tile,
      so a pill in the panel header would be the same number twice — and that header slot is already
@@ -1766,17 +1795,15 @@ extraBeds:
     customerName: (f, mode) => (!editing && mode === "new" && !String(f.customerName || "").trim() ? "Customer name is required" : ""),
     customerEmail: (f) => (!editing && f.customerEmail && !emailPattern.test(f.customerEmail) ? "Enter a valid email" : ""),
     destination: (f) => (!String(f.destination || "").trim() ? "Destination is required" : ""),
-    /* "Not in the past" is a rule about SCHEDULING a trip, so it applies to the date the clerk
-       picks — not to the one the form loaded. A booking spends most of its life with its travel date
-       behind it (mid-trip, or travelled and awaiting settlement), and because the edit form
-       round-trips every field, this rule used to make a booking permanently uneditable the day the
-       trip started: no amount correction, no assignee change, no services. The backend's matching
-       @FutureOrPresent has been dropped from UpdateBookingRequestDTO for the same reason. */
-    travelDate: (f) => {
-      if (!f.travelDate) return "Travel date is required";
-      if (editing && f.travelDate === loadedRef.current.travelDate) return "";
-      return f.travelDate < today() ? "Travel date cannot be in the past" : "";
-    },
+    /* Travel date is REQUIRED but may be in the past.
+       The old rule read "you cannot schedule a trip into the past", which is true of scheduling and
+       false of recording: bookings are routinely keyed in after the trip started or finished — a
+       phone booking entered days later, a spreadsheet backlog being migrated, a walk-in settled once
+       the party is back. Refusing those dates did not prevent a mistake, it made the correct record
+       impossible to enter and pushed the work into fixing a wrong date afterwards. It also made an
+       edited booking uneditable the day its trip began. Both @FutureOrPresent constraints on the
+       backend (CreateBookingRequestDTO, LeadConversionRequestDTO) were dropped to match. */
+    travelDate: (f) => (!f.travelDate ? "Travel date is required" : ""),
     customerAmount: (f) => (!(Number(f.customerAmount) > 0) ? "Amount must be greater than 0" : ""),
     // Vendor cost is now REQUIRED ONLY WHEN A VENDOR IS CHOSEN, mirroring the relaxed backend
     // contract (optional, inclusive @DecimalMin(0)). Naming a supplier and then leaving the amount
@@ -2655,7 +2682,7 @@ extraBeds:
               </div>
               <TravellerCountFields
                 values={form}
-                onCountChange={setField}
+                onCountChange={setAdultCount}
                 onToggleBreakdown={toggleAdultBreakdown}
                 theme="teal"
                 showRooms={false}
@@ -3398,6 +3425,11 @@ extraBeds:
               <div>
                 <label className="mb-1.5 block text-xs font-semibold text-slate-600">Passengers</label>
                 {/*   totalTravellers is derived from `form`, so the cap
+
+                {/* Capped at the  totalTravellers is derived from `form`, so the cap
+                    holds regardless of which card the counters themselves live in. */}
+
+                {/*   tellers is derived from `form`, so the cap
                     of which card the counters themselves live in. */}
                 <input type="number" min="1" max={Math.max(totalTravellers, 1)} value={form.assistancePassengerCount} onFocus={(event) => event.target.select()} onChange={(event) => setField("assistancePassengerCount", event.target.value)} className={controlClass("assistancePassengerCount")} />
               </div>

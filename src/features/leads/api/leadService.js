@@ -233,7 +233,7 @@ function transformFormData(formData, services = [], itinerary = []) {
     customerCountry: formData.customerCountry?.trim() || null,
     /* WhatsApp. `whatsappSame` is a UI latch, not data — while it is ticked the number IS the
        phone, so that is what gets sent rather than a flag the server would have to interpret. */
-    whatsappNumber: (formData.whatsappSame ? formData.phone : formData.whatsappNumber)?.trim() || null,
+    customerWhatsapp: (formData.whatsappSame ? formData.phone : formData.whatsappNumber)?.trim() || null,
     /* What the trip NEEDS — the same shapes the booking form already sends, so a requirement
        written on the lead survives conversion unchanged. Half-filled rows are dropped: a row
        somebody opened and abandoned is not a requirement. */
@@ -245,7 +245,13 @@ function transformFormData(formData, services = [], itinerary = []) {
 )
       .map((row) => ({
         vehicleType: row.vehicleType || null,
-        vehicleId:  toMasterId(row.vehicleId),
+        /* The Vehicle Master publicId (a UUID), passed straight through.
+           This used to run through toMasterId, which coerces anything non-numeric to null. That
+           was right when the backend column was a bigint; it has not been right since the vehicle
+           master started exposing only publicId, and the effect was silent — every vehicle a clerk
+           picked was dropped on save with no error, so the lead looked like it stored one.
+           destinationId/cityId above are still real Longs and still need toMasterId. */
+        vehicleId:   row.vehicleId   || null,
         model:       row.model       || null,
         capacity:    row.capacity === "" || row.capacity == null ? null : Number(row.capacity),
         quantity:    Number(row.quantity) || 1,
@@ -316,6 +322,10 @@ function transformFormData(formData, services = [], itinerary = []) {
     budget:         formData.budget != null && formData.budget !== ""
                       ? Number(formData.budget)
                       : null,
+    budgetBasis:    formData.budgetBasis || "TOTAL",
+    childAges:      (Array.isArray(formData.childAges) ? formData.childAges : [])
+                      .map((age) => age === "" || age == null ? null : Number(age))
+                      .filter(Number.isFinite),
     notes:          formData.notes?.trim()          || "",
     roomAllocations: Array.isArray(formData.roomAllocations) ? formData.roomAllocations.map((room, index) => ({
       roomNumber: index + 1,
@@ -382,7 +392,25 @@ export const leadService = {
   updateLead: (publicId, formData, services, itinerary) =>
     API.put(`/leads/${publicId}`, transformFormData(formData, services, itinerary)),
 
+  // ── TEMPERATURE (Hot / Warm / Cold) ───────────────────────
+  //
+  // A dedicated PATCH, deliberately NOT the full-entity PUT above. Three reasons:
+  //   1. transformFormData WHITELISTS fields, so provenance (who pinned it, when, why) would be
+  //      silently dropped on the way out;
+  //   2. sending the whole lead to change one pill re-submits every other field from whatever the
+  //      client last rendered — which is exactly how a stale form value used to overwrite the
+  //      temperature on an unrelated save;
+  //   3. it carries its own permission (LEAD_TEMPERATURE_OVERRIDE), which a blanket PUT cannot express.
+  //
+  // Same shape as PATCH /leads/{publicId}/stage, the other single-field lead mutation.
 
+  /** Pin a lead's temperature over the rules. `temperature` is the wire value: 'Hot' | 'Warm' | 'Cold'. */
+  overrideTemperature: (publicId, temperature, reason = null) =>
+    API.patch(`/leads/${publicId}/temperature`, { temperature, reason }),
+
+  /** Clear the pin and fall back to whatever the scoring rules say. */
+  revertTemperature: (publicId) =>
+    API.delete(`/leads/${publicId}/temperature`),
 
   // ── DELETE ────────────────────────────────────────────────
 

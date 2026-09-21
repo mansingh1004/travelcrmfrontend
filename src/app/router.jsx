@@ -82,8 +82,8 @@ const EditUser = lazyPage(profile, "EditUser");
 const UserPermissions = lazyPage(profile, "UserPermissions");
 const PermissionTemplates = lazyPage(profile, "PermissionTemplates");
 const CreatePermissionTemplate = lazyPage(profile, "CreatePermissionTemplate");
-const CompanyProfile = lazyPage(profile, "CompanyProfile");
 const ChangePassword = lazyPage(profile, "ChangePassword");
+const CompanyProfile = lazyPage(profile, "CompanyProfile");
 
 const reports = () => import("@features/reports");
 const ReportsDashboard = lazyPage(reports, "ReportsDashboard");
@@ -99,6 +99,7 @@ const CompanySettings = lazyPage(settings, "CompanySettings");
 const EmailConfiguration = lazyPage(settings, "EmailConfiguration");
 const WhatsAppConfiguration = lazyPage(settings, "WhatsAppConfiguration");
 const LeadSources = lazyPage(settings, "LeadSources");
+const LeadScoringRules = lazyPage(settings, "LeadScoringRules");
 
 const SubscriptionInfo = lazyPage(() => import("@features/subscription"), "SubscriptionInfo");
 const Dashboard = lazyPage(() => import("@features/dashboard"), "Dashboard");
@@ -107,7 +108,6 @@ const Calendar = lazyPage(() => import("@features/calendar"), "Calendar");
 const AllTasks = lazyPage(() => import("@features/calendar"), "AllTasks");
 const Operations = lazyPage(() => import("@features/operations"), "Operations");
 const OperationsDetail = lazyPage(() => import("@features/operations"), "OperationsDetail");
-
 // ── Platform SuperAdmin Console — SEPARATE realm (own token "sa_token", violet/dark theme) ──
 const consoleFeature = () => import("@/console");
 const ConsoleLogin = lazyPage(consoleFeature, "ConsoleLogin");
@@ -128,26 +128,32 @@ const ConsoleGlobalConfig = lazyPage(consoleFeature, "ConsoleGlobalConfig");
 const ConsolePlatformEmail = lazyPage(consoleFeature, "ConsolePlatformEmail");
 const ConsolePlatformHealth = lazyPage(consoleFeature, "ConsolePlatformHealth");
 const ConsoleAuditLog = lazyPage(consoleFeature, "ConsoleAuditLog");
+const ConsoleRequestLogs = lazyPage(consoleFeature, "ConsoleRequestLogs");
+const ConsoleTenantActivity = lazyPage(consoleFeature, "ConsoleTenantActivity");
 const ConsoleAnnouncements = lazyPage(consoleFeature, "ConsoleAnnouncements");
 const ConsoleOps = lazyPage(consoleFeature, "ConsoleOps");
 const ConsoleSuperAdmins = lazyPage(consoleFeature, "ConsoleSuperAdmins");
 const ConsolePlatformHotels = lazyPage(consoleFeature, "ConsolePlatformHotels");
+const ConsolePlatformPackages = lazyPage(consoleFeature, "ConsolePlatformPackages");
+const ConsolePlatformPackageEditor = lazyPage(consoleFeature, "ConsolePlatformPackageEditor");
+const ConsolePlatformPackageDetail = lazyPage(consoleFeature, "ConsolePlatformPackageDetail");
+const ConsolePlatformPackageMix = lazyPage(consoleFeature, "ConsolePlatformPackageMix");
 const ConsoleHotelPartners = lazyPage(consoleFeature, "ConsoleHotelPartners");
 const ConsoleHotelPartnerReview = lazyPage(consoleFeature, "ConsoleHotelPartnerReview");
-const ConsoleHotelNominations = lazyPage(consoleFeature, "ConsoleHotelNominations");
 const ConsoleHotelMarketplace360 = lazyPage(consoleFeature, "ConsoleHotelMarketplace360");
 const ConsolePlatformHotelEditor = lazyPage(consoleFeature, "ConsolePlatformHotelEditor");
 const ConsoleMarketplaceBookings = lazyPage(consoleFeature, "ConsoleMarketplaceBookings");
 const ConsoleTransportRequests = lazyPage(consoleFeature, "ConsoleTransportRequests");
 const ConsolePlatformVehicles = lazyPage(consoleFeature, "ConsolePlatformVehicles");
 const ConsolePlatformVehicleEditor = lazyPage(consoleFeature, "ConsolePlatformVehicleEditor");
+const ConsolePlatformVehicleDetail = lazyPage(consoleFeature, "ConsolePlatformVehicleDetail");
 const ConsoleTransportCommissions = lazyPage(consoleFeature, "ConsoleTransportCommissions");
 const ConsoleTransportPartners = lazyPage(consoleFeature, "ConsoleTransportPartners");
 const ConsoleTransportPartnerReview = lazyPage(consoleFeature, "ConsoleTransportPartnerReview");
-const ConsoleTransportPricing = lazyPage(consoleFeature, "ConsoleTransportPricing");
 const ConsoleMarketplaceCommissions = lazyPage(consoleFeature, "ConsoleMarketplaceCommissions");
-const ConsoleMarketplaceOccupancy = lazyPage(consoleFeature, "ConsoleMarketplaceOccupancy");
-const ConsoleCommercialRules = lazyPage(consoleFeature, "ConsoleCommercialRules");
+// CommercialRules and TransportPricing are no longer routed: they are SECTIONS of PricingRules,
+// which imports them directly. Their page files and barrel exports are untouched.
+const ConsolePricingRules = lazyPage(consoleFeature, "ConsolePricingRules");
 const ConsoleMarketplaceCredit = lazyPage(consoleFeature, "ConsoleMarketplaceCredit");
 
 const hotelPartner = () => import("@features/hotelpartner");
@@ -220,6 +226,17 @@ const MarketplaceBookingDetail = lazyPage(marketplace, "MarketplaceBookingDetail
 const TransportSearch = lazyPage(marketplace, "TransportSearch");
 const TransportRequest = lazyPage(marketplace, "TransportRequest");
 const TransportOrders = lazyPage(marketplace, "TransportOrders");
+// Packages — the same feature thunk, so the whole marketplace stays one chunk.
+const PackageSearch = lazyPage(marketplace, "PackageSearch");
+const PackageDetail = lazyPage(marketplace, "PackageDetail");
+const MyPackages = lazyPage(marketplace, "MyPackages");
+const PackageEditor = lazyPage(marketplace, "PackageEditor");
+const MixRequests = lazyPage(marketplace, "MixRequests");
+const MixRequestDetail = lazyPage(marketplace, "MixRequestDetail");
+const PublicPackageSubmitStart = lazyPage(marketplace, "PublicPackageSubmitStart");
+const PublicPackageSubmit = lazyPage(marketplace, "PublicPackageSubmit");
+const PackageQuotes = lazyPage(marketplace, "PackageQuotes");
+const PackageQuoteWebView = lazyPage(marketplace, "PackageQuoteWebView");
 
 // Tenant-side work queue for this tenant's PLATFORM HOTEL requests. Kept separate from the
 // cross-service Operations board and from the SuperAdmin console realm.
@@ -267,6 +284,24 @@ const AppRouter = () => {
             {/* Public quotation web view (no auth) — shareable /q/{publicId} link */}
             <Route path="/q/:publicId" element={<PublicQuotationPage />} />
 
+            {/* Public PACKAGE quotation page (no auth) — /pq/{publicId}.
+                A different document from /q/ above, not a variant of it: that one renders a CRM
+                quotation's six priced sections, this renders a catalog package as it actually is —
+                gallery, day plan with photographs, hotels per stop, the rate card, and every tier
+                side by side. Deliberately outside Layout: the reader is a customer, not a user. */}
+            <Route path="/pq/:publicId" element={<PackageQuoteWebView />} />
+
+            {/* ── Public package submission — NO realm at all ───────────────────
+            Anybody with the URL can build a package and hand it to the platform.
+            Unlike the two partner links below it needs no invite: /submit-package
+            mints its own token, and the token in the path IS the whole credential.
+            Deliberately outside Layout — no sidebar, no navbar, nothing implying
+            the visitor has an account, because they do not.
+            Everything submitted lands as a DRAFT platform package, invisible to
+            every tenant until a SuperAdmin publishes it. */}
+            <Route path="/submit-package" element={<PublicPackageSubmitStart />} />
+            <Route path="/submit-package/:token" element={<PublicPackageSubmit />} />
+
             {/* ── Hotel Partner self-registration — SEPARATE realm, no login ────
             A hotel owner opens an emailed link; the token in the path IS the
             credential and is re-verified server-side on every call. Must stay a
@@ -280,6 +315,10 @@ const AppRouter = () => {
             exactly the same reason: nested under "/" it would render <Layout/>,
             which bounces an unauthenticated operator to /login before they ever
             see the form. The token in the path IS the credential. */}
+            {/* The permanent public link — no invite, no token. The page mints a
+                session and replaces the URL with the :token form below, so both
+                routes render the same component and only the entry differs. */}
+            <Route path="/transport-partner/register" element={<TransportPartnerRegister />} />
             <Route path="/transport-partner/register/:token" element={<TransportPartnerRegister />} />
 
             {/* ── Customer-facing Traveler Portal — SEPARATE realm ──────────────
@@ -317,6 +356,8 @@ const AppRouter = () => {
               <Route path="platform-email" element={<ConsolePlatformEmail />} />
               <Route path="platform-health" element={<ConsolePlatformHealth />} />
               <Route path="audit" element={<ConsoleAuditLog />} />
+              <Route path="request-logs" element={<ConsoleRequestLogs />} />
+              <Route path="tenant-activity" element={<ConsoleTenantActivity />} />
               <Route path="announcements" element={<ConsoleAnnouncements />} />
               <Route path="ops" element={<ConsoleOps />} />
               <Route path="superadmins" element={<ConsoleSuperAdmins />} />
@@ -328,8 +369,19 @@ const AppRouter = () => {
                   payload. A route also makes the review shareable and openable in a second tab,
                   which is what comparing against a duplicate actually needs. */}
               <Route path="hotel-partners/:publicId" element={<ConsoleHotelPartnerReview />} />
-              <Route path="hotel-nominations" element={<ConsoleHotelNominations />} />
+              {/* Nominations is a view of Hotel partners now — it is the step BEFORE an invite,
+                  and the two queues are one funnel. Kept as a redirect because the path has been
+                  linked from the action inbox and from operator bookmarks. */}
+              <Route path="hotel-nominations" element={<Navigate to="/console/hotel-partners?view=nominations" replace />} />
               <Route path="hotel-catalog" element={<ConsolePlatformHotels />} />
+              <Route path="package-catalog" element={<ConsolePlatformPackages />} />
+              {/* Declared before the id routes so "mix" is never read as a package id. */}
+              <Route path="package-catalog/mix" element={<ConsolePlatformPackageMix />} />
+              {/* `new` is declared before `:publicId` so it is never swallowed as an id. */}
+              <Route path="package-catalog/new" element={<ConsolePlatformPackageEditor />} />
+              <Route path="package-catalog/:publicId/edit" element={<ConsolePlatformPackageEditor />} />
+              {/* Declared after `new` and after `/edit` so neither is read as an id. */}
+              <Route path="package-catalog/:publicId" element={<ConsolePlatformPackageDetail />} />
               {/* new BEFORE :publicId, or "new" is read as an id and the editor never renders. */}
               <Route path="hotel-catalog/new" element={<ConsolePlatformHotelEditor />} />
               <Route path="hotel-catalog/:publicId/edit" element={<ConsolePlatformHotelEditor />} />
@@ -344,31 +396,41 @@ const AppRouter = () => {
               {/* new BEFORE :publicId, or "new" is read as an id and the editor never renders. */}
               <Route path="transport-catalog/new" element={<ConsolePlatformVehicleEditor />} />
               <Route path="transport-catalog/:publicId/edit" element={<ConsolePlatformVehicleEditor />} />
+              {/* The read view, and what a row in the catalog now opens. Editing is a decision taken
+              FROM here rather than the page you land on — same shape as the hotel pair above. */}
+              <Route path="transport-catalog/:publicId" element={<ConsolePlatformVehicleDetail />} />
               {/* Where the catalog above comes FROM: invite an operator, read what they submitted,
               publish their fleet. The invite list and the review are two routes for the same reason
               the hotel pair are — a submission carries a whole fleet, and each vehicle carries its
               own photos, amenities and a rate card per service type. */}
               <Route path="transport-partners" element={<ConsoleTransportPartners />} />
               <Route path="transport-partners/:publicId" element={<ConsoleTransportPartnerReview />} />
-              {/*
-                ⚠ The platform's margin structure over the vehicle catalog. SuperAdmin realm only,
-                same as hotel-pricing — and a separate screen from it, because a transport rule is
-                keyed by vehicle AND service type and is applied to a rate model (per km, per day,
-                per transfer) that no hotel rule has a field for.
-              */}
-              <Route path="transport-pricing" element={<ConsoleTransportPricing />} />
+                {/*
+                  ⚠ The platform's margin structure over the vehicle catalog. It is a SECTION of
+                  /console/pricing now, not its own screen — the three supply lines answer one
+                  question. The rules themselves stay separate: a transport rule is keyed by
+                  vehicle AND service type, against a rate model (per km, per day, per transfer)
+                  that no hotel rule has a field for. Redirect kept — the path is bookmarked.
+                */}
+              <Route path="transport-pricing" element={<Navigate to="/console/pricing?section=transport" replace />} />
               <Route path="transport-earnings" element={<ConsoleTransportCommissions />} />
               {/*
                 What the platform has SOLD, night by night — not what is available. There is no
                 allotment to report on; this is the exposure the operator already carries.
               */}
-              <Route path="hotel-occupancy" element={<ConsoleMarketplaceOccupancy />} />
+              {/* The stay calendar is a view of Hotel requests now — it is what an operator reads
+                  WHILE deciding one. Kept as a redirect: the path is bookmarked. */}
+              <Route path="hotel-occupancy" element={<Navigate to="/console/hotel-requests?view=calendar" replace />} />
               {/*
                 ⚠ The platform's margin structure, and its tenant credit ledger. SuperAdmin realm
                 only — a tenant who could read a commercial rule could compute the platform's cut on
                 every booking against that hotel.
               */}
-              <Route path="hotel-pricing" element={<ConsoleCommercialRules />} />
+              {/* One Pricing rules screen with a section per supply line. Both old paths redirect
+                  into their own section rather than onto whichever happens to be first — they are
+                  linked from operator bookmarks and from the catalog screens. */}
+              <Route path="pricing" element={<ConsolePricingRules />} />
+              <Route path="hotel-pricing" element={<Navigate to="/console/pricing?section=hotel" replace />} />
               <Route path="hotel-credit" element={<ConsoleMarketplaceCredit />} />
               {/* The platform earning ledger — append-only, and SuperAdmin-only by construction. */}
               <Route path="hotel-commissions" element={<ConsoleMarketplaceCommissions />} />
@@ -534,6 +596,10 @@ const AppRouter = () => {
               <Route path="EmailConfiguration" element={<Guard allow={hasPermission(P.SETTINGS_MANAGE)}><EmailConfiguration /></Guard>} />
               <Route path="WhatsAppConfiguration" element={<Guard allow={hasPermission(P.SETTINGS_MANAGE)}><WhatsAppConfiguration /></Guard>} />
               <Route path="LeadSources" element={<Guard allow={hasPermission(P.SETTINGS_MANAGE)}><LeadSources /></Guard>} />
+              {/* Gated on its OWN key, not SETTINGS_MANAGE: editing the Hot/Warm/Cold rules
+                  re-scores every lead in the agency, so it is a separate grant from company
+                  settings. Backend @PreAuthorize is the real gate; this just hides the route. */}
+              <Route path="LeadScoringRules" element={<Guard allow={hasPermission(P.LEAD_SCORING_CONFIGURE)}><LeadScoringRules /></Guard>} />
               <Route path="SubscriptionInfo" element={<Guard allow={!isSubAgent()}><SubscriptionInfo /></Guard>} />
               <Route path="Dashboard" element={<Guard allow={!isSubAgent() && hasModule("DASHBOARD")}><Dashboard /></Guard>} />
               <Route path="trash" element={<Guard allow={hasPermission(P.TRASH_VIEW)}><TrashPage /></Guard>} />
@@ -611,6 +677,21 @@ const AppRouter = () => {
               <Route path="marketplace/transport" element={<Guard allow={hasPermission(P.TRANSPORT_MARKETPLACE_VIEW)}><TransportSearch /></Guard>} />
               <Route path="marketplace/transport/orders" element={<Guard allow={hasPermission(P.TRANSPORT_MARKETPLACE_VIEW)}><TransportOrders /></Guard>} />
               <Route path="marketplace/transport/:publicId/request" element={<Guard allow={hasPermission(P.TRANSPORT_MARKETPLACE_BOOK)}><TransportRequest /></Guard>} />
+
+              {/* Packages. The static `mine` segments are declared before `:publicId` so the
+                  editor routes read unambiguously, and `mine/new` before `mine/:publicId`. */}
+              <Route path="marketplace/packages" element={<Guard allow={hasPermission(P.PACKAGE_MARKETPLACE_VIEW)}><PackageSearch /></Guard>} />
+              <Route path="marketplace/packages/mine" element={<Guard allow={hasPermission(P.PACKAGE_MARKETPLACE_AUTHOR)}><MyPackages /></Guard>} />
+              <Route path="marketplace/packages/mine/new" element={<Guard allow={hasPermission(P.PACKAGE_MARKETPLACE_AUTHOR)}><PackageEditor /></Guard>} />
+              <Route path="marketplace/packages/mine/:publicId" element={<Guard allow={hasPermission(P.PACKAGE_MARKETPLACE_AUTHOR)}><PackageEditor /></Guard>} />
+              {/* `requests` is declared BEFORE `:publicId`, or it is read as a package id and the
+                  detail page 404s on a request. Same trap as `new` under the editor routes. */}
+              <Route path="marketplace/packages/requests" element={<Guard allow={hasPermission(P.PACKAGE_MARKETPLACE_VIEW)}><MixRequests /></Guard>} />
+              <Route path="marketplace/packages/requests/:publicId" element={<Guard allow={hasPermission(P.PACKAGE_MARKETPLACE_VIEW)}><MixRequestDetail /></Guard>} />
+              {/* Quotation links the agency has sent. `quotes` before `:publicId` for the same
+                  reason `requests` is — otherwise it is read as a package id. */}
+              <Route path="marketplace/packages/quotes" element={<Guard allow={hasPermission(P.PACKAGE_MARKETPLACE_VIEW)}><PackageQuotes /></Guard>} />
+              <Route path="marketplace/packages/:publicId" element={<Guard allow={hasPermission(P.PACKAGE_MARKETPLACE_VIEW)}><PackageDetail /></Guard>} />
 
               {/* ── Sub-Agents (B2B franchise) — TENANT_ADMIN only ── */}
               <Route path="subagents" element={<Guard allow={isTenantAdmin()}><SubAgents /></Guard>} />

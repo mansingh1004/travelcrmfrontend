@@ -121,6 +121,21 @@ function categorise(serviceType) {
   return "OTHER";
 }
 
+/**
+ * Which master a line of this kind is bought from, or null when there is no master behind it.
+ *
+ * <p>Documents and sightseeing are deliberately absent: neither has a buyable master, so their
+ * picker stays supplier-only rather than offering an empty second list. Cruise is matched on the
+ * word itself because no dimension owns it — {@link categorise} files a cruise under OTHER.
+ */
+const MASTER_TYPE_BY_DIMENSION = { HOTEL: "HOTEL", VEHICLE: "VEHICLE", TRAVEL: "AIRLINE" };
+const MASTER_LABEL = { HOTEL: "your hotels", VEHICLE: "your vehicles", AIRLINE: "your airlines", CRUISE: "your cruises" };
+
+function masterTypeFor(serviceType) {
+  if ((serviceType || "").toLowerCase().includes("cruise")) return "CRUISE";
+  return MASTER_TYPE_BY_DIMENSION[categorise(serviceType)] ?? null;
+}
+
 /** Cards always shown (they have a column above), then any other dimension that has lines. */
 const CARD_ORDER = [
   ...DIMENSION_TOKENS.map(({ key, label }) => ({
@@ -163,6 +178,8 @@ export default function OpsRowDetail({
   const [failed, setFailed]     = useState(false);
   const [busyId, setBusyId]     = useState(null);
   const [generating, setGenerating] = useState(false);
+  // Off by default: a cancelled line is history, and the board's job is the outstanding work.
+  const [showCancelled, setShowCancelled] = useState(false);
 
   // One editor open at a time. `mode` remembers WHY the picker was opened: from "Confirm"
   // it assigns and confirms together, from the supplier name it only re-assigns.
@@ -170,6 +187,7 @@ export default function OpsRowDetail({
 
   const [vendorQuery, setVendorQuery]     = useState("");
   const [vendors, setVendors]             = useState([]);
+  const [masters, setMasters]               = useState([]);
   const [vendorsLoading, setVendorsLoading] = useState(false);
   // The vendor master sits behind VENDOR_READ, which an operations user may not hold. That is
   // a missing capability, not a broken panel — and it must not take the confirmation number
@@ -228,17 +246,29 @@ export default function OpsRowDetail({
     let cancelled = false;
     setVendorsLoading(true);
     const timer = setTimeout(async () => {
-      try {
-        const found = await operationsService.searchVendors(vendorQuery.trim());
-        if (!cancelled) { setVendors(found); setVendorsDenied(false); }
-      } catch (err) {
-        if (cancelled) return;
+      const q = vendorQuery.trim();
+      // Both halves at once, and settled independently: the master list failing must not blank the
+      // suppliers the operator can still choose from, and vice versa.
+      const [vendorRes, masterRes] = await Promise.allSettled([
+        operationsService.searchVendors(q),
+        operationsService.searchMasterSuppliers(editor.masterType, q),
+      ]);
+      if (cancelled) return;
+      if (vendorRes.status === "fulfilled") {
+        setVendors(vendorRes.value);
+        setVendorsDenied(false);
+      } else {
+        const err = vendorRes.reason;
         if (err?.response?.status === 403) setVendorsDenied(true);
         else if (!isAlreadyReported(err)) console.warn("Vendor lookup failed", err);
         setVendors([]);
-      } finally {
-        if (!cancelled) setVendorsLoading(false);
       }
+      if (masterRes.status === "fulfilled") setMasters(masterRes.value);
+      else {
+        if (!isAlreadyReported(masterRes.reason)) console.warn("Master lookup failed", masterRes.reason);
+        setMasters([]);
+      }
+      setVendorsLoading(false);
     }, 300);
     return () => { cancelled = true; clearTimeout(timer); };
   }, [editor, vendorQuery]);
@@ -297,11 +327,15 @@ export default function OpsRowDetail({
     await patchLine(line, { releaseDate: next || null }, { releaseDate: next || null });
   };
 
+  // masterType is resolved once, here, and carried on the editor rather than recomputed in the
+  // fetch effect: deriving it there would mean depending on `lines`, and `lines` changes on every
+  // assignment — the picker would refetch itself in a loop the moment somebody used it.
   const openPicker = (line, mode) => {
     setVendorQuery("");
     setVendors([]);
+    setMasters([]);
     setVendorsDenied(false);
-    setEditor({ lineId: line.publicId, mode });
+    setEditor({ lineId: line.publicId, mode, masterType: masterTypeFor(line.serviceType) });
   };
 
   const openConfEditor = (line) => {
@@ -319,7 +353,40 @@ export default function OpsRowDetail({
     await patchLine(line, { confirmationNumber: next }, { confirmationNumber: next });
   };
 
+  /**
+   * Assign by master row rather than by supplier.
+   *
+   * <p>Same endpoint and the same one-request status handling; only the reference differs. The
+   * server resolves that master's self-vendor and mints it if nobody has bought from it before, so
+   * an operator never has to leave the board and build a supplier by hand just to confirm a hotel.
+   */
+  const assignMaster = async (line, option) => {
+    if (!canWrite) return;
+    const nextStatus = PICKER_STATUS[editor?.mode];
+    const masterType = editor?.masterType;
+    setBusyId(line.publicId);
+    try {
+      const updated = await operationsService.assignVendor(bookingId, line.publicId, {
+        masterType,
+        masterPublicId: option.publicId,
+        status: nextStatus,
+      });
+      if (updated) replaceLine(updated);
+      setEditor(null);
+      onChanged?.();
+      toast.success(
+        nextStatus === "CONFIRMED" ? `${option.name} assigned and confirmed`
+        : nextStatus === "REQUESTED" ? `Sent to ${option.name}`
+        : `${option.name} assigned`);
+    } catch (err) {
+      if (!isAlreadyReported(err)) toast.error(getErrorMessage(err, "Could not assign that supplier"));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const assign = async (line, vendor) => {
+
     if (!canWrite) return;
     const nextStatus = PICKER_STATUS[editor?.mode];
     setBusyId(line.publicId);
@@ -365,13 +432,27 @@ export default function OpsRowDetail({
     }
   };
 
-  const active = lines.filter((l) => l.status !== "CANCELLED");
+  const active    = lines.filter((l) => l.status !== "CANCELLED");
+  const cancelled = lines.filter((l) => l.status === "CANCELLED");
+
+  // Cancelling a line never deleted it — it only moved the status — but the card filtered it out
+  // entirely, so the row vanished and the Undo that would bring it back sat on a row nobody could
+  // reach. They are shown behind a toggle instead: appended to their card, never interleaved, and
+  // never counted, because "N of M" has to keep meaning how much of the OUTSTANDING work is done.
   const cards = CARD_ORDER
     .map((dim) => {
-      const mine = active.filter((l) => categorise(l.serviceType) === dim.key);
-      return { ...dim, lines: mine, done: mine.filter((l) => l.status === "CONFIRMED").length };
+      const mine  = active.filter((l) => categorise(l.serviceType) === dim.key);
+      const gone  = showCancelled ? cancelled.filter((l) => categorise(l.serviceType) === dim.key) : [];
+      return {
+        ...dim,
+        lines: [...mine, ...gone],
+        outstanding: mine.length,
+        done: mine.filter((l) => l.status === "CONFIRMED").length,
+      };
     })
     .filter((c) => c.always || c.lines.length > 0);
+
+  const visibleCount = active.length + (showCancelled ? cancelled.length : 0);
 
   return (
     // sticky left-0 + the scroller's own width: the detail stays where it can be read
@@ -429,6 +510,20 @@ export default function OpsRowDetail({
         )}
 
         <div className="ml-auto flex items-center gap-2">
+          {cancelled.length > 0 && (
+            <button
+              onClick={() => setShowCancelled((v) => !v)}
+              title={showCancelled ? "Hide cancelled lines" : "Show cancelled lines — they can be restored"}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border ${
+                showCancelled
+                  ? "border-slate-300 bg-slate-100 text-slate-700"
+                  : "border-slate-200 bg-white text-slate-500 hover:text-slate-700 hover:border-slate-300"
+              }`}
+            >
+              <Ban className="w-3.5 h-3.5" />
+              {cancelled.length} cancelled
+            </button>
+          )}
           {canWrite && active.length > 0 && (
             <button
               onClick={generate}
@@ -492,7 +587,9 @@ export default function OpsRowDetail({
       {!loading && !failed && active.length === 0 && (
         <div className="flex flex-wrap items-center gap-3 py-4">
           <p className="text-xs font-bold text-slate-600">
-            Nothing has been broken into service lines yet — there is nothing to confirm.
+            {cancelled.length > 0
+              ? "Every service line on this booking is cancelled — there is nothing to confirm."
+              : "Nothing has been broken into service lines yet — there is nothing to confirm."}
           </p>
           {canWrite && (
             <button
@@ -507,15 +604,15 @@ export default function OpsRowDetail({
         </div>
       )}
 
-      {!loading && !failed && active.length > 0 && (
+      {!loading && !failed && visibleCount > 0 && (
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {cards.map((card) => (
             <div key={card.key} className="bg-white rounded-xl border border-slate-200/70 overflow-hidden">
               <div className="flex items-center justify-between px-3 py-2 border-b border-slate-100">
                 <p className="text-xs font-extrabold text-slate-700">{card.label}</p>
-                <Badge tone={card.lines.length === 0 ? "slate"
-                  : card.done >= card.lines.length ? "green" : "amber"}>
-                  {card.done} of {card.lines.length}
+                <Badge tone={card.outstanding === 0 ? "slate"
+                  : card.done >= card.outstanding ? "green" : "amber"}>
+                  {card.done} of {card.outstanding}
                 </Badge>
               </div>
 
@@ -549,6 +646,10 @@ export default function OpsRowDetail({
                       onEditRelease={() => openReleaseEditor(line)}
                       onSaveRelease={() => saveRelease(line)}
                       onAssign={(vendor) => assign(line, vendor)}
+                      masters={masters}
+                      masterLabel={MASTER_LABEL[editor?.masterType] ?? "your masters"}
+                      onAssignMaster={(option) => assignMaster(line, option)}
+
                       onCloseEditor={() => setEditor(null)}
                       onEmail={() => setMailFor(line)}
                       onWhatsApp={() => setWaFor(line)}
@@ -677,12 +778,14 @@ function SupplierContact({ line, canWrite, onEmail, onWhatsApp, onCall }) {
 function LineRow({
   line, canWrite, busy, editor, confDraft, setConfDraft, releaseDraft, setReleaseDraft,
   vendors, vendorQuery, setVendorQuery, vendorsLoading, vendorsDenied,
+  masters, masterLabel, onAssignMaster,
   onRequest, onConfirm, onRevert, onCancel, onPickSupplier, onEditConfirmation,
   onSaveConfirmation, onEditRelease, onSaveRelease, onAssign, onCloseEditor,
   onEmail, onWhatsApp, onCall,
 }) {
   const confirmed = line.status === "CONFIRMED";
   const requested = line.status === "REQUESTED";
+  const cancelled = line.status === "CANCELLED";
   const searchRef = useRef(null);
 
   useEffect(() => {
@@ -690,10 +793,12 @@ function LineRow({
   }, [editor]);
 
   return (
-    <li className="px-3 py-2">
+    <li className={`px-3 py-2 ${cancelled ? "opacity-60" : ""}`}>
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-bold text-slate-700 truncate">{line.title}</p>
+          <p className={`text-xs font-bold truncate ${cancelled ? "text-slate-400 line-through" : "text-slate-700"}`}>
+            {line.title}
+          </p>
           <p className="text-[10px] text-slate-400 truncate">
             {fmtDate(line.serviceDate)}
             {line.endDate ? ` → ${fmtDate(line.endDate)}` : ""}
@@ -783,7 +888,20 @@ function LineRow({
           <span className="font-mono text-slate-500 truncate">{line.confirmationNumber}</span>
         ) : null}
 
-        {canWrite && !confirmed && (
+        {/* Restoring a cancelled line is the same onRevert the confirmed branch uses: a service
+            line's status has no terminal guard on the backend, so CANCELLED -> PENDING is an
+            ordinary update. What was missing was somewhere to press it — the card filtered the row
+            out, so a line that had only been given a status looked permanently gone. */}
+        {canWrite && cancelled && (
+          <button
+            onClick={onRevert}
+            title="Restore this line to pending"
+            className="ml-auto shrink-0 p-0.5 rounded text-slate-400 hover:text-emerald-600"
+          >
+            <Undo2 className="w-3 h-3" />
+          </button>
+        )}
+        {canWrite && !cancelled && !confirmed && (
           <button
             onClick={onCancel}
             title="Cancel this line"
@@ -792,7 +910,7 @@ function LineRow({
             <Ban className="w-3 h-3" />
           </button>
         )}
-        {canWrite && confirmed && (
+        {canWrite && !cancelled && confirmed && (
           <button
             onClick={onRevert}
             title="Move back to pending"
@@ -806,9 +924,20 @@ function LineRow({
       <SupplierContact line={line} canWrite={canWrite}
                        onEmail={onEmail} onWhatsApp={onWhatsApp} onCall={onCall} />
 
-      {/* The hold's expiry. Shown while a line is out with a supplier, or whenever a date was
-          recorded — a lapsed hold on a line somebody later confirmed is still worth seeing. */}
-      {canWrite && (requested || line.releaseDate) && editor?.mode !== "release" && (
+      {/* The hold's expiry.
+
+          Offered on a PENDING line too, not only a REQUESTED one. The gate used to be
+          `requested || line.releaseDate`, which locked out the commonest real sequence there is:
+          the hotel says on the phone "we'll hold it until Friday" BEFORE any formal request has
+          gone out. With nowhere to put that date, the operator's only route to the field was to
+          press "Ask" — recording that a request was sent when none was — and the board's whole
+          claim is that a status means what it says. The cut-off is also exactly what the
+          HOLD_EXPIRING tab is made of, so the state it could least afford to miss was the one
+          state it refused to record.
+
+          Still shown on a confirmed line whenever a date exists: a lapsed hold on something
+          somebody later confirmed is history worth seeing. */}
+      {canWrite && line.status !== "CANCELLED" && editor?.mode !== "release" && (
         <button
           onClick={onEditRelease}
           className={`mt-1 inline-flex items-center gap-1 text-[10px] font-bold rounded px-1.5 py-0.5 ring-1 ${releaseTone(line.releaseDate)}`}
@@ -889,9 +1018,20 @@ function LineRow({
                 </p>
               )}
 
-              {!vendorsLoading && vendors.length === 0 && (
+              {!vendorsLoading && vendors.length === 0 && !masters?.length && (
                 <p className="text-[10px] text-slate-400 py-1">
-                  {vendorQuery ? "No supplier matches that." : "Type to search suppliers."}
+                  {vendorQuery ? "Nothing matches that." : "Type to search."}
+                </p>
+              )}
+
+              {/* Two groups, and the headings only appear when there is something to tell apart.
+                  The second is the whole point of the picker's rebuild: a hotel the agency has
+                  never sold has no vendor row, so it could not be offered by the supplier search
+                  however it was filtered, and the operator's only route was to leave the board and
+                  create the property in Vendors by hand. Picking one here mints it on the server. */}
+              {vendors.length > 0 && masters?.length > 0 && (
+                <p className="mt-0.5 mb-0.5 text-[9px] font-extrabold uppercase tracking-wide text-slate-400">
+                  Suppliers
                 </p>
               )}
 
@@ -909,6 +1049,28 @@ function LineRow({
                   </li>
                 ))}
               </ul>
+
+              {masters?.length > 0 && (
+                <>
+                  <p className="mt-1.5 mb-0.5 text-[9px] font-extrabold uppercase tracking-wide text-slate-400">
+                    From {masterLabel}
+                  </p>
+                  <ul className="max-h-36 overflow-y-auto">
+                    {masters.map((m) => (
+                      <li key={m.publicId}>
+                        <button
+                          onClick={() => onAssignMaster(m)}
+                          disabled={busy}
+                          className="w-full text-left px-2 py-1 rounded-lg text-[11px] font-semibold text-slate-600 hover:bg-emerald-50 hover:text-emerald-700 disabled:opacity-50"
+                        >
+                          {m.name}
+                          {m.subtitle && <span className="text-slate-400 font-medium"> · {m.subtitle}</span>}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
 
               <button
                 onClick={onCloseEditor}
